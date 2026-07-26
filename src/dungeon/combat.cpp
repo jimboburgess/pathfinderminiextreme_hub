@@ -3,6 +3,7 @@
 #include "forest.h"
 #include "data/game.h"
 #include "audio/audio.h"
+#include "graphics/messagelog.h"
 
 Combat combat;
 
@@ -12,20 +13,69 @@ void checkForCombat()
     // TODO
 }
 
+Character* getCurrentCombatant()
+{
+    if (combat.combatantCount == 0)
+        return nullptr;
+
+    return combat.turnOrder[combat.currentTurnIndex];
+}
+
+bool isPlayerTurn()
+{
+    return (getCurrentCombatant() == &player);
+}
+
 void startCombat()
 {
     combat.active = true;
     combat.phase = COMBAT_TURN;
 
-    combat.turn = TURN_PLAYER;
+    combat.combatantCount = 1;
+    combat.currentTurnIndex = 0;
+
+    // For now, only the player is in the turn order.
+    // We'll add monsters when we build initiative.
+    combat.turnOrder[0] = &player;
+
+    combat.combatRound = 1;
+
     combat.movementRemaining = player.speed;
+    combat.standardActionUsed = false;
+
+    setGameMessage("Combat Begins!");
+}
+
+void nextTurn()
+{
+    combat.currentTurnIndex++;
+
+    if (combat.currentTurnIndex >= combat.combatantCount)
+    {
+        combat.currentTurnIndex = 0;
+        combat.combatRound++;
+    }
+
+    combat.movementRemaining = getCurrentCombatant()->speed;
     combat.standardActionUsed = false;
 }
 
 void endPlayerTurn()
 {
     playSound(SoundEffect::MENU_MOVE);
-    combat.turn = TURN_MONSTERS;
+    Character* current = getCurrentCombatant();
+
+    if (current == nullptr)
+        return;
+
+    if (current == &player)
+    {
+        // Wait for player input.
+    }
+    else
+    {
+        updateMonsterTurn();
+    }
 }
 
 void updateMonsterTurn()
@@ -42,7 +92,14 @@ void updateMonsterTurn()
 
     playSound(SoundEffect::BUMP);   // or any very different sound
 
-        combat.turn = TURN_PLAYER;
+    if (isPlayerTurn())
+    {
+        // Wait for player input
+    }
+    else
+    {
+        // Monster AI
+    }
         combat.movementRemaining = player.speed;
         combat.standardActionUsed = false;
 }
@@ -59,9 +116,9 @@ void updateCombat()
 
         case COMBAT_TURN:
 
-            if (combat.turn == TURN_MONSTERS)
+            if (!isPlayerTurn())
             {
-                updateMonsterTurn();
+                // Monster turns aren't implemented yet.
             }
 
             break;

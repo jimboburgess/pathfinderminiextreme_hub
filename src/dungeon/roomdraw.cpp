@@ -23,48 +23,6 @@ void drawRoom(const DungeonRoom &room) {
   }
 }
 
-void drawEntities(const Dungeon &dungeon) {
-  for (int i = 0; i < dungeon.entityCount; i++) {
-    const Entity &entity = dungeon.entities[i];
-    if (!entity.active)
-      continue;
-
-    uint16_t color = ST77XX_WHITE;
-
-    switch (entity.type) {
-      case ENTITY_PLAYER:
-        color = ST77XX_BLUE;
-        break;
-
-      case ENTITY_ENEMY:
-        color = ST77XX_RED;
-        break;
-
-      case ENTITY_CHEST:
-        color = ST77XX_YELLOW;
-        break;
-
-      case ENTITY_LOOT:
-        color = ST77XX_GREEN;
-        break;
-
-      case ENTITY_NPC:
-        color = ST77XX_CYAN;
-        break;
-
-      default:
-        break;
-    }
-
-    tft.fillRect(
-      entity.x * TILE_SIZE,
-      entity.y * TILE_SIZE,
-      TILE_SIZE,
-      TILE_SIZE,
-      color);
-  }
-}
-
 void drawTile(int tileX, int tileY, TileType tile) {
   uint16_t color = COLOR_VOID;
 

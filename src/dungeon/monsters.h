@@ -100,6 +100,8 @@ struct Monster
 {
     const char* name;
 
+    const uint16_t* sprite;
+
     AbilityScores abilities;
 
     uint8_t hitDice;

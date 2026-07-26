@@ -127,7 +127,7 @@ bool tryMoveForestPlayer()
 {
     if (combat.active)
     {
-        if (combat.turn != TURN_PLAYER)
+        if (!isPlayerTurn())
             return false;
 
         if (combat.movementRemaining == 0)
@@ -171,7 +171,7 @@ bool tryMoveForestPlayer()
     playerPosition.x = targetX;
     playerPosition.y = targetY;
 
-    if (combat.active && combat.turn == TURN_PLAYER)
+    if (combat.active && isPlayerTurn())
     {
         if (combat.movementRemaining > 0)
         {

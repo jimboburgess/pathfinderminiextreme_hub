@@ -24,7 +24,6 @@ const int START_H = 64;
 extern const uint16_t fighterSprite16x16[SPRITE_W * SPRITE_H];
 
 
-
 extern const uint16_t fighterFrame1[SPRITE_W * SPRITE_H];
 extern const uint16_t fighterFrame2[SPRITE_W * SPRITE_H];
 

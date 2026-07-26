@@ -9,6 +9,7 @@
 
 #include "audio/audio.h"
 #include "charcreationscreen.h"
+#include "messagelog.h"
 #include "monstersprites.h"
 #include "graphics/sprites.h"
 #include "characters/sheet.h"
@@ -118,6 +119,11 @@ void drawForestScreen()
             redrawForestTile(x, y);
         }
     }
+    tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
+    tft.setTextSize(1);
+    tft.setCursor(2, 228);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.print(getGameMessage());
 }
 
 void drawForestTile(int x, int y)
@@ -141,47 +147,16 @@ void drawForestTile(int x, int y)
 
 void drawEntity(const Entity& entity)
 {
-    switch (entity.type)
-    {
-        case ENTITY_PLAYER:
-            drawSpriteTransparent(
-                entity.x * TILE_SIZE,
-                entity.y * TILE_SIZE,
-                fighterSprite16x16);
-            break;
+    if (!entity.active)
+        return;
 
-        case ENTITY_ENEMY:
-            switch (entity.monsterID)
-            {
-            case MONSTER_GOBLIN_SCIMITAR:
-                    drawSpriteTransparent(
-                        entity.x * TILE_SIZE,
-                        entity.y * TILE_SIZE,
-                        goblinSprite16x16r1);
-                    break;
+    if (entity.sprite == nullptr)
+        return;
 
-            case MONSTER_GOBLIN_ARCHER:
-                    drawSpriteTransparent(
-                        entity.x * TILE_SIZE,
-                        entity.y * TILE_SIZE,
-                        goblinArcher16x16);
-                    break;
-
-            case MONSTER_BUGBEAR:
-                    drawSpriteTransparent(
-                        entity.x * TILE_SIZE,
-                        entity.y * TILE_SIZE,
-                        bugbear16x16);
-                    break;
-
-            default:
-                    break;
-            }
-            break;
-
-        default:
-            break;
-    }
+    drawSpriteTransparent(
+        entity.x * TILE_SIZE,
+        entity.y * TILE_SIZE,
+        entity.sprite);
 }
 
 void redrawForestTile(int x, int y)
@@ -289,6 +264,8 @@ void drawDungeonScreen()
     drawEntities(dungeon);
 
     drawMoveCursor(dungeon);
+
+
 }
 
 void drawSpriteTransparent(int x, int y, const uint16_t* sprite)

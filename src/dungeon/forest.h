@@ -6,10 +6,12 @@
 
 #include "graphics/tiles.h"
 #include <stdint.h>
+
+#include "dungeon.h"
 #include "../data/entities.h"
 
 constexpr uint8_t FOREST_WIDTH  = 15;
-constexpr uint8_t FOREST_HEIGHT = 15;
+constexpr uint8_t FOREST_HEIGHT = 14;
 
 
 void enterForest();

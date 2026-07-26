@@ -30,7 +30,16 @@ struct Entity
     bool active = false;
 
     MonsterID monsterID = MONSTER_NONE;
+
+    Character* character = nullptr;
+
+    const uint16_t* sprite = nullptr;
 };
+
+void drawEntities(
+    Entity entities[],
+    uint8_t entityCount,
+    uint8_t tileSize);
 
 Entity* spawnEntity(
     Entity entities[],

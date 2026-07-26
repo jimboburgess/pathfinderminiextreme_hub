@@ -11,7 +11,9 @@
 #include "graphics/sprites.h"
 #include "graphics/monstersprites.h"
 #include "audio/audio.h"
+#include "graphics/messagelog.h"
 #include "input/menu.h"
+
 
 
 static TileType forestMap[FOREST_HEIGHT][FOREST_WIDTH];
@@ -118,6 +120,7 @@ void enterForest()
 {
     gameState = GAME_FOREST;
     initForest();
+    setGameMessage("Entered forest");
 
     previousPlayerPosition = playerPosition;
     previousMoveDirection = moveDirection;

@@ -429,11 +429,9 @@ void handleMapButtons()
     //--------------------------------------------------
     // A Button
     //--------------------------------------------------
-
     if (buttonAPressed())
     {
-        if (combat.active &&
-            combat.turn == TURN_PLAYER)
+        if (combat.active && isPlayerTurn())
         {
             endPlayerTurn();
         }

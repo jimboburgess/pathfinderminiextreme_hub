@@ -82,6 +82,7 @@ struct DungeonRoom {
     RoomMap map;
 };
 
+
 constexpr uint8_t MAX_ROOMS = 5;
 constexpr uint8_t MAX_DUNGEON_CHARACTERS = 16;
 
