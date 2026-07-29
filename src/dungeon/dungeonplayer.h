@@ -17,4 +17,6 @@ bool tryMovePlayer(Dungeon &dungeon);
 
 bool tryMoveForestPlayer();
 
+bool canPlayerMoveTo(int x, int y);
+
 #endif //PATHFINDERMINIEXTREME_025_DUNGEONPLAYER_H
