@@ -13,6 +13,8 @@
 #include "monstersprites.h"
 #include "graphics/sprites.h"
 #include "characters/sheet.h"
+#include "data/entityspawn.h"
+#include "dungeon/combat.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/dungeonplayer.h"
 #include "dungeon/roomdraw.h"
@@ -112,6 +114,8 @@ void drawTownScreen()
 
 void drawForestScreen()
 {
+    Serial.println("DRAWING ENTIRE FOREST");
+
     for (int y = 0; y < FOREST_HEIGHT; y++)
     {
         for (int x = 0; x < FOREST_WIDTH; x++)
@@ -119,10 +123,16 @@ void drawForestScreen()
             redrawForestTile(x, y);
         }
     }
+
+    redrawForestMessage();
+}
+
+void redrawForestMessage()
+{
     tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
     tft.setTextSize(1);
-    tft.setCursor(2, 228);
     tft.setTextColor(ST77XX_WHITE);
+    tft.setCursor(2, 228);
     tft.print(getGameMessage());
 }
 
@@ -145,6 +155,64 @@ void drawForestTile(int x, int y)
     }
 }
 
+void redrawForestTile(int x, int y)
+{
+    if (x < 0 || x >= FOREST_WIDTH ||
+        y < 0 || y >= FOREST_HEIGHT)
+    {
+        return;
+    }
+
+    //--------------------------------------------------
+    // Draw the map tile.
+    //--------------------------------------------------
+
+    drawForestTile(x, y);
+
+    //--------------------------------------------------
+    // Draw any entity on this tile.
+    //--------------------------------------------------
+
+    Entity* entity = getEntityAt(
+        forestEntities,
+        forestEntityCount,
+        x,
+        y);
+
+    if (entity != nullptr)
+    {
+        drawEntity(*entity);
+    }
+
+    //--------------------------------------------------
+    // Draw the movement cursor if it is on this tile.
+    //--------------------------------------------------
+
+    Entity* player = getPlayerEntity(
+        forestEntities,
+        forestEntityCount);
+
+    if (player != nullptr)
+    {
+        int cursorX =
+            player->x + directionOffsets[moveDirection].dx;
+
+        int cursorY =
+            player->y + directionOffsets[moveDirection].dy;
+
+        if (cursorX == x &&
+            cursorY == y)
+        {
+            tft.drawRect(
+                x * TILE_SIZE,
+                y * TILE_SIZE,
+                TILE_SIZE,
+                TILE_SIZE,
+                ST77XX_WHITE);
+        }
+    }
+}
+
 void drawEntity(const Entity& entity)
 {
     if (!entity.active)
@@ -156,101 +224,76 @@ void drawEntity(const Entity& entity)
     drawSpriteTransparent(
         entity.x * TILE_SIZE,
         entity.y * TILE_SIZE,
-        entity.sprite);
+        entity.sprite,
+        entity.spriteWidth,
+        entity.spriteHeight);
 }
 
-void redrawForestTile(int x, int y)
+void redrawDirtyTiles()
 {
-    if (x < 0 || x >= FOREST_WIDTH ||
-        y < 0 || y >= FOREST_HEIGHT)
+    for (uint8_t i = 0; i < dirtyTileCount; i++)
     {
+        switch (gameState)
+        {
+            case GAME_FOREST:
+                redrawForestTile(
+                    dirtyTiles[i].x,
+                    dirtyTiles[i].y);
+                break;
+
+                // case GAME_DUNGEON:
+                //     redrawDungeonTile(
+                //         dirtyTiles[i].x,
+                //         dirtyTiles[i].y);
+                //     break;
+
+            default:
+                break;
+        }
+    }
+
+    dirtyTileCount = 0;
+
+    if (gameState == GAME_FOREST)
+    {
+        redrawForestMessage();
+    }
+}
+
+DirtyTile dirtyTiles[MAX_DIRTY_TILES];
+uint8_t dirtyTileCount = 0;
+
+void markTileDirty(int x, int y)
+{
+    if (gameState == GAME_FOREST)
+    {
+        if (x < 0 || x >= FOREST_WIDTH ||
+            y < 0 || y >= FOREST_HEIGHT)
+        {
+            return;
+        }
+    }
+
+    // Don't add duplicates.
+    for (uint8_t i = 0; i < dirtyTileCount; i++)
+    {
+        if (dirtyTiles[i].x == x &&
+            dirtyTiles[i].y == y)
+        {
+            return;
+        }
+    }
+
+    if (dirtyTileCount >= MAX_DIRTY_TILES)
         return;
-    }
 
-    // Draw the map tile first.
-    drawForestTile(x, y);
+    dirtyTiles[dirtyTileCount].x = x;
+    dirtyTiles[dirtyTileCount].y = y;
+    dirtyTileCount++;
 
-    // Draw any entity standing on this tile.
-    Entity* entity = getEntityAt(
-        forestEntities,
-        forestEntityCount,
-        x,
-        y);
-
-    if (entity)
-    {
-        drawEntity(*entity);
-    }
-
-    // Draw the movement cursor if it belongs here.
-    int cursorX =
-        playerPosition.x +
-        directionOffsets[moveDirection].dx;
-
-    int cursorY =
-        playerPosition.y +
-        directionOffsets[moveDirection].dy;
-
-    if (cursorX == x &&
-        cursorY == y)
-    {
-        tft.drawRect(
-            x * TILE_SIZE,
-            y * TILE_SIZE,
-            TILE_SIZE,
-            TILE_SIZE,
-            ST77XX_WHITE);
-    }
+    needsRedraw = true;
 }
 
-void redrawForestCursor()
-{
-    int oldX =
-        playerPosition.x +
-        directionOffsets[previousMoveDirection].dx;
-
-    int oldY =
-        playerPosition.y +
-        directionOffsets[previousMoveDirection].dy;
-
-    int newX =
-        playerPosition.x +
-        directionOffsets[moveDirection].dx;
-
-    int newY =
-        playerPosition.y +
-        directionOffsets[moveDirection].dy;
-
-    redrawForestTile(oldX, oldY);
-    redrawForestTile(newX, newY);
-}
-
-void redrawForestMovement()
-{
-    // Redraw the old player tile.
-    redrawForestTile(
-        previousPlayerPosition.x,
-        previousPlayerPosition.y);
-
-    // Redraw the old cursor tile.
-    redrawForestTile(
-        previousPlayerPosition.x +
-            directionOffsets[previousMoveDirection].dx,
-        previousPlayerPosition.y +
-            directionOffsets[previousMoveDirection].dy);
-
-    // Redraw the new player tile.
-    redrawForestTile(
-        playerPosition.x,
-        playerPosition.y);
-
-    // Redraw the new cursor tile.
-    redrawForestTile(
-        playerPosition.x +
-            directionOffsets[moveDirection].dx,
-        playerPosition.y +
-            directionOffsets[moveDirection].dy);
-}
 void drawDungeonScreen()
 {
     if (isCharacterSheetVisible())
@@ -258,34 +301,47 @@ void drawDungeonScreen()
         drawCharacterSheet();
         return;
     }
-
     drawRoom(dungeon.rooms[dungeon.currentRoom]);
 
-    drawEntities(dungeon);
+    for (uint8_t i = 0; i < dungeon.entityCount; i++)
+    {
+        drawEntity(dungeon.entities[i]);
+    }
 
     drawMoveCursor(dungeon);
 
 
 }
 
-void drawSpriteTransparent(int x, int y, const uint16_t* sprite)
+void drawSpriteTransparent(
+    int x,
+    int y,
+    const uint16_t* sprite,
+    uint8_t width,
+    uint8_t height)
 {
-    for (int py = 0; py < SPRITE_H; py++)
+    for (uint8_t row = 0; row < height; row++)
     {
-        for (int px = 0; px < SPRITE_W; px++)
+        for (uint8_t col = 0; col < width; col++)
         {
-            uint16_t color =
-                pgm_read_word(&sprite[py * SPRITE_W + px]);
+            uint16_t color = pgm_read_word(&sprite[row * width + col]);
 
             if (color != 0xF81F)
             {
-                tft.drawPixel(
-                    x + px,
-                    y + py,
-                    color);
+                tft.drawPixel(x + col, y + row, color);
             }
         }
     }
+}
+
+void drawSpriteTransparent(int x, int y, const uint16_t* sprite)
+{
+    drawSpriteTransparent(
+        x,
+        y,
+        sprite,
+        SPRITE_W,
+        SPRITE_H);
 }
 
 void drawSpriteTransparent64(int x, int y, const uint16_t* sprite)
@@ -307,6 +363,9 @@ void drawSpriteTransparent64(int x, int y, const uint16_t* sprite)
         }
     }
 }
+
+
+
 void refreshDisplay()
 {
     //--------------------------------------------------
@@ -329,22 +388,14 @@ void refreshDisplay()
 
         case GAME_FOREST:
 
-            switch (redrawType)
+            if (redrawType == REDRAW_FULL)
             {
-            case REDRAW_FULL:
-                    drawForestScreen();
-                    break;
-
-            case REDRAW_CURSOR:
-                    redrawForestCursor();
-                    break;
-
-            case REDRAW_PLAYER:
-                    redrawForestMovement();
-                    break;
-
-            default:
-                    break;
+                drawForestScreen();
+                dirtyTileCount = 0;
+            }
+            else
+            {
+                redrawDirtyTiles();
             }
 
             break;
@@ -364,6 +415,19 @@ void refreshDisplay()
     if (menuState.isOpen)
     {
         drawMenu();
+    }
+    //--------------------------------------------------
+    // combat border
+    //--------------------------------------------------
+
+    if (combat.active)
+    {
+        tft.drawRect(
+            0,
+            0,
+            240,
+            240,
+            ST77XX_RED);
     }
 
     //--------------------------------------------------

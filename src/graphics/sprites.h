@@ -14,6 +14,9 @@
 const int SPRITE_W = 16;
 const int SPRITE_H = 16;
 
+const int LRGSPRITE_W = 32;
+const int LRGSPRITE_H = 32;
+
 //======================================
 // 64x64 Walking Sprites
 //======================================
@@ -21,8 +24,10 @@ const int SPRITE_H = 16;
 const int START_W = 64;
 const int START_H = 64;
 
-extern const uint16_t fighterSprite16x16[SPRITE_W * SPRITE_H];
-
+extern const uint16_t fighter16x16[SPRITE_W * SPRITE_H];
+extern const uint16_t rogue16x16[SPRITE_W * SPRITE_H];
+extern const uint16_t wizard16x16[SPRITE_W * SPRITE_H];
+extern const uint16_t cleric16x16[SPRITE_W * SPRITE_H];
 
 extern const uint16_t fighterFrame1[SPRITE_W * SPRITE_H];
 extern const uint16_t fighterFrame2[SPRITE_W * SPRITE_H];

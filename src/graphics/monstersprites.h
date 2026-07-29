@@ -19,7 +19,10 @@ extern const uint16_t zombie16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t ghoul16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t wight16x16[SPRITE_W * SPRITE_H];
 
-extern const uint16_t giantSpider16x16[SPRITE_W * SPRITE_H];
+extern const uint16_t choker16x16[SPRITE_W * SPRITE_H];
+
+extern const uint16_t giantspider32x32[LRGSPRITE_W * LRGSPRITE_H];
+extern const uint16_t spectator32x32[LRGSPRITE_W * LRGSPRITE_H];
 
 extern const uint16_t grayOoze16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t violetFungus16x16[SPRITE_W * SPRITE_H];

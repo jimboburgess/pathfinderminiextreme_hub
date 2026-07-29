@@ -8,15 +8,19 @@
 #include "graphics/display.h"
 #include "dungeonplayer.h"
 #include "dungeon.h"
+#include "turns.h"
 #include "graphics/sprites.h"
 #include "graphics/monstersprites.h"
 #include "audio/audio.h"
+#include "data/entityspawn.h"
 #include "graphics/messagelog.h"
 #include "input/menu.h"
+#include "characters/characters.h"
 
 
 
 static TileType forestMap[FOREST_HEIGHT][FOREST_WIDTH];
+
 
 TileType getForestTile(int x, int y){
 
@@ -29,12 +33,12 @@ TileType getForestTile(int x, int y){
     return forestMap[y][x];
 }
 
-
 static void initForest()
 {
-
-
+    //--------------------------------------------------
     // Fill the map with grass.
+    //--------------------------------------------------
+
     for (int y = 0; y < FOREST_HEIGHT; y++)
     {
         for (int x = 0; x < FOREST_WIDTH; x++)
@@ -43,78 +47,75 @@ static void initForest()
         }
     }
 
+    //--------------------------------------------------
     // Scatter random trees.
+    //--------------------------------------------------
+
     const int NUM_TREES = 35;
 
     for (int i = 0; i < NUM_TREES; i++)
     {
-        int x = random(2, FOREST_WIDTH - 5);   // Leave left and right sides clear.
+        int x = random(2, FOREST_WIDTH - 5);
         int y = random(0, FOREST_HEIGHT);
 
         forestMap[y][x] = TILE_TREE;
     }
-    playerPosition.x = FOREST_WIDTH / 2;
-    playerPosition.y = FOREST_HEIGHT / 2;
+
+    //--------------------------------------------------
+    // Spawn entities.
+    //--------------------------------------------------
 
     clearEntities(
-    forestEntities,
-    forestEntityCount);
+        forestEntities,
+        forestEntityCount);
 
-    spawnEntity(
+    Entity* playerEntity = spawnEntity(
         forestEntities,
         forestEntityCount,
         ENTITY_PLAYER,
-        playerPosition.x,
-        playerPosition.y);
-    Entity* goblin;
+        FOREST_WIDTH / 2,
+        FOREST_HEIGHT - 2);
 
-    goblin = spawnEntity(
-        forestEntities,
-        forestEntityCount,
-        ENTITY_ENEMY,
-        5,
-        5);
-
-    if (goblin)
+    if (playerEntity)
     {
-        goblin->monsterID = MONSTER_GOBLIN_SCIMITAR;
+        playerEntity->character = player;
+
+        playerEntity->sprite =
+            getPlayerSprite(player.characterClass);
     }
 
-    goblin = spawnEntity(
+    spawnMonster(
         forestEntities,
         forestEntityCount,
-        ENTITY_ENEMY,
-        8,
+        MONSTER_GOBLIN_SCIMITAR,
+        2,
+        2);
+
+    spawnMonster(
+        forestEntities,
+        forestEntityCount,
+        MONSTER_GOBLIN_ARCHER,
+        12,
         3);
-
-    if (goblin)
-    {
-        goblin->monsterID = MONSTER_GOBLIN_ARCHER;
-    }
-
-    goblin = spawnEntity(
-        forestEntities,
-        forestEntityCount,
-        ENTITY_ENEMY,
-        10,
-        10);
-
-    if (goblin)
-    {
-        goblin->monsterID = MONSTER_BUGBEAR;
-    }
 }
 
 int getForestPlayerX()
 {
-    return playerPosition.x;
+    Entity* player = getPlayerEntity(
+        forestEntities,
+        forestEntityCount);
+
+    return player ? player->x : 0;
 }
 
 int getForestPlayerY()
 {
-    return playerPosition.y;
-}
+    Entity* player = getPlayerEntity(
+        forestEntities,
+        forestEntityCount);
 
+    return player ? player->y : 0;
+}
 
 void enterForest()
 {
@@ -122,7 +123,16 @@ void enterForest()
     initForest();
     setGameMessage("Entered forest");
 
-    previousPlayerPosition = playerPosition;
+    Entity* player = getPlayerEntity(
+    forestEntities,
+    forestEntityCount);
+
+    if (player)
+    {
+        previousPlayerPosition.x = player->x;
+        previousPlayerPosition.y = player->y;
+    }
+
     previousMoveDirection = moveDirection;
 
     redrawType = REDRAW_FULL;

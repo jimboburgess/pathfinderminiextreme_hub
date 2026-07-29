@@ -4,7 +4,28 @@
 
 #include "characters.h"
 #include "data/progression.h"
+#include "graphics/sprites.h"
 
+const uint16_t* getPlayerSprite(CharacterClass characterClass)
+{
+    switch (characterClass)
+    {
+        case CLASS_FIGHTER:
+            return fighter16x16;
+
+        case CLASS_ROGUE:
+            return rogue16x16;
+
+        case CLASS_CLERIC:
+            return cleric16x16;
+
+        case CLASS_WIZARD:
+            return wizard16x16;
+
+        default:
+            return fighter16x16;
+    }
+}
 
 int getAbilityModifier(int score)
 {

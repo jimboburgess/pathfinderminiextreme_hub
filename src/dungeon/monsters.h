@@ -96,6 +96,19 @@ enum MonsterID
     MONSTER_COUNT
 };
 
+enum AIType
+{
+    AI_NONE,
+    AI_MELEE,          // Run toward nearest enemy and attack.
+    AI_RANGED,         // Keep distance and shoot.
+    AI_COWARD,         // Run away when wounded.
+    AI_GUARD,          // Stay near a location until provoked.
+    AI_WANDER,         // Roam randomly when idle.
+    AI_SUPPORT,         // Buff/heal allies.
+    AI_SPELLCASTER,    //CAST SPELLS DUH
+    AI_DEBUG,
+};
+
 struct Monster
 {
     const char* name;
@@ -105,9 +118,7 @@ struct Monster
     AbilityScores abilities;
 
     uint8_t hitDice;
-
     uint8_t baseAttack;
-
     uint8_t armorClass;
 
     int8_t fortitude;
@@ -122,9 +133,14 @@ struct Monster
     LootTableID lootTable;
 
     AbilityID specialAbilities[4];
+
+    AIType aiType;
 };
 
 const Monster* getMonster(MonsterID id);
+
+uint16_t getMonsterMaxHP(const Monster& monster);
+
 
 extern const Monster monsterDatabase[MONSTER_COUNT];
 

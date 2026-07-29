@@ -16,6 +16,7 @@
 
 constexpr uint8_t MAX_INVENTORY = 64;
 
+
 //==================================================
 // Ability Scores
 //==================================================
@@ -30,6 +31,32 @@ struct AbilityScores
     uint8_t wisdom;
     uint8_t charisma;
 };
+
+//==================================================
+// Character Races
+//==================================================
+
+enum Race
+{
+    RACE_HUMAN,
+    RACE_ELF,
+    RACE_DWARF,
+    RACE_HALF_ORC,
+
+    RACE_COUNT
+};
+
+struct RaceData
+{
+    const char* name;
+
+    AbilityScores modifiers;
+
+    AbilityID abilities[4];
+
+    //TODO
+};
+
 
 //==================================================
 // Character Classes
@@ -159,7 +186,6 @@ struct Character
     //==================================================
     // Identity
     //==================================================
-
     String name;
 
     CharacterClass characterClass;
@@ -171,44 +197,42 @@ struct Character
     //==================================================
     // Progression
     //==================================================
-
     uint8_t level;
     uint32_t xp;
 
     //==================================================
     // Movement
     //==================================================
-
     uint8_t speed;
+
+    //==================================================
+    // Initiative
+    //==================================================
+    int8_t initiative;
 
     //==================================================
     // Ability Scores
     //==================================================
-
     AbilityScores abilities;
 
     //==================================================
     // Health
     //==================================================
-
     HealthData health;
 
     //==================================================
     // Magic
     //==================================================
-
     MagicData magic;
 
     //==================================================
     // Equipment
     //==================================================
-
     EquipmentData equipment;
 
     //==================================================
     // Inventory
     //==================================================
-
     InventoryData inventory;
 };
 
@@ -216,9 +240,12 @@ struct Character
 // Character Rules
 //==================================================
 
+int getAbilityModifier(int score);
 int getAbilityModifier(const Character& character, AbilityScore ability);
 
 int getMaxHP(const Character& character);
+
+const uint16_t* getPlayerSprite(CharacterClass characterClass);
 
 const Weapon* getEquippedMeleeWeapon(const Character& character);
 

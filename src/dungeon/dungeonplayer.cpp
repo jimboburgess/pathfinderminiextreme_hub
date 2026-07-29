@@ -10,6 +10,9 @@
 #include "combat.h"
 #include "../audio/audio.h"
 #include "forest.h"
+#include "turns.h"
+#include "data/entityspawn.h"
+#include "graphics/display.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -22,8 +25,15 @@ void drawMoveCursor(const Dungeon &dungeon)
 
     if (gameState == GAME_FOREST)
     {
-        x = playerPosition.x + directionOffsets[moveDirection].dx;
-        y = playerPosition.y + directionOffsets[moveDirection].dy;
+        Entity* player = getPlayerEntity(
+            forestEntities,
+            forestEntityCount);
+
+        if (player == nullptr)
+            return;
+
+        x = player->x + directionOffsets[moveDirection].dx;
+        y = player->y + directionOffsets[moveDirection].dy;
     }
     else
     {
@@ -45,17 +55,22 @@ void drawMoveCursor(const Dungeon &dungeon)
         TILE_SIZE,
         ST77XX_WHITE);
 }
+
 bool tryMovePlayer(Dungeon &dungeon)
 {
     Entity* player = getPlayerEntity(
-    dungeon.entities,
-    dungeon.entityCount);
+        dungeon.entities,
+        dungeon.entityCount);
 
     if (player == nullptr)
         return false;
 
+    int oldX = player->x;
+    int oldY = player->y;
+    Direction oldDirection = moveDirection;
+
     int targetX =
-     player->x + directionOffsets[moveDirection].dx;
+        player->x + directionOffsets[moveDirection].dx;
 
     int targetY =
         player->y + directionOffsets[moveDirection].dy;
@@ -75,8 +90,37 @@ bool tryMovePlayer(Dungeon &dungeon)
     {
         case TILE_FLOOR:
 
+            if (combat.active)
+            {
+                if (!combat.waitingForPlayer)
+                    return false;
+
+                if (player->turn.movementRemaining == 0)
+                    return false;
+            }
+
             player->x = targetX;
             player->y = targetY;
+
+            markTileDirty(oldX, oldY);
+            markTileDirty(player->x, player->y);
+
+            markTileDirty(
+                oldX + directionOffsets[oldDirection].dx,
+                oldY + directionOffsets[oldDirection].dy);
+
+            markTileDirty(
+                player->x + directionOffsets[moveDirection].dx,
+                player->y + directionOffsets[moveDirection].dy);
+
+            if (combat.active)
+            {
+                if (player->turn.movementRemaining > 0)
+                {
+                    player->turn.movementRemaining--;
+                }
+            }
+
             return true;
 
         case TILE_WALL:
@@ -110,6 +154,8 @@ bool tryMovePlayer(Dungeon &dungeon)
                 else if (targetX == ROOM_SIZE - 1)
                     loadRoom(dungeon, ENTRY_WEST);
 
+                redrawType = REDRAW_FULL;
+
                 return true;
             }
 
@@ -122,23 +168,64 @@ bool tryMovePlayer(Dungeon &dungeon)
 
     return false;
 }
-
 bool tryMoveForestPlayer()
 {
+    Entity* player = nullptr;
+
+    if (gameState == GAME_FOREST)
+    {
+        player = getPlayerEntity(
+            forestEntities,
+            forestEntityCount);
+    }
+    else if (gameState == GAME_DUNGEON)
+    {
+        player = getPlayerEntity(
+            dungeon.entities,
+            dungeon.entityCount);
+    }
+
+    if (player == nullptr)
+        return false;
+
+    //--------------------------------------------------
+    // Combat movement restrictions.
+    //--------------------------------------------------
+
     if (combat.active)
     {
-        if (!isPlayerTurn())
+        if (!combat.waitingForPlayer)
             return false;
 
-        if (combat.movementRemaining == 0)
+        if (player->turn.movementRemaining == 0)
             return false;
     }
 
-    previousPlayerPosition = playerPosition;
-    previousMoveDirection = moveDirection;
+    //--------------------------------------------------
+    // Redraw facing tiles.
+    //--------------------------------------------------
 
-    int targetX = playerPosition.x + directionOffsets[moveDirection].dx;
-    int targetY = playerPosition.y + directionOffsets[moveDirection].dy;
+    markTileDirty(
+        player->x + directionOffsets[previousMoveDirection].dx,
+        player->y + directionOffsets[previousMoveDirection].dy);
+
+    markTileDirty(
+        player->x + directionOffsets[moveDirection].dx,
+        player->y + directionOffsets[moveDirection].dy);
+
+    int oldX = player->x;
+    int oldY = player->y;
+    Direction oldDirection = moveDirection;
+
+    int targetX =
+        player->x + directionOffsets[moveDirection].dx;
+
+    int targetY =
+        player->y + directionOffsets[moveDirection].dy;
+
+    //--------------------------------------------------
+    // Stay inside the map.
+    //--------------------------------------------------
 
     if (targetX < 0 || targetX >= FOREST_WIDTH ||
         targetY < 0 || targetY >= FOREST_HEIGHT)
@@ -147,46 +234,95 @@ bool tryMoveForestPlayer()
         return false;
     }
 
-    TileType tile = getForestTile(targetX, targetY);
+    //--------------------------------------------------
+    // Collision check.
+    //--------------------------------------------------
 
-    if (tile == TILE_TREE)
+    if (!canPlayerMoveTo(targetX, targetY))
     {
         playSound(SoundEffect::BUMP);
         return false;
     }
 
-    Entity* entity = getEntityAt(
-        forestEntities,
-        forestEntityCount,
-        targetX,
-        targetY);
+    //--------------------------------------------------
+    // Move player.
+    //--------------------------------------------------
 
-    if (entity && entity->type == ENTITY_ENEMY)
+    player->x = targetX;
+    player->y = targetY;
+
+    markTileDirty(oldX, oldY);
+    markTileDirty(player->x, player->y);
+
+    markTileDirty(
+        oldX + directionOffsets[oldDirection].dx,
+        oldY + directionOffsets[oldDirection].dy);
+
+    markTileDirty(
+        player->x + directionOffsets[moveDirection].dx,
+        player->y + directionOffsets[moveDirection].dy);
+
+    Serial.print("Player moved to: ");
+    Serial.print(player->x);
+    Serial.print(", ");
+    Serial.println(player->y);
+
+    //--------------------------------------------------
+    // Enter combat if enemies are nearby.
+    //--------------------------------------------------
+
+    checkForCombat();
+
+    //--------------------------------------------------
+    // Consume movement during combat.
+    //--------------------------------------------------
+
+    if (combat.active)
     {
-        startCombat();
-        playSound(SoundEffect::GOBLIN_ATTACK);
-        return false;
-    }
-
-    playerPosition.x = targetX;
-    playerPosition.y = targetY;
-
-    if (combat.active && isPlayerTurn())
-    {
-        if (combat.movementRemaining > 0)
+        if (player->turn.movementRemaining > 0)
         {
-            combat.movementRemaining--;
+            player->turn.movementRemaining--;
         }
     }
 
-    Entity* player = getPlayerEntity(
-    forestEntities,
-    forestEntityCount);
+    return true;
+}
 
-    if (player)
+bool canPlayerMoveTo(int x, int y)
+{
+    //--------------------------------------------------
+    // Stay inside the map.
+    //--------------------------------------------------
+
+    if (x < 0 || x >= FOREST_WIDTH ||
+        y < 0 || y >= FOREST_HEIGHT)
     {
-        player->x = playerPosition.x;
-        player->y = playerPosition.y;
+        return false;
+    }
+
+    //--------------------------------------------------
+    // Trees block movement.
+    //--------------------------------------------------
+
+    if (getForestTile(x, y) == TILE_TREE)
+    {
+        return false;
+    }
+
+    //--------------------------------------------------
+    // Monsters block movement.
+    //--------------------------------------------------
+
+    Entity* entity = getEntityAt(
+    forestEntities,
+    forestEntityCount,
+    x,
+    y);
+
+    if (entity != nullptr &&
+        entity->type == ENTITY_MONSTER)
+    {
+        return false;
     }
 
     return true;

@@ -7,6 +7,8 @@
 
 #include "../characters/characters.h"
 #include "../dungeon/monsters.h"
+#include "dungeon/turns.h"
+#include "graphics/sprites.h"
 
 //==================================================
 // Entities
@@ -14,7 +16,7 @@
 enum EntityType : uint8_t {
     ENTITY_NONE,
     ENTITY_PLAYER,
-    ENTITY_ENEMY,
+    ENTITY_MONSTER,
     ENTITY_CHEST,
     ENTITY_LOOT,
     ENTITY_NPC
@@ -31,46 +33,14 @@ struct Entity
 
     MonsterID monsterID = MONSTER_NONE;
 
-    Character* character = nullptr;
+    Character character;
 
     const uint16_t* sprite = nullptr;
+
+    uint8_t spriteWidth = SPRITE_W;
+    uint8_t spriteHeight = SPRITE_H;
+    TurnState turn;
 };
-
-void drawEntities(
-    Entity entities[],
-    uint8_t entityCount,
-    uint8_t tileSize);
-
-Entity* spawnEntity(
-    Entity entities[],
-    uint8_t& entityCount,
-    EntityType type,
-    uint8_t x,
-    uint8_t y);
-
-void removeEntity(Entity& entity);
-
-Entity* getEntityAt(
-    Entity entities[],
-    uint8_t entityCount,
-    uint8_t x,
-    uint8_t y);
-
-Entity* findFreeEntity(
-    Entity entities[],
-    uint8_t entityCount);
-
-Entity* getPlayerEntity(
-    Entity entities[],
-    uint8_t entityCount);
-
-const Entity* getPlayerEntity(
-    const Entity entities[],
-    uint8_t entityCount);
-
-void clearEntities(
-    Entity entities[],
-    uint8_t& entityCount);
 
 constexpr uint8_t MAX_ENTITIES = 16;
 

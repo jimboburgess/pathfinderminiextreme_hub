@@ -86,10 +86,4 @@ void loop()
     {
         drawStartAnimation();
     }
-
-    if (gameState == GAME_FOREST ||
-    gameState == GAME_DUNGEON)
-    {
-        checkForCombat();
-    }
 }

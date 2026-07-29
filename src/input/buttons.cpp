@@ -6,8 +6,11 @@
 #include "Arduino.h"
 #include "menu.h"
 #include "characters/sheet.h"
+#include "data/entityspawn.h"
 #include "dungeon/combat.h"
 #include "dungeon/forest.h"
+#include "dungeon/turns.h"
+#include "graphics/display.h"
 
 //======================================
 // Input State
@@ -309,14 +312,17 @@ void handleTownButtons()
 
                 break;
 
+
             case TOWN_STAY_HOME:
 
                 break;
+
 
             case TOWN_DUNGEON:
 
                 generateDungeon(dungeon);
                 gameState = GAME_DUNGEON;
+
                 break;
         }
 
@@ -399,8 +405,20 @@ void handleMapButtons()
 
             playSound(SoundEffect::MENU_MOVE);
 
-            redrawType = REDRAW_CURSOR;
-            needsRedraw = true;
+            Entity* player = getPlayerEntity(
+            forestEntities,
+            forestEntityCount);
+
+            if (player)
+            {
+                markTileDirty(
+                    player->x + directionOffsets[previousMoveDirection].dx,
+                    player->y + directionOffsets[previousMoveDirection].dy);
+
+                markTileDirty(
+                    player->x + directionOffsets[moveDirection].dx,
+                    player->y + directionOffsets[moveDirection].dy);
+            }
         }
     }
 
@@ -412,17 +430,15 @@ void handleMapButtons()
 
     if (encoderPressed())
     {
-        bool moved = false;
+        Serial.println("Encoder Pressed");
 
         if (gameState == GAME_FOREST)
-            moved = tryMoveForestPlayer();
-        else if (gameState == GAME_DUNGEON)
-            moved = tryMovePlayer(dungeon);
-
-        if (moved)
         {
-            redrawType = REDRAW_PLAYER;
-            needsRedraw = true;
+            tryMoveForestPlayer();
+        }
+        else if (gameState == GAME_DUNGEON)
+        {
+            tryMovePlayer(dungeon);
         }
     }
 

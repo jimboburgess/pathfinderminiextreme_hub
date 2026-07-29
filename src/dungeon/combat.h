@@ -2,76 +2,132 @@
 #define PATHFINDERMINIEXTREME_025_COMBAT_H
 
 #include <Arduino.h>
+#include <algorithm>
+#include <stdlib.h>
 
 #include "characters/characters.h"
 #include "dungeon.h"
 #include "forest.h"
+#include "graphics/tiles.h"
 
-//======================================
+//==================================================
+// Combat Constants
+//==================================================
+
+constexpr uint8_t COMBAT_DETECTION_RANGE = 6;
+
+//==================================================
 // Combat Phases
-//======================================
+//==================================================
 
 enum CombatPhase
 {
-    COMBAT_NONE,
-    COMBAT_INITIATIVE,
-    COMBAT_TURN,
-    COMBAT_END
+    COMBAT_NONE,          // No combat active
+    COMBAT_INITIATIVE,    // Determine turn order
+    COMBAT_TURN,          // Combat is in progress
+    COMBAT_END            // Cleanup combat
 };
 
-
-constexpr uint8_t DETECTION_RANGE = 6;
-
-
-//======================================
+//==================================================
 // Combat State
-//======================================
+//==================================================
 
 struct Combat
 {
-    bool active;
+    bool active = false;
 
-    CombatPhase phase;
+    CombatPhase phase = COMBAT_NONE;
 
-    Character* turnOrder[MAX_DUNGEON_CHARACTERS];
+    //--------------------------------------------------
+    // Initiative
+    //--------------------------------------------------
 
-    uint8_t combatantCount;
-    uint8_t currentTurnIndex;
+    Entity* turnOrder[MAX_DUNGEON_CHARACTERS];
 
-    uint8_t combatRound;
+    uint8_t combatantCount = 0;
+    uint8_t currentTurnIndex = 0;
 
-    uint8_t movementRemaining;
+    uint8_t combatRound = 0;
 
-    bool standardActionUsed;
+    //--------------------------------------------------
+    // Player Input
+    //--------------------------------------------------
+
+    bool waitingForPlayer = false;
+
+    //--------------------------------------------------
+    // Phase Timing
+    //--------------------------------------------------
+
+    unsigned long phaseStartTime = 0;
+    bool initiativeMessageShown = false;
 };
 
 extern Combat combat;
 
-static void takeMonsterTurn(Entity& monster)
-{
-    monster.x--;
-}
+//==================================================
+// Combat Detection
+//==================================================
 
-Character* getCurrentCombatant();
+void checkForCombat();
 
+void findCombatants();
 
-bool isPlayerTurn();
+bool hasLineOfSight(int x1, int y1, int x2, int y2);
 
-void nextTurn();
+bool blocksSight(TileType tile);
 
-
-
-//======================================
-// Combat Functions
-//======================================
+//==================================================
+// Combat Startup
+//==================================================
 
 void startCombat();
 
+void rollInitiative();
+
+void sortInitiative();
+
+//==================================================
+// Turn Engine
+//==================================================
+
+Entity* getCurrentCombatant();
+
+bool isPlayerTurn();
+
+void announceTurn(Entity* entity);
+
+void runCombatTurn(Entity* entity);
+
+void nextTurn();
+
 void endPlayerTurn();
 
-void updateMonsterTurn();
+//==================================================
+// Player / Monster Turns
+//==================================================
 
-void checkForCombat();
+void runPlayerTurn(Entity* entity);
+
+void runMonsterTurn(Entity* entity);
+
+void runMonsterAI(Entity* monster);
+
+//==================================================
+// Movement
+//==================================================
+
+void performMovementPhase(Entity* entity);
+
+void moveMonsterTowardsPlayer(Entity* monster);
+
+bool canMonsterMoveTo(Entity* monster, int x, int y);
+
+bool isAdjacent(const Entity* a, const Entity* b);
+
+//==================================================
+// Combat Update
+//==================================================
 
 void updateCombat();
 

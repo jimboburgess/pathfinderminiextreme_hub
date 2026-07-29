@@ -5,6 +5,7 @@
 #include "dungeon.h"
 #include <Arduino.h>
 #include "roomgen.h"
+#include "data/entityspawn.h"
 
 Dungeon dungeon;
 
@@ -99,7 +100,7 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
                     spawnEntity(
                         dungeon.entities,
                         dungeon.entityCount,
-                        ENTITY_ENEMY,
+                        ENTITY_MONSTER,
                         x,
                         y);
 

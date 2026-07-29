@@ -5,6 +5,7 @@
 #include "messagelog.h"
 #include <cstring>
 #include "messageLog.h"
+#include "data/game.h"
 
 static char currentMessage[64] = "";
 

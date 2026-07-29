@@ -4,6 +4,11 @@
 
 #include "monsters.h"
 
+#include "data/dice.h"
+#include "characters/characters.h"
+#include "graphics/monstersprites.h"
+
+
 const Monster monsterDatabase[MONSTER_COUNT] =
 {
     //======================================================
@@ -21,7 +26,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NONE,
         CR_ONE_EIGHTH,
         LOOT_NONE,
-        { ABILITY_NONE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_NONE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_NONE,
     },
 
     //======================================================
@@ -29,7 +34,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
     //======================================================
     {
         "Goblin",
-        goblin16x16,
+        goblinSprite16x16r1,
         {11,15,12,10,9,6},
         1,
         1,
@@ -39,7 +44,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_LEATHER_ARMOR,
         CR_ONE_THIRD,
         LOOT_HUMANOID,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
@@ -54,7 +59,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NONE,
         CR_ONE_THIRD,
         LOOT_HUMANOID,
-        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_RANGED
     },
 
     {
@@ -69,7 +74,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_HIDE_ARMOR,
         CR_TWO,
         LOOT_HUMANOID,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     //======================================================
@@ -87,7 +92,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_1,
         CR_ONE_THIRD,
         LOOT_UNDEAD,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
@@ -102,7 +107,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_ONE_HALF,
         LOOT_UNDEAD,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
@@ -117,7 +122,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_1,
         CR_ONE,
         LOOT_UNDEAD,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
@@ -132,7 +137,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_3,
         CR_THREE,
         LOOT_UNDEAD,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     //======================================================
@@ -140,7 +145,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
     //======================================================
     {
         "Giant Spider",
-        giantSpider16x16,
+        giantspider32x32,
         {13,15,12,0,10,2},
         2,
         2,
@@ -150,7 +155,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_ONE,
         LOOT_BEAST,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
@@ -165,7 +170,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_4,
         CR_TWO,
         LOOT_MONSTER,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
@@ -180,7 +185,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_3,
         CR_THREE,
         LOOT_MONSTER,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_SUPPORT
     },
 
     {
@@ -195,12 +200,12 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_TWO,
         LOOT_ABERRATION,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_MELEE,
     },
 
     {
         "Spectator",
-        spectator16x16,
+        spectator32x32,
         {14,20,16,16,14,14},
         4,
         3,
@@ -210,7 +215,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_FOUR,
         LOOT_ABERRATION,
-        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }
+        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, AI_SPELLCASTER,
     },
 };
 
@@ -226,3 +231,16 @@ const Monster* getMonster(MonsterID id)
 
     return &monsterDatabase[id];
 }
+
+uint16_t getMonsterMaxHP(const Monster& monster)
+{
+    uint16_t hp = rollDice(monster.hitDice, 8);
+
+    hp += monster.hitDice * getAbilityModifier(monster.abilities.constitution);
+
+    if (hp < monster.hitDice)
+        hp = monster.hitDice;
+
+    return hp;
+}
+

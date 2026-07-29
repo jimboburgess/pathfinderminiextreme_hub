@@ -76,7 +76,9 @@ enum RedrawType
     REDRAW_NONE,
     REDRAW_FULL,
     REDRAW_CURSOR,
-    REDRAW_PLAYER
+    REDRAW_PLAYER,
+    REDRAW_TILE,
+    REDRAW_ENTITY,
 };
 
 extern RedrawType redrawType;
@@ -86,8 +88,6 @@ extern const DirectionOffset directionOffsets[];
 extern bool lastMoveWasDiagonal;
 
 extern Direction moveDirection;
-
-extern MapPosition playerPosition;
 extern MapPosition previousPlayerPosition;
 extern Direction previousMoveDirection;
 

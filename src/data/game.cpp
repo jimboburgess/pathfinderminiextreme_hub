@@ -10,8 +10,6 @@ TownOption townSelection = TOWN_GOBLINS;
 Character player;
 
 Direction moveDirection = DIR_NORTH;
-
-MapPosition playerPosition = {0, 0};
 MapPosition previousPlayerPosition = {0, 0};
 Direction previousMoveDirection = DIR_NORTH;
 
