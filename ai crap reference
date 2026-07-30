@@ -1,0 +1,290 @@
+Pathfinder Mini - Core Architecture
+Design Philosophy
+
+There are four kinds of data in the game:
+
+Templates (never change)
+Persistent Data (saved with the game)
+World Data (exists while a map is loaded)
+Systems (operate on the other three)
+
+A piece of information should have exactly one owner.
+
+Templates
+
+Templates are immutable definitions.
+
+They are compiled into the game and never change.
+
+Monster
+Goblin Archer
+Goblin Spearman
+Goblin Chief
+Wolf
+Skeleton
+
+Contains:
+
+Name
+Sprite
+Ability Scores
+Speed
+BAB
+AC
+Saves
+Weapon
+Armor
+Challenge Rating
+XP Reward
+Loot Table
+AI Type
+Special Abilities
+
+Monsters never gain XP.
+
+Monsters never level.
+
+Monsters never own inventory.
+
+Item
+
+Contains:
+
+Name
+Type
+Weight
+Value
+Damage
+Armor Bonus
+Description
+
+Never changes.
+
+Ability
+
+Contains:
+
+Name
+School
+Range
+Damage
+Saving Throw
+Description
+
+Never changes.
+
+Persistent Data
+
+Persistent data is saved with the game.
+
+Character
+
+The Character is the permanent record of the player's adventure.
+
+Contains:
+
+Name
+Class
+Level
+XP
+Ability Scores
+Skills
+Equipment
+Inventory
+Known Spells
+HP
+MP
+Conditions that persist outside combat
+
+The Character is the single source of truth for the player.
+
+Nothing else permanently stores this information.
+
+World Data
+
+World data exists only while a map is loaded.
+
+When the player leaves the map, this data may disappear.
+
+Entity
+
+An Entity represents something that exists on a map.
+
+Contains:
+
+Position
+Facing
+Sprite
+Active
+Visibility
+Turn State
+Runtime combat data
+Pointer to Character or
+Pointer to Monster template
+
+Entities do not own:
+
+XP
+Equipment
+Inventory
+Skills
+Class
+Monster Entity Runtime
+
+A monster entity only stores information that changes.
+
+Examples:
+
+Current HP
+Current Conditions
+Initiative
+Temporary Effects
+
+Everything else comes from the Monster template.
+
+When a monster dies:
+
+Roll Loot Table.
+Award XP.
+Remove Entity.
+
+The Monster template remains unchanged.
+
+Combat
+
+Combat is a rules engine.
+
+Combat owns no permanent game data.
+
+Combat performs:
+
+Initiative
+Turn Order
+Movement
+Attacks
+Damage Rolls
+Saving Throws
+Conditions
+End of Turn Effects
+
+Combat never permanently stores:
+
+HP
+XP
+Inventory
+Equipment
+
+Combat modifies the owning object.
+
+Examples:
+
+Player takes damage
+        ↓
+Character.currentHP changes
+Goblin takes damage
+        ↓
+Monster Entity.currentHP changes
+
+Combat asks helper functions for information.
+
+Examples:
+
+getAttackBonus(entity)
+
+getArmorClass(entity)
+
+getSpeed(entity)
+
+applyDamage(entity)
+
+isDead(entity)
+
+Combat should never care whether the entity is a player or a monster.
+
+Loot
+
+Loot comes from Monster templates.
+
+Each monster has a Loot Table.
+
+Example:
+
+Goblin Archer
+
+70% Nothing
+
+15% Healing Potion
+
+10% Arrows
+
+5% Random Goblin Weapon
+
+Loot is generated when the monster dies.
+
+Monsters do not carry inventories.
+
+XP
+
+XP comes from Monster templates.
+
+Example:
+
+Goblin Archer
+
+XP Reward = 135
+
+When the monster dies:
+
+player.xp += monster.xpReward;
+
+No Entity stores XP.
+
+Saving
+
+The save file stores:
+
+Character
+Story Progress
+Completed Quests
+World Flags
+
+The save file does not store:
+
+Combat
+Temporary Monster Entities
+Turn Order
+
+Maps recreate entities when entered.
+
+Ownership Rules
+
+Every piece of data has exactly one owner.
+
+Data	Owner
+XP	Character
+Level	Character
+Equipment	Character
+Inventory	Character
+Skills	Character
+HP (Player)	Character
+HP (Monster)	Monster Entity
+Position	Entity
+Facing	Entity
+Initiative	Entity
+Conditions	Entity (combat/runtime) or Character (persistent), depending on duration
+Loot Table	Monster Template
+XP Reward	Monster Template
+Sprite	Monster Template or Character/Class
+AI	Monster Template
+Guiding Principles
+One owner per piece of data.
+Templates are immutable.
+The Character is the player's save data.
+Entities are the physical things on the current map.
+Combat is only a rules engine.
+Monster templates define what a monster is; monster entities represent one instance of that monster in the world.
+Avoid copying data unless there is a clear gameplay reason.
+
+I think this should become our project's "constitution." Whenever we're unsure where a new piece of data belongs, we can come back to these rules and ask, Who owns this? If the answer isn't obvious, that's a sign the design needs another look before we write code.
+
+There's only one point I'd like us to revisit when we start the refactor: conditions. I intentionally left room for them to exist in either the Entity (temporary combat effects like Shaken for one encounter) or the Character (persistent effects like Disease or Curse that survive leaving the map). Everything else in this document, though, I think gives us a solid foundation to build the rest of the game.
