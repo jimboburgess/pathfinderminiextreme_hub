@@ -6,7 +6,7 @@
 #include "dungeon/dungeonplayer.h"
 
 GameState gameState = GAME_START;
-TownOption townSelection = TOWN_GOBLINS;
+TownOption townSelection = TOWN_STAY_HOME;
 Character player;
 
 Direction moveDirection = DIR_NORTH;

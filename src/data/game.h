@@ -24,8 +24,8 @@ enum GameState
 
 enum TownOption
 {
-    TOWN_GOBLINS,
     TOWN_STAY_HOME,
+    TOWN_FOREST,
     TOWN_DUNGEON,
     TOWN_OPTION_COUNT
 };

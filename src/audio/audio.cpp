@@ -17,6 +17,9 @@ bool isSoundPlaying() {
 
 constexpr Note END_SOUND = { 0, 0 };
 
+//UI
+
+
 const Note menuMoveSound[] = {
   { 1200, 25 },
   END_SOUND
@@ -28,11 +31,27 @@ const Note menuSelectSound[] = {
   END_SOUND
 };
 
-const Note bumpSound[] = {
+const Note menuBackSound[] =
+{
+    {1800, 25},
+    {1300, 35},
+    END_SOUND
+};
+
+const Note bumpSound[] =
+{
     {220, 70},
     END_SOUND
 };
 
+const Note errorSound[] =
+{
+    {250, 80},
+    {180, 120},
+    END_SOUND
+};
+
+//MUSIC
 //HOMEWARD BOUND AKA MONTY PYTHON HOLY GRAIL THEME
 const Note titleTheme[] = {
   { 0, 500 },    // REST
@@ -58,6 +77,112 @@ const Note titleTheme[] = {
   END_SOUND
 };
 
+const Note dungeonTheme[] =
+{
+    {196, 300},   // G3
+    {0,   80},
+
+    {175, 300},   // F3
+    {0,   80},
+
+    {165, 300},   // E3
+    {0,  100},
+
+    {147, 450},   // D3
+
+    END_SOUND
+};
+
+const Note townTheme[] =
+{
+    {784,120},
+    {880,120},
+    {988,180},
+    {880,120},
+    {784,250},
+    END_SOUND
+};
+
+const Note forestTheme[] =
+{
+    {523,140},
+    {659,140},
+    {587,140},
+    {784,180},
+    {659,220},
+    END_SOUND
+};
+
+const Note combatTheme[] =
+{
+    {440,100},
+    {523,100},
+    {659,100},
+    {523,100},
+    {784,180},
+    END_SOUND
+};
+
+const Note bossTheme[] =
+{
+    {220,180},
+    {294,180},
+    {196,180},
+    {330,250},
+    {147,350},
+    END_SOUND
+};
+
+const Note victoryTheme[] =
+{
+    {523,100},
+    {659,100},
+    {784,120},
+    {1046,200},
+    {1318,350},
+    END_SOUND
+};
+
+
+//WORLD
+const Note walkSound[] =
+{
+    {300,15},
+    END_SOUND
+};
+
+const Note doorOpenSound[] =
+{
+    {500,40},
+    {700,60},
+    END_SOUND
+};
+
+const Note doorLockedSound[] =
+{
+    {300,50},
+    {250,50},
+    {300,50},
+    END_SOUND
+};
+
+const Note chestOpenSound[] =
+{
+    {600,40},
+    {800,40},
+    {1000,80},
+    END_SOUND
+};
+
+const Note itemPickupSound[] =
+{
+    {900,30},
+    {1200,60},
+    END_SOUND
+};
+
+
+//cOMBAT
 const Note attackSound[] =
 {
     {1800, 20},
@@ -102,6 +227,45 @@ const Note defendSound[] =
     END_SOUND
 };
 
+const Note blockSound[] =
+{
+    {2200,20},
+    {1700,40},
+    END_SOUND
+};
+
+const Note dodgeSound[] =
+{
+    {1500,20},
+    {2200,40},
+    END_SOUND
+};
+
+const Note enemyHitSound[] =
+{
+    {800,25},
+    {550,50},
+    END_SOUND
+};
+
+const Note playerHitSound[] =
+{
+    {650,40},
+    {450,70},
+    END_SOUND
+};
+
+const Note playerDieSound[] =
+{
+    {500,120},
+    {400,150},
+    {300,200},
+    {200,300},
+    END_SOUND
+};
+
+
+//MAGIC
 const Note potionSound[] =
 {
     {700, 40},
@@ -111,10 +275,80 @@ const Note potionSound[] =
     END_SOUND
 };
 
+const Note spellCastSound[] =
+{
+    {900,30},
+    {1200,30},
+    {1500,60},
+    END_SOUND
+};
+
+const Note spellHitSound[] =
+{
+    {1800,20},
+    {1400,20},
+    {900,50},
+    END_SOUND
+};
+
+const Note spellHealSound[] =
+{
+    {600,40},
+    {800,40},
+    {1000,40},
+    {1200,80},
+    END_SOUND
+};
+
+const Note spellFailSound[] =
+{
+    {500,50},
+    {450,50},
+    {400,80},
+    END_SOUND
+};
+
+//monster sounds
+
 const Note goblinAttackSound[] =
 {
     {500, 30},
     {350, 60},
+    END_SOUND
+};
+
+const Note goblinAlertSound[] =
+{
+    {450,40},
+    {550,40},
+    {450,60},
+    END_SOUND
+};
+
+const Note trapSound[] =
+{
+    {1800,20},
+    {900,40},
+    {400,80},
+    END_SOUND
+};
+
+const Note secretFoundSound[] =
+{
+    {900,40},
+    {1100,40},
+    {1400,80},
+    {1700,120},
+    END_SOUND
+};
+
+const Note questCompleteSound[] =
+{
+    {523,80},
+    {659,80},
+    {784,80},
+    {988,120},
+    {1318,220},
     END_SOUND
 };
 
@@ -126,6 +360,8 @@ const Note enemyDieSound[] =
     {300, 80},
     END_SOUND
 };
+
+//overtop
 
 const Note victorySound[] =
 {
@@ -159,25 +395,55 @@ static const Note* soundTable[] =
 {
     nullptr,            // NONE
 
-    menuMoveSound,      // MENU_MOVE
-    menuSelectSound,    // MENU_SELECT
-    bumpSound,          // BUMP
+menuMoveSound,
+menuSelectSound,
+menuBackSound,
+errorSound,
+bumpSound,
 
-    titleTheme,         // TITLE_THEME
+titleTheme,
+townTheme,
+dungeonTheme,
+forestTheme,
+combatTheme,
+bossTheme,
+victoryTheme,
 
-    attackSound,        // ATTACK
-    missSound,          // MISS
-    critSound,          // CRIT
-    critFailSound,      // CRIT_FAIL
-    defendSound,        // DEFEND
-    potionSound,        // POTION
+walkSound,
+doorOpenSound,
+doorLockedSound,
+chestOpenSound,
+itemPickupSound,
+potionSound,
+defendSound,
 
-    goblinAttackSound,  // GOBLIN_ATTACK
-    enemyDieSound,      // ENEMY_DIE
+attackSound,
+missSound,
+critSound,
+critFailSound,
+blockSound,
+dodgeSound,
 
-    victorySound,       // VICTORY
-    levelUpSound,       // LEVEL_UP
-    gameOverSound       // GAME_OVER
+spellCastSound,
+spellHitSound,
+spellHealSound,
+spellFailSound,
+
+goblinAlertSound,
+goblinAttackSound,
+enemyHitSound,
+enemyDieSound,
+
+playerHitSound,
+playerDieSound,
+levelUpSound,
+
+trapSound,
+secretFoundSound,
+questCompleteSound,
+
+victorySound,
+gameOverSound
 };
 
 void initAudio() {

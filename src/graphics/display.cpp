@@ -93,12 +93,12 @@ void drawTownScreen()
     tft.setTextSize(2);
 
     tft.setCursor(20, 70);
-    tft.print(townSelection == TOWN_GOBLINS ? "> " : "  ");
-    tft.print("Enter the forest");
-
-    tft.setCursor(20, 100);
     tft.print(townSelection == TOWN_STAY_HOME ? "> " : "  ");
     tft.print("Stay Home");
+
+    tft.setCursor(20, 100);
+    tft.print(townSelection == TOWN_FOREST ? "> " : "  ");
+    tft.print("Enter the Forest");
 
     tft.setCursor(20, 130);
     tft.print(townSelection == TOWN_DUNGEON ? "> " : "  ");
@@ -111,6 +111,97 @@ void drawTownScreen()
         tft.print("\"It's dangerous out there.\"");
     }
 }
+
+void redrawDungeonTile(int x, int y)
+{
+    if (x < 0 || x >= ROOM_SIZE ||
+        y < 0 || y >= ROOM_SIZE)
+    {
+        return;
+    }
+
+    //--------------------------------------------------
+    // Draw the map tile.
+    //--------------------------------------------------
+
+    drawTile(
+        x,
+        y,
+        dungeon.rooms[dungeon.currentRoom].map.tiles[y][x]);
+
+    //--------------------------------------------------
+    // Draw any entity on this tile.
+    //--------------------------------------------------
+
+    Entity* entity = getEntityAt(
+        dungeon.entities,
+        dungeon.entityCount,
+        x,
+        y);
+
+    if (entity != nullptr)
+    {
+        drawEntity(*entity);
+    }
+
+    //--------------------------------------------------
+    // Draw the movement cursor if it is on this tile.
+    //--------------------------------------------------
+
+    Entity* player = getPlayerEntity(
+        dungeon.entities,
+        dungeon.entityCount);
+
+    if (player != nullptr)
+    {
+        int cursorX =
+            player->x + directionOffsets[moveDirection].dx;
+
+        int cursorY =
+            player->y + directionOffsets[moveDirection].dy;
+
+        if (cursorX == x &&
+            cursorY == y)
+        {
+            tft.drawRect(
+                x * TILE_SIZE,
+                y * TILE_SIZE,
+                TILE_SIZE,
+                TILE_SIZE,
+                ST77XX_WHITE);
+        }
+    }
+}
+
+void redrawDungeonMessage()
+{
+    tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setCursor(2, 228);
+    tft.print(getGameMessage());
+}
+
+void drawDungeonScreen()
+{
+    if (isCharacterSheetVisible())
+    {
+        drawCharacterSheet();
+        return;
+    }
+
+    drawRoom(dungeon.rooms[dungeon.currentRoom]);
+
+    for (uint8_t i = 0; i < dungeon.entityCount; i++)
+    {
+        drawEntity(dungeon.entities[i]);
+    }
+
+    drawMoveCursor(dungeon);
+
+    redrawDungeonMessage();
+}
+
 
 void drawForestScreen()
 {
@@ -241,11 +332,11 @@ void redrawDirtyTiles()
                     dirtyTiles[i].y);
                 break;
 
-                // case GAME_DUNGEON:
-                //     redrawDungeonTile(
-                //         dirtyTiles[i].x,
-                //         dirtyTiles[i].y);
-                //     break;
+            case GAME_DUNGEON:
+                redrawDungeonTile(
+                    dirtyTiles[i].x,
+                    dirtyTiles[i].y);
+                break;
 
             default:
                 break;
@@ -254,9 +345,18 @@ void redrawDirtyTiles()
 
     dirtyTileCount = 0;
 
-    if (gameState == GAME_FOREST)
+    switch (gameState)
     {
-        redrawForestMessage();
+        case GAME_FOREST:
+            redrawForestMessage();
+            break;
+
+        case GAME_DUNGEON:
+            redrawDungeonMessage();
+            break;
+
+        default:
+            break;
     }
 }
 
@@ -294,24 +394,6 @@ void markTileDirty(int x, int y)
     needsRedraw = true;
 }
 
-void drawDungeonScreen()
-{
-    if (isCharacterSheetVisible())
-    {
-        drawCharacterSheet();
-        return;
-    }
-    drawRoom(dungeon.rooms[dungeon.currentRoom]);
-
-    for (uint8_t i = 0; i < dungeon.entityCount; i++)
-    {
-        drawEntity(dungeon.entities[i]);
-    }
-
-    drawMoveCursor(dungeon);
-
-
-}
 
 void drawSpriteTransparent(
     int x,
@@ -401,7 +483,17 @@ void refreshDisplay()
             break;
 
         case GAME_DUNGEON:
-            drawDungeonScreen();
+
+            if (redrawType == REDRAW_FULL)
+            {
+                drawDungeonScreen();
+                dirtyTileCount = 0;
+            }
+            else
+            {
+                redrawDirtyTiles();
+            }
+
             break;
 
         default:

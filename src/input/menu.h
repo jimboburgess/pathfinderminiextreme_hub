@@ -132,7 +132,7 @@ struct MenuState
 
 
 extern MenuState menuState;
-extern const Menu combatMenu;
+extern const Menu mainMenu;
 
 bool isMenuItemVisible(MenuAction action);
 bool isMenuItemEnabled(MenuAction action);

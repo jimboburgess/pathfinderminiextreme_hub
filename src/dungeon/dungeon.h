@@ -98,6 +98,7 @@ struct Dungeon {
 extern Dungeon dungeon;
 
 const char* roomTypeName(RoomType type);
+void enterDungeon();
 void generateDungeon(Dungeon& dungeon);
 void generateRoom(DungeonRoom& room);
 void loadRoom(Dungeon& dungeon, RoomEntry entry);

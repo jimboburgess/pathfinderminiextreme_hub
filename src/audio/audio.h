@@ -13,27 +13,64 @@ enum class SoundEffect : uint8_t
 {
     NONE,
 
+    // UI
     MENU_MOVE,
     MENU_SELECT,
+    MENU_BACK,
+    ERROR,
     BUMP,
 
-  // Music
+    // Music
     TITLE_THEME,
+    TOWN_THEME,
+    DUNGEON_THEME,
+    FOREST_THEME,
+    COMBAT_THEME,
+    BOSS_THEME,
+    VICTORY_THEME,
 
+    // Player Actions
+    WALK,
+    DOOR_OPEN,
+    DOOR_LOCKED,
+    CHEST_OPEN,
+    ITEM_PICKUP,
+    POTION,
+    DEFEND,
+
+    // Combat
     ATTACK,
     MISS,
     CRIT,
     CRIT_FAIL,
-    DEFEND,
-    POTION,
+    BLOCK,
+    DODGE,
 
+    // Magic
+    SPELL_CAST,
+    SPELL_HIT,
+    SPELL_HEAL,
+    SPELL_FAIL,
+
+    // Monsters
+    GOBLIN_ALERT,
     GOBLIN_ATTACK,
+    ENEMY_HIT,
     ENEMY_DIE,
 
-    VICTORY,
+    // Character
+    PLAYER_HIT,
+    PLAYER_DIE,
     LEVEL_UP,
-    GAME_OVER,
 
+    // World
+    TRAP,
+    SECRET_FOUND,
+    QUEST_COMPLETE,
+
+    // End Game
+    VICTORY,
+    GAME_OVER,
 
     COUNT
 };
@@ -47,6 +84,10 @@ struct Note
 
 void initAudio();
 void updateAudio();
+
+// TODO:
+// Separate music and sound effects into independent playback
+// channels when the audio system grows.
 
 void playSound(SoundEffect sound);
 bool isSoundPlaying();

@@ -448,13 +448,12 @@ const MenuItem combatMenuItems[] =
     }
 };
 
-const Menu combatMenu =
+const Menu mainMenu =
 {
-    "Combat",
+    "Menu",
     combatMenuItems,
     sizeof(combatMenuItems) / sizeof(MenuItem)
 };
-
 
 void openMenu(const Menu* menu)
 {
@@ -543,9 +542,58 @@ void menuCursorUp()
 
 void menuActivate()
 {
+    const Menu* menu = getCurrentMenu();
 
+    if (menu == nullptr)
+        return;
+
+    const MenuItem* item =
+        getVisibleMenuItem(menu, menuState.cursorIndex);
+
+    if (item == nullptr)
+        return;
+
+    //--------------------------------------------------
+    // Open submenu
+    //--------------------------------------------------
+
+    if (item->child != nullptr)
+    {
+        menuState.menuStack[menuState.depth] = item->child;
+        menuState.depth++;
+
+        menuState.cursorIndex = 0;
+        menuState.previousCursorIndex = 0;
+        menuState.firstVisibleIndex = 0;
+
+        menuState.redrawType = MENU_REDRAW_FULL;
+        needsRedraw = true;
+
+        return;
+    }
+
+    //--------------------------------------------------
+    // Execute action
+    //--------------------------------------------------
+
+    switch (item->action)
+    {
+        case MENU_RETURN_TO_TOWN:
+
+            closeMenu();
+
+            gameState = GAME_TOWN;
+            townSelection = TOWN_STAY_HOME;
+
+            redrawType = REDRAW_FULL;
+            needsRedraw = true;
+
+            break;
+
+        default:
+            break;
+    }
 }
-
 void menuCancel()
 {
     if (menuState.depth > 1)

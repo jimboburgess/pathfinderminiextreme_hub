@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #include "roomgen.h"
 #include "data/entityspawn.h"
+#include "data/game.h"
+#include "graphics/messagelog.h"
 
 Dungeon dungeon;
 
@@ -24,6 +26,29 @@ const char* roomTypeName(RoomType type)
     }
 
     return "Unknown";
+}
+
+void enterDungeon()
+{
+    generateDungeon(dungeon);
+
+    gameState = GAME_DUNGEON;
+    setGameMessage("Entered dungeon");
+
+    Entity* player = getPlayerEntity(
+        dungeon.entities,
+        dungeon.entityCount);
+
+    if (player)
+    {
+        previousPlayerPosition.x = player->x;
+        previousPlayerPosition.y = player->y;
+    }
+
+    previousMoveDirection = moveDirection;
+
+    redrawType = REDRAW_FULL;
+    needsRedraw = true;
 }
 
 void generateDungeon(Dungeon& dungeon)

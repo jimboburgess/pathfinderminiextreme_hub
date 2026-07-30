@@ -15,6 +15,8 @@ void drawTownScreen();
 void drawForestScreen();
 void redrawForestMessage();
 void drawDungeonScreen();
+void redrawDungeonMessage();
+void redrawDungeonTole();
 void drawEntity(const Entity& entity);
 void drawForestTile(int x, int y);
 void redrawForestTile(int x, int y);

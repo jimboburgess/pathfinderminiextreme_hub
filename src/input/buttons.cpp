@@ -217,7 +217,8 @@ void handleCharacterCreationButtons()
         {
             case CCS_CLASS_SELECT:
 
-                // No action.
+                createPreviewCharacter();
+                playSound(SoundEffect::MENU_SELECT);
                 break;
 
             case CCS_VIEW_STATS:
@@ -250,13 +251,13 @@ void handleCharacterCreationButtons()
 
                 enterCharacterCreation();
 
-                playSound(SoundEffect::MENU_SELECT);
+                playSound(SoundEffect::MENU_BACK);
                 break;
 
             case CCS_MENU:
 
                 closeCharacterMenu();
-                playSound(SoundEffect::MENU_SELECT);
+                playSound(SoundEffect::MENU_BACK);
                 break;
         }
     }
@@ -266,39 +267,30 @@ void handleCharacterCreationButtons()
 // Town
 //======================================================
 
-void handleTownButtons()
-{
-
+void handleTownButtons() {
     if (isCharacterSheetVisible())
     {
         handleCharacterSheetButtons();
         return;
     }
-     bool clkNow = digitalRead(ENCODER_CLK);
+    EncoderDirection direction = readEncoder();
 
-    if (clkNow != encoderLastCLK && clkNow == LOW)
+    if (direction == ENCODER_CLOCKWISE)
     {
-        if (millis() - encoderLastMove > ENCODER_DEBOUNCE)
-        {
-            encoderLastMove = millis();
+        townSelection =
+            (TownOption)((townSelection + 1) % TOWN_OPTION_COUNT);
 
-            if (digitalRead(ENCODER_DT) != clkNow)
-            {
-                townSelection =
-                    (TownOption)((townSelection + 1) % TOWN_OPTION_COUNT);
-            }
-            else
-            {
-                townSelection =
-                    (TownOption)((townSelection - 1 + TOWN_OPTION_COUNT) % TOWN_OPTION_COUNT);
-            }
-
-            playSound(SoundEffect::MENU_MOVE);
-            needsRedraw = true;
-        }
+        playSound(SoundEffect::MENU_MOVE);
+        needsRedraw = true;
     }
+    else if (direction == ENCODER_COUNTERCLOCKWISE)
+    {
+        townSelection =
+            (TownOption)((townSelection - 1 + TOWN_OPTION_COUNT) % TOWN_OPTION_COUNT);
 
-    encoderLastCLK = clkNow;
+        playSound(SoundEffect::MENU_MOVE);
+        needsRedraw = true;
+    }
 
     if (encoderPressed())
     {
@@ -306,27 +298,17 @@ void handleTownButtons()
 
         switch (townSelection)
         {
-            case TOWN_GOBLINS:
-
+            case TOWN_FOREST:
                 enterForest();
-
                 break;
-
 
             case TOWN_STAY_HOME:
-
                 break;
-
 
             case TOWN_DUNGEON:
-
-                generateDungeon(dungeon);
-                gameState = GAME_DUNGEON;
-
+                enterDungeon();
                 break;
         }
-
-        needsRedraw = true;
     }
 }
 
@@ -362,7 +344,7 @@ void handleMapButtons()
         if (encoderPressed() || buttonAPressed())
         {
             playSound(SoundEffect::MENU_SELECT);
-            menuSelect();
+            menuActivate();
         }
 
         if (buttonBPressed())
@@ -387,42 +369,34 @@ void handleMapButtons()
     //--------------------------------------------------
     // Facing Direction
     //--------------------------------------------------
+    EncoderDirection direction = readEncoder();
 
-    bool clkNow = digitalRead(ENCODER_CLK);
-
-    if (clkNow != encoderLastCLK && clkNow == LOW)
+    if (direction != ENCODER_NONE)
     {
-        if (millis() - encoderLastMove > ENCODER_DEBOUNCE)
-        {
-            encoderLastMove = millis();
+        previousMoveDirection = moveDirection;
 
-            previousMoveDirection = moveDirection;
+        if (direction == ENCODER_CLOCKWISE)
+            rotateDirectionCW();
+        else
+            rotateDirectionCCW();
 
-            if (digitalRead(ENCODER_DT) != clkNow)
-                rotateDirectionCW();
-            else
-                rotateDirectionCCW();
+        playSound(SoundEffect::MENU_MOVE);
 
-            playSound(SoundEffect::MENU_MOVE);
-
-            Entity* player = getPlayerEntity(
+        Entity* player = getPlayerEntity(
             forestEntities,
             forestEntityCount);
 
-            if (player)
-            {
-                markTileDirty(
-                    player->x + directionOffsets[previousMoveDirection].dx,
-                    player->y + directionOffsets[previousMoveDirection].dy);
+        if (player)
+        {
+            markTileDirty(
+                player->x + directionOffsets[previousMoveDirection].dx,
+                player->y + directionOffsets[previousMoveDirection].dy);
 
-                markTileDirty(
-                    player->x + directionOffsets[moveDirection].dx,
-                    player->y + directionOffsets[moveDirection].dy);
-            }
+            markTileDirty(
+                player->x + directionOffsets[moveDirection].dx,
+                player->y + directionOffsets[moveDirection].dy);
         }
     }
-
-    encoderLastCLK = clkNow;
 
     //--------------------------------------------------
     // Move Player
@@ -435,10 +409,12 @@ void handleMapButtons()
         if (gameState == GAME_FOREST)
         {
             tryMoveForestPlayer();
+            playSound(SoundEffect::WALK);
         }
         else if (gameState == GAME_DUNGEON)
         {
             tryMovePlayer(dungeon);
+            playSound(SoundEffect::WALK);
         }
     }
 
@@ -453,29 +429,39 @@ void handleMapButtons()
         }
         else
         {
-            openMenu(&combatMenu);
+            openMenu(&mainMenu);
             menuState.redrawType = MENU_REDRAW_FULL;
         }
 
         return;
     }
+    //--------------------------------------------------
+    // B Button
+    //--------------------------------------------------
+
+    if (buttonBPressed())
+    {
+        if (combat.active && isPlayerTurn())
+        {
+            endPlayerTurn();
+        }
+    }
 }
 
-void handleCharacterSheetButtons()
-{
+void handleCharacterSheetButtons() {
     EncoderDirection direction = readEncoder();
 
     if (direction == ENCODER_CLOCKWISE)
     {
         scrollCharacterSheetDown();
         needsRedraw = true;
-        playSound(SoundEffect::MENU_MOVE);
+        playSound(SoundEffect::MENU_SELECT);
     }
     else if (direction == ENCODER_COUNTERCLOCKWISE)
     {
         scrollCharacterSheetUp();
         needsRedraw = true;
-        playSound(SoundEffect::MENU_MOVE);
+        playSound(SoundEffect::MENU_SELECT);
     }
     //--------------------------------------------------
     // Exit
@@ -483,12 +469,14 @@ void handleCharacterSheetButtons()
 
     if (buttonBPressed())
     {
+        playSound(SoundEffect::MENU_BACK);
         closeCharacterSheet();
         return;
     }
 
     if (encoderButtonLongPressed())
     {
+        playSound(SoundEffect::MENU_BACK);
         closeCharacterSheet();
         return;
     }
@@ -511,7 +499,9 @@ void resetButtonStates()
 
 void handleButtons()
 {
-    if ((gameState == GAME_TOWN || gameState == GAME_DUNGEON) &&
+    if ((gameState == GAME_TOWN ||
+     gameState == GAME_FOREST ||
+     gameState == GAME_DUNGEON) &&
     encoderButtonLongPressed())
     {
         if (isCharacterSheetVisible())
@@ -537,6 +527,7 @@ void handleButtons()
             break;
 
         case GAME_FOREST:
+
         case GAME_DUNGEON:
             handleMapButtons();
             break;
