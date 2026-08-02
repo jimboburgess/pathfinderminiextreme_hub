@@ -7,14 +7,26 @@
 
 #include <stdint.h>
 
+enum MonsterTurnState
+{
+    MONSTER_START,
+    MONSTER_MOVE,
+    MONSTER_ATTACK,
+    MONSTER_END
+};
+
 struct TurnState
 {
+    MonsterTurnState monsterState = MONSTER_START;
     uint8_t movementRemaining;
     bool standardActionUsed;
     bool turnActive;
     bool fullDefense;
     bool fiveFootStepUsed;
     bool delayTurn;
+
 };
+
+
 
 #endif // PATHFINDERMINIEXTREME_025_TURNS_H

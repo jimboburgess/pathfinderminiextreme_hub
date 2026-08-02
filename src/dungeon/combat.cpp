@@ -81,7 +81,7 @@ void findCombatants()
     // Player always joins combat.
     //--------------------------------------------------
 
-    combat.turnOrder[combat.combatantCount++] = playerEntity;
+    combat.initiativeOrder[combat.combatantCount++] = playerEntity;
 
     //--------------------------------------------------
     // Find nearby monsters.
@@ -117,7 +117,7 @@ void findCombatants()
             continue;
         }
 
-        combat.turnOrder[combat.combatantCount++] = &entity;
+        combat.initiativeOrder[combat.combatantCount++] = &entity;
     }
 
     //--------------------------------------------------
@@ -126,7 +126,7 @@ void findCombatants()
 
     for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
-        Entity* entity = combat.turnOrder[i];
+        Entity* entity = combat.initiativeOrder[i];
 
         if (entity->type == ENTITY_PLAYER)
             Serial.println("Player");
@@ -193,7 +193,7 @@ void rollInitiative()
 {
     for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
-        Entity* entity = combat.turnOrder[i];
+        Entity* entity = combat.initiativeOrder[i];
 
         entity->character.initiative =
             rollDie(20) +
@@ -207,12 +207,12 @@ void sortInitiative()
     {
         for (uint8_t j = i + 1; j < combat.combatantCount; j++)
         {
-            if (combat.turnOrder[j]->character.initiative >
-                combat.turnOrder[i]->character.initiative)
+            if (combat.initiativeOrder[j]->character.initiative >
+                combat.initiativeOrder[i]->character.initiative)
             {
-                Entity* temp = combat.turnOrder[i];
-                combat.turnOrder[i] = combat.turnOrder[j];
-                combat.turnOrder[j] = temp;
+                Entity* temp = combat.initiativeOrder[i];
+                combat.initiativeOrder[i] = combat.initiativeOrder[j];
+                combat.initiativeOrder[j] = temp;
             }
         }
     }
@@ -226,7 +226,7 @@ Entity* getCurrentCombatant()
     if (combat.currentTurnIndex >= combat.combatantCount)
         return nullptr;
 
-    return combat.turnOrder[combat.currentTurnIndex];
+    return combat.initiativeOrder[combat.currentTurnIndex];
 }
 
 bool isPlayerTurn()
@@ -242,23 +242,23 @@ bool isPlayerTurn()
 void startCombat()
 {
     combat.active = true;
+
     findCombatants();
     rollInitiative();
     sortInitiative();
+
     combat.phase = COMBAT_INITIATIVE;
     combat.phaseStartTime = millis();
     combat.initiativeMessageShown = false;
-    combat.currentTurnIndex = 0;
 
+    combat.currentTurnIndex = 0;
     combat.combatRound = 1;
-    runCombatTurn(getCurrentCombatant());
 
     redrawType = REDRAW_FULL;
     needsRedraw = true;
 }
 
-
-void runCombatTurn(Entity* entity)
+void resetActions(Entity* entity)
 {
     if (entity == nullptr)
         return;
@@ -267,31 +267,16 @@ void runCombatTurn(Entity* entity)
 
     if (entity->type == ENTITY_PLAYER)
     {
+        setGameMessage("Player Turn");
         combat.waitingForPlayer = true;
-
-        runPlayerTurn(entity);
     }
     else
     {
+        setGameMessage("Monster Turn");
         combat.waitingForPlayer = false;
-
-        runMonsterTurn(entity);
     }
-}
 
-void runMonsterTurn(Entity* monster)
-{
-    if (monster == nullptr)
-        return;
-
-    runMonsterAI(monster);
-}
-
-void runMonsterAI(Entity* monster)
-{
-    performMovementPhase(monster);
-
-    nextTurn();
+    needsRedraw = true;
 }
 
 void announceTurn(Entity* entity)
@@ -300,166 +285,21 @@ void announceTurn(Entity* entity)
     entity->character.speed;
 
     entity->turn.standardActionUsed = false;
-
-    Serial.println("----- Start Turn -----");
-
-    Serial.print("Type: ");
-    Serial.println(
-        entity->type == ENTITY_PLAYER ?
-        "Player" : "Monster");
-
-    Serial.print("Speed: ");
+    entity->turn.monsterState = MONSTER_START;
     Serial.println(entity->character.speed);
 }
 
 void runPlayerTurn(Entity* player)
 {
-    setGameMessage("Player Turn");
-
-    needsRedraw = true;
-
-    // Nothing else.
+     // Nothing else.
     // Wait for button input.
 }
 
 
-bool isAdjacent(const Entity* a, const Entity* b)
-{
-    int dx = abs(a->x - b->x);
-    int dy = abs(a->y - b->y);
-
-    return (dx <= 1 &&
-            dy <= 1 &&
-            !(dx == 0 && dy == 0));
-}
-
-bool canMonsterMoveTo(Entity* monster, int x, int y)
-{
-    //--------------------------------------------------
-    // Stay inside the forest.
-    //--------------------------------------------------
-
-    if (x < 0 || x >= FOREST_WIDTH ||
-        y < 0 || y >= FOREST_HEIGHT)
-    {
-        return false;
-    }
-
-    //--------------------------------------------------
-    // Trees block movement.
-    //--------------------------------------------------
-
-    if (getForestTile(x, y) == TILE_TREE)
-    {
-        return false;
-    }
-
-    //--------------------------------------------------
-    // Don't move onto another entity.
-    //--------------------------------------------------
-
-    Entity* entity = getEntityAt(
-        forestEntities,
-        forestEntityCount,
-        x,
-        y);
-
-    if (entity != nullptr)
-    {
-        return false;
-    }
-
-    return true;
-}
-
-void moveMonsterTowardsPlayer(Entity* monster)
-{
-    Entity* player = getPlayerEntity(
-        forestEntities,
-        forestEntityCount);
-
-    if (player == nullptr)
-        return;
-
-
-    //--------------------------------------------------
-    // Already next to the player?
-    //--------------------------------------------------
-
-    if (isAdjacent(monster, player))
-    {
-        setGameMessage("Goblin attacks!");
-        needsRedraw = true;
-        return;
-    }
-
-    int oldX = monster->x;
-    int oldY = monster->y;
-
-    char message[32];
-
-    snprintf(
-        message,
-        sizeof(message),
-        "%s advances.",
-        getEntityName(monster));
-
-    setGameMessage(message);
-
-    int newX = monster->x;
-    int newY = monster->y;
-
-    int dx = player->x - monster->x;
-    int dy = player->y - monster->y;
-
-    //--------------------------------------------------
-    // Move one tile toward the player.
-    //--------------------------------------------------
-
-    if (dx != 0)
-        newX += (dx > 0) ? 1 : -1;
-
-    if (dy != 0)
-        newY += (dy > 0) ? 1 : -1;
-
-    //--------------------------------------------------
-    // Only move if the destination is valid.
-    //--------------------------------------------------
-
-    if (canMonsterMoveTo(monster, newX, newY))
-    {
-        monster->x = newX;
-        monster->y = newY;
-
-        markTileDirty(oldX, oldY);
-        markTileDirty(monster->x, monster->y);
-    }
-}
-void performMovementPhase(Entity* entity)
-{
-    while (entity->turn.movementRemaining > 0)
-    {
-        int oldX = entity->x;
-        int oldY = entity->y;
-
-        moveMonsterTowardsPlayer(entity);
-
-        entity->turn.movementRemaining--;
-
-        //--------------------------------------------------
-        // Stop if we couldn't move.
-        //--------------------------------------------------
-
-        if (entity->x == oldX &&
-            entity->y == oldY)
-        {
-            break;
-        }
-    }
-}
 
 void nextTurn()
 {
+    Serial.println("NEXT TURN");
     combat.currentTurnIndex++;
 
     if (combat.currentTurnIndex >= combat.combatantCount)
@@ -467,11 +307,10 @@ void nextTurn()
         combat.currentTurnIndex = 0;
         combat.combatRound++;
     }
-    if (isPlayerTurn())
-        setGameMessage("Player Turn");
-    else
-        setGameMessage("Monster Turn");
-    needsRedraw = true;
+
+    combat.nextMonsterStep = millis();
+
+    resetActions(getCurrentCombatant());
 }
 
 void endPlayerTurn()
@@ -484,7 +323,7 @@ void endPlayerTurn()
 
 void updateCombat()
 {
-    switch (combat.phase)
+   switch (combat.phase)
     {
         case COMBAT_NONE:
             break;
@@ -502,9 +341,11 @@ void updateCombat()
 
                 combat.phase = COMBAT_TURN;
 
-                runCombatTurn(getCurrentCombatant());
+                resetActions(getCurrentCombatant());
 
-                if (isPlayerTurn())
+                Entity* current = getCurrentCombatant();
+
+                if (current->type == ENTITY_PLAYER)
                     setGameMessage("Player Turn");
                 else
                     setGameMessage("Monster Turn");
@@ -512,8 +353,32 @@ void updateCombat()
 
             break;
 
-        case COMBAT_TURN:
-            break;
+       case COMBAT_TURN:
+       {
+           Entity* current = getCurrentCombatant();
+
+           if (current == nullptr)
+               break;
+
+           if (current->type == ENTITY_PLAYER)
+           {
+               if (combat.waitingForPlayer)
+               {
+                   runPlayerTurn(current);
+               }
+           }
+           else
+           {
+               if (millis() >= combat.nextMonsterStep)
+               {
+                   combat.nextMonsterStep = millis() + 120;
+
+                   runMonsterTurn(current);
+               }
+           }
+
+           break;
+       }
 
         case COMBAT_END:
             endCombat();

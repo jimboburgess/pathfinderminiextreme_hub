@@ -6,7 +6,7 @@
 #define PATHFINDERMINIEXTREME_025_ENTITIES_H
 
 #include "../characters/characters.h"
-#include "../dungeon/monsters.h"
+#include "dungeon/monsters.h"
 #include "dungeon/turns.h"
 #include "graphics/sprites.h"
 
@@ -22,6 +22,7 @@ enum EntityType : uint8_t {
     ENTITY_NPC
   };
 
+
 struct Entity
 {
     EntityType type;
@@ -31,14 +32,16 @@ struct Entity
 
     bool active = false;
 
-    MonsterID monsterID = MONSTER_NONE;
-
     Character character;
+
+    MonsterID monsterID = MONSTER_NONE;
+    const Monster* monster = nullptr;
 
     const uint16_t* sprite = nullptr;
 
     uint8_t spriteWidth = SPRITE_W;
     uint8_t spriteHeight = SPRITE_H;
+
     TurnState turn;
 };
 

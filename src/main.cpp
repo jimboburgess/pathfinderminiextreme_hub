@@ -75,6 +75,11 @@ void loop()
 {
     handleButtons();
 
+    if (combat.active)
+    {
+        updateCombat();
+    }
+
     updateAudio();
 
     if (needsRedraw)

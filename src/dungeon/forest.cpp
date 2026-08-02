@@ -85,11 +85,11 @@ static void initForest()
     }
 
     spawnMonster(
-        forestEntities,
-        forestEntityCount,
-        MONSTER_GOBLIN_SCIMITAR,
-        2,
-        2);
+    forestEntities,
+    forestEntityCount,
+    MONSTER_GOBLIN_SCIMITAR,
+    2,
+    12);
 
     spawnMonster(
         forestEntities,

@@ -15,7 +15,7 @@ Entity* spawnEntity(
     uint8_t y);
 
 Entity* spawnMonster(
-    Entity entities[],
+    Entity* entities,
     uint8_t& entityCount,
     MonsterID monsterID,
     uint8_t x,

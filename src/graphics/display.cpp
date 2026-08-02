@@ -83,6 +83,7 @@ void drawTownScreen()
         return;
     }
     tft.fillScreen(ST77XX_BLACK);
+    playSound(SoundEffect::DUNGEON_THEME);
 
     tft.setTextColor(ST77XX_WHITE);
 

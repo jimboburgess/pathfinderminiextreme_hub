@@ -52,7 +52,7 @@ Entity* spawnEntity(
 }
 
 Entity* spawnMonster(
-    Entity entities[],
+    Entity* entities,
     uint8_t& entityCount,
     MonsterID monsterID,
     uint8_t x,
@@ -72,6 +72,8 @@ Entity* spawnMonster(
 
     const Monster* monster = getMonster(monsterID);
 
+    entity->monster = monster;
+
     if (monster == nullptr)
         return entity;
 
@@ -81,6 +83,10 @@ Entity* spawnMonster(
     entity->character.state = STATE_ALIVE;
 
     entity->character.abilities = monster->abilities;
+    entity->character.speed = monster->speed;
+
+    entity->character.health.maxHP = getMonsterMaxHP(*monster);
+    entity->character.health.currentHP = entity->character.health.maxHP;
 
     entity->character.equipment.equipped[SLOT_MELEE_WEAPON] = monster->weapon;
     entity->character.equipment.equipped[SLOT_ARMOR] = monster->armor;
@@ -90,6 +96,7 @@ Entity* spawnMonster(
 
     return entity;
 }
+
 
 void removeEntity(Entity& entity)
 {
@@ -172,7 +179,7 @@ const char* getEntityName(const Entity* entity)
 
         case ENTITY_MONSTER:
         {
-            const Monster* monster = getMonster(entity->monsterID);
+            const Monster* monster = entity->monster;
 
             if (monster != nullptr)
             {

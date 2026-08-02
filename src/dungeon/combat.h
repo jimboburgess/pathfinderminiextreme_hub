@@ -9,6 +9,7 @@
 #include "dungeon.h"
 #include "forest.h"
 #include "graphics/tiles.h"
+#include "monsterScripts.h"
 
 //==================================================
 // Combat Constants
@@ -42,7 +43,7 @@ struct Combat
     // Initiative
     //--------------------------------------------------
 
-    Entity* turnOrder[MAX_DUNGEON_CHARACTERS];
+    Entity* initiativeOrder[MAX_DUNGEON_CHARACTERS];
 
     uint8_t combatantCount = 0;
     uint8_t currentTurnIndex = 0;
@@ -60,6 +61,7 @@ struct Combat
     //--------------------------------------------------
 
     unsigned long phaseStartTime = 0;
+    unsigned long nextMonsterStep = 0;
     bool initiativeMessageShown = false;
 };
 
@@ -113,17 +115,7 @@ void runMonsterTurn(Entity* entity);
 
 void runMonsterAI(Entity* monster);
 
-//==================================================
-// Movement
-//==================================================
 
-void performMovementPhase(Entity* entity);
-
-void moveMonsterTowardsPlayer(Entity* monster);
-
-bool canMonsterMoveTo(Entity* monster, int x, int y);
-
-bool isAdjacent(const Entity* a, const Entity* b);
 
 //==================================================
 // Combat Update

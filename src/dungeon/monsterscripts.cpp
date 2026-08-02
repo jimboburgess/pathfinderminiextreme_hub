@@ -1,0 +1,285 @@
+//
+// Created by james on 8/1/2026.
+//
+
+#include "monsterScripts.h"
+#include "monsters.h"
+#include "graphics/messagelog.h"
+#include "combat.h"
+#include "monsters.h"
+#include "data/entityspawn.h"
+#include "data/game.h"
+#include "graphics/display.h"
+
+void runMonsterScript(Entity* monster)
+{
+    switch (monster->monster->script)
+    {
+        case AI_MELEE:
+            runMeleeScript(monster);
+            break;
+
+        case AI_RANGED:
+            runRangedScript(monster);
+            break;
+
+        case AI_COWARD:
+            runCowardScript(monster);
+            break;
+
+        case AI_GUARD:
+            runGuardScript(monster);
+            break;
+
+        case AI_WANDER:
+            runWanderScript(monster);
+            break;
+
+        case AI_SUPPORT:
+            runSupportScript(monster);
+            break;
+
+        case AI_SPELLCASTER:
+            runSpellcasterScript(monster);
+            break;
+
+        case AI_DEBUG:
+            runDebugScript(monster);
+            break;
+
+        default:
+            break;
+    }
+}
+
+void runMeleeScript(Entity* monster)
+{
+    chooseTarget(monster);
+
+    performMovementPhase(monster);
+
+    performStandardAction(monster);
+}
+
+void runRangedScript(Entity* monster)
+{
+    chooseTarget(monster);
+
+    keepDistance(monster);
+
+    performRangedAttack(monster);
+}
+
+void runCowardScript(Entity* monster)
+{
+    if (monster->character.health.currentHP <
+        monster->character.health.maxHP / 3)
+    {
+        flee(monster);
+        return;
+    }
+
+    runMeleeScript(monster);
+}
+
+void runGuardScript(Entity* monster)
+{
+    if (!enemyVisible(monster))
+    {
+        guardArea(monster);
+        return;
+    }
+
+    runMeleeScript(monster);
+}
+
+void runMonsterTurn(Entity* monster)
+{
+    switch (monster->turn.monsterState)
+    {
+        case MONSTER_START:
+
+            monster->turn.monsterState = MONSTER_MOVE;
+            break;
+
+        case MONSTER_MOVE:
+
+            performMovementPhase(monster);
+
+            if (monster->turn.movementRemaining == 0 ||
+                isAdjacent(monster, chooseTarget(monster)))
+            {
+                monster->turn.monsterState = MONSTER_ATTACK;
+            }
+
+            break;
+
+        case MONSTER_ATTACK:
+
+            performStandardAction(monster);
+
+            monster->turn.monsterState = MONSTER_END;
+            break;
+
+        case MONSTER_END:
+
+            nextTurn();
+            break;
+    }
+}
+
+Entity* chooseTarget(Entity* monster)
+{
+    return getPlayerEntity(
+        forestEntities,
+        forestEntityCount);
+}
+
+void performStandardAction(Entity* monster)
+{
+    Entity* target = chooseTarget(monster);
+
+    if (target == nullptr)
+        return;
+
+    if (isAdjacent(monster, target))
+    {
+        setGameMessage("Goblin attacks!");
+
+        // We'll put the real attack code here later.
+    }
+}
+
+
+bool isAdjacent(const Entity* a, const Entity* b)
+{
+    int dx = abs(a->x - b->x);
+    int dy = abs(a->y - b->y);
+
+    return (dx <= 1 &&
+            dy <= 1 &&
+            !(dx == 0 && dy == 0));
+}
+
+bool canMonsterMoveTo(Entity* monster, int x, int y)
+{
+    //--------------------------------------------------
+    // Stay inside the forest.
+    //--------------------------------------------------
+
+    if (x < 0 || x >= FOREST_WIDTH ||
+        y < 0 || y >= FOREST_HEIGHT)
+    {
+        return false;
+    }
+
+    //--------------------------------------------------
+    // Trees block movement.
+    //--------------------------------------------------
+
+    if (getForestTile(x, y) == TILE_TREE)
+    {
+        return false;
+    }
+
+    //--------------------------------------------------
+    // Don't move onto another entity.
+    //--------------------------------------------------
+
+    Entity* entity = getEntityAt(
+        forestEntities,
+        forestEntityCount,
+        x,
+        y);
+
+    if (entity != nullptr)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+void moveMonsterTowardsPlayer(Entity* monster)
+{
+    Serial.print("Moving from ");
+    Serial.print(monster->x);
+    Serial.print(",");
+    Serial.print(monster->y);
+    Serial.print(" -> ");
+    Entity* player = getPlayerEntity(
+        forestEntities,
+        forestEntityCount);
+
+    if (player == nullptr)
+        return;
+
+
+    //--------------------------------------------------
+    // Already next to the player?
+    //--------------------------------------------------
+
+    if (isAdjacent(monster, player))
+    {
+        setGameMessage("Goblin attacks!");
+        needsRedraw = true;
+        return;
+    }
+
+    int oldX = monster->x;
+    int oldY = monster->y;
+
+    char message[32];
+
+    snprintf(
+        message,
+        sizeof(message),
+        "%s advances.",
+        getEntityName(monster));
+
+    setGameMessage(message);
+
+    int newX = monster->x;
+    int newY = monster->y;
+
+    int dx = player->x - monster->x;
+    int dy = player->y - monster->y;
+
+    //--------------------------------------------------
+    // Move one tile toward the player.
+    //--------------------------------------------------
+
+    if (dx != 0)
+        newX += (dx > 0) ? 1 : -1;
+
+    if (dy != 0)
+        newY += (dy > 0) ? 1 : -1;
+
+    //--------------------------------------------------
+    // Only move if the destination is valid.
+    //--------------------------------------------------
+
+    if (canMonsterMoveTo(monster, newX, newY))
+    {
+        monster->x = newX;
+        monster->y = newY;
+
+        markTileDirty(oldX, oldY);
+        markTileDirty(monster->x, monster->y);
+    }
+    Serial.print(monster->x);
+    Serial.print(",");
+    Serial.println(monster->y);
+}
+//add this once you need monsters to move around trees
+//bool moved = moveMonsterTowardsPlayer(entity);
+
+void performMovementPhase(Entity* entity)
+{
+    if (entity->turn.movementRemaining == 0)
+        return;
+
+    moveMonsterTowardsPlayer(entity);
+
+    entity->turn.movementRemaining--;
+}

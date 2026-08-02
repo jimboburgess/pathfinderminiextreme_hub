@@ -96,17 +96,21 @@ enum MonsterID
     MONSTER_COUNT
 };
 
-enum AIType
+enum MonsterScript
 {
     AI_NONE,
-    AI_MELEE,          // Run toward nearest enemy and attack.
-    AI_RANGED,         // Keep distance and shoot.
-    AI_COWARD,         // Run away when wounded.
-    AI_GUARD,          // Stay near a location until provoked.
-    AI_WANDER,         // Roam randomly when idle.
-    AI_SUPPORT,         // Buff/heal allies.
-    AI_SPELLCASTER,    //CAST SPELLS DUH
-    AI_DEBUG,
+
+    AI_MELEE,
+    AI_RANGED,
+    AI_COWARD,
+    AI_GUARD,
+    AI_WANDER,
+    AI_SUPPORT,
+    AI_SPELLCASTER,
+
+    AI_BOSS,      // Uses multiple attacks and special abilities.
+    AI_PASSIVE,   // Won't attack unless provoked.
+    AI_DEBUG
 };
 
 struct Monster
@@ -125,6 +129,9 @@ struct Monster
     int8_t reflex;
     int8_t will;
 
+    uint8_t speed;
+    //uint8_t perception;
+
     ItemID weapon;
     ItemID armor;
 
@@ -134,7 +141,7 @@ struct Monster
 
     AbilityID specialAbilities[4];
 
-    AIType aiType;
+    MonsterScript script;
 };
 
 const Monster* getMonster(MonsterID id);
