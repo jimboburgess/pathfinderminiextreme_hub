@@ -397,9 +397,7 @@ void markTileDirty(int x, int y)
 
 
 void drawSpriteTransparent(
-    int x,
-    int y,
-    const uint16_t* sprite,
+    int x,int y,const uint16_t* sprite,
     uint8_t width,
     uint8_t height)
 {
@@ -426,28 +424,6 @@ void drawSpriteTransparent(int x, int y, const uint16_t* sprite)
         SPRITE_W,
         SPRITE_H);
 }
-
-void drawSpriteTransparent64(int x, int y, const uint16_t* sprite)
-{
-    for (int py = 0; py < 64; py++)
-    {
-        for (int px = 0; px < 64; px++)
-        {
-            uint16_t color =
-                pgm_read_word(&sprite[py * 64 + px]);
-
-            if (color != 0xF81F)
-            {
-                tft.drawPixel(
-                    x + px,
-                    y + py,
-                    color);
-            }
-        }
-    }
-}
-
-
 
 void refreshDisplay()
 {
