@@ -15,40 +15,41 @@ void runMonsterScript(Entity* monster)
 {
     switch (monster->monster->script)
     {
-        case AI_MELEE:
+        case SCRIPT_MELEE:
             runMeleeScript(monster);
             break;
 
-        case AI_RANGED:
+        case SCRIPT_RANGED:
             runRangedScript(monster);
             break;
 
-        case AI_COWARD:
+        case SCRIPT_COWARD:
             runCowardScript(monster);
             break;
 
-        case AI_GUARD:
+        case SCRIPT_GUARD:
             runGuardScript(monster);
             break;
 
-        case AI_WANDER:
-            runWanderScript(monster);
-            break;
-
-        case AI_SUPPORT:
-            runSupportScript(monster);
-            break;
-
-        case AI_SPELLCASTER:
-            runSpellcasterScript(monster);
-            break;
-
-        case AI_DEBUG:
-            runDebugScript(monster);
-            break;
-
         default:
+            runMeleeScript(monster);
             break;
+
+            // case SCRIPT_WANDER:
+            //     runWanderScript(monster);
+            //     break;
+
+            // case SCRIPT_SUPPORT:
+            //     runSupportScript(monster);
+            //     break;
+
+            // case SCRIPT_SPELLCASTER:
+            //     runSpellcasterScript(monster);
+            //     break;
+
+            // case SCRIPT_DEBUG:
+            //     runDebugScript(monster);
+            //     break;
     }
 }
 
@@ -63,69 +64,17 @@ void runMeleeScript(Entity* monster)
 
 void runRangedScript(Entity* monster)
 {
-    chooseTarget(monster);
-
-    keepDistance(monster);
-
-    performRangedAttack(monster);
+    runMeleeScript(monster);
 }
 
 void runCowardScript(Entity* monster)
 {
-    if (monster->character.health.currentHP <
-        monster->character.health.maxHP / 3)
-    {
-        flee(monster);
-        return;
-    }
-
     runMeleeScript(monster);
 }
 
 void runGuardScript(Entity* monster)
 {
-    if (!enemyVisible(monster))
-    {
-        guardArea(monster);
-        return;
-    }
-
     runMeleeScript(monster);
-}
-
-void runMonsterTurn(Entity* monster)
-{
-    switch (monster->turn.monsterState)
-    {
-        case MONSTER_START:
-
-            monster->turn.monsterState = MONSTER_MOVE;
-            break;
-
-        case MONSTER_MOVE:
-
-            performMovementPhase(monster);
-
-            if (monster->turn.movementRemaining == 0 ||
-                isAdjacent(monster, chooseTarget(monster)))
-            {
-                monster->turn.monsterState = MONSTER_ATTACK;
-            }
-
-            break;
-
-        case MONSTER_ATTACK:
-
-            performStandardAction(monster);
-
-            monster->turn.monsterState = MONSTER_END;
-            break;
-
-        case MONSTER_END:
-
-            nextTurn();
-            break;
-    }
 }
 
 Entity* chooseTarget(Entity* monster)

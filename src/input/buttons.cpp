@@ -418,17 +418,9 @@ void handleMapButtons()
     //--------------------------------------------------
     if (buttonAPressed())
     {
-        if (combat.active && isPlayerTurn())
-        {
-            endPlayerTurn();
-        }
-        else
-        {
             openMenu(&mainMenu);
             menuState.redrawType = MENU_REDRAW_FULL;
-        }
-
-        return;
+            return;
     }
     //--------------------------------------------------
     // B Button

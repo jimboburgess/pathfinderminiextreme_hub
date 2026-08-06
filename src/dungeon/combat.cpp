@@ -73,18 +73,22 @@ void findCombatants()
 {
     combat.combatantCount = 0;
 
+    //--------------------------------------------------
+    // Add the player.
+    //--------------------------------------------------
+
     Entity* playerEntity = getPlayerEntity(
         forestEntities,
         forestEntityCount);
 
-    //--------------------------------------------------
-    // Player always joins combat.
-    //--------------------------------------------------
+    if (playerEntity != nullptr)
+    {
+        combat.initiativeOrder[
+            combat.combatantCount++] = playerEntity;
+    }
 
-    combat.initiativeOrder[combat.combatantCount++] = playerEntity;
-
     //--------------------------------------------------
-    // Find nearby monsters.
+    // Add every living monster on the map.
     //--------------------------------------------------
 
     for (uint8_t i = 0; i < forestEntityCount; i++)
@@ -100,38 +104,27 @@ void findCombatants()
         if (entity.character.state != STATE_ALIVE)
             continue;
 
-        int dx = abs(entity.x - playerEntity->x);
-        int dy = abs(entity.y - playerEntity->y);
-
-        int distance = std::max(dx, dy);
-
-        if (distance > COMBAT_DETECTION_RANGE)
-            continue;
-
-        if (!hasLineOfSight(
-                playerEntity->x,
-                playerEntity->y,
-                entity.x,
-                entity.y))
-        {
-            continue;
-        }
-
-        combat.initiativeOrder[combat.combatantCount++] = &entity;
+        combat.initiativeOrder[
+            combat.combatantCount++] = &entity;
     }
 
     //--------------------------------------------------
     // Debug
     //--------------------------------------------------
 
+    Serial.println("Combatants:");
+
     for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
         Entity* entity = combat.initiativeOrder[i];
 
+        Serial.print(i);
+        Serial.print(": ");
+
         if (entity->type == ENTITY_PLAYER)
             Serial.println("Player");
         else
-            Serial.println("Monster");
+            Serial.println(getEntityName(entity));
     }
 
     Serial.println();
@@ -260,6 +253,12 @@ void startCombat()
 
 void resetActions(Entity* entity)
 {
+    entity->turn.moveActionUsed = false;
+    entity->turn.standardActionUsed = false;
+    entity->turn.fullDefense = false;
+    entity->turn.fiveFootStepUsed = false;
+    entity->turn.delayTurn = false;
+    entity->turn.turnActive = true;
     if (entity == nullptr)
         return;
 
@@ -289,12 +288,63 @@ void announceTurn(Entity* entity)
     Serial.println(entity->character.speed);
 }
 
+void runMonsterTurn(Entity* monster)
+{
+    switch (monster->turn.monsterState)
+    {
+        case MONSTER_START:
+
+            monster->turn.monsterState = MONSTER_MOVE;
+            break;
+
+        case MONSTER_MOVE:
+
+            performMovementPhase(monster);
+
+            if (monster->turn.movementRemaining == 0 ||
+                isAdjacent(monster, chooseTarget(monster)))
+            {
+                monster->turn.monsterState = MONSTER_ACTION;
+            }
+
+            break;
+
+        case MONSTER_ACTION:
+
+            runMonsterScript(monster);
+
+            monster->turn.monsterState = MONSTER_END;
+            break;
+
+        case MONSTER_END:
+
+            nextTurn();
+            break;
+    }
+}
+
 void runPlayerTurn(Entity* player)
 {
      // Nothing else.
     // Wait for button input.
 }
 
+void checkEndPlayerTurn()
+{
+    Entity* player = getCurrentCombatant();
+
+    if (player == nullptr)
+        return;
+
+    if (player->type != ENTITY_PLAYER)
+        return;
+
+    if (player->turn.moveActionUsed &&
+        player->turn.standardActionUsed)
+    {
+        endPlayerTurn();
+    }
+}
 
 
 void nextTurn()

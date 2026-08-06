@@ -590,6 +590,14 @@ void menuActivate()
 
             break;
 
+        case MENU_END_TURN:
+
+            closeMenu();
+
+            endPlayerTurn();
+
+            break;
+
         default:
             break;
     }

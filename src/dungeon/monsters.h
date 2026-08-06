@@ -98,19 +98,19 @@ enum MonsterID
 
 enum MonsterScript
 {
-    AI_NONE,
+    SCRIPT_NONE,
 
-    AI_MELEE,
-    AI_RANGED,
-    AI_COWARD,
-    AI_GUARD,
-    AI_WANDER,
-    AI_SUPPORT,
-    AI_SPELLCASTER,
+    SCRIPT_MELEE,         // Close with the enemy and fight in melee.
+    SCRIPT_RANGED,        // Keep distance and attack from range.
+    SCRIPT_COWARD,        // Retreat and heal when wounded.
+    SCRIPT_GUARD,         // Hold a position until an enemy is spotted.
+    SCRIPT_WANDER,        // Roam when idle.
+    SCRIPT_SUPPORT,       // Heal or assist allies.
+    SCRIPT_SPELLCASTER,   // Cast spells based on the situation.
 
-    AI_BOSS,      // Uses multiple attacks and special abilities.
-    AI_PASSIVE,   // Won't attack unless provoked.
-    AI_DEBUG
+    SCRIPT_BOSS,          // Uses multiple attacks and special abilities.
+    SCRIPT_PASSIVE,       // Will not attack unless provoked.
+    SCRIPT_DEBUG          // For testing combat behavior.
 };
 
 struct Monster

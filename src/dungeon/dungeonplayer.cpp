@@ -56,14 +56,30 @@ void drawMoveCursor(const Dungeon &dungeon)
         ST77XX_WHITE);
 }
 
+//--------------------------------------------------
+// TODO:
+// tryMovePlayer() and tryMoveForestPlayer() now
+// share most of their logic. Once combat movement
+// is finalized, move the shared code into common
+// helper functions to avoid duplication.
+//--------------------------------------------------
+
 bool tryMovePlayer(Dungeon &dungeon)
 {
+    //--------------------------------------------------
+    // Find the player.
+    //--------------------------------------------------
+
     Entity* player = getPlayerEntity(
         dungeon.entities,
         dungeon.entityCount);
 
     if (player == nullptr)
         return false;
+
+    //--------------------------------------------------
+    // Save current position.
+    //--------------------------------------------------
 
     int oldX = player->x;
     int oldY = player->y;
@@ -75,7 +91,12 @@ bool tryMovePlayer(Dungeon &dungeon)
     int targetY =
         player->y + directionOffsets[moveDirection].dy;
 
-    DungeonRoom &room = dungeon.rooms[dungeon.currentRoom];
+    DungeonRoom& room =
+        dungeon.rooms[dungeon.currentRoom];
+
+    //--------------------------------------------------
+    // Stay inside the room.
+    //--------------------------------------------------
 
     if (targetX < 0 || targetX >= ROOM_SIZE ||
         targetY < 0 || targetY >= ROOM_SIZE)
@@ -84,23 +105,58 @@ bool tryMovePlayer(Dungeon &dungeon)
         return false;
     }
 
-    TileType tile = room.map.tiles[targetY][targetX];
+    TileType tile =
+        room.map.tiles[targetY][targetX];
 
     switch (tile)
     {
+        //--------------------------------------------------
+        // Floor
+        //--------------------------------------------------
+
         case TILE_FLOOR:
+        {
+            //--------------------------------------------------
+            // Combat movement restrictions.
+            //--------------------------------------------------
 
             if (combat.active)
             {
                 if (!combat.waitingForPlayer)
                     return false;
 
-                if (player->turn.movementRemaining == 0)
+                if (player->turn.movementRemaining == 0) {
+                    playSound(SoundEffect::BUMP);
                     return false;
+                }
             }
+
+            //--------------------------------------------------
+            // Move the player.
+            //--------------------------------------------------
 
             player->x = targetX;
             player->y = targetY;
+
+            //--------------------------------------------------
+            // Consume one square of movement.
+            //--------------------------------------------------
+
+            if (combat.active)
+            {
+                player->turn.movementRemaining--;
+
+                if (player->turn.movementRemaining == 0)
+                {
+                    player->turn.moveActionUsed = true;
+
+                    checkEndPlayerTurn();
+                }
+            }
+
+            //--------------------------------------------------
+            // Redraw affected tiles.
+            //--------------------------------------------------
 
             markTileDirty(oldX, oldY);
             markTileDirty(player->x, player->y);
@@ -113,20 +169,21 @@ bool tryMovePlayer(Dungeon &dungeon)
                 player->x + directionOffsets[moveDirection].dx,
                 player->y + directionOffsets[moveDirection].dy);
 
-            if (combat.active)
-            {
-                if (player->turn.movementRemaining > 0)
-                {
-                    player->turn.movementRemaining--;
-                }
-            }
-
             return true;
+        }
+
+        //--------------------------------------------------
+        // Wall
+        //--------------------------------------------------
 
         case TILE_WALL:
 
             playSound(SoundEffect::BUMP);
             return false;
+
+        //--------------------------------------------------
+        // Door
+        //--------------------------------------------------
 
         case TILE_DOOR:
         {
@@ -162,12 +219,17 @@ bool tryMovePlayer(Dungeon &dungeon)
             break;
         }
 
+        //--------------------------------------------------
+        // Unknown tile.
+        //--------------------------------------------------
+
         default:
             return false;
     }
 
     return false;
 }
+
 bool tryMoveForestPlayer()
 {
     Entity* player = nullptr;
@@ -187,19 +249,6 @@ bool tryMoveForestPlayer()
 
     if (player == nullptr)
         return false;
-
-    //--------------------------------------------------
-    // Combat movement restrictions.
-    //--------------------------------------------------
-
-    if (combat.active)
-    {
-        if (!combat.waitingForPlayer)
-            return false;
-
-        if (player->turn.movementRemaining == 0)
-            return false;
-    }
 
     //--------------------------------------------------
     // Redraw facing tiles.
@@ -245,11 +294,46 @@ bool tryMoveForestPlayer()
     }
 
     //--------------------------------------------------
+    // Combat movement restrictions.
+    //--------------------------------------------------
+
+    if (combat.active)
+    {
+        if (!combat.waitingForPlayer)
+            return false;
+
+        if (player->turn.movementRemaining == 0) {
+            playSound(SoundEffect::BUMP);
+            return false;
+        }
+    }
+
+    //--------------------------------------------------
     // Move player.
     //--------------------------------------------------
 
     player->x = targetX;
     player->y = targetY;
+
+    //--------------------------------------------------
+    // Consume one square of movement.
+    //--------------------------------------------------
+
+    if (combat.active)
+    {
+        player->turn.movementRemaining--;
+
+        if (player->turn.movementRemaining == 0)
+        {
+            player->turn.moveActionUsed = true;
+
+            checkEndPlayerTurn();
+        }
+    }
+
+    //--------------------------------------------------
+    // Redraw tiles.
+    //--------------------------------------------------
 
     markTileDirty(oldX, oldY);
     markTileDirty(player->x, player->y);
@@ -272,18 +356,6 @@ bool tryMoveForestPlayer()
     //--------------------------------------------------
 
     checkForCombat();
-
-    //--------------------------------------------------
-    // Consume movement during combat.
-    //--------------------------------------------------
-
-    if (combat.active)
-    {
-        if (player->turn.movementRemaining > 0)
-        {
-            player->turn.movementRemaining--;
-        }
-    }
 
     return true;
 }

@@ -11,6 +11,7 @@ enum MonsterTurnState
 {
     MONSTER_START,
     MONSTER_MOVE,
+    MONSTER_ACTION,
     MONSTER_ATTACK,
     MONSTER_END
 };
@@ -24,6 +25,7 @@ struct TurnState
     bool fullDefense;
     bool fiveFootStepUsed;
     bool delayTurn;
+    bool moveActionUsed = false;
 
 };
 

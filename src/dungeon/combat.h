@@ -113,9 +113,7 @@ void runPlayerTurn(Entity* entity);
 
 void runMonsterTurn(Entity* entity);
 
-void runMonsterAI(Entity* monster);
-
-
+void checkEndPlayerTurn();
 
 //==================================================
 // Combat Update
