@@ -11,6 +11,9 @@
 #include "dungeon/forest.h"
 #include "dungeon/turns.h"
 #include "graphics/display.h"
+#include "graphics/messagelog.h"
+#include "town/town.h"
+#include "data/savegame.h"
 
 //======================================
 // Input State
@@ -29,6 +32,25 @@ bool encoderLongPressHandled = false;
 constexpr unsigned long LONG_PRESS_TIME = 750;
 
 const uint16_t ENCODER_DEBOUNCE = 3;
+
+static Entity* getActiveMapPlayer()
+{
+    switch (gameState)
+    {
+        case GAME_FOREST:
+            return getPlayerEntity(
+                forestEntities,
+                forestEntityCount);
+
+        case GAME_DUNGEON:
+            return getPlayerEntity(
+                dungeon.entities,
+                dungeon.entityCount);
+
+        default:
+            return nullptr;
+    }
+}
 
 bool encoderPressed()
 {
@@ -123,13 +145,30 @@ EncoderDirection readEncoder()
 
 void handleStartButtons()
 {
-    if (encoderPressed() ||
-    buttonAPressed() ||
-    buttonBPressed())
+    if (buttonAPressed())
     {
         playSound(SoundEffect::MENU_SELECT);
-        resetButtonStates();
         gameState = GAME_CHARACTER_CREATION;
+        enterCharacterCreation();
+        return;
+    }
+
+    if (buttonBPressed())
+    {
+        if (!loadGame(player))
+        {
+            playSound(SoundEffect::ERROR);
+            setGameMessage("No saved game found.");
+            return;
+        }
+
+        playSound(SoundEffect::MENU_SELECT);
+        clearGameMessage();
+        resetButtonStates();
+
+        townSelection = TOWN_STAY_HOME;
+        redrawType = REDRAW_FULL;
+        gameState = GAME_TOWN;
         needsRedraw = true;
     }
 }
@@ -273,7 +312,55 @@ void handleTownButtons() {
         handleCharacterSheetButtons();
         return;
     }
+    if (isTownRestActive())
+        return;
+
     EncoderDirection direction = readEncoder();
+
+    if (isTownHomeOpen())
+    {
+        if (direction == ENCODER_CLOCKWISE)
+        {
+            rotateTownHomeSelection(true);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        else if (direction == ENCODER_COUNTERCLOCKWISE)
+        {
+            rotateTownHomeSelection(false);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+
+        if (encoderPressed())
+        {
+            playSound(SoundEffect::MENU_SELECT);
+
+            switch (getTownHomeSelection())
+            {
+                case TOWN_HOME_REST:
+                    beginTownRest();
+                    break;
+
+                case TOWN_HOME_SAVE_GAME:
+                    setGameMessage(saveGame(player)
+                        ? "Game saved."
+                        : "Unable to save game.");
+                    needsRedraw = true;
+                    break;
+
+                case TOWN_HOME_BACK:
+                    closeTownHome();
+                    break;
+            }
+        }
+
+        if (buttonBPressed())
+        {
+            playSound(SoundEffect::MENU_BACK);
+            closeTownHome();
+        }
+
+        return;
+    }
 
     if (direction == ENCODER_CLOCKWISE)
     {
@@ -303,6 +390,7 @@ void handleTownButtons() {
                 break;
 
             case TOWN_STAY_HOME:
+                openTownHome();
                 break;
 
             case TOWN_DUNGEON:
@@ -317,6 +405,75 @@ void handleTownButtons() {
 //======================================================
 void handleMapButtons()
 {
+    //--------------------------------------------------
+    // Entity inspection
+    //--------------------------------------------------
+
+    if (isInspectingEntities())
+    {
+        EncoderDirection direction = readEncoder();
+
+        if (direction == ENCODER_CLOCKWISE)
+        {
+            rotateInspectedEntity(true);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        else if (direction == ENCODER_COUNTERCLOCKWISE)
+        {
+            rotateInspectedEntity(false);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+
+        if (buttonAPressed())
+        {
+            confirmInspection();
+            playSound(SoundEffect::MENU_SELECT);
+        }
+
+        if (buttonBPressed())
+        {
+            cancelInspection();
+            playSound(SoundEffect::MENU_BACK);
+        }
+
+        return;
+    }
+
+    //--------------------------------------------------
+    // Combat attack targeting
+    //--------------------------------------------------
+
+    if (isPlayerTargetingAttack())
+    {
+        EncoderDirection direction = readEncoder();
+
+        if (direction == ENCODER_CLOCKWISE)
+        {
+            rotateAttackTarget(true);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        else if (direction == ENCODER_COUNTERCLOCKWISE)
+        {
+            rotateAttackTarget(false);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+
+        if (buttonAPressed())
+        {
+            confirmPlayerAttack();
+        }
+
+        if (buttonBPressed())
+        {
+            cancelPlayerAttack();
+        }
+
+        return;
+    }
+
+    if (isPlayerAttackResolving())
+        return;
+
     //--------------------------------------------------
     // Menu Open
     //--------------------------------------------------
@@ -377,9 +534,7 @@ void handleMapButtons()
 
         playSound(SoundEffect::MENU_MOVE);
 
-        Entity* player = getPlayerEntity(
-            forestEntities,
-            forestEntityCount);
+        Entity* player = getActiveMapPlayer();
 
         if (player)
         {
@@ -491,6 +646,9 @@ void handleButtons()
      gameState == GAME_DUNGEON) &&
     encoderButtonLongPressed())
     {
+        if (menuState.isOpen)
+            closeMenu();
+
         if (isCharacterSheetVisible())
             closeCharacterSheet();
         else

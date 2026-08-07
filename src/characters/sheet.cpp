@@ -6,11 +6,15 @@
 #include "graphics/display.h"
 #include "graphics/sprites.h"
 #include "data/game.h"
+#include "data/entityspawn.h"
+#include "dungeon/dungeon.h"
+#include "dungeon/forest.h"
 #include <cstring>
 
 
 static Character* currentCharacter = nullptr;
 static int scrollOffset = 0;
+static CharacterView characterView = CHARACTER_VIEW_SHEET;
 
 static void drawText(int x, int y, const char* text)
 {
@@ -74,6 +78,104 @@ void enterCharacterSheet(Character* character)
     scrollOffset = 0;
 }
 
+static void drawViewHeader(const char* title)
+{
+    tft.fillScreen(ST77XX_BLACK);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setTextSize(1);
+    tft.setCursor(5, 5);
+    tft.print(title);
+    tft.drawFastHLine(0, 17, 240, ST77XX_WHITE);
+}
+
+static void drawInventoryView()
+{
+    drawViewHeader("Inventory");
+
+    if (currentCharacter->inventory.itemCount == 0)
+    {
+        drawText(5, 32, "Empty");
+        return;
+    }
+
+    int y = 32;
+
+    for (uint8_t i = 0; i < currentCharacter->inventory.itemCount; i++)
+    {
+        const Item* item = getItem(currentCharacter->inventory.items[i]);
+
+        if (item != nullptr)
+        {
+            drawText(5, y, item->name);
+            y += 12;
+        }
+    }
+}
+
+static const char* getEquipmentSlotName(EquipmentSlot slot)
+{
+    static const char* names[NUM_EQUIPMENT_SLOTS] =
+    {
+        "Melee", "Ranged", "Shield", "Armor", "Belt", "Body",
+        "Chest", "Eyes", "Hands", "Head", "Headband", "Neck",
+        "Ring 1", "Ring 2", "Shoulders", "Wrists"
+    };
+
+    return names[slot];
+}
+
+static void drawEquipmentView()
+{
+    drawViewHeader("Equipment");
+
+    int y = 32;
+    bool hasEquipment = false;
+
+    for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
+    {
+        EquipmentSlot slot = static_cast<EquipmentSlot>(i);
+        ItemID item = currentCharacter->equipment.equipped[slot];
+
+        if (item == ITEM_NONE)
+            continue;
+
+        hasEquipment = true;
+        drawText(5, y, getEquipmentSlotName(slot));
+        drawText(105, y, getEquippedItemName(*currentCharacter, slot));
+        y += 12;
+    }
+
+    if (!hasEquipment)
+        drawText(5, y, "Empty");
+}
+
+static void drawSkillsView()
+{
+    drawViewHeader("Skills");
+
+    static const char* names[SKILL_COUNT] =
+    {
+        "Acrobatics", "Diplomacy", "Disable Dev.",
+        "Intimidate", "Perception", "Stealth"
+    };
+
+    int y = 32;
+
+    for (uint8_t i = 0; i < SKILL_COUNT; i++)
+    {
+        drawLabelValue(5, 140, y, names[i],
+                       getSkillBonus(*currentCharacter,
+                                     static_cast<Skill>(i)));
+        y += 12;
+    }
+}
+
+static void drawQuestsView()
+{
+    drawViewHeader("Quests");
+    drawText(5, 32, "No quests available yet.");
+}
+
 void drawCharacterSheet()
 {
     Serial.println("Drawing character sheet");
@@ -82,6 +184,28 @@ void drawCharacterSheet()
     {
         Serial.println("currentCharacter is NULL");
         return;
+    }
+
+    switch (characterView)
+    {
+        case CHARACTER_VIEW_INVENTORY:
+            drawInventoryView();
+            return;
+
+        case CHARACTER_VIEW_EQUIPMENT:
+            drawEquipmentView();
+            return;
+
+        case CHARACTER_VIEW_SKILLS:
+            drawSkillsView();
+            return;
+
+        case CHARACTER_VIEW_QUESTS:
+            drawQuestsView();
+            return;
+
+        case CHARACTER_VIEW_SHEET:
+            break;
     }
 
     const int LEFT_X  = 5;
@@ -234,14 +358,45 @@ bool isCharacterSheetOpen = false;
 
 void openCharacterSheet()
 {
+    openCharacterView(CHARACTER_VIEW_SHEET);
+}
+
+void openCharacterView(CharacterView view)
+{
     Serial.println("Character sheet opened");
     isCharacterSheetOpen = true;
+    characterView = view;
     currentCharacter = &player;
+
+    // Combat changes the character embedded in the map's player entity.
+    // Show that live character so current HP reflects damage immediately.
+    if (gameState == GAME_FOREST)
+    {
+        Entity* playerEntity = getPlayerEntity(
+            forestEntities,
+            forestEntityCount);
+
+        if (playerEntity != nullptr)
+            currentCharacter = &playerEntity->character;
+    }
+    else if (gameState == GAME_DUNGEON)
+    {
+        Entity* playerEntity = getPlayerEntity(
+            dungeon.entities,
+            dungeon.entityCount);
+
+        if (playerEntity != nullptr)
+            currentCharacter = &playerEntity->character;
+    }
+
+    scrollOffset = 0;
     needsRedraw = true;
 }
 
 void closeCharacterSheet(){
     isCharacterSheetOpen = false;
+    backgroundNeedsRedraw = true;
+    redrawType = REDRAW_FULL;
     needsRedraw = true;
 }
 

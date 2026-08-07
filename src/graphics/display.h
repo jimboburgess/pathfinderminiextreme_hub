@@ -12,6 +12,11 @@ void drawStartScreen();
 void drawStartAnimation();
 void drawTownScreen();
 
+void drawMapBackground();
+void drawMapEntities();
+void drawMapCursor();
+void drawMapMessage();
+
 void drawForestScreen();
 void redrawForestMessage();
 void drawDungeonScreen();
@@ -34,6 +39,7 @@ struct DirtyTile
 
 extern DirtyTile dirtyTiles[MAX_DIRTY_TILES];
 extern uint8_t dirtyTileCount;
+extern bool backgroundNeedsRedraw;
 
 
 void drawCriticalHit();

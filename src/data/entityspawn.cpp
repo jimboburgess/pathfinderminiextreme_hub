@@ -47,6 +47,8 @@ Entity* spawnEntity(
     entity->monsterID = MONSTER_NONE;
 
     entity->sprite = nullptr;
+    entity->spriteWidth = SPRITE_W;
+    entity->spriteHeight = SPRITE_H;
 
     return entity;
 }
@@ -78,6 +80,12 @@ Entity* spawnMonster(
         return entity;
 
     entity->sprite = monster->sprite;
+
+    if (monsterID == MONSTER_GIANT_SPIDER)
+    {
+        entity->spriteWidth = LRGSPRITE_W;
+        entity->spriteHeight = LRGSPRITE_H;
+    }
 
     entity->character.team = TEAM_MONSTER;
     entity->character.state = STATE_ALIVE;

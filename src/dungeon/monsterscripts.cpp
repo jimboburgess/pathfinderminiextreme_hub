@@ -93,9 +93,7 @@ void performStandardAction(Entity* monster)
 
     if (isAdjacent(monster, target))
     {
-        setGameMessage("Goblin attacks!");
-
-        // We'll put the real attack code here later.
+        beginMonsterAttack(monster, target);
     }
 }
 

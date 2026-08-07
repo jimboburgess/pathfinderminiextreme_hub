@@ -21,6 +21,105 @@
 
 static TileType forestMap[FOREST_HEIGHT][FOREST_WIDTH];
 
+enum ForestEncounterTheme
+{
+    FOREST_ENCOUNTER_GOBLINS,
+    FOREST_ENCOUNTER_UNDEAD,
+    FOREST_ENCOUNTER_GIANT_SPIDER
+};
+
+static const MonsterID goblinForestMonsters[] =
+{
+    MONSTER_GOBLIN_SCIMITAR,
+    MONSTER_GOBLIN_ARCHER
+};
+
+static const MonsterID undeadForestMonsters[] =
+{
+    MONSTER_SKELETON,
+    MONSTER_ZOMBIE,
+    MONSTER_GHOUL,
+    MONSTER_WIGHT
+};
+
+static MonsterID chooseForestMonster(ForestEncounterTheme theme)
+{
+    switch (theme)
+    {
+        case FOREST_ENCOUNTER_GOBLINS:
+            return goblinForestMonsters[random(
+                sizeof(goblinForestMonsters) / sizeof(MonsterID))];
+
+        case FOREST_ENCOUNTER_UNDEAD:
+            return undeadForestMonsters[random(
+                sizeof(undeadForestMonsters) / sizeof(MonsterID))];
+
+        case FOREST_ENCOUNTER_GIANT_SPIDER:
+            return MONSTER_GIANT_SPIDER;
+    }
+
+    return MONSTER_GOBLIN_SCIMITAR;
+}
+
+static bool canSpawnForestMonster(MonsterID monsterID, int x, int y)
+{
+    int footprint = monsterID == MONSTER_GIANT_SPIDER ? 2 : 1;
+
+    for (int offsetY = 0; offsetY < footprint; offsetY++)
+    {
+        for (int offsetX = 0; offsetX < footprint; offsetX++)
+        {
+            int tileX = x + offsetX;
+            int tileY = y + offsetY;
+
+            if (getForestTile(tileX, tileY) == TILE_TREE ||
+                getEntityAt(forestEntities, forestEntityCount,
+                            tileX, tileY) != nullptr)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+static void spawnForestEncounter()
+{
+    ForestEncounterTheme theme = static_cast<ForestEncounterTheme>(random(3));
+    uint8_t monsterCount = theme == FOREST_ENCOUNTER_GIANT_SPIDER
+        ? 1
+        : random(1, 6);
+
+    for (uint8_t spawned = 0; spawned < monsterCount; )
+    {
+        MonsterID monsterID = chooseForestMonster(theme);
+        int footprint = monsterID == MONSTER_GIANT_SPIDER ? 2 : 1;
+        bool placed = false;
+
+        for (uint8_t attempt = 0; attempt < 80; attempt++)
+        {
+            int x = random(0, FOREST_WIDTH - footprint + 1);
+            int y = random(0, FOREST_HEIGHT - footprint + 1);
+
+            if (!canSpawnForestMonster(monsterID, x, y))
+                continue;
+
+            if (spawnMonster(forestEntities, forestEntityCount,
+                             monsterID, x, y) != nullptr)
+            {
+                placed = true;
+                spawned++;
+            }
+
+            break;
+        }
+
+        if (!placed)
+            return;
+    }
+}
+
 
 TileType getForestTile(int x, int y){
 
@@ -61,6 +160,8 @@ static void initForest()
         forestMap[y][x] = TILE_TREE;
     }
 
+    forestMap[FOREST_HEIGHT - 2][FOREST_WIDTH / 2] = TILE_GRASS;
+
     //--------------------------------------------------
     // Spawn entities.
     //--------------------------------------------------
@@ -84,19 +185,7 @@ static void initForest()
             getPlayerSprite(player.characterClass);
     }
 
-    spawnMonster(
-    forestEntities,
-    forestEntityCount,
-    MONSTER_GOBLIN_SCIMITAR,
-    2,
-    12);
-
-    spawnMonster(
-        forestEntities,
-        forestEntityCount,
-        MONSTER_GOBLIN_ARCHER,
-        12,
-        3);
+    spawnForestEncounter();
 }
 
 int getForestPlayerX()
@@ -134,6 +223,8 @@ void enterForest()
     }
 
     previousMoveDirection = moveDirection;
+
+    backgroundNeedsRedraw = true;
 
     redrawType = REDRAW_FULL;
     needsRedraw = true;

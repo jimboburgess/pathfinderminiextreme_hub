@@ -7,6 +7,7 @@
 #include "roomgen.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
+#include "graphics/display.h"
 #include "graphics/messagelog.h"
 
 Dungeon dungeon;
@@ -46,6 +47,8 @@ void enterDungeon()
     }
 
     previousMoveDirection = moveDirection;
+
+    backgroundNeedsRedraw = true;
 
     redrawType = REDRAW_FULL;
     needsRedraw = true;
@@ -179,39 +182,47 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
     }
 
     // Create the player.
-    Entity* player = spawnEntity(
-    dungeon.entities,
-    dungeon.entityCount,
-    ENTITY_PLAYER,0,0);
+    Entity* playerEntity = spawnEntity(
+        dungeon.entities,
+        dungeon.entityCount,
+        ENTITY_PLAYER,
+        0,
+        0);
 
-    if (player == nullptr)
+    if (playerEntity == nullptr)
         return;
+
+    // Match the forest player setup: each map player receives the current
+    // character data and the 16x16 sprite for that character's class.
+    playerEntity->character = player;
+    playerEntity->sprite = getPlayerSprite(
+        playerEntity->character.characterClass);
 
     switch (entry)
     {
         case ENTRY_START:
-            player->x = ROOM_SIZE / 2;
-            player->y = ROOM_SIZE / 2;
+            playerEntity->x = ROOM_SIZE / 2;
+            playerEntity->y = ROOM_SIZE / 2;
             break;
 
         case ENTRY_NORTH:
-            player->x = ROOM_SIZE / 2;
-            player->y = 1;
+            playerEntity->x = ROOM_SIZE / 2;
+            playerEntity->y = 1;
             break;
 
         case ENTRY_EAST:
-            player->x = ROOM_SIZE - 2;
-            player->y = ROOM_SIZE / 2;
+            playerEntity->x = ROOM_SIZE - 2;
+            playerEntity->y = ROOM_SIZE / 2;
             break;
 
         case ENTRY_SOUTH:
-            player->x = ROOM_SIZE / 2;
-            player->y = ROOM_SIZE - 2;
+            playerEntity->x = ROOM_SIZE / 2;
+            playerEntity->y = ROOM_SIZE - 2;
             break;
 
         case ENTRY_WEST:
-            player->x = 1;
-            player->y = ROOM_SIZE / 2;
+            playerEntity->x = 1;
+            playerEntity->y = ROOM_SIZE / 2;
             break;
     }
 }

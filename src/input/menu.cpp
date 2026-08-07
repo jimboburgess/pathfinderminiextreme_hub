@@ -7,6 +7,10 @@
 #include "graphics/display.h"
 #include "input/buttons.h"
 #include "audio/audio.h"
+#include "characters/sheet.h"
+#include "data/entityspawn.h"
+#include "dungeon/dungeon.h"
+#include "dungeon/forest.h"
 
 MenuState menuState =
 {
@@ -24,6 +28,73 @@ static const Menu* getCurrentMenu()
 
     return menuState.menuStack[menuState.depth - 1];
 }
+
+static Character* getMenuCharacter()
+{
+    if (gameState == GAME_FOREST)
+    {
+        Entity* playerEntity = getPlayerEntity(
+            forestEntities, forestEntityCount);
+
+        if (playerEntity != nullptr)
+            return &playerEntity->character;
+    }
+    else if (gameState == GAME_DUNGEON)
+    {
+        Entity* playerEntity = getPlayerEntity(
+            dungeon.entities, dungeon.entityCount);
+
+        if (playerEntity != nullptr)
+            return &playerEntity->character;
+    }
+
+    return &player;
+}
+
+static bool isPlayerCombatTurn()
+{
+    return combat.active && isPlayerTurn() && combat.waitingForPlayer;
+}
+
+static bool hasSpecialAbilities(const Character& character)
+{
+    for (uint8_t i = 0; i < character.magic.knownAbilityCount; i++)
+    {
+        AbilityID ability = character.magic.knownAbilities[i];
+
+        if (ability != ABILITY_NONE &&
+            ability != ABILITY_MELEE_ATTACK &&
+            ability != ABILITY_RANGED_ATTACK)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static uint16_t getCharacterMenuClassMask(const Character& character)
+{
+    switch (character.characterClass)
+    {
+        case CLASS_FIGHTER: return MENU_CLASS_FIGHTER;
+        case CLASS_ROGUE:   return MENU_CLASS_ROGUE;
+        case CLASS_WIZARD:  return MENU_CLASS_WIZARD;
+        case CLASS_CLERIC:  return MENU_CLASS_CLERIC;
+    }
+
+    return 0;
+}
+
+static bool isMenuItemVisible(const MenuItem& item)
+{
+    Character* character = getMenuCharacter();
+
+    return character != nullptr &&
+           (item.classMask & getCharacterMenuClassMask(*character)) != 0 &&
+           isMenuItemVisible(item.action);
+}
+
 static uint8_t getVisibleItemCount(const Menu* menu)
 {
     if (menu == nullptr)
@@ -33,7 +104,7 @@ static uint8_t getVisibleItemCount(const Menu* menu)
 
     for (uint8_t i = 0; i < menu->itemCount; i++)
     {
-        if (isMenuItemVisible(menu->items[i].action))
+        if (isMenuItemVisible(menu->items[i]))
         {
             count++;
         }
@@ -53,7 +124,7 @@ static const MenuItem* getVisibleMenuItem(
 
     for (uint8_t i = 0; i < menu->itemCount; i++)
     {
-        if (!isMenuItemVisible(menu->items[i].action))
+        if (!isMenuItemVisible(menu->items[i]))
             continue;
 
         if (count == visibleIndex)
@@ -358,49 +429,56 @@ const MenuItem combatMenuItems[] =
     {
         "Attack",
         "Perform a melee or ranged attack.",
-        MENU_NONE,
+        MENU_ATTACK,
         &attackMenu,
         MENU_CLASS_ALL
     },
 {
     "Cast Spell",
     "Cast one of your prepared spells.",
-    MENU_NONE,
+    MENU_CAST_SPELL,
     &spellMenu,
     MENU_CLASS_WIZARD | MENU_CLASS_CLERIC
 },
 {
+    "Inspect",
+    "Examine a creature's condition.",
+    MENU_INSPECT,
+    nullptr,
+    MENU_CLASS_ALL
+},
+{
     "Special Ability",
     "Use one of your class abilities.",
-    MENU_NONE,
+    MENU_SPECIAL_ABILITY,
     &fighterSpecialMenu,
     MENU_CLASS_FIGHTER
 },
 {
     "Special Ability",
     "Use one of your class abilities.",
-    MENU_NONE,
+    MENU_SPECIAL_ABILITY,
     &rogueSpecialMenu,
     MENU_CLASS_ROGUE
 },
 {
     "Special Ability",
     "Use one of your class abilities.",
-    MENU_NONE,
+    MENU_SPECIAL_ABILITY,
     &clericSpecialMenu,
     MENU_CLASS_CLERIC
 },
 {
     "Special Ability",
     "Use one of your class abilities.",
-    MENU_NONE,
+    MENU_SPECIAL_ABILITY,
     &wizardSpecialMenu,
     MENU_CLASS_WIZARD
 },
 {
     "Use Item",
     "Use an item from your inventory.",
-    MENU_NONE,
+    MENU_USE_ITEM,
     &useItemMenu,
     MENU_CLASS_ALL
 },
@@ -433,16 +511,16 @@ const MenuItem combatMenuItems[] =
         MENU_CLASS_ALL
     },
     {
-        "Character",
-        "View character information.",
-        MENU_NONE,
+    "Character",
+    "View character information.",
+    MENU_CHARACTER,
         &characterMenu,
         MENU_CLASS_ALL
     },
     {
-        "Game",
-        "Game options.",
-        MENU_NONE,
+    "Game",
+    "Game options.",
+    MENU_GAME,
         &gameMenu,
         MENU_CLASS_ALL
     }
@@ -478,10 +556,11 @@ void closeMenu()
     menuState.firstVisibleIndex = 0;
     menuState.isOpen = false;
 
+    backgroundNeedsRedraw = true;
+
     redrawType = REDRAW_FULL;
     needsRedraw = true;
 }
-
 void updateMenu()
 {
     // Reserved for future menu animation.
@@ -578,9 +657,79 @@ void menuActivate()
 
     switch (item->action)
     {
+        case MENU_MELEE_ATTACK:
+
+            closeMenu();
+            beginPlayerAttack(COMBAT_ATTACK_MELEE);
+            break;
+
+        case MENU_RANGED_ATTACK:
+
+            closeMenu();
+            beginPlayerAttack(COMBAT_ATTACK_RANGED);
+            break;
+
+        case MENU_INSPECT:
+
+            closeMenu();
+            beginInspection();
+            break;
+
+        case MENU_USE_ITEM:
+        case MENU_INVENTORY:
+
+            closeMenu();
+            openCharacterView(CHARACTER_VIEW_INVENTORY);
+            break;
+
+        case MENU_EQUIPMENT:
+
+            closeMenu();
+            openCharacterView(CHARACTER_VIEW_EQUIPMENT);
+            break;
+
+        case MENU_SKILLS:
+
+            closeMenu();
+            openCharacterView(CHARACTER_VIEW_SKILLS);
+            break;
+
+        case MENU_QUESTS:
+
+            closeMenu();
+            openCharacterView(CHARACTER_VIEW_QUESTS);
+            break;
+
+        case MENU_DOUBLE_MOVE:
+
+            closeMenu();
+            beginDoubleMove();
+            break;
+
+        case MENU_TOTAL_DEFENSE:
+
+            closeMenu();
+            beginTotalDefense();
+            break;
+
+        case MENU_CHARACTER_SHEET:
+
+            closeMenu();
+            openCharacterSheet();
+            break;
+
         case MENU_RETURN_TO_TOWN:
 
             closeMenu();
+
+            // Town owns the persistent player character. Preserve changes
+            // made to the map entity before returning home to rest or save.
+            {
+                Character* currentCharacter = getMenuCharacter();
+
+                if (currentCharacter != &player)
+                    player = *currentCharacter;
+            }
 
             gameState = GAME_TOWN;
             townSelection = TOWN_STAY_HOME;
@@ -956,10 +1105,69 @@ void drawMenu()
 
 bool isMenuItemVisible(MenuAction action)
 {
-    return true;
+    Character* character = getMenuCharacter();
+
+    if (character == nullptr)
+        return false;
+
+    switch (action)
+    {
+        case MENU_ATTACK:
+            return isPlayerCombatTurn() &&
+                   (getEquippedMeleeWeapon(*character) != nullptr ||
+                    getEquippedRangedWeapon(*character) != nullptr);
+
+        case MENU_MELEE_ATTACK:
+            return isPlayerCombatTurn() &&
+                   getEquippedMeleeWeapon(*character) != nullptr;
+
+        case MENU_RANGED_ATTACK:
+            return isPlayerCombatTurn() &&
+                   getEquippedRangedWeapon(*character) != nullptr;
+
+        case MENU_CAST_SPELL:
+            // The character model supports known spells, but spell casting
+            // itself has not been implemented yet.
+            return false;
+
+        case MENU_SPECIAL_ABILITY:
+            return hasSpecialAbilities(*character);
+
+        case MENU_USE_ITEM:
+            return character->inventory.itemCount > 0;
+
+        case MENU_DOUBLE_MOVE:
+            return isPlayerCombatTurn() &&
+                   character->state == STATE_ALIVE &&
+                   !getCurrentCombatant()->turn.standardActionUsed &&
+                   getCurrentCombatant()->turn.movementRemaining ==
+                       character->speed;
+
+        case MENU_TOTAL_DEFENSE:
+            return isPlayerCombatTurn() &&
+                   !getCurrentCombatant()->turn.standardActionUsed &&
+                   !getCurrentCombatant()->turn.moveActionUsed;
+
+        case MENU_DELAY:
+            return false;
+
+        case MENU_END_TURN:
+            return isPlayerCombatTurn();
+
+        case MENU_RETURN_TO_TOWN:
+            return gameState == GAME_FOREST || gameState == GAME_DUNGEON;
+
+        case MENU_SAVE_GAME:
+        case MENU_OPTIONS:
+        case MENU_EXIT_TITLE:
+            return false;
+
+        default:
+            return true;
+    }
 }
 
 bool isMenuItemEnabled(MenuAction action)
 {
-    return true;
+    return isMenuItemVisible(action);
 }

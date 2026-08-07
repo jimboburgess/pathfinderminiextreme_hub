@@ -12,8 +12,10 @@
 #include "dungeon/roomgen.h"
 #include "graphics/charcreationscreen.h"
 #include "graphics/display.h"
+#include "graphics/messagelog.h"
 #include "graphics/sprites.h"
 #include "dungeon/forest.h"
+#include "town/town.h"
 
 #include "input/buttons.h"
 
@@ -79,6 +81,9 @@ void loop()
     {
         updateCombat();
     }
+
+    updateGameMessage();
+    updateTownRest();
 
     updateAudio();
 

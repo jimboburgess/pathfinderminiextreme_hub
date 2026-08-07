@@ -13,6 +13,10 @@ void setGameMessage(const char* message);
 
 const char* getGameMessage();
 
+void updateGameMessage();
+
+bool isGameMessageComplete();
+
 void clearGameMessage();
 
 #endif

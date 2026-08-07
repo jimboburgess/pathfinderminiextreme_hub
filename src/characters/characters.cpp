@@ -114,7 +114,7 @@ const Shield* getEquippedShield(const Character& character)
     return getShield(item);
 }
 
-int getArmorClass(const Character& character)
+int getArmorClass(const Character& character, int dodgeBonus)
 {
     const Armor* armor = getEquippedArmor(character);
     const Shield* shield = getEquippedShield(character);
@@ -122,7 +122,6 @@ int getArmorClass(const Character& character)
     int shieldBonus = shield ? shield->shieldBonus : 0;
     int naturalArmor = 0;
     int deflectionBonus = 0;
-    int dodgeBonus = 0;
     int sizeModifier = 0;
 
     return 10

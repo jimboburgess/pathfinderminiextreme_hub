@@ -255,7 +255,7 @@ const Armor* getEquippedArmor(const Character& character);
 
 const Shield* getEquippedShield(const Character& character);
 
-int getArmorClass(const Character& character);
+int getArmorClass(const Character& character, int dodgeBonus = 0);
 
 int getMeleeAttackBonus(const Character& character);
 
