@@ -148,6 +148,8 @@ const Monster* getMonster(MonsterID id);
 
 uint16_t getMonsterMaxHP(const Monster& monster);
 
+// Pathfinder Table: Experience Point Awards, Total XP column.
+uint32_t getExperienceAward(ChallengeRating challengeRating);
 
 extern const Monster monsterDatabase[MONSTER_COUNT];
 

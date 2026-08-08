@@ -22,6 +22,14 @@ enum EntityType : uint8_t {
     ENTITY_NPC
   };
 
+constexpr uint8_t MAX_CORPSE_LOOT_SLOTS = 8;
+
+struct LootData
+{
+    InventorySlot slots[MAX_CORPSE_LOOT_SLOTS];
+    uint8_t itemCount = 0;
+    bool generated = false;
+};
 
 struct Entity
 {
@@ -36,6 +44,8 @@ struct Entity
 
     MonsterID monsterID = MONSTER_NONE;
     const Monster* monster = nullptr;
+
+    LootData loot;
 
     const uint16_t* sprite = nullptr;
 

@@ -37,6 +37,10 @@ Entity* spawnEntity(
         entity = &entities[entityCount++];
     }
 
+    // Entity slots are reused. Reset all lifecycle, character, monster and
+    // corpse-loot state so a new spawn cannot inherit data from an old one.
+    *entity = Entity{};
+
     entity->active = true;
 
     entity->type = type;
@@ -96,7 +100,25 @@ Entity* spawnMonster(
     entity->character.health.maxHP = getMonsterMaxHP(*monster);
     entity->character.health.currentHP = entity->character.health.maxHP;
 
-    entity->character.equipment.equipped[SLOT_MELEE_WEAPON] = monster->weapon;
+    // Put the creature's weapon in the matching slot.  Ranged monster
+    // scripts can then deliberately choose their ranged weapon instead of
+    // treating a bow as a melee attack.
+    entity->character.equipment.equipped[SLOT_MELEE_WEAPON] = ITEM_NONE;
+    entity->character.equipment.equipped[SLOT_RANGED_WEAPON] = ITEM_NONE;
+
+    const Weapon* weapon = getWeapon(monster->weapon);
+
+    if (weapon != nullptr && weapon->type == WEAPON_RANGED)
+    {
+        entity->character.equipment.equipped[SLOT_RANGED_WEAPON] =
+            monster->weapon;
+    }
+    else
+    {
+        entity->character.equipment.equipped[SLOT_MELEE_WEAPON] =
+            monster->weapon;
+    }
+
     entity->character.equipment.equipped[SLOT_ARMOR] = monster->armor;
 
     entity->character.health.maxHP = getMonsterMaxHP(*monster);
@@ -111,6 +133,31 @@ void removeEntity(Entity& entity)
     entity.active = false;
 }
 
+uint8_t getEntityTileWidth(const Entity& entity)
+{
+    uint8_t tileWidth =
+        (entity.spriteWidth + SPRITE_W - 1) / SPRITE_W;
+
+    return tileWidth > 0 ? tileWidth : 1;
+}
+
+uint8_t getEntityTileHeight(const Entity& entity)
+{
+    uint8_t tileHeight =
+        (entity.spriteHeight + SPRITE_H - 1) / SPRITE_H;
+
+    return tileHeight > 0 ? tileHeight : 1;
+}
+
+bool entityOccupiesTile(const Entity& entity, int tileX, int tileY)
+{
+    int right = entity.x + getEntityTileWidth(entity);
+    int bottom = entity.y + getEntityTileHeight(entity);
+
+    return tileX >= entity.x && tileX < right &&
+           tileY >= entity.y && tileY < bottom;
+}
+
 Entity* getEntityAt(
     Entity entities[],
     uint8_t entityCount,
@@ -122,10 +169,7 @@ Entity* getEntityAt(
         if (!entities[i].active)
             continue;
 
-        if (entities[i].x != x)
-            continue;
-
-        if (entities[i].y != y)
+        if (!entityOccupiesTile(entities[i], x, y))
             continue;
 
         return &entities[i];

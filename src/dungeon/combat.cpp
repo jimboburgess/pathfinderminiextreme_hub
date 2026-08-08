@@ -1,10 +1,15 @@
 #include "combat.h"
-#include "dungeon.h"
-#include "forest.h"
-#include "data/game.h"
+
+#include <algorithm>
+#include <stdlib.h>
+
+#include "activemap.h"
+#include "loot.h"
+#include "monsterscripts.h"
 #include "audio/audio.h"
 #include "data/dice.h"
 #include "data/entityspawn.h"
+#include "data/game.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "input/menu.h"
@@ -13,7 +18,7 @@ Combat combat;
 
 static Entity* getPlayerCombatant()
 {
-    return getPlayerEntity(forestEntities, forestEntityCount);
+    return getActiveMapPlayer();
 }
 
 static void requestCombatTileRedraw()
@@ -45,36 +50,211 @@ static void markPlayerFacingCursorDirty()
 static void markAttackCursorDirty();
 static void markInspectionCursorDirty();
 
-static int gridDistance(const Entity* a, const Entity* b)
+static int gridDistanceToTile(const Entity* entity, int tileX, int tileY)
 {
-    return std::max(abs(a->x - b->x), abs(a->y - b->y));
+    return std::max(abs(entity->x - tileX), abs(entity->y - tileY));
+}
+
+static int gridDistanceBetweenFootprints(
+    const Entity* first,
+    const Entity* second)
+{
+    int firstRight = first->x + getEntityTileWidth(*first) - 1;
+    int firstBottom = first->y + getEntityTileHeight(*first) - 1;
+    int secondRight = second->x + getEntityTileWidth(*second) - 1;
+    int secondBottom = second->y + getEntityTileHeight(*second) - 1;
+
+    int horizontalDistance = 0;
+    int verticalDistance = 0;
+
+    if (firstRight < second->x)
+        horizontalDistance = second->x - firstRight;
+    else if (secondRight < first->x)
+        horizontalDistance = first->x - secondRight;
+
+    if (firstBottom < second->y)
+        verticalDistance = second->y - firstBottom;
+    else if (secondBottom < first->y)
+        verticalDistance = first->y - secondBottom;
+
+    return std::max(horizontalDistance, verticalDistance);
+}
+
+static SoundEffect getAttackSound(
+    const Entity* attacker,
+    const Weapon* weapon)
+{
+    if (weapon != nullptr && weapon->type == WEAPON_RANGED)
+        return SoundEffect::BOW_FIRE;
+
+    if (attacker != nullptr && attacker->type == ENTITY_MONSTER &&
+        (attacker->monsterID == MONSTER_GOBLIN_SCIMITAR ||
+         attacker->monsterID == MONSTER_GOBLIN_ARCHER))
+    {
+        return SoundEffect::GOBLIN_ATTACK;
+    }
+
+    return SoundEffect::ATTACK;
+}
+
+// Returns the nearest square of a target that the attacker can see.  This is
+// important for large creatures: a tree may hide their anchor square while
+// another square of their footprint is still visible and can be attacked.
+static bool getVisibleTargetTile(
+    const Entity* attacker,
+    const Entity* target,
+    int& targetX,
+    int& targetY)
+{
+    if (attacker == nullptr || target == nullptr)
+        return false;
+
+    bool foundVisibleTile = false;
+    int closestDistance = 0;
+
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(*target);
+         offsetY++)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(*target);
+             offsetX++)
+        {
+            int candidateX = target->x + offsetX;
+            int candidateY = target->y + offsetY;
+
+            if (!hasLineOfSight(
+                    attacker->x,
+                    attacker->y,
+                    candidateX,
+                    candidateY))
+            {
+                continue;
+            }
+
+            int distance = gridDistanceToTile(
+                attacker, candidateX, candidateY);
+
+            if (!foundVisibleTile || distance < closestDistance)
+            {
+                targetX = candidateX;
+                targetY = candidateY;
+                closestDistance = distance;
+                foundVisibleTile = true;
+            }
+        }
+    }
+
+    return foundVisibleTile;
 }
 
 static bool isValidRangedTarget(const Entity* player, const Entity* target)
 {
-    return target != nullptr &&
-           target != player &&
-           target->active &&
-           target->character.state == STATE_ALIVE &&
-           hasLineOfSight(player->x, player->y, target->x, target->y);
+    if (target == nullptr || target == player || !target->active ||
+        target->character.state != STATE_ALIVE)
+    {
+        return false;
+    }
+
+    int targetX = 0;
+    int targetY = 0;
+
+    return getVisibleTargetTile(player, target, targetX, targetY);
 }
 
-static Entity* getMapEntities(uint8_t& entityCount)
+static bool isPlayerSideCharacter(const Entity& entity)
 {
-    switch (gameState)
+    return entity.active &&
+           entity.type == ENTITY_PLAYER &&
+           entity.character.team == TEAM_PLAYER;
+}
+
+static bool isMonsterCombatant(const Entity& entity)
+{
+    return entity.active &&
+           entity.type == ENTITY_MONSTER &&
+           entity.character.team == TEAM_MONSTER;
+}
+
+static bool areAllCombatMonstersDefeated()
+{
+    bool hasMonster = false;
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
-        case GAME_FOREST:
-            entityCount = forestEntityCount;
-            return forestEntities;
+        Entity* entity = combat.initiativeOrder[i];
 
-        case GAME_DUNGEON:
-            entityCount = dungeon.entityCount;
-            return dungeon.entities;
+        if (entity == nullptr || !isMonsterCombatant(*entity))
+            continue;
 
-        default:
-            entityCount = 0;
-            return nullptr;
+        hasMonster = true;
+
+        if (entity->character.state == STATE_ALIVE)
+            return false;
     }
+
+    return hasMonster;
+}
+
+static uint32_t getDefeatedMonsterExperience()
+{
+    uint32_t totalExperience = 0;
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        Entity* entity = combat.initiativeOrder[i];
+
+        if (entity == nullptr || !isMonsterCombatant(*entity) ||
+            entity->character.state == STATE_ALIVE)
+        {
+            continue;
+        }
+
+        const Monster* monster = entity->monster;
+
+        if (monster == nullptr)
+            monster = getMonster(entity->monsterID);
+
+        if (monster != nullptr)
+            totalExperience += getExperienceAward(monster->challengeRating);
+    }
+
+    return totalExperience;
+}
+
+static uint32_t awardCombatExperience(uint8_t& playerCount)
+{
+    playerCount = 0;
+
+    if (combat.experienceAwarded || !areAllCombatMonstersDefeated())
+        return 0;
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        Entity* entity = combat.initiativeOrder[i];
+
+        if (entity != nullptr && isPlayerSideCharacter(*entity))
+            playerCount++;
+    }
+
+    if (playerCount == 0)
+        return 0;
+
+    // The exact Pathfinder award method totals defeated creatures' CR XP,
+    // then divides that encounter total equally among participating PCs.
+    uint32_t experiencePerCharacter =
+        getDefeatedMonsterExperience() / playerCount;
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        Entity* entity = combat.initiativeOrder[i];
+
+        if (entity != nullptr && isPlayerSideCharacter(*entity))
+            entity->character.xp += experiencePerCharacter;
+    }
+
+    combat.experienceAwarded = true;
+    return experiencePerCharacter;
 }
 
 static bool isInspectableEntity(const Entity& entity)
@@ -144,6 +324,13 @@ static void finishPlayerAttack()
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
 
+    if (areAllCombatMonstersDefeated())
+    {
+        combat.waitingForPlayer = false;
+        combat.phase = COMBAT_END;
+        return;
+    }
+
     Entity* player = getPlayerCombatant();
 
     if (player == nullptr)
@@ -193,6 +380,7 @@ static void updateMonsterAttack()
                 {
                     target->character.health.currentHP = 0;
                     target->character.state = STATE_DEAD;
+                    generateCorpseLoot(*target);
                     combat.monsterDefeatedPlayer = true;
 
                     snprintf(message, sizeof(message),
@@ -207,7 +395,10 @@ static void updateMonsterAttack()
                 }
 
                 setGameMessage(message);
-                markTileDirty(target->x, target->y);
+                // A target can cover more than one map tile (for example,
+                // the giant spider).  Redraw its entire footprint so damage
+                // and the dead/loot marker cannot leave stale sprite pixels.
+                markEntityFootprintDirty(*target);
             }
 
             combat.monsterAttackPhase = MONSTER_ATTACK_COMPLETE;
@@ -233,101 +424,36 @@ static void updateMonsterAttack()
 }
 
 
-bool blocksSight(TileType tile)
-{
-    switch (tile)
-    {
-        case TILE_TREE:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-bool hasLineOfSight(int x1, int y1, int x2, int y2)
-{
-    int dx = abs(x2 - x1);
-    int dy = abs(y2 - y1);
-
-    int sx = (x1 < x2) ? 1 : -1;
-    int sy = (y1 < y2) ? 1 : -1;
-
-    int err = dx - dy;
-
-    while (true)
-    {
-        // Skip the starting tile and ending tile.
-        if (!(x1 == x2 && y1 == y2))
-        {
-            if (!(x1 == getForestPlayerX() &&
-                  y1 == getForestPlayerY()))
-            {
-                if (blocksSight(getForestTile(x1, y1)))
-                {
-                    return false;
-                }
-            }
-        }
-
-        if (x1 == x2 && y1 == y2)
-            break;
-
-        int e2 = err * 2;
-
-        if (e2 > -dy)
-        {
-            err -= dy;
-            x1 += sx;
-        }
-
-        if (e2 < dx)
-        {
-            err += dx;
-            y1 += sy;
-        }
-    }
-
-    return true;
-}
-
 void findCombatants()
 {
     combat.combatantCount = 0;
 
-    //--------------------------------------------------
-    // Add the player.
-    //--------------------------------------------------
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
 
-    Entity* playerEntity = getPlayerEntity(
-        forestEntities,
-        forestEntityCount);
+    if (entities == nullptr)
+        return;
 
-    if (playerEntity != nullptr)
+    for (uint8_t i = 0; i < entityCount; i++)
     {
-        combat.initiativeOrder[
-            combat.combatantCount++] = playerEntity;
-    }
-
-    //--------------------------------------------------
-    // Add every living monster on the map.
-    //--------------------------------------------------
-
-    for (uint8_t i = 0; i < forestEntityCount; i++)
-    {
-        Entity& entity = forestEntities[i];
+        Entity& entity = entities[i];
 
         if (!entity.active)
-            continue;
-
-        if (entity.type != ENTITY_MONSTER)
             continue;
 
         if (entity.character.state != STATE_ALIVE)
             continue;
 
-        combat.initiativeOrder[
-            combat.combatantCount++] = &entity;
+        if (!isPlayerSideCharacter(entity) &&
+            !isMonsterCombatant(entity))
+        {
+            continue;
+        }
+
+        if (combat.combatantCount >= MAX_DUNGEON_CHARACTERS)
+            break;
+
+        combat.initiativeOrder[combat.combatantCount++] = &entity;
     }
 
     //--------------------------------------------------
@@ -358,46 +484,37 @@ void checkForCombat()
     if (combat.active)
         return;
 
-    Entity* playerEntity = getPlayerEntity(
-        forestEntities,
-        forestEntityCount);
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    Entity* playerEntity = getActiveMapPlayer();
 
-    if (playerEntity == nullptr)
+    if (entities == nullptr || playerEntity == nullptr)
         return;
 
-    for (uint8_t i = 0; i < forestEntityCount; i++)
+    for (uint8_t i = 0; i < entityCount; i++)
     {
-        Entity& monster = forestEntities[i];
+        Entity& monster = entities[i];
 
-        if (!monster.active)
+        if (!isMonsterCombatant(monster))
             continue;
 
-        if (monster.type != ENTITY_MONSTER)
-            continue;
-
-        if (monster.character.state != STATE_ALIVE)
-            continue;
-
-        int dx = abs(monster.x - playerEntity->x);
-        int dy = abs(monster.y - playerEntity->y);
+        int distance = gridDistanceBetweenFootprints(playerEntity, &monster);
 
         Serial.print("Monster at ");
         Serial.print(monster.x);
         Serial.print(", ");
         Serial.print(monster.y);
         Serial.print("  Distance = ");
-        Serial.println(std::max(dx, dy));
-
-        int distance = std::max(dx, dy);
+        Serial.println(distance);
 
         if (distance > COMBAT_DETECTION_RANGE)
             continue;
 
-        if (!hasLineOfSight(
+        if (!hasLineOfSightBetweenFootprintsAt(
+                *playerEntity,
                 playerEntity->x,
                 playerEntity->y,
-                monster.x,
-                monster.y))
+                monster))
         {
             continue;
         }
@@ -475,6 +592,7 @@ void startCombat()
 
     combat.currentTurnIndex = 0;
     combat.combatRound = 1;
+    combat.experienceAwarded = false;
 
     backgroundNeedsRedraw = true;
 
@@ -534,7 +652,7 @@ void runMonsterTurn(Entity* monster)
             performMovementPhase(monster);
 
             if (monster->turn.movementRemaining == 0 ||
-                isAdjacent(monster, chooseTarget(monster)))
+                isMonsterReadyForAction(monster))
             {
                 monster->turn.monsterState = MONSTER_ACTION;
             }
@@ -545,9 +663,20 @@ void runMonsterTurn(Entity* monster)
 
             runMonsterScript(monster);
 
-            monster->turn.monsterState = isMonsterAttackResolving()
-                ? MONSTER_ATTACK
-                : MONSTER_END;
+            if (isMonsterAttackResolving())
+            {
+                monster->turn.monsterState = MONSTER_ATTACK;
+            }
+            else
+            {
+                // A ranged monster may finish its movement without a clear
+                // shot, and any monster can be trapped with no legal move.
+                // Consume the action and advance immediately rather than
+                // leaving combat waiting on a monster with nothing to do.
+                monster->turn.standardActionUsed = true;
+                monster->turn.movementRemaining = 0;
+                nextTurn();
+            }
             break;
 
         case MONSTER_ATTACK:
@@ -678,6 +807,7 @@ void updateCombat()
                        {
                            target->character.health.currentHP = 0;
                            target->character.state = STATE_DEAD;
+                           generateCorpseLoot(*target);
 
                            snprintf(message, sizeof(message),
                                     "%s takes %d damage and dies!",
@@ -695,7 +825,9 @@ void updateCombat()
                        combat.attackDamagePending = false;
                        combat.attackResultTime = millis();
 
-                       markTileDirty(target->x, target->y);
+                       // Large creatures need every occupied tile redrawn
+                       // when their health/death state changes.
+                       markEntityFootprintDirty(*target);
                        requestCombatTileRedraw();
 
                        break;
@@ -746,8 +878,34 @@ void updateCombat()
 
 void endCombat()
 {
+    uint8_t playerCount = 0;
+    uint32_t experiencePerCharacter = awardCombatExperience(playerCount);
+
+    if (experiencePerCharacter > 0)
+    {
+        char message[64];
+
+        if (playerCount == 1)
+        {
+            snprintf(message, sizeof(message),
+                     "Victory! You gain %lu XP.",
+                     static_cast<unsigned long>(experiencePerCharacter));
+        }
+        else
+        {
+            snprintf(message, sizeof(message),
+                     "Victory! Party gains %lu XP each.",
+                     static_cast<unsigned long>(experiencePerCharacter));
+        }
+
+        setGameMessage(message);
+    }
+
     combat.active = false;
     combat.phase = COMBAT_NONE;
+    backgroundNeedsRedraw = true;
+    redrawType = REDRAW_FULL;
+    needsRedraw = true;
 }
 
 bool isCombatActive()
@@ -810,24 +968,26 @@ bool isPlayerAttackResolving()
 Entity* getSelectedAttackTarget()
 {
     Entity* player = getPlayerCombatant();
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
 
-    if (player == nullptr || !isPlayerTargetingAttack())
-        return nullptr;
+    if (player == nullptr || entities == nullptr ||
+        !isPlayerTargetingAttack())
+    return nullptr;
 
     if (combat.attackType == COMBAT_ATTACK_MELEE)
     {
         int targetX = player->x + directionOffsets[moveDirection].dx;
         int targetY = player->y + directionOffsets[moveDirection].dy;
 
-        if (targetX < 0 || targetX >= FOREST_WIDTH ||
-            targetY < 0 || targetY >= FOREST_HEIGHT)
+        if (!isInsideActiveMap(targetX, targetY))
         {
             return nullptr;
         }
 
         Entity* target = getEntityAt(
-            forestEntities,
-            forestEntityCount,
+            entities,
+            entityCount,
             targetX,
             targetY);
 
@@ -838,29 +998,31 @@ Entity* getSelectedAttackTarget()
     }
 
     if (combat.selectedTargetIndex < 0 ||
-        combat.selectedTargetIndex >= forestEntityCount)
+        combat.selectedTargetIndex >= entityCount)
     {
         return nullptr;
     }
 
-    Entity* target = &forestEntities[combat.selectedTargetIndex];
+    Entity* target = &entities[combat.selectedTargetIndex];
 
     return isValidRangedTarget(player, target) ? target : nullptr;
 }
 
 static void markAttackCursorDirty()
 {
+    if (combat.attackType == COMBAT_ATTACK_MELEE)
+    {
+        // The melee cursor represents the square the player is facing,
+        // including a non-anchor square of a large creature.
+        markPlayerFacingCursorDirty();
+        return;
+    }
+
     Entity* target = getSelectedAttackTarget();
 
     if (target != nullptr)
     {
-        markTileDirty(target->x, target->y);
-        return;
-    }
-
-    if (combat.attackType == COMBAT_ATTACK_MELEE)
-    {
-        markPlayerFacingCursorDirty();
+        markEntityFootprintDirty(*target);
     }
 }
 
@@ -883,22 +1045,24 @@ void rotateAttackTarget(bool forward)
     else
     {
         Entity* player = getPlayerCombatant();
+        uint8_t entityCount = 0;
+        Entity* entities = getActiveMapEntities(entityCount);
 
-        if (player == nullptr)
+        if (player == nullptr || entities == nullptr || entityCount == 0)
             return;
 
         int start = combat.selectedTargetIndex;
 
-        for (uint8_t checked = 0; checked < forestEntityCount; checked++)
+        for (uint8_t checked = 0; checked < entityCount; checked++)
         {
             start += forward ? 1 : -1;
 
             if (start < 0)
-                start = forestEntityCount - 1;
-            else if (start >= forestEntityCount)
+                start = entityCount - 1;
+            else if (start >= entityCount)
                 start = 0;
 
-            if (isValidRangedTarget(player, &forestEntities[start]))
+            if (isValidRangedTarget(player, &entities[start]))
             {
                 combat.selectedTargetIndex = start;
                 break;
@@ -934,12 +1098,24 @@ void confirmPlayerAttack()
         return;
     }
 
+    playSound(getAttackSound(player, weapon));
+
+    // Clear the targeting cursor before it stops being a targeting action.
+    // For melee this is the exact square chosen by the direction cursor.
+    markAttackCursorDirty();
+
     int rangePenalty = 0;
 
     if (combat.attackType == COMBAT_ATTACK_RANGED &&
         weapon->rangeIncrement > 0)
     {
-        int targetDistanceFeet = gridDistance(player, target) * 5;
+        int targetX = target->x;
+        int targetY = target->y;
+
+        getVisibleTargetTile(player, target, targetX, targetY);
+
+        int targetDistanceFeet =
+            gridDistanceToTile(player, targetX, targetY) * 5;
         int incrementsBeyondFirst =
             (targetDistanceFeet - 1) / weapon->rangeIncrement;
 
@@ -994,7 +1170,7 @@ void confirmPlayerAttack()
     combat.attackResultTime = millis();
     combat.waitingForPlayer = false;
 
-    markTileDirty(target->x, target->y);
+    markEntityFootprintDirty(*target);
     requestCombatTileRedraw();
 }
 
@@ -1033,7 +1209,7 @@ Entity* getInspectedEntity()
         return nullptr;
 
     uint8_t entityCount = 0;
-    Entity* entities = getMapEntities(entityCount);
+    Entity* entities = getActiveMapEntities(entityCount);
 
     if (entities == nullptr || combat.inspectedEntityIndex < 0 ||
         combat.inspectedEntityIndex >= entityCount)
@@ -1062,7 +1238,7 @@ void rotateInspectedEntity(bool forward)
     markInspectionCursorDirty();
 
     uint8_t entityCount = 0;
-    Entity* entities = getMapEntities(entityCount);
+    Entity* entities = getActiveMapEntities(entityCount);
 
     if (entities == nullptr || entityCount == 0)
     {
@@ -1150,7 +1326,10 @@ void beginTotalDefense()
     endPlayerTurn();
 }
 
-void beginMonsterAttack(Entity* monster, Entity* target)
+void beginMonsterAttack(
+    Entity* monster,
+    Entity* target,
+    CombatAttackType attackType)
 {
     if (monster == nullptr || target == nullptr ||
         monster->monster == nullptr ||
@@ -1159,18 +1338,57 @@ void beginMonsterAttack(Entity* monster, Entity* target)
         return;
     }
 
-    const Weapon* weapon = getEquippedMeleeWeapon(monster->character);
+    EquipmentSlot weaponSlot = attackType == COMBAT_ATTACK_RANGED
+        ? SLOT_RANGED_WEAPON
+        : SLOT_MELEE_WEAPON;
+    const Weapon* weapon = attackType == COMBAT_ATTACK_RANGED
+        ? getEquippedRangedWeapon(monster->character)
+        : getEquippedMeleeWeapon(monster->character);
 
-    if (weapon == nullptr)
-        return;
+    // Older in-memory encounters placed bows in the melee slot.  New
+    // monsters use the correct ranged slot, but retaining this fallback
+    // prevents an existing encounter from silently losing its attack.
+    if (attackType == COMBAT_ATTACK_RANGED &&
+        (weapon == nullptr || weapon->type != WEAPON_RANGED))
+    {
+        const Weapon* fallback = getEquippedMeleeWeapon(monster->character);
+
+        if (fallback != nullptr && fallback->type == WEAPON_RANGED)
+        {
+            weapon = fallback;
+            weaponSlot = SLOT_MELEE_WEAPON;
+        }
+    }
+
+    if (weapon == nullptr ||
+        (attackType == COMBAT_ATTACK_RANGED &&
+         weapon->type != WEAPON_RANGED) ||
+        (attackType != COMBAT_ATTACK_RANGED &&
+         weapon->type != WEAPON_MELEE))
+    return;
+
+    playSound(getAttackSound(monster, weapon));
 
     int abilityModifier = getAbilityModifier(
         monster->character,
         weapon->type == WEAPON_RANGED
             ? ABILITY_DEXTERITY
             : ABILITY_STRENGTH);
+    int rangePenalty = 0;
+
+    if (weapon->type == WEAPON_RANGED && weapon->rangeIncrement > 0)
+    {
+        int distanceFeet =
+            gridDistanceBetweenFootprints(monster, target) * 5;
+        int incrementsBeyondFirst =
+            (distanceFeet - 1) / weapon->rangeIncrement;
+
+        rangePenalty = -2 * incrementsBeyondFirst;
+    }
+
     int dieRoll = rollDie(20);
-    int total = dieRoll + monster->monster->baseAttack + abilityModifier;
+    int total = dieRoll + monster->monster->baseAttack + abilityModifier +
+                rangePenalty;
 
     combat.monsterAttackHit = (dieRoll == 20) ||
         (dieRoll != 1 && total >= getArmorClass(
@@ -1202,7 +1420,9 @@ void beginMonsterAttack(Entity* monster, Entity* target)
     snprintf(message, sizeof(message), "%s makes a %s attack with %s.",
              getEntityName(monster),
              weapon->type == WEAPON_RANGED ? "ranged" : "melee",
-             getEquippedItemName(monster->character, SLOT_MELEE_WEAPON));
+             getEquippedItemName(
+                 monster->character,
+                 weaponSlot));
     setGameMessage(message);
     requestCombatTileRedraw();
 }

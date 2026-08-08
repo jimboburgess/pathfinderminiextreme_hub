@@ -23,6 +23,10 @@ Entity* spawnMonster(
 
 void removeEntity(Entity& entity);
 
+uint8_t getEntityTileWidth(const Entity& entity);
+uint8_t getEntityTileHeight(const Entity& entity);
+bool entityOccupiesTile(const Entity& entity, int tileX, int tileY);
+
 Entity* getEntityAt(
     Entity entities[],
     uint8_t entityCount,

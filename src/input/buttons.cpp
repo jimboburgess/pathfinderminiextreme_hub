@@ -7,13 +7,16 @@
 #include "menu.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
+#include "dungeon/activemap.h"
 #include "dungeon/combat.h"
 #include "dungeon/forest.h"
+#include "dungeon/interaction.h"
 #include "dungeon/turns.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "town/town.h"
 #include "data/savegame.h"
+#include "input/inventorymenu.h"
 
 //======================================
 // Input State
@@ -32,25 +35,6 @@ bool encoderLongPressHandled = false;
 constexpr unsigned long LONG_PRESS_TIME = 750;
 
 const uint16_t ENCODER_DEBOUNCE = 3;
-
-static Entity* getActiveMapPlayer()
-{
-    switch (gameState)
-    {
-        case GAME_FOREST:
-            return getPlayerEntity(
-                forestEntities,
-                forestEntityCount);
-
-        case GAME_DUNGEON:
-            return getPlayerEntity(
-                dungeon.entities,
-                dungeon.entityCount);
-
-        default:
-            return nullptr;
-    }
-}
 
 bool encoderPressed()
 {
@@ -573,6 +557,14 @@ void handleMapButtons()
     //--------------------------------------------------
     if (buttonAPressed())
     {
+            // A dead monster at the normal facing cursor is a context
+            // interaction, not a reason to open the general menu.
+            if (tryInteractWithFacingEntity())
+            {
+                playSound(SoundEffect::MENU_SELECT);
+                return;
+            }
+
             openMenu(&mainMenu);
             menuState.redrawType = MENU_REDRAW_FULL;
             return;
@@ -641,6 +633,14 @@ void resetButtonStates()
 
 void handleButtons()
 {
+    // The dynamic inventory and corpse-loot screens own the encoder and A/B
+    // controls while open, before global long-press behavior can intervene.
+    if (isInventoryMenuOpen())
+    {
+        handleInventoryMenuButtons();
+        return;
+    }
+
     if ((gameState == GAME_TOWN ||
      gameState == GAME_FOREST ||
      gameState == GAME_DUNGEON) &&

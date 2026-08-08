@@ -20,6 +20,7 @@
 #include "dungeon/roomdraw.h"
 #include "dungeon/forest.h"
 #include "graphics/tiles.h"
+#include "input/inventorymenu.h"
 #include "input/menu.h"
 #include "town/town.h"
 
@@ -234,16 +235,7 @@ void drawMapCursor()
     {
         Entity* target = getSelectedAttackTarget();
 
-        if (target != nullptr)
-        {
-            tft.drawRect(
-                target->x * TILE_SIZE,
-                target->y * TILE_SIZE,
-                TILE_SIZE,
-                TILE_SIZE,
-                ST77XX_YELLOW);
-        }
-        else if (combat.attackType == COMBAT_ATTACK_MELEE)
+        if (combat.attackType == COMBAT_ATTACK_MELEE)
         {
             Entity* player = getPlayerEntity(
                 forestEntities,
@@ -263,6 +255,17 @@ void drawMapCursor()
                     TILE_SIZE,
                     ST77XX_YELLOW);
             }
+        }
+        else if (target != nullptr)
+        {
+            // Ranged attacks select the creature as a whole.  Outline its
+            // full footprint so a large target is clearly selectable.
+            tft.drawRect(
+                target->x * TILE_SIZE,
+                target->y * TILE_SIZE,
+                target->spriteWidth,
+                target->spriteHeight,
+                ST77XX_YELLOW);
         }
 
         return;
@@ -532,13 +535,7 @@ void redrawForestTile(int x, int y)
     {
         Entity* target = getSelectedAttackTarget();
 
-        if (target != nullptr && target->x == x && target->y == y)
-        {
-            tft.drawRect(x * TILE_SIZE, y * TILE_SIZE,
-                         TILE_SIZE, TILE_SIZE, ST77XX_YELLOW);
-        }
-        else if (target == nullptr &&
-                 combat.attackType == COMBAT_ATTACK_MELEE)
+        if (combat.attackType == COMBAT_ATTACK_MELEE)
         {
             Entity* player = getPlayerEntity(
                 forestEntities, forestEntityCount);
@@ -547,9 +544,17 @@ void redrawForestTile(int x, int y)
                 player->x + directionOffsets[moveDirection].dx == x &&
                 player->y + directionOffsets[moveDirection].dy == y)
             {
+                // Keep the cursor on the exact square selected by the
+                // player, even when that square is part of a larger sprite.
                 tft.drawRect(x * TILE_SIZE, y * TILE_SIZE,
                              TILE_SIZE, TILE_SIZE, ST77XX_YELLOW);
             }
+        }
+        else if (target != nullptr && entityOccupiesTile(*target, x, y))
+        {
+            tft.drawRect(target->x * TILE_SIZE, target->y * TILE_SIZE,
+                         target->spriteWidth, target->spriteHeight,
+                         ST77XX_YELLOW);
         }
 
         return;
@@ -682,6 +687,26 @@ void markTileDirty(int x, int y)
     needsRedraw = true;
 }
 
+void markEntityFootprintDirtyAt(const Entity& entity, int x, int y)
+{
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(entity);
+         offsetY++)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(entity);
+             offsetX++)
+        {
+            markTileDirty(x + offsetX, y + offsetY);
+        }
+    }
+}
+
+void markEntityFootprintDirty(const Entity& entity)
+{
+    markEntityFootprintDirtyAt(entity, entity.x, entity.y);
+}
+
 
 void drawSpriteTransparent(
     int x,
@@ -737,6 +762,16 @@ void drawSpriteTransparent64(
 
 void refreshDisplay()
 {
+    // Inventory/loot is an opaque, full-screen modal. It owns the display
+    // until it closes, at which point it schedules a normal full map redraw.
+    if (isInventoryMenuOpen())
+    {
+        drawInventoryMenu();
+        redrawType = REDRAW_NONE;
+        needsRedraw = false;
+        return;
+    }
+
     // The sheet is an overlay-independent full-screen view. Drawing it here
     // lets both the menu action and the encoder long-press work from every
     // map state, even when no map redraw has been requested.

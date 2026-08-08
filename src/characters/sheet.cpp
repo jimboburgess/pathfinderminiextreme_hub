@@ -9,6 +9,7 @@
 #include "data/entityspawn.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/forest.h"
+#include <cstdio>
 #include <cstring>
 
 
@@ -102,11 +103,20 @@ static void drawInventoryView()
 
     for (uint8_t i = 0; i < currentCharacter->inventory.itemCount; i++)
     {
-        const Item* item = getItem(currentCharacter->inventory.items[i]);
+        const InventorySlot& slot = currentCharacter->inventory.slots[i];
+        const Item* item = getItem(slot.item);
 
         if (item != nullptr)
         {
             drawText(5, y, item->name);
+
+            if (slot.quantity > 1)
+            {
+                char quantity[8];
+                snprintf(quantity, sizeof(quantity), "x%u", slot.quantity);
+                drawText(200, y, quantity);
+            }
+
             y += 12;
         }
     }
@@ -221,7 +231,17 @@ void drawCharacterSheet()
     // Header
     //--------------------------------------------------
 
-    drawText(70, y, getCharacterClassName(currentCharacter->characterClass));
+    drawText(LEFT_X, y,
+             getCharacterClassName(currentCharacter->characterClass));
+
+    char xpText[32];
+    uint32_t nextLevelXP = currentCharacter->xp +
+                           getExperienceToNextLevel(*currentCharacter);
+
+    snprintf(xpText, sizeof(xpText), "XP %lu/%lu",
+             static_cast<unsigned long>(currentCharacter->xp),
+             static_cast<unsigned long>(nextLevelXP));
+    drawText(75, y, xpText);
     y += 16;
 
     drawDivider(y);
@@ -240,9 +260,6 @@ void drawCharacterSheet()
     y += 12;
 
     drawLabelValue(LEFT_X, VALUE_X, y, "Level", currentCharacter->level);
-    y += 12;
-
-    drawLabelValue(LEFT_X, VALUE_X, y, "XP", currentCharacter->xp);
     y += 18;
 
     //--------------------------------------------------

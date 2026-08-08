@@ -501,53 +501,216 @@ bool unequipItem(Character& character, EquipmentSlot slot)
     return true;
 }
 
-bool addItem(Character& character, ItemID item)
+static bool isValidInventoryItem(ItemID item)
 {
-    if (inventoryFull(character))
+    return item > ITEM_NONE && item < ITEM_COUNT && getItem(item) != nullptr;
+}
+
+static bool isStackableItem(ItemID item)
+{
+    const Item* itemInfo = getItem(item);
+
+    return itemInfo != nullptr && itemInfo->stackable;
+}
+
+void clearInventory(InventoryData& inventory)
+{
+    for (uint8_t i = 0; i < MAX_INVENTORY; i++)
+    {
+        inventory.slots[i].item = ITEM_NONE;
+        inventory.slots[i].quantity = 0;
+    }
+
+    inventory.itemCount = 0;
+}
+
+const InventorySlot* getInventorySlot(
+    const InventoryData& inventory,
+    uint8_t index)
+{
+    return index < inventory.itemCount ? &inventory.slots[index] : nullptr;
+}
+
+InventorySlot* getInventorySlot(InventoryData& inventory, uint8_t index)
+{
+    return index < inventory.itemCount ? &inventory.slots[index] : nullptr;
+}
+
+uint16_t getItemQuantity(const InventoryData& inventory, ItemID item)
+{
+    return getItemQuantity(inventory.slots, inventory.itemCount, item);
+}
+
+uint16_t getItemQuantity(
+    const InventorySlot slots[],
+    uint8_t itemCount,
+    ItemID item)
+{
+    uint16_t quantity = 0;
+
+    for (uint8_t i = 0; i < itemCount; i++)
+    {
+        const InventorySlot& slot = slots[i];
+
+        if (slot.item == item)
+            quantity += slot.quantity;
+    }
+
+    return quantity;
+}
+
+bool inventoryFull(const InventoryData& inventory)
+{
+    return inventory.itemCount >= MAX_INVENTORY;
+}
+
+bool addInventoryItem(
+    InventoryData& inventory,
+    ItemID item,
+    uint8_t quantity)
+{
+    return addItemToSlots(
+        inventory.slots,
+        inventory.itemCount,
+        MAX_INVENTORY,
+        item,
+        quantity);
+}
+
+bool addItemToSlots(
+    InventorySlot slots[],
+    uint8_t& itemCount,
+    uint8_t capacity,
+    ItemID item,
+    uint8_t quantity)
+{
+    if (!isValidInventoryItem(item) || quantity == 0 ||
+        itemCount > capacity)
+    {
+        return false;
+    }
+
+    if (isStackableItem(item))
+    {
+        for (uint8_t i = 0; i < itemCount; i++)
+        {
+            InventorySlot& slot = slots[i];
+
+            if (slot.item != item)
+                continue;
+
+            if (quantity > UINT8_MAX - slot.quantity)
+                return false;
+
+            slot.quantity += quantity;
+            return true;
+        }
+
+        if (itemCount >= capacity)
+            return false;
+
+        InventorySlot& slot = slots[itemCount++];
+        slot.item = item;
+        slot.quantity = quantity;
+        return true;
+    }
+
+    if (quantity > capacity - itemCount)
         return false;
 
-    character.inventory.items[character.inventory.itemCount] = item;
-    character.inventory.itemCount++;
+    for (uint8_t i = 0; i < quantity; i++)
+    {
+        InventorySlot& slot = slots[itemCount++];
+        slot.item = item;
+        slot.quantity = 1;
+    }
 
     return true;
 }
 
-bool removeItem(Character& character, ItemID item)
+bool removeInventoryItem(
+    InventoryData& inventory,
+    ItemID item,
+    uint8_t quantity)
 {
-    for (uint8_t i = 0; i < character.inventory.itemCount; i++)
+    return removeItemFromSlots(
+        inventory.slots,
+        inventory.itemCount,
+        MAX_INVENTORY,
+        item,
+        quantity);
+}
+
+bool removeItemFromSlots(
+    InventorySlot slots[],
+    uint8_t& itemCount,
+    uint8_t capacity,
+    ItemID item,
+    uint8_t quantity)
+{
+    if (!isValidInventoryItem(item) || quantity == 0 ||
+        itemCount > capacity ||
+        getItemQuantity(slots, itemCount, item) < quantity)
     {
-        if (character.inventory.items[i] == item)
-        {
-            for (uint8_t j = i; j < character.inventory.itemCount - 1; j++)
-            {
-                character.inventory.items[j] =
-                    character.inventory.items[j + 1];
-            }
-
-            character.inventory.itemCount--;
-            character.inventory.items[character.inventory.itemCount] = ITEM_NONE;
-
-            return true;
-        }
+        return false;
     }
 
-    return false;
+    for (uint8_t i = 0; i < itemCount && quantity > 0;)
+    {
+        InventorySlot& slot = slots[i];
+
+        if (slot.item != item)
+        {
+            i++;
+            continue;
+        }
+
+        uint8_t removed = slot.quantity < quantity
+            ? slot.quantity
+            : quantity;
+        slot.quantity -= removed;
+        quantity -= removed;
+
+        if (slot.quantity > 0)
+        {
+            i++;
+            continue;
+        }
+
+        for (uint8_t j = i; j + 1 < itemCount; j++)
+            slots[j] = slots[j + 1];
+
+        itemCount--;
+        slots[itemCount].item = ITEM_NONE;
+        slots[itemCount].quantity = 0;
+    }
+
+    return true;
+}
+
+bool addItem(Character& character, ItemID item, uint8_t quantity)
+{
+    return addInventoryItem(character.inventory, item, quantity);
+}
+
+bool removeItem(Character& character, ItemID item, uint8_t quantity)
+{
+    return removeInventoryItem(character.inventory, item, quantity);
 }
 
 bool hasItem(const Character& character, ItemID item)
 {
-    for (uint8_t i = 0; i < character.inventory.itemCount; i++)
-    {
-        if (character.inventory.items[i] == item)
-            return true;
-    }
+    return getItemQuantity(character.inventory, item) > 0;
+}
 
-    return false;
+uint16_t getItemQuantity(const Character& character, ItemID item)
+{
+    return getItemQuantity(character.inventory, item);
 }
 
 bool inventoryFull(const Character& character)
 {
-    return character.inventory.itemCount >= MAX_INVENTORY;
+    return inventoryFull(character.inventory);
 }
 
 ItemID getEquippedItem(const Character& character, EquipmentSlot slot)

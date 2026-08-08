@@ -40,6 +40,7 @@ enum class SoundEffect : uint8_t
 
     // Combat
     ATTACK,
+    BOW_FIRE,
     MISS,
     CRIT,
     CRIT_FAIL,

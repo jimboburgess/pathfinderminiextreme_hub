@@ -27,6 +27,8 @@ void drawForestTile(int x, int y);
 void redrawForestTile(int x, int y);
 
 void markTileDirty(int x, int y);
+void markEntityFootprintDirty(const Entity& entity);
+void markEntityFootprintDirtyAt(const Entity& entity, int x, int y);
 void redrawDirtyTiles();
 
 const uint8_t MAX_DIRTY_TILES = 32;

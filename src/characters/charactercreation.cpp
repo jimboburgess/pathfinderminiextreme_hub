@@ -133,13 +133,7 @@ static void giveStartingEquipment(Character &character,
         character.equipment.equipped[i] = ITEM_NONE;
     }
 
-    // Clear inventory
-    for (int i = 0; i < MAX_INVENTORY; i++)
-    {
-        character.inventory.items[i] = ITEM_NONE;
-    }
-
-    character.inventory.itemCount = 0;
+    clearInventory(character.inventory);
 
     const ClassStartingEquipment& gear = startingEquipment[characterClass];
 

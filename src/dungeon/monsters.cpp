@@ -255,3 +255,21 @@ uint16_t getMonsterMaxHP(const Monster& monster)
     return hp;
 }
 
+uint32_t getExperienceAward(ChallengeRating challengeRating)
+{
+    // Pathfinder Table: Experience Point Awards, Total XP column.
+    switch (challengeRating)
+    {
+        case CR_ONE_EIGHTH: return 50;
+        case CR_ONE_QUARTER: return 100;
+        case CR_ONE_THIRD:   return 135;
+        case CR_ONE_HALF:    return 200;
+        case CR_ONE:         return 400;
+        case CR_TWO:         return 600;
+        case CR_THREE:       return 800;
+        case CR_FOUR:        return 1200;
+        case CR_FIVE:        return 1600;
+        default:             return 0;
+    }
+}
+

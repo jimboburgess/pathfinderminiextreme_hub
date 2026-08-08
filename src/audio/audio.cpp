@@ -201,6 +201,15 @@ const Note attackSound[] =
     END_SOUND
 };
 
+// A short descending pluck for bow shots.
+const Note bowFireSound[] =
+{
+    {2000, 12},
+    {1550, 14},
+    {1100, 28},
+    END_SOUND
+};
+
 const Note missSound[] =
 {
     {900, 20},
@@ -429,6 +438,7 @@ potionSound,
 defendSound,
 
 attackSound,
+bowFireSound,
 missSound,
 critSound,
 critFailSound,
@@ -456,6 +466,11 @@ questCompleteSound,
 victorySound,
 gameOverSound
 };
+
+static_assert(
+    sizeof(soundTable) / sizeof(soundTable[0]) ==
+        static_cast<uint8_t>(SoundEffect::COUNT),
+    "SoundEffect and soundTable are out of sync.");
 
 void initAudio() {
   pinMode(PIEZO_PIN, OUTPUT);

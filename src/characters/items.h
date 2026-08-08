@@ -14,7 +14,7 @@
 // Items IDs
 //==================================================
 
-enum ItemID
+enum ItemID : uint8_t
 {
     ITEM_NONE = 0,
 
@@ -187,6 +187,9 @@ enum ItemID
 
     ITEM_COUNT
 };
+
+static_assert(ITEM_COUNT <= UINT8_MAX,
+              "ItemID no longer fits in its compact storage type.");
 
 enum ItemIcon
 {

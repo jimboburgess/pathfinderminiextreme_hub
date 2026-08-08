@@ -5,8 +5,7 @@
 #ifndef MONSTER_SCRIPTS_H
 #define MONSTER_SCRIPTS_H
 
-#include "characters/characters.h"
-#include "combat.h"
+struct Entity;
 
 void runMonsterScript(Entity* monster);
 
@@ -24,14 +23,9 @@ void runDebugScript(Entity* monster);
 Entity* chooseTarget(Entity* monster);
 
 void performStandardAction(Entity* monster);
-void keepDistance(Entity* monster);
+bool keepDistance(Entity* monster);
 void performRangedAttack(Entity* monster);
-bool enemyVisible(Entity* monster);
-void guardArea(Entity* monster);
-void flee(Entity* monster);
-Entity* chooseTarget(Entity* monster);
-
-void performStandardAction(Entity* monster);
+bool isMonsterReadyForAction(Entity* monster);
 
 //==================================================
 // Movement

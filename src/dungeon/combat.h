@@ -2,14 +2,10 @@
 #define PATHFINDERMINIEXTREME_025_COMBAT_H
 
 #include <Arduino.h>
-#include <algorithm>
-#include <stdlib.h>
 
-#include "characters/characters.h"
 #include "dungeon.h"
-#include "forest.h"
-#include "graphics/tiles.h"
-#include "monsterScripts.h"
+
+struct Entity;
 
 //==================================================
 // Combat Constants
@@ -65,6 +61,7 @@ struct Combat
     uint8_t currentTurnIndex = 0;
 
     uint8_t combatRound = 0;
+    bool experienceAwarded = false;
 
     //--------------------------------------------------
     // Player Input
@@ -122,10 +119,6 @@ void checkForCombat();
 
 void findCombatants();
 
-bool hasLineOfSight(int x1, int y1, int x2, int y2);
-
-bool blocksSight(TileType tile);
-
 //==================================================
 // Combat Startup
 //==================================================
@@ -145,8 +138,6 @@ Entity* getCurrentCombatant();
 bool isPlayerTurn();
 
 void announceTurn(Entity* entity);
-
-void runCombatTurn(Entity* entity);
 
 void nextTurn();
 
@@ -178,7 +169,10 @@ void cancelPlayerAttack();
 // Monster Attacks
 //==================================================
 
-void beginMonsterAttack(Entity* monster, Entity* target);
+void beginMonsterAttack(
+    Entity* monster,
+    Entity* target,
+    CombatAttackType attackType = COMBAT_ATTACK_MELEE);
 bool isMonsterAttackResolving();
 
 //==================================================

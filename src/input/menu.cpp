@@ -11,6 +11,7 @@
 #include "data/entityspawn.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/forest.h"
+#include "input/inventorymenu.h"
 
 MenuState menuState =
 {
@@ -679,7 +680,7 @@ void menuActivate()
         case MENU_INVENTORY:
 
             closeMenu();
-            openCharacterView(CHARACTER_VIEW_INVENTORY);
+            openPlayerInventoryMenu();
             break;
 
         case MENU_EQUIPMENT:
@@ -1134,7 +1135,10 @@ bool isMenuItemVisible(MenuAction action)
             return hasSpecialAbilities(*character);
 
         case MENU_USE_ITEM:
-            return character->inventory.itemCount > 0;
+            return character->inventory.itemCount > 0 &&
+                   (!combat.active ||
+                    (isPlayerCombatTurn() &&
+                     !getCurrentCombatant()->turn.standardActionUsed));
 
         case MENU_DOUBLE_MOVE:
             return isPlayerCombatTurn() &&

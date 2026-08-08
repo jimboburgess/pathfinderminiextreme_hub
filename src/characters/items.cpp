@@ -109,29 +109,29 @@ const Item itemDatabase[] =
 	// Potions
 	// ======================================================
 
-	{ "Potion of Cure Light Wounds",      ITEMTYPE_POTION, 0, 50,   1, ICON_POTION, false, true, RARITY_COMMON,   THEME_ANY,    "Restores a small amount of health." },
-	{ "Potion of Cure Moderate Wounds",   ITEMTYPE_POTION, 1, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Restores a moderate amount of health." },
-	{ "Potion of Cure Serious Wounds",    ITEMTYPE_POTION, 2, 750,  1, ICON_POTION, false, true, RARITY_RARE,      THEME_ANY,    "Restores a large amount of health." },
-	{ "Potion of Cure Critical Wounds",   ITEMTYPE_POTION, 3, 1400, 1, ICON_POTION, false, true, RARITY_EPIC,      THEME_ANY,    "Restores a massive amount of health." },
+	{ "Potion of Cure Light Wounds",      ITEMTYPE_POTION, 0, 50,   1, ICON_POTION, true, true, RARITY_COMMON,   THEME_ANY,    "Restores a small amount of health." },
+	{ "Potion of Cure Moderate Wounds",   ITEMTYPE_POTION, 1, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Restores a moderate amount of health." },
+	{ "Potion of Cure Serious Wounds",    ITEMTYPE_POTION, 2, 750,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_ANY,    "Restores a large amount of health." },
+	{ "Potion of Cure Critical Wounds",   ITEMTYPE_POTION, 3, 1400, 1, ICON_POTION, true, true, RARITY_EPIC,      THEME_ANY,    "Restores a massive amount of health." },
 
-	{ "Potion of Bull's Strength",         ITEMTYPE_POTION, 4, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Strength." },
-	{ "Potion of Cat's Grace",             ITEMTYPE_POTION, 5, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Dexterity." },
-	{ "Potion of Bear's Endurance",        ITEMTYPE_POTION, 6, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Constitution." },
-	{ "Potion of Fox's Cunning",           ITEMTYPE_POTION, 7, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Intelligence." },
-	{ "Potion of Owl's Wisdom",            ITEMTYPE_POTION, 8, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Wisdom." },
-	{ "Potion of Eagle's Splendor",        ITEMTYPE_POTION, 9, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Charisma." },
+	{ "Potion of Bull's Strength",         ITEMTYPE_POTION, 4, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Strength." },
+	{ "Potion of Cat's Grace",             ITEMTYPE_POTION, 5, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Dexterity." },
+	{ "Potion of Bear's Endurance",        ITEMTYPE_POTION, 6, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Constitution." },
+	{ "Potion of Fox's Cunning",           ITEMTYPE_POTION, 7, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Intelligence." },
+	{ "Potion of Owl's Wisdom",            ITEMTYPE_POTION, 8, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Wisdom." },
+	{ "Potion of Eagle's Splendor",        ITEMTYPE_POTION, 9, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Temporarily increases Charisma." },
 
-	{ "Potion of Barkskin",                ITEMTYPE_POTION,10, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,     "Temporarily hardens the skin." },
-	{ "Potion of Shield of Faith",         ITEMTYPE_POTION,11, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_ANY,    "Grants a divine protection bonus." },
-	{ "Potion of Resist Energy",           ITEMTYPE_POTION,12, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_DRAGON,     "Reduces elemental damage." },
-	{ "Potion of Protection from Evil",   ITEMTYPE_POTION,13, 300,  1, ICON_POTION, false, true, RARITY_UNCOMMON, THEME_DARK_MAGIC, "Provides protection against evil creatures." },
-	{ "Potion of Remove Fear",             ITEMTYPE_POTION,14, 50,   1, ICON_POTION, false, true, RARITY_COMMON,   THEME_ANY,    "Removes fear effects." },
+	{ "Potion of Barkskin",                ITEMTYPE_POTION,10, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,     "Temporarily hardens the skin." },
+	{ "Potion of Shield of Faith",         ITEMTYPE_POTION,11, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Grants a divine protection bonus." },
+	{ "Potion of Resist Energy",           ITEMTYPE_POTION,12, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_DRAGON,     "Reduces elemental damage." },
+	{ "Potion of Protection from Evil",   ITEMTYPE_POTION,13, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_DARK_MAGIC, "Provides protection against evil creatures." },
+	{ "Potion of Remove Fear",             ITEMTYPE_POTION,14, 50,   1, ICON_POTION, true, true, RARITY_COMMON,   THEME_ANY,    "Removes fear effects." },
 
-	{ "Potion of Invisibility",            ITEMTYPE_POTION,15, 300,  1, ICON_POTION, false, true, RARITY_RARE,      THEME_ANY,    "Become invisible for a short time." },
-	{ "Potion of Haste",                   ITEMTYPE_POTION,16, 750,  1, ICON_POTION, false, true, RARITY_RARE,      THEME_ANY,    "Move and act more quickly." },
-	{ "Potion of Heroism",                 ITEMTYPE_POTION,17,1000,  1, ICON_POTION, false, true, RARITY_RARE,      THEME_ANY,    "Grants courage and combat skill." },
-	{ "Potion of Fly",                     ITEMTYPE_POTION,18, 750,  1, ICON_POTION, false, true, RARITY_RARE,      THEME_DRAGON,     "Allows the drinker to fly." },
-	{ "Potion of Water Breathing",         ITEMTYPE_POTION,19, 750,  1, ICON_POTION, false, true, RARITY_RARE,      THEME_ANY,    "Allows breathing underwater." },
+	{ "Potion of Invisibility",            ITEMTYPE_POTION,15, 300,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_ANY,    "Become invisible for a short time." },
+	{ "Potion of Haste",                   ITEMTYPE_POTION,16, 750,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_ANY,    "Move and act more quickly." },
+	{ "Potion of Heroism",                 ITEMTYPE_POTION,17,1000,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_ANY,    "Grants courage and combat skill." },
+	{ "Potion of Fly",                     ITEMTYPE_POTION,18, 750,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_DRAGON,     "Allows the drinker to fly." },
+	{ "Potion of Water Breathing",         ITEMTYPE_POTION,19, 750,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_ANY,    "Allows breathing underwater." },
 
 
 	// ======================================================
@@ -329,7 +329,7 @@ const Shield shieldDatabase[] =
 
 const Item* getItem(ItemID item)
 {
-	if (item < ITEM_NONE)
+	if (item < ITEM_NONE || item >= ITEM_COUNT)
 		return nullptr;
 
 	return &itemDatabase[item];
@@ -339,7 +339,7 @@ const Weapon* getWeapon(ItemID item)
 {
 	const Item* itemInfo = getItem(item);
 
-	if (itemInfo->type != ITEMTYPE_WEAPON)
+	if (itemInfo == nullptr || itemInfo->type != ITEMTYPE_WEAPON)
 		return nullptr;
 
 	return &weaponDatabase[itemInfo->effectIndex];
@@ -349,7 +349,7 @@ const Armor* getArmor(ItemID item)
 {
 	const Item* itemInfo = getItem(item);
 
-	if (itemInfo->type != ITEMTYPE_ARMOR)
+	if (itemInfo == nullptr || itemInfo->type != ITEMTYPE_ARMOR)
 		return nullptr;
 
 	return &armorDatabase[itemInfo->effectIndex];
@@ -359,7 +359,7 @@ const Shield* getShield(ItemID item)
 {
 	const Item* itemInfo = getItem(item);
 
-	if (itemInfo->type != ITEMTYPE_SHIELD)
+	if (itemInfo == nullptr || itemInfo->type != ITEMTYPE_SHIELD)
 		return nullptr;
 
 	return &shieldDatabase[itemInfo->effectIndex];

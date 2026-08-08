@@ -175,10 +175,19 @@ struct EquipmentData
     ItemID equipped[NUM_EQUIPMENT_SLOTS];
 };
 
+struct InventorySlot
+{
+    ItemID item = ITEM_NONE;
+    uint8_t quantity = 0;
+};
+
+static_assert(sizeof(InventorySlot) == 2,
+              "InventorySlot must remain compact for entity storage.");
+
 struct InventoryData
 {
-    ItemID items[MAX_INVENTORY];
-    uint8_t itemCount;
+    InventorySlot slots[MAX_INVENTORY];
+    uint8_t itemCount = 0;
 };
 
 struct Character
@@ -316,11 +325,52 @@ bool equipItem(Character& character, ItemID item);
 
 bool unequipItem(Character& character, EquipmentSlot slot);
 
-bool addItem(Character& character, ItemID item);
+void clearInventory(InventoryData& inventory);
 
-bool removeItem(Character& character, ItemID item);
+const InventorySlot* getInventorySlot(const InventoryData& inventory,
+                                      uint8_t index);
+
+InventorySlot* getInventorySlot(InventoryData& inventory, uint8_t index);
+
+uint16_t getItemQuantity(const InventoryData& inventory, ItemID item);
+
+uint16_t getItemQuantity(const InventorySlot slots[],
+                         uint8_t itemCount,
+                         ItemID item);
+
+bool addItemToSlots(InventorySlot slots[],
+                    uint8_t& itemCount,
+                    uint8_t capacity,
+                    ItemID item,
+                    uint8_t quantity = 1);
+
+bool removeItemFromSlots(InventorySlot slots[],
+                         uint8_t& itemCount,
+                         uint8_t capacity,
+                         ItemID item,
+                         uint8_t quantity = 1);
+
+bool addInventoryItem(InventoryData& inventory,
+                      ItemID item,
+                      uint8_t quantity = 1);
+
+bool removeInventoryItem(InventoryData& inventory,
+                         ItemID item,
+                         uint8_t quantity = 1);
+
+bool inventoryFull(const InventoryData& inventory);
+
+bool addItem(Character& character,
+             ItemID item,
+             uint8_t quantity = 1);
+
+bool removeItem(Character& character,
+                ItemID item,
+                uint8_t quantity = 1);
 
 bool hasItem(const Character& character, ItemID item);
+
+uint16_t getItemQuantity(const Character& character, ItemID item);
 
 bool inventoryFull(const Character& character);
 
