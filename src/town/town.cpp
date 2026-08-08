@@ -3,6 +3,7 @@
 #include "characters/characters.h"
 #include "data/game.h"
 #include "graphics/messagelog.h"
+#include "input/buttons.h"
 
 constexpr unsigned long REST_SLEEP_TIME_MS = 2800;
 constexpr unsigned long REST_RESULT_TIME_MS = 1800;
@@ -17,6 +18,7 @@ void openTownHome()
 {
     townHomeOpen = true;
     townHomeSelection = TOWN_HOME_REST;
+    suppressEncoderSelectUntilRelease();
     needsRedraw = true;
 }
 

@@ -495,6 +495,7 @@ void openPlayerInventoryMenu()
     inventoryMenu.cursorIndex = 0;
     inventoryMenu.firstVisibleIndex = 0;
     clearInventoryStatus();
+    suppressEncoderSelectUntilRelease();
     needsRedraw = true;
 }
 
@@ -508,6 +509,7 @@ void openCorpseLootMenu(Entity& corpse)
     inventoryMenu.firstVisibleIndex = 0;
     clearInventoryStatus();
     clampInventorySelection();
+    suppressEncoderSelectUntilRelease();
     needsRedraw = true;
 }
 

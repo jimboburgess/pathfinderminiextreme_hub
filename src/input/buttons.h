@@ -30,6 +30,10 @@ bool buttonAPressed();
 bool buttonBPressed();
 bool encoderButtonLongPressed();
 
+// Stops the encoder's select switch from activating a freshly opened menu
+// with the same physical press that opened it.
+void suppressEncoderSelectUntilRelease();
+
 // Individual state handlers
 void handleStartButtons();
 void handleCharacterCreationButtons();

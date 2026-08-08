@@ -219,6 +219,7 @@ void openCharacterMenu()
 
     creationState = CCS_MENU;
     selectedMenu = MENU_ACCEPT;
+    suppressEncoderSelectUntilRelease();
     needsRedraw = true;
 }
 

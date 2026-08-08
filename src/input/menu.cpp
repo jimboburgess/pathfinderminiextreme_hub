@@ -547,6 +547,7 @@ void openMenu(const Menu* menu)
     menuState.redrawType = MENU_REDRAW_VISIBLE_ITEMS;
     menuState.isOpen = true;
 
+    suppressEncoderSelectUntilRelease();
     needsRedraw = true;     // <-- add this
 }
 
@@ -647,6 +648,7 @@ void menuActivate()
         menuState.firstVisibleIndex = 0;
 
         menuState.redrawType = MENU_REDRAW_FULL;
+        suppressEncoderSelectUntilRelease();
         needsRedraw = true;
 
         return;

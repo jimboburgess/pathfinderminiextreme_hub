@@ -29,18 +29,72 @@ bool selectLast = HIGH;
 bool aLast = HIGH;
 bool bLast = HIGH;
 
+bool encoderSelectReady = true;
+bool encoderSelectSuppressed = false;
+unsigned long encoderSelectReleasedAt = 0;
+unsigned long encoderSelectSuppressedAt = 0;
+
 unsigned long encoderPressStart = 0;
 bool encoderLongPressHandled = false;
 
 constexpr unsigned long LONG_PRESS_TIME = 750;
 
 const uint16_t ENCODER_DEBOUNCE = 3;
+constexpr unsigned long ENCODER_SELECT_RELEASE_DEBOUNCE_MS = 25;
+constexpr unsigned long ENCODER_MENU_OPEN_GUARD_MS = 200;
+
+void suppressEncoderSelectUntilRelease()
+{
+    bool now = digitalRead(ENCODER_SW);
+
+    // Require a stable release before the select switch can be armed again.
+    // This absorbs both a held click and its mechanical bounce.
+    selectLast = now;
+    encoderSelectReady = false;
+    encoderSelectSuppressed = true;
+    encoderSelectSuppressedAt = millis();
+
+    if (now == HIGH)
+        encoderSelectReleasedAt = encoderSelectSuppressedAt;
+}
 
 bool encoderPressed()
 {
     bool now = digitalRead(ENCODER_SW);
+    unsigned long nowMillis = millis();
 
-    bool pressed = (now == LOW && selectLast == HIGH);
+    if (now == HIGH)
+    {
+        if (selectLast == LOW)
+            encoderSelectReleasedAt = nowMillis;
+
+        if (!encoderSelectReady &&
+            nowMillis - encoderSelectReleasedAt >=
+                ENCODER_SELECT_RELEASE_DEBOUNCE_MS)
+        {
+            encoderSelectReady = true;
+        }
+    }
+
+    if (encoderSelectSuppressed)
+    {
+        selectLast = now;
+
+        if (now == HIGH && encoderSelectReady &&
+            nowMillis - encoderSelectSuppressedAt >=
+                ENCODER_MENU_OPEN_GUARD_MS)
+        {
+            encoderSelectSuppressed = false;
+        }
+
+        return false;
+    }
+
+    bool pressed = now == LOW && selectLast == HIGH &&
+                   encoderSelectReady;
+
+    if (pressed)
+        encoderSelectReady = false;
 
     selectLast = now;
 
@@ -71,6 +125,13 @@ bool buttonBPressed()
 
 bool encoderButtonLongPressed()
 {
+    if (encoderSelectSuppressed)
+    {
+        encoderPressStart = 0;
+        encoderLongPressHandled = false;
+        return false;
+    }
+
     bool pressed = (digitalRead(ENCODER_SW) == LOW);
 
     if (pressed)
@@ -629,6 +690,10 @@ void resetButtonStates()
     bLast = digitalRead(BUTTON_B);
 
     encoderLastMove = millis();
+    encoderSelectReady = selectLast == HIGH;
+    encoderSelectReleasedAt = encoderLastMove;
+    encoderSelectSuppressed = false;
+    encoderSelectSuppressedAt = 0;
 }
 
 void handleButtons()
