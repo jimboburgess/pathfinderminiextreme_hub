@@ -191,6 +191,50 @@ enum ItemID : uint8_t
 static_assert(ITEM_COUNT <= UINT8_MAX,
               "ItemID no longer fits in its compact storage type.");
 
+enum WeaponEnhancement : uint8_t
+{
+    WEAPON_ENHANCEMENT_NONE,
+    WEAPON_ENHANCEMENT_FLAMING,
+    WEAPON_ENHANCEMENT_FROST,
+    WEAPON_ENHANCEMENT_SHOCK
+};
+
+struct ItemInstance
+{
+    ItemID itemID;
+    int8_t enhancementBonus;
+    WeaponEnhancement weaponEnhancement;
+};
+
+static_assert(sizeof(ItemInstance) == 3,
+              "ItemInstance must remain compact for entity storage.");
+
+inline ItemInstance makeItemInstance(ItemID itemID)
+{
+    ItemInstance item =
+    {
+        itemID,
+        0,
+        WEAPON_ENHANCEMENT_NONE
+    };
+
+    return item;
+}
+
+inline bool operator==(const ItemInstance& left,
+                       const ItemInstance& right)
+{
+    return left.itemID == right.itemID &&
+           left.enhancementBonus == right.enhancementBonus &&
+           left.weaponEnhancement == right.weaponEnhancement;
+}
+
+inline bool operator!=(const ItemInstance& left,
+                       const ItemInstance& right)
+{
+    return !(left == right);
+}
+
 enum ItemIcon
 {
     ICON_NONE,

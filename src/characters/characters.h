@@ -178,16 +178,21 @@ struct ClassAbilityData
 
 struct EquipmentData
 {
-    ItemID equipped[NUM_EQUIPMENT_SLOTS];
+    ItemInstance equipped[NUM_EQUIPMENT_SLOTS];
 };
 
 struct InventorySlot
 {
-    ItemID item = ITEM_NONE;
+    ItemInstance item =
+    {
+        ITEM_NONE,
+        0,
+        WEAPON_ENHANCEMENT_NONE
+    };
     uint8_t quantity = 0;
 };
 
-static_assert(sizeof(InventorySlot) == 2,
+static_assert(sizeof(InventorySlot) == 4,
               "InventorySlot must remain compact for entity storage.");
 
 struct InventoryData
@@ -355,6 +360,8 @@ bool canEquip(ItemID item);
 
 EquipmentSlot getEquipmentSlot(ItemID item);
 
+bool equipItem(Character& character, const ItemInstance& item);
+
 bool equipItem(Character& character, ItemID item);
 
 bool unequipItem(Character& character, EquipmentSlot slot);
@@ -368,9 +375,22 @@ InventorySlot* getInventorySlot(InventoryData& inventory, uint8_t index);
 
 uint16_t getItemQuantity(const InventoryData& inventory, ItemID item);
 
+uint16_t getItemQuantity(const InventoryData& inventory,
+                         const ItemInstance& item);
+
 uint16_t getItemQuantity(const InventorySlot slots[],
                          uint8_t itemCount,
                          ItemID item);
+
+uint16_t getItemQuantity(const InventorySlot slots[],
+                         uint8_t itemCount,
+                         const ItemInstance& item);
+
+bool addItemToSlots(InventorySlot slots[],
+                    uint8_t& itemCount,
+                    uint8_t capacity,
+                    const ItemInstance& item,
+                    uint8_t quantity = 1);
 
 bool addItemToSlots(InventorySlot slots[],
                     uint8_t& itemCount,
@@ -381,12 +401,26 @@ bool addItemToSlots(InventorySlot slots[],
 bool removeItemFromSlots(InventorySlot slots[],
                          uint8_t& itemCount,
                          uint8_t capacity,
+                         const ItemInstance& item,
+                         uint8_t quantity = 1);
+
+bool removeItemFromSlots(InventorySlot slots[],
+                         uint8_t& itemCount,
+                         uint8_t capacity,
                          ItemID item,
                          uint8_t quantity = 1);
 
 bool addInventoryItem(InventoryData& inventory,
+                      const ItemInstance& item,
+                      uint8_t quantity = 1);
+
+bool addInventoryItem(InventoryData& inventory,
                       ItemID item,
                       uint8_t quantity = 1);
+
+bool removeInventoryItem(InventoryData& inventory,
+                         const ItemInstance& item,
+                         uint8_t quantity = 1);
 
 bool removeInventoryItem(InventoryData& inventory,
                          ItemID item,
@@ -395,14 +429,27 @@ bool removeInventoryItem(InventoryData& inventory,
 bool inventoryFull(const InventoryData& inventory);
 
 bool addItem(Character& character,
+             const ItemInstance& item,
+             uint8_t quantity = 1);
+
+bool addItem(Character& character,
              ItemID item,
              uint8_t quantity = 1);
+
+bool removeItem(Character& character,
+                const ItemInstance& item,
+                uint8_t quantity = 1);
 
 bool removeItem(Character& character,
                 ItemID item,
                 uint8_t quantity = 1);
 
+bool hasItem(const Character& character, const ItemInstance& item);
+
 bool hasItem(const Character& character, ItemID item);
+
+uint16_t getItemQuantity(const Character& character,
+                         const ItemInstance& item);
 
 uint16_t getItemQuantity(const Character& character, ItemID item);
 

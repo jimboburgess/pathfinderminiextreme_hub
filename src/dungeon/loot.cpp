@@ -154,7 +154,7 @@ void clearCorpseLoot(LootData& loot)
 {
     for (uint8_t i = 0; i < MAX_CORPSE_LOOT_SLOTS; i++)
     {
-        loot.slots[i].item = ITEM_NONE;
+        loot.slots[i].item = makeItemInstance(ITEM_NONE);
         loot.slots[i].quantity = 0;
     }
 
@@ -341,7 +341,7 @@ bool takeCorpseLootItem(
     if (!corpseHasLoot(corpse) || slotIndex >= corpse.loot.itemCount)
         return false;
 
-    ItemID item = corpse.loot.slots[slotIndex].item;
+    ItemInstance item = corpse.loot.slots[slotIndex].item;
 
     if (!addItem(recipient, item))
         return false;

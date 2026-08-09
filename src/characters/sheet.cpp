@@ -104,7 +104,7 @@ static void drawInventoryView()
     for (uint8_t i = 0; i < currentCharacter->inventory.itemCount; i++)
     {
         const InventorySlot& slot = currentCharacter->inventory.slots[i];
-        const Item* item = getItem(slot.item);
+        const Item* item = getItem(slot.item.itemID);
 
         if (item != nullptr)
         {
@@ -144,9 +144,9 @@ static void drawEquipmentView()
     for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
     {
         EquipmentSlot slot = static_cast<EquipmentSlot>(i);
-        ItemID item = currentCharacter->equipment.equipped[slot];
+        const ItemInstance& item = currentCharacter->equipment.equipped[slot];
 
-        if (item == ITEM_NONE)
+        if (item.itemID == ITEM_NONE)
             continue;
 
         hasEquipment = true;

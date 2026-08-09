@@ -5,7 +5,8 @@
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 2;
+constexpr uint8_t SAVE_VERSION = 3;
+constexpr uint8_t ITEM_SLOT_SAVE_VERSION = 2;
 constexpr uint8_t LEGACY_SAVE_VERSION = 1;
 
 struct SavedCharacter
@@ -21,9 +22,44 @@ struct SavedCharacter
     InventoryData inventory;
 };
 
+// Version 2 stored compact ItemID-based equipment and inventory slots.
+// Preserve its exact layout so ordinary existing saves can be migrated to
+// ItemInstance values.
+struct ItemSlotEquipmentData
+{
+    ItemID equipped[NUM_EQUIPMENT_SLOTS];
+};
+
+struct ItemSlotInventorySlot
+{
+    ItemID item;
+    uint8_t quantity;
+};
+
+static_assert(sizeof(ItemSlotInventorySlot) == 2,
+              "Version 2 inventory slot layout changed.");
+
+struct ItemSlotInventoryData
+{
+    ItemSlotInventorySlot slots[MAX_INVENTORY];
+    uint8_t itemCount;
+};
+
+struct ItemSlotSavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    ItemSlotEquipmentData equipment;
+    ItemSlotInventoryData inventory;
+};
+
 // Version 1 wrote the old enum-based ItemID arrays directly. Keep this
-// layout only for migration; all new saves use the compact InventorySlot
-// representation above.
+// layout only for migration.
 struct LegacyEquipmentData
 {
     uint32_t equipped[NUM_EQUIPMENT_SLOTS];
@@ -67,6 +103,30 @@ bool isValidRawItemID(uint32_t rawItem, bool allowNone)
            getItem(static_cast<ItemID>(rawItem)) != nullptr;
 }
 
+bool isValidItemInstanceData(const ItemInstance& item, bool allowNone)
+{
+    if (item.itemID == ITEM_NONE)
+    {
+        return allowNone && item.enhancementBonus == 0 &&
+               item.weaponEnhancement == WEAPON_ENHANCEMENT_NONE;
+    }
+
+    return isValidRawItemID(item.itemID, false) &&
+           item.weaponEnhancement >= WEAPON_ENHANCEMENT_NONE &&
+           item.weaponEnhancement <= WEAPON_ENHANCEMENT_SHOCK;
+}
+
+bool isValidEquipment(const EquipmentData& equipment)
+{
+    for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
+    {
+        if (!isValidItemInstanceData(equipment.equipped[i], true))
+            return false;
+    }
+
+    return true;
+}
+
 bool isValidInventory(const InventoryData& inventory)
 {
     if (inventory.itemCount > MAX_INVENTORY)
@@ -75,9 +135,9 @@ bool isValidInventory(const InventoryData& inventory)
     for (uint8_t i = 0; i < inventory.itemCount; i++)
     {
         const InventorySlot& slot = inventory.slots[i];
-        const Item* item = getItem(slot.item);
+        const Item* item = getItem(slot.item.itemID);
 
-        if (slot.item == ITEM_NONE || item == nullptr ||
+        if (!isValidItemInstanceData(slot.item, false) || item == nullptr ||
             slot.quantity == 0 ||
             (!item->stackable && slot.quantity != 1))
         {
@@ -105,8 +165,47 @@ bool convertLegacyEquipment(const LegacyEquipmentData& source,
         if (!isValidRawItemID(source.equipped[i], true))
             return false;
 
-        destination.equipped[i] =
-            static_cast<ItemID>(source.equipped[i]);
+        destination.equipped[i] = makeItemInstance(
+            static_cast<ItemID>(source.equipped[i]));
+    }
+
+    return true;
+}
+
+bool convertItemSlotEquipment(const ItemSlotEquipmentData& source,
+                              EquipmentData& destination)
+{
+    for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
+    {
+        if (!isValidRawItemID(source.equipped[i], true))
+            return false;
+
+        destination.equipped[i] = makeItemInstance(source.equipped[i]);
+    }
+
+    return true;
+}
+
+bool convertItemSlotInventory(const ItemSlotInventoryData& source,
+                              InventoryData& destination)
+{
+    if (source.itemCount > MAX_INVENTORY)
+        return false;
+
+    clearInventory(destination);
+
+    for (uint8_t i = 0; i < source.itemCount; i++)
+    {
+        const ItemSlotInventorySlot& slot = source.slots[i];
+        const Item* item = getItem(slot.item);
+
+        if (!isValidRawItemID(slot.item, false) || item == nullptr ||
+            slot.quantity == 0 ||
+            (!item->stackable && slot.quantity != 1) ||
+            !addInventoryItem(destination, slot.item, slot.quantity))
+        {
+            return false;
+        }
     }
 
     return true;
@@ -144,6 +243,7 @@ bool restoreCharacter(Character& character,
                       const InventoryData& inventory)
 {
     if (!isValidCharacterData(characterClass, level, health) ||
+        !isValidEquipment(equipment) ||
         !isValidInventory(inventory))
     {
         return false;
@@ -238,6 +338,42 @@ bool loadGame(Character& character)
             saved.health,
             saved.equipment,
             saved.inventory);
+    }
+
+    if (savedSize == sizeof(ItemSlotSavedCharacter))
+    {
+        ItemSlotSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes(
+            "player", &saved, sizeof(saved));
+        preferences.end();
+
+        if (bytesRead != sizeof(saved) ||
+            saved.magic != SAVE_MAGIC ||
+            saved.version != ITEM_SLOT_SAVE_VERSION ||
+            !isValidCharacterData(
+                saved.characterClass, saved.level, saved.health))
+        {
+            return false;
+        }
+
+        EquipmentData equipment = {};
+        InventoryData inventory = {};
+
+        if (!convertItemSlotEquipment(saved.equipment, equipment) ||
+            !convertItemSlotInventory(saved.inventory, inventory))
+        {
+            return false;
+        }
+
+        return restoreCharacter(
+            character,
+            saved.characterClass,
+            saved.level,
+            saved.xp,
+            saved.abilities,
+            saved.health,
+            equipment,
+            inventory);
     }
 
     if (savedSize == sizeof(LegacySavedCharacter))

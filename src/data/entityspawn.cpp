@@ -103,23 +103,26 @@ Entity* spawnMonster(
     // Put the creature's weapon in the matching slot.  Ranged monster
     // scripts can then deliberately choose their ranged weapon instead of
     // treating a bow as a melee attack.
-    entity->character.equipment.equipped[SLOT_MELEE_WEAPON] = ITEM_NONE;
-    entity->character.equipment.equipped[SLOT_RANGED_WEAPON] = ITEM_NONE;
+    entity->character.equipment.equipped[SLOT_MELEE_WEAPON] =
+        makeItemInstance(ITEM_NONE);
+    entity->character.equipment.equipped[SLOT_RANGED_WEAPON] =
+        makeItemInstance(ITEM_NONE);
 
     const Weapon* weapon = getWeapon(monster->weapon);
 
     if (weapon != nullptr && weapon->type == WEAPON_RANGED)
     {
         entity->character.equipment.equipped[SLOT_RANGED_WEAPON] =
-            monster->weapon;
+            makeItemInstance(monster->weapon);
     }
     else
     {
         entity->character.equipment.equipped[SLOT_MELEE_WEAPON] =
-            monster->weapon;
+            makeItemInstance(monster->weapon);
     }
 
-    entity->character.equipment.equipped[SLOT_ARMOR] = monster->armor;
+    entity->character.equipment.equipped[SLOT_ARMOR] =
+        makeItemInstance(monster->armor);
 
     entity->character.health.maxHP = getMonsterMaxHP(*monster);
     entity->character.health.currentHP = entity->character.health.maxHP;

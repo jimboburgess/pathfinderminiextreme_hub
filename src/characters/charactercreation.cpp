@@ -130,17 +130,21 @@ static void giveStartingEquipment(Character &character,
     // Clear equipment
     for (int i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
     {
-        character.equipment.equipped[i] = ITEM_NONE;
+        character.equipment.equipped[i] = makeItemInstance(ITEM_NONE);
     }
 
     clearInventory(character.inventory);
 
     const ClassStartingEquipment& gear = startingEquipment[characterClass];
 
-    character.equipment.equipped[SLOT_MELEE_WEAPON]  = gear.meleeWeapon;
-    character.equipment.equipped[SLOT_RANGED_WEAPON] = gear.rangedWeapon;
-    character.equipment.equipped[SLOT_ARMOR]         = gear.armor;
-    character.equipment.equipped[SLOT_SHIELD]        = gear.shield;
+    character.equipment.equipped[SLOT_MELEE_WEAPON] =
+        makeItemInstance(gear.meleeWeapon);
+    character.equipment.equipped[SLOT_RANGED_WEAPON] =
+        makeItemInstance(gear.rangedWeapon);
+    character.equipment.equipped[SLOT_ARMOR] =
+        makeItemInstance(gear.armor);
+    character.equipment.equipped[SLOT_SHIELD] =
+        makeItemInstance(gear.shield);
 
     // TODO: Add starting potions once consumables are implemented.
 }

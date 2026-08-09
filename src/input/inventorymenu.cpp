@@ -266,7 +266,7 @@ void useSelectedPlayerItem()
         return;
     }
 
-    if (slot->item == ITEM_POTION_CURE_LIGHT_WOUNDS)
+    if (slot->item.itemID == ITEM_POTION_CURE_LIGHT_WOUNDS)
     {
         if (useCureLightWounds(*inventoryMenu.character))
             closeInventoryMenu();
@@ -274,7 +274,7 @@ void useSelectedPlayerItem()
         return;
     }
 
-    const Item* item = getItem(slot->item);
+    const Item* item = getItem(slot->item.itemID);
 
     if (item != nullptr && item->consumable)
         setInventoryStatus("That consumable is not ready yet.");
@@ -341,8 +341,7 @@ void takeSelectedCorpseLoot()
         return;
     }
 
-    ItemID itemID = slot->item;
-    const Item* item = getItem(itemID);
+    const Item* item = getItem(slot->item.itemID);
 
     if (!takeCorpseLootItem(*corpse, inventoryMenu.cursorIndex,
                              *inventoryMenu.character))
@@ -410,7 +409,8 @@ const char* getSelectedDescription()
         return "Take every item that fits in your pack.";
 
     const InventorySlot* slot = getSelectedSlot();
-    const Item* item = slot != nullptr ? getItem(slot->item) : nullptr;
+    const Item* item =
+        slot != nullptr ? getItem(slot->item.itemID) : nullptr;
 
     if (item != nullptr && item->description != nullptr)
         return item->description;
@@ -466,7 +466,8 @@ void drawInventoryRow(uint8_t row, uint8_t entryIndex)
         slot = &inventoryMenu.corpse->loot.slots[entryIndex];
     }
 
-    const Item* item = slot != nullptr ? getItem(slot->item) : nullptr;
+    const Item* item =
+        slot != nullptr ? getItem(slot->item.itemID) : nullptr;
     drawClippedText(item != nullptr ? item->name : "Unknown item", 26);
 
     if (slot != nullptr && slot->quantity > 1)

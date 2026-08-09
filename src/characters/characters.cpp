@@ -124,42 +124,44 @@ void restoreClassAbilityUses(Character& character)
 
 const Weapon* getEquippedMeleeWeapon(const Character& character)
 {
-    ItemID item = character.equipment.equipped[SLOT_MELEE_WEAPON];
+    const ItemInstance& item =
+        character.equipment.equipped[SLOT_MELEE_WEAPON];
 
-    if (item == ITEM_NONE)
+    if (item.itemID == ITEM_NONE)
         return nullptr;
 
-    return getWeapon(item);
+    return getWeapon(item.itemID);
 }
 
 const Weapon* getEquippedRangedWeapon(const Character& character)
 {
-    ItemID item = character.equipment.equipped[SLOT_RANGED_WEAPON];
+    const ItemInstance& item =
+        character.equipment.equipped[SLOT_RANGED_WEAPON];
 
-    if (item == ITEM_NONE)
+    if (item.itemID == ITEM_NONE)
         return nullptr;
 
-    return getWeapon(item);
+    return getWeapon(item.itemID);
 }
 
 const Armor* getEquippedArmor(const Character& character)
 {
-    ItemID item = character.equipment.equipped[SLOT_ARMOR];
+    const ItemInstance& item = character.equipment.equipped[SLOT_ARMOR];
 
-    if (item == ITEM_NONE)
+    if (item.itemID == ITEM_NONE)
         return nullptr;
 
-    return getArmor(item);
+    return getArmor(item.itemID);
 }
 
 const Shield* getEquippedShield(const Character& character)
 {
-    ItemID item = character.equipment.equipped[SLOT_SHIELD];
+    const ItemInstance& item = character.equipment.equipped[SLOT_SHIELD];
 
-    if (item == ITEM_NONE)
+    if (item.itemID == ITEM_NONE)
         return nullptr;
 
-    return getShield(item);
+    return getShield(item.itemID);
 }
 
 int getArmorClass(const Character& character, int dodgeBonus)
@@ -553,19 +555,19 @@ EquipmentSlot getEquipmentSlot(ItemID item)
     }
 }
 
-bool equipItem(Character& character, ItemID item)
+bool equipItem(Character& character, const ItemInstance& item)
 {
     if (!hasItem(character, item))
         return false;
 
-    EquipmentSlot slot = getEquipmentSlot(item);
+    EquipmentSlot slot = getEquipmentSlot(item.itemID);
 
     if (slot == NUM_EQUIPMENT_SLOTS)
         return false;
 
-    ItemID oldItem = character.equipment.equipped[slot];
+    ItemInstance oldItem = character.equipment.equipped[slot];
 
-    if (oldItem != ITEM_NONE)
+    if (oldItem.itemID != ITEM_NONE)
     {
         if (!addItem(character, oldItem))
             return false;
@@ -578,29 +580,50 @@ bool equipItem(Character& character, ItemID item)
     return true;
 }
 
+bool equipItem(Character& character, ItemID item)
+{
+    for (uint8_t i = 0; i < character.inventory.itemCount; i++)
+    {
+        const ItemInstance& instance = character.inventory.slots[i].item;
+
+        if (instance.itemID == item)
+            return equipItem(character, instance);
+    }
+
+    return false;
+}
+
 bool unequipItem(Character& character, EquipmentSlot slot)
 {
-    ItemID item = character.equipment.equipped[slot];
+    ItemInstance item = character.equipment.equipped[slot];
 
-    if (item == ITEM_NONE)
+    if (item.itemID == ITEM_NONE)
         return false;
 
     if (!addItem(character, item))
         return false;
 
-    character.equipment.equipped[slot] = ITEM_NONE;
+    character.equipment.equipped[slot] = makeItemInstance(ITEM_NONE);
 
     return true;
 }
 
-static bool isValidInventoryItem(ItemID item)
+static bool isValidWeaponEnhancement(WeaponEnhancement enhancement)
 {
-    return item > ITEM_NONE && item < ITEM_COUNT && getItem(item) != nullptr;
+    return enhancement >= WEAPON_ENHANCEMENT_NONE &&
+           enhancement <= WEAPON_ENHANCEMENT_SHOCK;
 }
 
-static bool isStackableItem(ItemID item)
+static bool isValidInventoryItem(const ItemInstance& item)
 {
-    const Item* itemInfo = getItem(item);
+    return item.itemID > ITEM_NONE && item.itemID < ITEM_COUNT &&
+           getItem(item.itemID) != nullptr &&
+           isValidWeaponEnhancement(item.weaponEnhancement);
+}
+
+static bool isStackableItem(const ItemInstance& item)
+{
+    const Item* itemInfo = getItem(item.itemID);
 
     return itemInfo != nullptr && itemInfo->stackable;
 }
@@ -609,7 +632,7 @@ void clearInventory(InventoryData& inventory)
 {
     for (uint8_t i = 0; i < MAX_INVENTORY; i++)
     {
-        inventory.slots[i].item = ITEM_NONE;
+        inventory.slots[i].item = makeItemInstance(ITEM_NONE);
         inventory.slots[i].quantity = 0;
     }
 
@@ -634,9 +657,34 @@ uint16_t getItemQuantity(const InventoryData& inventory, ItemID item)
 }
 
 uint16_t getItemQuantity(
+    const InventoryData& inventory,
+    const ItemInstance& item)
+{
+    return getItemQuantity(inventory.slots, inventory.itemCount, item);
+}
+
+uint16_t getItemQuantity(
     const InventorySlot slots[],
     uint8_t itemCount,
     ItemID item)
+{
+    uint16_t quantity = 0;
+
+    for (uint8_t i = 0; i < itemCount; i++)
+    {
+        const InventorySlot& slot = slots[i];
+
+        if (slot.item.itemID == item)
+            quantity += slot.quantity;
+    }
+
+    return quantity;
+}
+
+uint16_t getItemQuantity(
+    const InventorySlot slots[],
+    uint8_t itemCount,
+    const ItemInstance& item)
 {
     uint16_t quantity = 0;
 
@@ -658,7 +706,7 @@ bool inventoryFull(const InventoryData& inventory)
 
 bool addInventoryItem(
     InventoryData& inventory,
-    ItemID item,
+    const ItemInstance& item,
     uint8_t quantity)
 {
     return addItemToSlots(
@@ -669,11 +717,19 @@ bool addInventoryItem(
         quantity);
 }
 
+bool addInventoryItem(
+    InventoryData& inventory,
+    ItemID item,
+    uint8_t quantity)
+{
+    return addInventoryItem(inventory, makeItemInstance(item), quantity);
+}
+
 bool addItemToSlots(
     InventorySlot slots[],
     uint8_t& itemCount,
     uint8_t capacity,
-    ItemID item,
+    const ItemInstance& item,
     uint8_t quantity)
 {
     if (!isValidInventoryItem(item) || quantity == 0 ||
@@ -720,6 +776,34 @@ bool addItemToSlots(
     return true;
 }
 
+bool addItemToSlots(
+    InventorySlot slots[],
+    uint8_t& itemCount,
+    uint8_t capacity,
+    ItemID item,
+    uint8_t quantity)
+{
+    return addItemToSlots(
+        slots,
+        itemCount,
+        capacity,
+        makeItemInstance(item),
+        quantity);
+}
+
+bool removeInventoryItem(
+    InventoryData& inventory,
+    const ItemInstance& item,
+    uint8_t quantity)
+{
+    return removeItemFromSlots(
+        inventory.slots,
+        inventory.itemCount,
+        MAX_INVENTORY,
+        item,
+        quantity);
+}
+
 bool removeInventoryItem(
     InventoryData& inventory,
     ItemID item,
@@ -733,25 +817,35 @@ bool removeInventoryItem(
         quantity);
 }
 
-bool removeItemFromSlots(
+static bool removeItemFromSlotsInternal(
     InventorySlot slots[],
     uint8_t& itemCount,
     uint8_t capacity,
-    ItemID item,
+    const ItemInstance& item,
+    bool matchExactInstance,
     uint8_t quantity)
 {
-    if (!isValidInventoryItem(item) || quantity == 0 ||
-        itemCount > capacity ||
-        getItemQuantity(slots, itemCount, item) < quantity)
+    if (!isValidInventoryItem(item) || quantity == 0 || itemCount > capacity)
     {
         return false;
     }
+
+    uint16_t available = matchExactInstance
+        ? getItemQuantity(slots, itemCount, item)
+        : getItemQuantity(slots, itemCount, item.itemID);
+
+    if (available < quantity)
+        return false;
 
     for (uint8_t i = 0; i < itemCount && quantity > 0;)
     {
         InventorySlot& slot = slots[i];
 
-        if (slot.item != item)
+        bool matches = matchExactInstance
+            ? slot.item == item
+            : slot.item.itemID == item.itemID;
+
+        if (!matches)
         {
             i++;
             continue;
@@ -773,11 +867,45 @@ bool removeItemFromSlots(
             slots[j] = slots[j + 1];
 
         itemCount--;
-        slots[itemCount].item = ITEM_NONE;
+        slots[itemCount].item = makeItemInstance(ITEM_NONE);
         slots[itemCount].quantity = 0;
     }
 
     return true;
+}
+
+bool removeItemFromSlots(
+    InventorySlot slots[],
+    uint8_t& itemCount,
+    uint8_t capacity,
+    const ItemInstance& item,
+    uint8_t quantity)
+{
+    return removeItemFromSlotsInternal(
+        slots, itemCount, capacity, item, true, quantity);
+}
+
+bool removeItemFromSlots(
+    InventorySlot slots[],
+    uint8_t& itemCount,
+    uint8_t capacity,
+    ItemID item,
+    uint8_t quantity)
+{
+    return removeItemFromSlotsInternal(
+        slots,
+        itemCount,
+        capacity,
+        makeItemInstance(item),
+        false,
+        quantity);
+}
+
+bool addItem(Character& character,
+             const ItemInstance& item,
+             uint8_t quantity)
+{
+    return addInventoryItem(character.inventory, item, quantity);
 }
 
 bool addItem(Character& character, ItemID item, uint8_t quantity)
@@ -785,14 +913,32 @@ bool addItem(Character& character, ItemID item, uint8_t quantity)
     return addInventoryItem(character.inventory, item, quantity);
 }
 
+bool removeItem(Character& character,
+                const ItemInstance& item,
+                uint8_t quantity)
+{
+    return removeInventoryItem(character.inventory, item, quantity);
+}
+
 bool removeItem(Character& character, ItemID item, uint8_t quantity)
 {
     return removeInventoryItem(character.inventory, item, quantity);
 }
 
+bool hasItem(const Character& character, const ItemInstance& item)
+{
+    return getItemQuantity(character.inventory, item) > 0;
+}
+
 bool hasItem(const Character& character, ItemID item)
 {
     return getItemQuantity(character.inventory, item) > 0;
+}
+
+uint16_t getItemQuantity(const Character& character,
+                         const ItemInstance& item)
+{
+    return getItemQuantity(character.inventory, item);
 }
 
 uint16_t getItemQuantity(const Character& character, ItemID item)
@@ -807,7 +953,7 @@ bool inventoryFull(const Character& character)
 
 ItemID getEquippedItem(const Character& character, EquipmentSlot slot)
 {
-    return character.equipment.equipped[slot];
+    return character.equipment.equipped[slot].itemID;
 }
 
 const char* getEquippedItemName(const Character& character,
