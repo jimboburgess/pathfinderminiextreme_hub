@@ -26,6 +26,7 @@ struct TurnState
     bool fiveFootStepUsed;
     bool delayTurn;
     bool moveActionUsed = false;
+    bool powerAttackActive = false;
 
 };
 

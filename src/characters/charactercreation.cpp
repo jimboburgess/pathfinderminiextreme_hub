@@ -170,7 +170,9 @@ void createCharacter(Character &character, CharacterClass characterClass)
     character.magic.arcaneCaster = false;
     character.magic.divineCaster = false;
 
-    if (character.characterClass == CLASS_CLERIC)
+    if (character.characterClass == CLASS_FIGHTER)
+        learnAbility(character, ABILITY_POWER_ATTACK);
+    else if (character.characterClass == CLASS_CLERIC)
         learnAbility(character, ABILITY_CHANNEL_ENERGY);
 
     restoreClassAbilityUses(character);

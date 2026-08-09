@@ -300,6 +300,10 @@ int getRangedAttackBonus(const Character& character);
 // two levels through level 20.
 uint8_t getSneakAttackDice(const Character& character);
 
+int getPowerAttackPenalty(const Character& character);
+int getPowerAttackDamageBonus(const Character& character,
+                              const Weapon& weapon);
+
 int getMovementSpeed(const Character& character);
 
 uint32_t getExperienceToNextLevel(const Character& character);

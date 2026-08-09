@@ -222,6 +222,37 @@ uint8_t getSneakAttackDice(const Character& character)
     return dice > 10 ? 10 : dice;
 }
 
+int getPowerAttackPenalty(const Character& character)
+{
+    if (character.characterClass != CLASS_FIGHTER || character.level == 0)
+        return 0;
+
+    int baseAttackBonus = getBaseAttackBonus(
+        character.characterClass, character.level);
+
+    if (baseAttackBonus < 1)
+        return 0;
+
+    return -(1 + baseAttackBonus / 4);
+}
+
+int getPowerAttackDamageBonus(const Character& character,
+                              const Weapon& weapon)
+{
+    if (weapon.type != WEAPON_MELEE)
+        return 0;
+
+    int penalty = getPowerAttackPenalty(character);
+
+    if (penalty >= 0)
+        return 0;
+
+    int multiplier =
+        (weapon.properties & WEAPON_PROP_TWO_HANDED) != 0 ? 3 : 2;
+
+    return -penalty * multiplier;
+}
+
 int getMovementSpeed(const Character& character)
 {
     int movement = 30;

@@ -234,9 +234,9 @@ const Menu useItemMenu =
 const MenuItem fighterSpecialMenuItems[] =
 {
     {
-        "Combat Feats",
-        "Use one of your combat feats.",
-        MENU_NONE,
+        "Power Attack",
+        "Trade melee accuracy for damage.",
+        MENU_POWER_ATTACK,
         nullptr,
         MENU_CLASS_FIGHTER
     }
@@ -683,6 +683,25 @@ void menuActivate()
             closeMenu();
             beginInspection();
             break;
+
+        case MENU_POWER_ATTACK:
+        {
+            closeMenu();
+
+            Entity* fighter = getActiveMapPlayer();
+
+            if (fighter != nullptr)
+            {
+                togglePowerAttack(*fighter);
+            }
+            else
+            {
+                setGameMessage("Power Attack unavailable.");
+                playSound(SoundEffect::ERROR);
+            }
+
+            break;
+        }
 
         case MENU_CHANNEL_ENERGY:
         {
@@ -1163,8 +1182,26 @@ bool isMenuItemVisible(MenuAction action)
                 *character, ABILITY_CATEGORY_SPELL);
 
         case MENU_SPECIAL_ABILITY:
+            if (character->characterClass == CLASS_FIGHTER)
+            {
+                return hasKnownAbilityInCategory(
+                           *character,
+                           ABILITY_CATEGORY_CLASS_FEATURE) &&
+                       isMenuItemVisible(MENU_POWER_ATTACK);
+            }
+
             return hasKnownAbilityInCategory(
                 *character, ABILITY_CATEGORY_CLASS_FEATURE);
+
+        case MENU_POWER_ATTACK:
+        {
+            Entity* fighter = getActiveMapPlayer();
+
+            return fighter != nullptr &&
+                   &fighter->character == character &&
+                   knowsAbility(*character, ABILITY_POWER_ATTACK) &&
+                   canTogglePowerAttack(*fighter);
+        }
 
         case MENU_CHANNEL_ENERGY:
         {

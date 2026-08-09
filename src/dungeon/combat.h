@@ -96,6 +96,8 @@ struct Combat
     int pendingDamage = 0;
     bool pendingSneakAttack = false;
     int pendingSneakAttackDamage = 0;
+    bool pendingPowerAttack = false;
+    int pendingPowerAttackDamage = 0;
     unsigned long attackResultTime = 0;
     bool attackDamagePending = false;
     bool attackResolutionPending = false;
@@ -219,6 +221,8 @@ void cancelInspection();
 
 void beginDoubleMove();
 void beginTotalDefense();
+bool canTogglePowerAttack(const Entity& fighter);
+bool togglePowerAttack(Entity& fighter);
 bool canUseChannelEnergy(const Entity& cleric);
 bool useChannelEnergy(Entity& cleric);
 

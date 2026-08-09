@@ -35,6 +35,7 @@ enum AbilityID
     //------------------------------------------------
 
     ABILITY_CHANNEL_ENERGY,
+    ABILITY_POWER_ATTACK,
 
 
     //------------------------------------------------
@@ -183,7 +184,8 @@ enum AbilityAction
     ACTION_STANDARD,
     ACTION_MOVE,
     ACTION_SWIFT,
-    ACTION_FULL_ROUND
+    ACTION_FULL_ROUND,
+    ACTION_FREE
 };
 
 //--------------------------------------------------

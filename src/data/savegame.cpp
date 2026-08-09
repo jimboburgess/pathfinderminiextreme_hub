@@ -164,7 +164,9 @@ bool restoreCharacter(Character& character,
     loaded.equipment = equipment;
     loaded.inventory = inventory;
 
-    if (loaded.characterClass == CLASS_CLERIC)
+    if (loaded.characterClass == CLASS_FIGHTER)
+        learnAbility(loaded, ABILITY_POWER_ATTACK);
+    else if (loaded.characterClass == CLASS_CLERIC)
         learnAbility(loaded, ABILITY_CHANNEL_ENERGY);
 
     // Class ability resources are runtime data in the current save format.

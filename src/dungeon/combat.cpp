@@ -415,6 +415,8 @@ static void finishPlayerAttack()
     combat.pendingDamage = 0;
     combat.pendingSneakAttack = false;
     combat.pendingSneakAttackDamage = 0;
+    combat.pendingPowerAttack = false;
+    combat.pendingPowerAttackDamage = 0;
 
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
@@ -968,6 +970,7 @@ void resetActions(Entity* entity)
     entity->turn.fullDefense = false;
     entity->turn.fiveFootStepUsed = false;
     entity->turn.delayTurn = false;
+    entity->turn.powerAttackActive = false;
     entity->turn.turnActive = true;
     combat.waitingForPlayer = false;
 
@@ -1196,7 +1199,14 @@ void updateCombat()
                            target->character.state = STATE_DEAD;
                            generateCorpseLoot(*target);
 
-                           if (combat.pendingSneakAttack)
+                           if (combat.pendingPowerAttack)
+                           {
+                               snprintf(message, sizeof(message),
+                                        "%s takes %d damage (Power Attack +%d) and dies!",
+                                        getEntityName(target), combat.pendingDamage,
+                                        combat.pendingPowerAttackDamage);
+                           }
+                           else if (combat.pendingSneakAttack)
                            {
                                snprintf(message, sizeof(message),
                                         "%s takes %d damage (Sneak Attack +%d) and dies!",
@@ -1212,7 +1222,14 @@ void updateCombat()
                        }
                        else
                        {
-                           if (combat.pendingSneakAttack)
+                           if (combat.pendingPowerAttack)
+                           {
+                               snprintf(message, sizeof(message),
+                                        "%s takes %d damage (Power Attack +%d)!",
+                                        getEntityName(target), combat.pendingDamage,
+                                        combat.pendingPowerAttackDamage);
+                           }
+                           else if (combat.pendingSneakAttack)
                            {
                                snprintf(message, sizeof(message),
                                         "%s takes %d damage (Sneak Attack +%d)!",
@@ -1301,6 +1318,14 @@ void updateCombat()
 void endCombat()
 {
     clearCombatFlatFootedConditions();
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        Entity* combatant = combat.initiativeOrder[i];
+
+        if (combatant != nullptr)
+            combatant->turn.powerAttackActive = false;
+    }
 
     uint8_t playerCount = 0;
     uint32_t experiencePerCharacter = awardCombatExperience(playerCount);
@@ -1550,10 +1575,20 @@ void confirmPlayerAttack()
     }
 
     int dieRoll = rollDie(20);
-    int attackBonus =
+    int powerAttackPenalty = 0;
+
+    if (combat.attackType == COMBAT_ATTACK_MELEE &&
+        weapon->type == WEAPON_MELEE &&
+        player->turn.powerAttackActive)
+    {
+        powerAttackPenalty = getPowerAttackPenalty(player->character);
+    }
+
+    int normalAttackBonus =
         (combat.attackType == COMBAT_ATTACK_MELEE)
             ? getMeleeAttackBonus(player->character)
             : getRangedAttackBonus(player->character);
+    int attackBonus = normalAttackBonus + powerAttackPenalty;
     int total = dieRoll + attackBonus + rangePenalty;
     bool hit = (dieRoll == 20) ||
                (dieRoll != 1 && total >= getArmorClass(
@@ -1568,6 +1603,12 @@ void confirmPlayerAttack()
                  hit ? "Hit" : "Miss", dieRoll, attackBonus,
                  -rangePenalty, total);
     }
+    else if (powerAttackPenalty < 0)
+    {
+        snprintf(message, sizeof(message), "%s! %d + %d - %d = %d",
+                 hit ? "Hit" : "Miss", dieRoll, normalAttackBonus,
+                 -powerAttackPenalty, total);
+    }
     else
     {
         snprintf(message, sizeof(message), "%s! %d + %d = %d",
@@ -1580,6 +1621,14 @@ void confirmPlayerAttack()
     combat.pendingDamage = 0;
     combat.pendingSneakAttack = false;
     combat.pendingSneakAttackDamage = 0;
+    combat.pendingPowerAttack = false;
+    combat.pendingPowerAttackDamage = 0;
+
+    if (powerAttackPenalty < 0)
+    {
+        Serial.print("Power Attack: attack ");
+        Serial.println(powerAttackPenalty);
+    }
 
     if (hit)
     {
@@ -1589,6 +1638,22 @@ void confirmPlayerAttack()
         {
             combat.pendingDamage += getAbilityModifier(
                 player->character, ABILITY_STRENGTH);
+
+            if (powerAttackPenalty < 0)
+            {
+                combat.pendingPowerAttackDamage =
+                    getPowerAttackDamageBonus(player->character, *weapon);
+                combat.pendingPowerAttack =
+                    combat.pendingPowerAttackDamage > 0;
+                combat.pendingDamage +=
+                    combat.pendingPowerAttackDamage;
+
+                if (combat.pendingPowerAttack)
+                {
+                    Serial.print("Power Attack: damage +");
+                    Serial.println(combat.pendingPowerAttackDamage);
+                }
+            }
         }
 
         combat.pendingDamage = std::max(1, combat.pendingDamage);
@@ -1761,6 +1826,51 @@ void beginTotalDefense()
     player->turn.standardActionUsed = true;
     setGameMessage("Total Defense: +4 AC.");
     endPlayerTurn();
+}
+
+bool canTogglePowerAttack(const Entity& fighter)
+{
+    if (!combat.active || !fighter.active ||
+        fighter.type != ENTITY_PLAYER ||
+        fighter.character.characterClass != CLASS_FIGHTER ||
+        fighter.character.state != STATE_ALIVE ||
+        getCurrentCombatant() != &fighter ||
+        !combat.waitingForPlayer ||
+        fighter.turn.standardActionUsed ||
+        !canCharacterAct(fighter.character))
+    {
+        return false;
+    }
+
+    const Weapon* weapon = getEquippedMeleeWeapon(fighter.character);
+
+    return weapon != nullptr && weapon->type == WEAPON_MELEE;
+}
+
+bool togglePowerAttack(Entity& fighter)
+{
+    if (!canTogglePowerAttack(fighter))
+    {
+        setGameMessage("Power Attack unavailable.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    fighter.turn.powerAttackActive =
+        !fighter.turn.powerAttackActive;
+
+    if (fighter.turn.powerAttackActive)
+    {
+        setGameMessage("Power Attack enabled.");
+        Serial.println("Power Attack ON");
+    }
+    else
+    {
+        setGameMessage("Power Attack disabled.");
+        Serial.println("Power Attack OFF");
+    }
+
+    return true;
 }
 
 bool canUseChannelEnergy(const Entity& cleric)
