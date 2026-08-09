@@ -681,8 +681,13 @@ void checkForCombat()
     Entity* entities = getActiveMapEntities(entityCount);
     Entity* playerEntity = getActiveMapPlayer();
 
-    if (entities == nullptr || playerEntity == nullptr)
+    // A defeated player remains an active map entity so their final state can
+    // still be drawn, but they cannot trigger a new encounter.
+    if (entities == nullptr || playerEntity == nullptr ||
+        playerEntity->character.state != STATE_ALIVE)
+    {
         return;
+    }
 
     for (uint8_t i = 0; i < entityCount; i++)
     {
