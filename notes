@@ -1,0 +1,251 @@
+Development environment constraints
+
+Do not modify platformio.ini, board configuration, upload settings, USB settings, serial-port settings, monitor settings, build flags, PlatformIO environments, CLion configuration, or device flashing/debugging behavior.
+
+Do not attempt to connect to, monitor, reset, flash, upload to, or automatically test against the physical ESP32.
+
+Do not create serial-port test harnesses or change USB CDC behavior.
+
+You may compile the project with PlatformIO to check for compiler/linker errors, but stop after a successful compile. I will upload to the ESP32 and perform hardware testing manually.
+
+Serial logging inside the game code is acceptable only when it is useful for debugging the feature, but do not change how the serial monitor itself is configured.
+
+High: large monsters are only dirtied at their anchor when damage applies (combat.cpp). Replace that with markEntityFootprintDirty(*target) so a 2×2 spider fully redraws when hurt, killed, or marked with its red X.
+•
+High: combat is only partially map-generic. getMapEntities() supports forest and dungeon, but player lookup, combat detection, player targeting, and line of sight still directly use forest data (combat.cpp, combat.cpp, combat.cpp). A shared active-map accessor would make dungeon combat reliable and remove duplicate LOS code from monsterscripts.cpp.
+•
+High: gate Serial combat logging behind a debug macro. checkForCombat() logs every check and every nearby monster, which can noticeably stall input/rendering on hardware (combat.cpp). This is likely the best pure runtime optimization.
+•
+Medium: unify player and monster attack-resolution state. Combat has two parallel attack state systems (combat.h), with separate damage/timing paths. A single AttackResolution state would reduce duplicated logic and prevent future timing or redraw differences.
+•
+Medium: centralize turn completion. The monster action path advances turns directly, while nextTurn() does not explicitly handle the case where every combatant is invalid/dead. A finishCurrentTurn() helper and a “no live combatants” result would make the ranged-AI freeze fix more robust.
+•
+Low: reduce header coupling. combat.h includes monsterScripts.h, which includes combat.h back. Move implementation-only includes into .cpp files and remove the unused runCombatTurn() declaration (combat.h). This improves build times and maintainability, not frame rate.
+I would keep the full redraw at combat start/end: it is needed to restore the map after opaque menus. The attack/target paths are already using dirty tiles appropriately apart from the large-target damage redraw above.
+1.Finish the equipment system
+
+Per-character condition system
+Flat-footed + Rogue Sneak Attack
+Generic ability execution/targeting
+Cleric Cure Light Wounds
+Wizard Magic Missile
+Mage Armor condition
+Ranged-touch spell
+Expand spell lists
+
+Add equippedWeapon, equippedArmor, equippedShield, and inventory[] to Character.
+Write helper functions:
+getWeapon()
+getArmor()
+getShield()
+Display equipped items on the character sheet.
+Build the inventory screen.
+Add equip/unequip functionality.
+Add consumables (potions).
+Spawn enemies in the forest (no AI yet)
+Draw enemy sprites
+Prevent walking through enemies
+Combat detection.
+
+✅ Detect combat.
+➜ Find combatants.
+➜ Roll initiative.
+➜ Sort turn order.
+➜ Start the first turn.
+spent time debugging movement and the goblins don't redraw after the monsters turn. also the bottom should say monsters turn, maybe add a "thinking" message.
+~~Give enemies a simple turn
+Finish the turn engine.~~
+waitingForPlayer
+player input
+nextTurn()
+Replace one-step monster movement with movementRemaining.
+Run AI_DEBUG.
+spend all movement
+Full Defense
+Make every combatant in initiative get a turn.
+Add attack rolls.
+Then replace AI_DEBUG with AI_MELEE.
+
+
+
+spawnEntity() creates a generic entity.
+spawnMonster() calls spawnEntity().
+spawnMonster() copies the monster template into the entity's Character.
+spawnMonster() assigns the sprite.
+spawnMonster() assigns the MonsterID.
+
+No managers.
+
+
+✓ Finish Item database
+
+↓equipment functions
+
+
+✓ Finish equipment databases
+
+↓
+
+✓ Finish equipment functions
+character equipment slots
+↓
+
+✓ Finish inventory functions
+inventory funtions
+↓
+
+✓ Create EffectData
+effect system foundations
+↓
+
+✓ Create SpellData
+spell database skeleton
+↓
+
+Done
+
+
+2.Finish the inventory system
+Add/remove items
+Stackable items (potions, keys, etc.)
+Non-stackable equipment
+Inventory helper functions
+
+3.Connect the character sheet
+Display equipped weapon, armor, and shield.
+Display the inventory list.
+Scroll through the inventory.
+Equip/unequip items.
+Global Controls
+
+add quests space to the charater sheet
+
+closed and open chests, chests have the lootable condition, locked, open with treasure or open without.
+make different room shapes
+enemies have a detection range? enemies carry only certain gear types.
+
+does combat happen if entering a room immediately?
+
+bool menuOpen;
+
+Encoder Rotate
+- Move cursor
+- Scroll pages
+
+Encoder Click
+- Select highlighted option
+
+A Button
+- Open interaction menu
+- Advance dialog
+
+B Button
+- Go back
+- Close menu
+- Cancel
+
+Create a generic scrolling character sheet screen.
+add sprote to character sheet
+Draw the sprite.
+Draw the character's name/class.
+Support vertical scrolling with the encoder.
+Add the sections one at a time.
+Vitals
+Ability scores
+Combat stats
+Saving throws
+Skills
+Equipment
+Inventory
+Reuse it everywhere.
+Character creation preview
+In-game character screen (long press on encoder)
+Future NPC inspection if desired
+
+// Display
+#define TFT_SCL   12
+#define TFT_SDA   11
+#define TFT_RST   7
+#define TFT_DC    9
+#define TFT_CS    10
+#define TFT_BL    8
+
+// Encoder
+#define ENCODER_CLK      1
+#define ENCODER_DT       2
+#define ENCODER_SW       3
+
+// Buttons
+#define BUTTON_A         4
+#define BUTTON_B         5
+
+//piezo
+#define PIEZO_PIN 6
+
+Step 1 (today)
+
+Finish items.h.
+
+This means adding everything we've decided belongs there:
+
+Item enums
+Equipment slots
+Armor category
+Rarity
+Enemy family (or whatever we decide to call it)
+Updated structs
+
+Once items.h is stable, it shouldn't need much attention again.
+
+Step 2
+
+Populate items.cpp.
+
+Just starter equipment.
+
+No magic yet.
+
+Something like:
+
+10 weapons
+8 armor
+5 shields
+
+Compile.
+
+Step 3
+
+Update Character.
+
+Replace the current equipment members with
+
+ItemID equipped[NUM_EQUIPMENT_SLOTS];
+ItemID inventory[MAX_INVENTORY];
+
+Compile.
+
+Step 4
+
+Update Character Creation.
+Instead of whatever equipment it currently gives the player, assign the appropriate ItemIDs into the equipment array.
+Compile.
+Step 5
+
+Update the Character Sheet.
+
+Instead of just showing stats, actually display
+
+Weapon
+Armor
+Shield
+
+using the databases.
+
+Compile.
+
+Step 6
+
+Inventory screen.
+
+This is where scrolling, equipping, and later selling items comes in.
+items.cpp,characters.h characters.cpp charactercreation.cpp
