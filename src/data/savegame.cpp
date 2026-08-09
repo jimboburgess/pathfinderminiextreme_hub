@@ -164,6 +164,14 @@ bool restoreCharacter(Character& character,
     loaded.equipment = equipment;
     loaded.inventory = inventory;
 
+    if (loaded.characterClass == CLASS_CLERIC)
+        learnAbility(loaded, ABILITY_CHANNEL_ENERGY);
+
+    // Class ability resources are runtime data in the current save format.
+    // Reconstruct valid values rather than leaving a loaded Cleric with an
+    // uninitialized feature.
+    restoreClassAbilityUses(loaded);
+
     character = loaded;
     return true;
 }

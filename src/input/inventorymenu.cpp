@@ -215,16 +215,10 @@ bool useCureLightWounds(Character& character)
     }
 
     int previousHP = character.health.currentHP;
-    int healed = rollDice(1, 8) + 1;
-    int missingHP = character.health.maxHP - character.health.currentHP;
-
-    if (healed > missingHP)
-        healed = missingHP;
+    int healed = healCharacter(character, rollDice(1, 8) + 1);
 
     // Heal first, then consume exactly one item. If an unexpected inventory
     // failure occurs, restore HP so the operation remains atomic.
-    character.health.currentHP += healed;
-
     if (!removeItem(character, ITEM_POTION_CURE_LIGHT_WOUNDS))
     {
         character.health.currentHP = previousHP;

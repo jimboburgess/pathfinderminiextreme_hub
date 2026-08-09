@@ -9,8 +9,10 @@
 #include "audio/audio.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
+#include "dungeon/activemap.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/forest.h"
+#include "graphics/messagelog.h"
 #include "input/inventorymenu.h"
 
 MenuState menuState =
@@ -57,18 +59,22 @@ static bool isPlayerCombatTurn()
     return combat.active && isPlayerTurn() && combat.waitingForPlayer;
 }
 
-static bool hasSpecialAbilities(const Character& character)
+static bool hasKnownAbilityInCategory(
+    const Character& character,
+    AbilityCategory category)
 {
-    for (uint8_t i = 0; i < character.magic.knownAbilityCount; i++)
-    {
-        AbilityID ability = character.magic.knownAbilities[i];
+    uint8_t abilityCount = character.magic.knownAbilityCount;
 
-        if (ability != ABILITY_NONE &&
-            ability != ABILITY_MELEE_ATTACK &&
-            ability != ABILITY_RANGED_ATTACK)
-        {
+    if (abilityCount > MAX_KNOWN_ABILITIES)
+        abilityCount = MAX_KNOWN_ABILITIES;
+
+    for (uint8_t i = 0; i < abilityCount; i++)
+    {
+        const Ability* ability = getAbility(
+            character.magic.knownAbilities[i]);
+
+        if (ability != nullptr && ability->category == category)
             return true;
-        }
     }
 
     return false;
@@ -277,8 +283,8 @@ const MenuItem clericSpecialMenuItems[] =
 {
     {
         "Channel Energy",
-        "Heal or harm with divine energy.",
-        MENU_NONE,
+        "Heal living allies within 30 feet.",
+        MENU_CHANNEL_ENERGY,
         nullptr,
         MENU_CLASS_CLERIC
     },
@@ -677,6 +683,25 @@ void menuActivate()
             closeMenu();
             beginInspection();
             break;
+
+        case MENU_CHANNEL_ENERGY:
+        {
+            closeMenu();
+
+            Entity* cleric = getActiveMapPlayer();
+
+            if (cleric != nullptr)
+            {
+                useChannelEnergy(*cleric);
+            }
+            else
+            {
+                setGameMessage("Channel Energy unavailable.");
+                playSound(SoundEffect::ERROR);
+            }
+
+            break;
+        }
 
         case MENU_USE_ITEM:
         case MENU_INVENTORY:
@@ -1132,12 +1157,31 @@ bool isMenuItemVisible(MenuAction action)
                    getEquippedRangedWeapon(*character) != nullptr;
 
         case MENU_CAST_SPELL:
-            // The character model supports known spells, but spell casting
-            // itself has not been implemented yet.
-            return false;
+            // This exposes only the placeholder spell submenu for now;
+            // spell selection and casting remain unimplemented.
+            return hasKnownAbilityInCategory(
+                *character, ABILITY_CATEGORY_SPELL);
 
         case MENU_SPECIAL_ABILITY:
-            return hasSpecialAbilities(*character);
+            return hasKnownAbilityInCategory(
+                *character, ABILITY_CATEGORY_CLASS_FEATURE);
+
+        case MENU_CHANNEL_ENERGY:
+        {
+            if (character->characterClass != CLASS_CLERIC)
+                return false;
+
+            if (!combat.active)
+                return true;
+
+            Entity* combatant = getCurrentCombatant();
+
+            return isPlayerCombatTurn() &&
+                   combatant != nullptr &&
+                   &combatant->character == character &&
+                   canCharacterAct(*character) &&
+                   !combatant->turn.standardActionUsed;
+        }
 
         case MENU_USE_ITEM:
             return character->inventory.itemCount > 0 &&

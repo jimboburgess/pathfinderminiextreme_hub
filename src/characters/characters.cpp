@@ -74,6 +74,54 @@ int getMaxHP(const Character& character)
       + getAbilityModifier(character, ABILITY_CONSTITUTION);
 }
 
+int healCharacter(Character& character, int healing)
+{
+    if (healing <= 0 ||
+        character.health.currentHP >= character.health.maxHP)
+    {
+        return 0;
+    }
+
+    int missingHP =
+        character.health.maxHP - character.health.currentHP;
+    int restored = healing < missingHP ? healing : missingHP;
+
+    character.health.currentHP += restored;
+    return restored;
+}
+
+uint8_t getMaxChannelEnergyUses(const Character& character)
+{
+    if (character.characterClass != CLASS_CLERIC)
+        return 0;
+
+    int uses = 3 + getAbilityModifier(
+        character, ABILITY_CHARISMA);
+
+    if (uses < 1)
+        uses = 1;
+
+    return static_cast<uint8_t>(uses);
+}
+
+uint8_t getChannelEnergyDice(const Character& character)
+{
+    if (character.characterClass != CLASS_CLERIC || character.level == 0)
+        return 0;
+
+    uint8_t dice = (character.level + 1) / 2;
+
+    return dice > 10 ? 10 : dice;
+}
+
+void restoreClassAbilityUses(Character& character)
+{
+    character.classAbilities.channelEnergyMax =
+        getMaxChannelEnergyUses(character);
+    character.classAbilities.channelEnergyCurrent =
+        character.classAbilities.channelEnergyMax;
+}
+
 const Weapon* getEquippedMeleeWeapon(const Character& character)
 {
     ItemID item = character.equipment.equipped[SLOT_MELEE_WEAPON];

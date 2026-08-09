@@ -84,11 +84,8 @@ void updateTownRest()
             player, ABILITY_CONSTITUTION);
         healing = max(0, healing);
 
-        int oldHP = player.health.currentHP;
-        player.health.currentHP = min(
-            player.health.maxHP,
-            player.health.currentHP + healing);
-        int regained = player.health.currentHP - oldHP;
+        int regained = healCharacter(player, healing);
+        restoreClassAbilityUses(player);
 
         char message[48];
         snprintf(message, sizeof(message),

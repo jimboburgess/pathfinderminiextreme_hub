@@ -170,6 +170,12 @@ struct MagicData
     bool divineCaster;
 };
 
+struct ClassAbilityData
+{
+    uint8_t channelEnergyCurrent = 0;
+    uint8_t channelEnergyMax = 0;
+};
+
 struct EquipmentData
 {
     ItemID equipped[NUM_EQUIPMENT_SLOTS];
@@ -240,6 +246,11 @@ struct Character
     MagicData magic;
 
     //==================================================
+    // Limited-use class abilities
+    //==================================================
+    ClassAbilityData classAbilities;
+
+    //==================================================
     // Equipment
     //==================================================
     EquipmentData equipment;
@@ -258,6 +269,15 @@ int getAbilityModifier(int score);
 int getAbilityModifier(const Character& character, AbilityScore ability);
 
 int getMaxHP(const Character& character);
+
+// Applies positive healing without exceeding max HP and returns the amount
+// actually restored. Eligibility (alive, friendly, and so on) stays with the
+// calling gameplay system.
+int healCharacter(Character& character, int healing);
+
+uint8_t getMaxChannelEnergyUses(const Character& character);
+uint8_t getChannelEnergyDice(const Character& character);
+void restoreClassAbilityUses(Character& character);
 
 const uint16_t* getPlayerSprite(CharacterClass characterClass);
 

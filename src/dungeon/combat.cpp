@@ -80,6 +80,26 @@ static int gridDistanceBetweenFootprints(
     return std::max(horizontalDistance, verticalDistance);
 }
 
+static bool isChannelEnergyCreature(const Entity& entity)
+{
+    return entity.type == ENTITY_PLAYER ||
+           entity.type == ENTITY_MONSTER ||
+           entity.type == ENTITY_NPC;
+}
+
+static bool isValidChannelEnergyTarget(
+    const Entity& cleric,
+    const Entity& target)
+{
+    return target.active &&
+           isChannelEnergyCreature(target) &&
+           target.character.team == cleric.character.team &&
+           target.character.state == STATE_ALIVE &&
+           target.character.health.currentHP <
+               target.character.health.maxHP &&
+           gridDistanceBetweenFootprints(&cleric, &target) <= 6;
+}
+
 static SoundEffect getAttackSound(
     const Entity* attacker,
     const Weapon* weapon)
@@ -797,6 +817,7 @@ void startCombat()
     combat.currentTurnIndex = 0;
     combat.combatRound = 1;
     combat.experienceAwarded = false;
+    combat.endPlayerTurnAfterMessage = false;
     combat.turnStartConditionPhase = TURN_START_CONDITION_NONE;
     combat.turnStartPoisonExpired = false;
     combat.turnStartConditionDefeated = false;
@@ -1142,6 +1163,17 @@ void updateCombat()
 
        case COMBAT_TURN:
        {
+           if (combat.endPlayerTurnAfterMessage)
+           {
+               if (isGameMessageComplete())
+               {
+                   combat.endPlayerTurnAfterMessage = false;
+                   checkEndPlayerTurn();
+               }
+
+               break;
+           }
+
            if (combat.attackResolutionPending)
            {
                if (millis() - combat.attackResultTime >=
@@ -1295,6 +1327,7 @@ void endCombat()
 
     combat.active = false;
     combat.phase = COMBAT_NONE;
+    combat.endPlayerTurnAfterMessage = false;
     backgroundNeedsRedraw = true;
     redrawType = REDRAW_FULL;
     needsRedraw = true;
@@ -1728,6 +1761,132 @@ void beginTotalDefense()
     player->turn.standardActionUsed = true;
     setGameMessage("Total Defense: +4 AC.");
     endPlayerTurn();
+}
+
+bool canUseChannelEnergy(const Entity& cleric)
+{
+    if (!cleric.active ||
+        cleric.character.characterClass != CLASS_CLERIC ||
+        cleric.character.state != STATE_ALIVE ||
+        cleric.character.classAbilities.channelEnergyCurrent == 0)
+    {
+        return false;
+    }
+
+    if (!combat.active)
+        return true;
+
+    Entity* combatant = getCurrentCombatant();
+
+    return combatant == &cleric &&
+           cleric.type == ENTITY_PLAYER &&
+           combat.waitingForPlayer &&
+           canCharacterAct(cleric.character) &&
+           !cleric.turn.standardActionUsed;
+}
+
+bool useChannelEnergy(Entity& cleric)
+{
+    if (cleric.character.characterClass != CLASS_CLERIC ||
+        !cleric.active || cleric.character.state != STATE_ALIVE)
+    {
+        setGameMessage("Channel Energy unavailable.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    if (cleric.character.classAbilities.channelEnergyCurrent == 0)
+    {
+        setGameMessage("No Channel Energy uses remaining.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    if (!canUseChannelEnergy(cleric))
+    {
+        setGameMessage("Channel Energy unavailable.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    bool hasWoundedTarget = false;
+
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        if (isValidChannelEnergyTarget(cleric, entities[i]))
+        {
+            hasWoundedTarget = true;
+            break;
+        }
+    }
+
+    if (!hasWoundedTarget)
+    {
+        setGameMessage("No one needs healing.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    uint8_t dice = getChannelEnergyDice(cleric.character);
+
+    if (dice == 0)
+    {
+        setGameMessage("Channel Energy unavailable.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    int healing = rollDice(dice, 6);
+    uint8_t previousUses =
+        cleric.character.classAbilities.channelEnergyCurrent;
+
+    cleric.character.classAbilities.channelEnergyCurrent--;
+
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        if (isValidChannelEnergyTarget(cleric, entities[i]))
+            healCharacter(entities[i].character, healing);
+    }
+
+    Serial.print("Channel Energy: ");
+    Serial.print(dice);
+    Serial.print("d6 = ");
+    Serial.println(healing);
+    Serial.print("Channel uses: ");
+    Serial.print(previousUses);
+    Serial.print(" -> ");
+    Serial.println(
+        cleric.character.classAbilities.channelEnergyCurrent);
+
+    char message[64];
+    snprintf(message, sizeof(message),
+             "Channel Energy heals %d HP. Uses: %u.",
+             healing,
+             static_cast<unsigned int>(
+                 cleric.character.classAbilities.channelEnergyCurrent));
+    playSound(SoundEffect::SPELL_HEAL);
+    setGameMessage(message);
+
+    if (combat.active)
+    {
+        cleric.turn.standardActionUsed = true;
+
+        if (cleric.turn.moveActionUsed)
+        {
+            // Keep the result visible before nextTurn() starts processing
+            // the following combatant's conditions and turn message.
+            combat.waitingForPlayer = false;
+            combat.endPlayerTurnAfterMessage = true;
+        }
+        else
+        {
+            checkEndPlayerTurn();
+        }
+    }
+
+    return true;
 }
 
 void beginMonsterAttack(

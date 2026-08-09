@@ -9,10 +9,15 @@
 // Ability Database
 //--------------------------------------------------
 
+static_assert(
+    ABILITY_CATEGORY_SPELL == 0,
+    "Spell rows rely on zero-initialized AbilityCategory metadata."
+);
+
 const Ability abilityDatabase[] =
 {
     {
-        ABILITY_NONE,"None",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_AUTOMATIC,TARGET_SELF,DURATION_INSTANT,{{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},0,ANIM_NONE
+        ABILITY_NONE,"None",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_AUTOMATIC,TARGET_SELF,DURATION_INSTANT,{{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},0,ANIM_NONE,ABILITY_CATEGORY_NONE
     }, // ABILITY_NONE
 
     //------------------------------------------------
@@ -20,37 +25,41 @@ const Ability abilityDatabase[] =
     //------------------------------------------------
 
     {
-        ABILITY_FIRE_BREATH,"Fire Breath",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_CONE,TARGET_AREA,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_FIRE, 6, 2, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_BREATH
+        ABILITY_FIRE_BREATH,"Fire Breath",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_CONE,TARGET_AREA,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_FIRE, 6, 2, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_BREATH,ABILITY_CATEGORY_MONSTER
     }, // ABILITY_FIRE_BREATH
 
     {
-        ABILITY_HEAL,"Heal",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ALLY,DURATION_INSTANT,{{ EFFECT_HEAL, DAMAGE_NONE, 8, 2, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_HEAL
+        ABILITY_HEAL,"Heal",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ALLY,DURATION_INSTANT,{{ EFFECT_HEAL, DAMAGE_NONE, 8, 2, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_HEAL,ABILITY_CATEGORY_MONSTER
     }, // ABILITY_HEAL
 
     {
-        ABILITY_PARALYZE,"Paralyze",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_PARALYZE, DAMAGE_NONE, 1, 0, 3 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE
+        ABILITY_PARALYZE,"Paralyze",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_PARALYZE, DAMAGE_NONE, 1, 0, 3 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE,ABILITY_CATEGORY_MONSTER
     }, // ABILITY_PARALYZE
 
     {
-        ABILITY_POISON,"Poison",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_POISON, DAMAGE_NONE, 2, 1, 5 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_POISON
+        ABILITY_POISON,"Poison",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_POISON, DAMAGE_NONE, 2, 1, 5 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_POISON,ABILITY_CATEGORY_MONSTER
     }, // ABILITY_POISON
 
     {
-        ABILITY_REGENERATION,"Regeneration",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_AUTOMATIC,TARGET_SELF,DURATION_INSTANT,{{ EFFECT_HEAL, DAMAGE_NONE, 2, 1, 5 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_HEAL
+        ABILITY_REGENERATION,"Regeneration",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_AUTOMATIC,TARGET_SELF,DURATION_INSTANT,{{ EFFECT_HEAL, DAMAGE_NONE, 2, 1, 5 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_HEAL,ABILITY_CATEGORY_MONSTER
     }, // ABILITY_REGENERATION
 
     {
-        ABILITY_SUMMON,"Summon",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TARGET,TARGET_EMPTY_TILE,DURATION_INSTANT,{{ EFFECT_SUMMON, DAMAGE_NONE, 1, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE
+        ABILITY_SUMMON,"Summon",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TARGET,TARGET_EMPTY_TILE,DURATION_INSTANT,{{ EFFECT_SUMMON, DAMAGE_NONE, 1, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE,ABILITY_CATEGORY_MONSTER
     }, // ABILITY_SUMMON
 
 {
     ABILITY_MELEE_ATTACK,
-    "Melee Attack",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_PHYSICAL, 1, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE
+    "Melee Attack",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TOUCH,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_PHYSICAL, 1, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE,ABILITY_CATEGORY_ATTACK
 },
 
 {
     ABILITY_RANGED_ATTACK,"Ranged Attack",ABILITY_MARTIAL,0,0,ACTION_STANDARD,DELIVERY_TARGET,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_PHYSICAL, 1, 0, 0 },
-{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE
+{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_NONE,ABILITY_CATEGORY_ATTACK
+},
+
+{
+    ABILITY_CHANNEL_ENERGY,"Channel Energy",ABILITY_DIVINE,0,0,ACTION_STANDARD,DELIVERY_AREA,TARGET_ALL_ALLIES_AREA,DURATION_INSTANT,{{ EFFECT_HEAL, DAMAGE_POSITIVE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_HEAL,ABILITY_CATEGORY_CLASS_FEATURE
 },
     //------------------------------------------------
     // Cantrips
@@ -445,13 +454,67 @@ bool isValidAbility(AbilityID id)
     return id > ABILITY_NONE && id < ABILITY_MAX;
 }
 
-const Ability* getAbility(AbilityID id);
-
 bool knowsAbility(const Character& character,
-                  AbilityID id);
+                  AbilityID id)
+{
+    if (!isValidAbility(id))
+        return false;
+
+    uint8_t abilityCount = character.magic.knownAbilityCount;
+
+    if (abilityCount > MAX_KNOWN_ABILITIES)
+        abilityCount = MAX_KNOWN_ABILITIES;
+
+    for (uint8_t i = 0; i < abilityCount; i++)
+    {
+        if (character.magic.knownAbilities[i] == id)
+            return true;
+    }
+
+    return false;
+}
 
 bool learnAbility(Character& character,
-                  AbilityID id);
+                  AbilityID id)
+{
+    if (!isValidAbility(id) || knowsAbility(character, id) ||
+        character.magic.knownAbilityCount >= MAX_KNOWN_ABILITIES)
+    {
+        return false;
+    }
+
+    character.magic.knownAbilities[
+        character.magic.knownAbilityCount++] = id;
+    return true;
+}
 
 bool forgetAbility(Character& character,
-                   AbilityID id);
+                   AbilityID id)
+{
+    if (!isValidAbility(id) ||
+        character.magic.knownAbilityCount > MAX_KNOWN_ABILITIES)
+    {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < character.magic.knownAbilityCount; i++)
+    {
+        if (character.magic.knownAbilities[i] != id)
+            continue;
+
+        for (uint8_t j = i;
+             j + 1 < character.magic.knownAbilityCount;
+             j++)
+        {
+            character.magic.knownAbilities[j] =
+                character.magic.knownAbilities[j + 1];
+        }
+
+        character.magic.knownAbilityCount--;
+        character.magic.knownAbilities[
+            character.magic.knownAbilityCount] = ABILITY_NONE;
+        return true;
+    }
+
+    return false;
+}

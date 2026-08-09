@@ -76,6 +76,7 @@ struct Combat
     //--------------------------------------------------
 
     bool waitingForPlayer = false;
+    bool endPlayerTurnAfterMessage = false;
 
     //--------------------------------------------------
     // Phase Timing
@@ -218,6 +219,8 @@ void cancelInspection();
 
 void beginDoubleMove();
 void beginTotalDefense();
+bool canUseChannelEnergy(const Entity& cleric);
+bool useChannelEnergy(Entity& cleric);
 
 //==================================================
 // Combat Update

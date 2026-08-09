@@ -170,6 +170,11 @@ void createCharacter(Character &character, CharacterClass characterClass)
     character.magic.arcaneCaster = false;
     character.magic.divineCaster = false;
 
+    if (character.characterClass == CLASS_CLERIC)
+        learnAbility(character, ABILITY_CHANNEL_ENERGY);
+
+    restoreClassAbilityUses(character);
+
     character.team = TEAM_PLAYER;
     character.state = STATE_ALIVE;
 }

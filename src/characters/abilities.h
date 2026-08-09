@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+struct Character;
+
 //--------------------------------------------------
 // Ability IDs
 //--------------------------------------------------
@@ -28,6 +30,11 @@ enum AbilityID
     ABILITY_MELEE_ATTACK,
     ABILITY_RANGED_ATTACK,
 
+    //------------------------------------------------
+    // Class Features
+    //------------------------------------------------
+
+    ABILITY_CHANNEL_ENERGY,
 
 
     //------------------------------------------------
@@ -152,6 +159,19 @@ enum AbilityType
     ABILITY_DIVINE,
     ABILITY_MONSTER,
     ABILITY_MARTIAL
+};
+
+// What kind of gameplay ability this is. AbilityType remains the ability's
+// tradition (arcane, divine, martial, and so on).
+enum AbilityCategory : uint8_t
+{
+    // Kept at zero so existing spell rows can use aggregate
+    // zero-initialization for the final Ability field.
+    ABILITY_CATEGORY_SPELL = 0,
+    ABILITY_CATEGORY_ATTACK,
+    ABILITY_CATEGORY_CLASS_FEATURE,
+    ABILITY_CATEGORY_MONSTER,
+    ABILITY_CATEGORY_NONE
 };
 
 //--------------------------------------------------
@@ -346,6 +366,11 @@ struct Ability
     uint8_t effectCount;
 
     AbilityAnimation animation;
+
+    // This remains the final field so the large existing spell table stays
+    // compact. Arcane/divine spell rows omit it and therefore initialize to
+    // ABILITY_CATEGORY_SPELL; all non-spell rows specify it explicitly.
+    AbilityCategory category;
 };
 
 extern const Ability abilityDatabase[];
@@ -355,5 +380,9 @@ const Ability* getAbility(AbilityID id);
 const char* getAbilityName(AbilityID id);
 
 bool isValidAbility(AbilityID id);
+
+bool knowsAbility(const Character& character, AbilityID id);
+bool learnAbility(Character& character, AbilityID id);
+bool forgetAbility(Character& character, AbilityID id);
 
 #endif
