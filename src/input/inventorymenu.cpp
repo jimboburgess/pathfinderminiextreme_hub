@@ -187,7 +187,8 @@ bool canUseCombatItem(const Character& character)
 
     return combatant != nullptr && combatant->type == ENTITY_PLAYER &&
            &combatant->character == &character && combat.waitingForPlayer &&
-           !combatant->turn.standardActionUsed;
+           !combatant->turn.standardActionUsed &&
+           canCharacterAct(character);
 }
 
 bool useCureLightWounds(Character& character)
@@ -427,6 +428,10 @@ const char* getSelectedDescription()
 
 void drawInventoryRow(uint8_t row, uint8_t entryIndex)
 {
+    // The header uses the larger title font; inventory rows should match
+    // the standard menu item text.
+    tft.setTextSize(1);
+
     bool highlighted = entryIndex == inventoryMenu.cursorIndex;
     int y = INVENTORY_LIST_Y + row * MENU_LINE_HEIGHT;
 

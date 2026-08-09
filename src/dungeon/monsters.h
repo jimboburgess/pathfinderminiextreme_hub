@@ -113,6 +113,14 @@ enum MonsterScript
     SCRIPT_DEBUG          // For testing combat behavior.
 };
 
+// Poison is attack metadata only.  The active condition itself remains in
+// Character::conditions and is resolved by the shared condition system.
+struct MonsterPoisonData
+{
+    uint8_t saveDC;
+    uint8_t rounds;
+};
+
 struct Monster
 {
     const char* name;
@@ -142,9 +150,13 @@ struct Monster
     AbilityID specialAbilities[4];
 
     MonsterScript script;
+
+    MonsterPoisonData poison;
 };
 
 const Monster* getMonster(MonsterID id);
+
+bool monsterHasSpecialAbility(const Monster& monster, AbilityID ability);
 
 uint16_t getMonsterMaxHP(const Monster& monster);
 

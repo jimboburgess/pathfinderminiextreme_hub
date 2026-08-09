@@ -1117,15 +1117,18 @@ bool isMenuItemVisible(MenuAction action)
     {
         case MENU_ATTACK:
             return isPlayerCombatTurn() &&
+                   canCharacterAct(*character) &&
                    (getEquippedMeleeWeapon(*character) != nullptr ||
                     getEquippedRangedWeapon(*character) != nullptr);
 
         case MENU_MELEE_ATTACK:
             return isPlayerCombatTurn() &&
+                   canCharacterAct(*character) &&
                    getEquippedMeleeWeapon(*character) != nullptr;
 
         case MENU_RANGED_ATTACK:
             return isPlayerCombatTurn() &&
+                   canCharacterAct(*character) &&
                    getEquippedRangedWeapon(*character) != nullptr;
 
         case MENU_CAST_SPELL:
@@ -1140,17 +1143,20 @@ bool isMenuItemVisible(MenuAction action)
             return character->inventory.itemCount > 0 &&
                    (!combat.active ||
                     (isPlayerCombatTurn() &&
+                     canCharacterAct(*character) &&
                      !getCurrentCombatant()->turn.standardActionUsed));
 
         case MENU_DOUBLE_MOVE:
             return isPlayerCombatTurn() &&
                    character->state == STATE_ALIVE &&
+                   canCharacterAct(*character) &&
                    !getCurrentCombatant()->turn.standardActionUsed &&
                    getCurrentCombatant()->turn.movementRemaining ==
                        character->speed;
 
         case MENU_TOTAL_DEFENSE:
             return isPlayerCombatTurn() &&
+                   canCharacterAct(*character) &&
                    !getCurrentCombatant()->turn.standardActionUsed &&
                    !getCurrentCombatant()->turn.moveActionUsed;
 

@@ -132,7 +132,8 @@ int getArmorClass(const Character& character, int dodgeBonus)
          + naturalArmor
          + deflectionBonus
          + dodgeBonus
-         + sizeModifier;
+         + sizeModifier
+         + getConditionArmorClassModifier(character);
 }
 
 int getMeleeAttackBonus(const Character& character)
@@ -145,7 +146,8 @@ int getMeleeAttackBonus(const Character& character)
          + getAbilityModifier(
                character,
                ABILITY_STRENGTH)
-         + weaponEnhancement;
+         + weaponEnhancement
+         + getConditionAttackModifier(character);
 }
 
 int getRangedAttackBonus(const Character& character)
@@ -158,7 +160,8 @@ int getRangedAttackBonus(const Character& character)
          + getAbilityModifier(
                character,
                ABILITY_DEXTERITY)
-         + weaponEnhancement;
+         + weaponEnhancement
+         + getConditionAttackModifier(character);
 }
 
 int getMovementSpeed(const Character& character)
@@ -365,7 +368,7 @@ bool isConscious(const Character& character)
 
 bool canAct(const Character& character)
 {
-    return isConscious(character);
+    return canCharacterAct(character);
 }
 
 bool isLootable(const Character& character)

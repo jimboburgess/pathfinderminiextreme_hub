@@ -19,6 +19,7 @@ enum TileType : uint8_t {
     TILE_EXIT,
     TILE_PLAYER_START,
     TILE_ENEMY_START,
+    TILE_GIANT_SPIDER_START,
     TILE_GRASS,
     TILE_TREE,
     TILE_MUD,

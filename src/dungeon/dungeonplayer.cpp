@@ -108,6 +108,22 @@ bool tryMovePlayer(Dungeon &dungeon)
     TileType tile =
         room.map.tiles[targetY][targetX];
 
+    // Forest movement blocks an occupied monster square before the player
+    // moves. Do the same in rooms, including every square of a large
+    // creature's footprint.
+    Entity* targetEntity = getEntityAt(
+        dungeon.entities,
+        dungeon.entityCount,
+        targetX,
+        targetY);
+
+    if (targetEntity != nullptr && targetEntity != player &&
+        targetEntity->type == ENTITY_MONSTER)
+    {
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+
     switch (tile)
     {
         //--------------------------------------------------
@@ -122,7 +138,8 @@ bool tryMovePlayer(Dungeon &dungeon)
 
             if (combat.active)
             {
-                if (!combat.waitingForPlayer)
+                if (!combat.waitingForPlayer ||
+                    !canCharacterAct(player->character))
                     return false;
 
                 if (player->turn.movementRemaining == 0) {
@@ -169,6 +186,10 @@ bool tryMovePlayer(Dungeon &dungeon)
                 player->x + directionOffsets[moveDirection].dx,
                 player->y + directionOffsets[moveDirection].dy);
 
+            // This detector reads the active map, so the dungeon now uses
+            // the same range and line-of-sight rules as the forest.
+            checkForCombat();
+
             return true;
         }
 
@@ -187,6 +208,16 @@ bool tryMovePlayer(Dungeon &dungeon)
 
         case TILE_DOOR:
         {
+            // Leaving the room while combat owns the current entity list
+            // would discard its combatants. Forest exploration has no room
+            // transition escape route, so keep dungeon combat locked to the
+            // active map until it ends.
+            if (combat.active)
+            {
+                playSound(SoundEffect::BUMP);
+                return false;
+            }
+
             uint8_t nextRoom = 255;
 
             if (targetY == 0)
@@ -299,7 +330,8 @@ bool tryMoveForestPlayer()
 
     if (combat.active)
     {
-        if (!combat.waitingForPlayer)
+        if (!combat.waitingForPlayer ||
+            !canCharacterAct(player->character))
             return false;
 
         if (player->turn.movementRemaining == 0) {

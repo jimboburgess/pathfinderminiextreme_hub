@@ -153,6 +153,7 @@ void createCharacter(Character &character, CharacterClass characterClass)
 
     character.characterClass = characterClass;
     character.creatureType = CREATURE_PLAYER;
+    clearConditions(character);
 
     assignAbilitiesForClass(character, characterClass, scores);
 

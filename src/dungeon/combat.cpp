@@ -341,6 +341,85 @@ static void finishPlayerAttack()
     checkEndPlayerTurn();
 }
 
+static const MonsterPoisonData* getMonsterPoisonData(
+    const Entity* monster)
+{
+    if (monster == nullptr || monster->monster == nullptr ||
+        !monsterHasSpecialAbility(*monster->monster, ABILITY_POISON))
+    {
+        return nullptr;
+    }
+
+    const MonsterPoisonData& poison = monster->monster->poison;
+
+    return poison.saveDC > 0 && poison.rounds > 0 ? &poison : nullptr;
+}
+
+static void resolveMonsterPoison(Entity* monster, Entity* target)
+{
+    const MonsterPoisonData* poison = getMonsterPoisonData(monster);
+
+    if (poison == nullptr || target == nullptr ||
+        target->character.state != STATE_ALIVE)
+    {
+        return;
+    }
+
+    int dieRoll = rollDie(20);
+    int fortitude = getFortitudeSave(target->character);
+    int total = dieRoll + fortitude;
+
+    Serial.print(monster->monsterID == MONSTER_GIANT_SPIDER
+        ? "Spider"
+        : getEntityName(monster));
+    Serial.print(" poison save: ");
+    Serial.print(dieRoll);
+    Serial.print(" + ");
+    Serial.print(fortitude);
+    Serial.print(" = ");
+    Serial.print(total);
+    Serial.print(" vs DC ");
+    Serial.println(poison->saveDC);
+
+    if (total >= poison->saveDC)
+    {
+        if (target->type == ENTITY_PLAYER)
+        {
+            setGameMessage("You resist the poison.");
+        }
+        else
+        {
+            char message[64];
+            snprintf(message, sizeof(message), "%s resists the poison.",
+                     getEntityName(target));
+            setGameMessage(message);
+        }
+
+        return;
+    }
+
+    if (!addCondition(target->character,
+                      CONDITION_POISONED,
+                      0,
+                      poison->rounds))
+    {
+        setGameMessage("Poison has no effect.");
+        return;
+    }
+
+    if (target->type == ENTITY_PLAYER)
+    {
+        setGameMessage("You are poisoned.");
+    }
+    else
+    {
+        char message[64];
+        snprintf(message, sizeof(message), "%s is poisoned.",
+                 getEntityName(target));
+        setGameMessage(message);
+    }
+}
+
 static void updateMonsterAttack()
 {
     if (millis() - combat.monsterAttackTime < COMBAT_MESSAGE_PAUSE_MS ||
@@ -369,6 +448,8 @@ static void updateMonsterAttack()
 
         case MONSTER_ATTACK_DAMAGE_RESULT:
         {
+            bool poisonPending = false;
+
             if (combat.monsterAttackHit && target != nullptr &&
                 target->character.state == STATE_ALIVE)
             {
@@ -399,19 +480,34 @@ static void updateMonsterAttack()
                 // the giant spider).  Redraw its entire footprint so damage
                 // and the dead/loot marker cannot leave stale sprite pixels.
                 markEntityFootprintDirty(*target);
+
+                poisonPending =
+                    target->character.state == STATE_ALIVE &&
+                    combat.monsterAttackType == COMBAT_ATTACK_MELEE &&
+                    getMonsterPoisonData(monster) != nullptr;
             }
 
-            combat.monsterAttackPhase = MONSTER_ATTACK_COMPLETE;
+            combat.monsterAttackPhase = poisonPending
+                ? MONSTER_ATTACK_POISON_RESULT
+                : MONSTER_ATTACK_COMPLETE;
             combat.monsterAttackTime = millis();
             requestCombatTileRedraw();
             break;
         }
+
+        case MONSTER_ATTACK_POISON_RESULT:
+            resolveMonsterPoison(monster, target);
+            combat.monsterAttackPhase = MONSTER_ATTACK_COMPLETE;
+            combat.monsterAttackTime = millis();
+            requestCombatTileRedraw();
+            break;
 
         case MONSTER_ATTACK_COMPLETE:
             combat.monsterAttackPhase = MONSTER_ATTACK_NONE;
             combat.attackingMonster = nullptr;
             combat.monsterAttackTarget = nullptr;
             combat.monsterPendingDamage = 0;
+            combat.monsterAttackType = COMBAT_ATTACK_NONE;
 
             if (combat.monsterDefeatedPlayer)
                 combat.phase = COMBAT_END;
@@ -593,6 +689,9 @@ void startCombat()
     combat.currentTurnIndex = 0;
     combat.combatRound = 1;
     combat.experienceAwarded = false;
+    combat.turnStartConditionPhase = TURN_START_CONDITION_NONE;
+    combat.turnStartPoisonExpired = false;
+    combat.turnStartConditionDefeated = false;
 
     backgroundNeedsRedraw = true;
 
@@ -601,17 +700,39 @@ void startCombat()
 
 }
 
-void resetActions(Entity* entity)
+static void finishTurnStart(Entity* entity)
 {
     if (entity == nullptr)
         return;
 
-    entity->turn.moveActionUsed = false;
-    entity->turn.standardActionUsed = false;
-    entity->turn.fullDefense = false;
-    entity->turn.fiveFootStepUsed = false;
-    entity->turn.delayTurn = false;
-    entity->turn.turnActive = true;
+    bool conditionDefeated = combat.turnStartConditionDefeated ||
+                             entity->character.state != STATE_ALIVE;
+
+    combat.turnStartConditionPhase = TURN_START_CONDITION_NONE;
+    combat.turnStartPoisonExpired = false;
+    combat.turnStartConditionDefeated = false;
+
+    if (conditionDefeated)
+    {
+        combat.waitingForPlayer = false;
+
+        if (entity->type == ENTITY_PLAYER)
+        {
+            combat.monsterDefeatedPlayer = true;
+            combat.phase = COMBAT_END;
+        }
+        else if (areAllCombatMonstersDefeated())
+        {
+            combat.phase = COMBAT_END;
+        }
+        else
+        {
+            nextTurn();
+        }
+
+        return;
+    }
+
     announceTurn(entity);
 
     if (entity->type == ENTITY_PLAYER)
@@ -626,6 +747,100 @@ void resetActions(Entity* entity)
     }
 
     needsRedraw = true;
+}
+
+static void beginTurnStartConditionMessages(
+    Entity* entity,
+    const ConditionTurnResult& result)
+{
+    combat.turnStartPoisonExpired = result.poisonExpired;
+    combat.turnStartConditionDefeated = false;
+
+    if (result.damage > 0)
+    {
+        char message[64];
+
+        if (entity->character.health.currentHP <= 0)
+        {
+            entity->character.health.currentHP = 0;
+            entity->character.state = STATE_DEAD;
+            generateCorpseLoot(*entity);
+            combat.turnStartConditionDefeated = true;
+
+            snprintf(message, sizeof(message),
+                     "%s takes %d poison damage and dies!",
+                     getEntityName(entity), result.damage);
+        }
+        else if (entity->type == ENTITY_PLAYER)
+        {
+            snprintf(message, sizeof(message),
+                     "You take %d poison damage.", result.damage);
+        }
+        else
+        {
+            snprintf(message, sizeof(message),
+                     "%s takes %d poison damage.",
+                     getEntityName(entity), result.damage);
+        }
+
+        setGameMessage(message);
+        combat.turnStartConditionPhase =
+            TURN_START_CONDITION_DAMAGE_MESSAGE;
+        markEntityFootprintDirty(*entity);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    if (result.poisonExpired)
+    {
+        setGameMessage("Poison wears off.");
+        combat.turnStartConditionPhase =
+            TURN_START_CONDITION_EXPIRY_MESSAGE;
+        needsRedraw = true;
+        return;
+    }
+
+    finishTurnStart(entity);
+}
+
+static bool updateTurnStartConditionMessages(Entity* entity)
+{
+    if (combat.turnStartConditionPhase == TURN_START_CONDITION_NONE)
+        return false;
+
+    if (!isGameMessageComplete())
+        return true;
+
+    if (combat.turnStartConditionPhase ==
+        TURN_START_CONDITION_DAMAGE_MESSAGE &&
+        combat.turnStartPoisonExpired)
+    {
+        setGameMessage("Poison wears off.");
+        combat.turnStartConditionPhase =
+            TURN_START_CONDITION_EXPIRY_MESSAGE;
+        return true;
+    }
+
+    finishTurnStart(entity);
+    return true;
+}
+
+void resetActions(Entity* entity)
+{
+    if (entity == nullptr)
+        return;
+
+    entity->turn.moveActionUsed = false;
+    entity->turn.standardActionUsed = false;
+    entity->turn.fullDefense = false;
+    entity->turn.fiveFootStepUsed = false;
+    entity->turn.delayTurn = false;
+    entity->turn.turnActive = true;
+    combat.waitingForPlayer = false;
+
+    ConditionTurnResult result =
+        processConditionsAtTurnStart(entity->character);
+    beginTurnStartConditionMessages(entity, result);
 }
 
 void announceTurn(Entity* entity)
@@ -753,6 +968,30 @@ void endPlayerTurn()
     nextTurn();
 }
 
+static bool skipTurnForCondition(Entity* entity)
+{
+    if (entity == nullptr || canCharacterAct(entity->character))
+        return false;
+
+    if (entity->turn.turnActive)
+    {
+        entity->turn.turnActive = false;
+        entity->turn.movementRemaining = 0;
+        entity->turn.moveActionUsed = true;
+        entity->turn.standardActionUsed = true;
+        combat.waitingForPlayer = false;
+
+        char message[64];
+        snprintf(message, sizeof(message), "%s cannot act.",
+                 getEntityName(entity));
+        setGameMessage(message);
+        combat.nextMonsterStep = millis() + COMBAT_MESSAGE_PAUSE_MS;
+        needsRedraw = true;
+    }
+
+    return true;
+}
+
 void updateCombat()
 {
    switch (combat.phase)
@@ -775,12 +1014,16 @@ void updateCombat()
 
                 resetActions(getCurrentCombatant());
 
-                Entity* current = getCurrentCombatant();
+                if (combat.turnStartConditionPhase ==
+                    TURN_START_CONDITION_NONE)
+                {
+                    Entity* current = getCurrentCombatant();
 
-                if (current->type == ENTITY_PLAYER)
-                    setGameMessage("Player Turn");
-                else
-                    setGameMessage("Monster Turn");
+                    if (current->type == ENTITY_PLAYER)
+                        setGameMessage("Player Turn");
+                    else
+                        setGameMessage("Monster Turn");
+                }
             }
 
             break;
@@ -849,6 +1092,21 @@ void updateCombat()
 
            if (current == nullptr)
                break;
+
+           if (updateTurnStartConditionMessages(current))
+               break;
+
+           if (skipTurnForCondition(current))
+           {
+               if (!current->turn.turnActive &&
+                   millis() >= combat.nextMonsterStep &&
+                   isGameMessageComplete())
+               {
+                   nextTurn();
+               }
+
+               break;
+           }
 
            if (current->type == ENTITY_PLAYER)
            {
@@ -920,7 +1178,8 @@ void beginPlayerAttack(CombatAttackType attackType)
     if (player == nullptr ||
         player->type != ENTITY_PLAYER ||
         !combat.waitingForPlayer ||
-        player->turn.standardActionUsed)
+        player->turn.standardActionUsed ||
+        !canCharacterAct(player->character))
     {
         return;
     }
@@ -1079,7 +1338,8 @@ void confirmPlayerAttack()
     Entity* player = getCurrentCombatant();
     Entity* target = getSelectedAttackTarget();
 
-    if (player == nullptr || target == nullptr)
+    if (player == nullptr || target == nullptr ||
+        !canCharacterAct(player->character))
     {
         setGameMessage("No target selected.");
         needsRedraw = true;
@@ -1295,7 +1555,8 @@ void beginDoubleMove()
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
         !combat.waitingForPlayer || player->turn.standardActionUsed ||
-        player->turn.movementRemaining != player->character.speed)
+        player->turn.movementRemaining != player->character.speed ||
+        !canCharacterAct(player->character))
     {
         setGameMessage("Double Move unavailable.");
         return;
@@ -1313,7 +1574,8 @@ void beginTotalDefense()
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
         !combat.waitingForPlayer || player->turn.standardActionUsed ||
-        player->turn.moveActionUsed)
+        player->turn.moveActionUsed ||
+        !canCharacterAct(player->character))
     {
         setGameMessage("Total Defense unavailable.");
         return;
@@ -1333,7 +1595,8 @@ void beginMonsterAttack(
 {
     if (monster == nullptr || target == nullptr ||
         monster->monster == nullptr ||
-        isMonsterAttackResolving())
+        isMonsterAttackResolving() ||
+        !canCharacterAct(monster->character))
     {
         return;
     }
@@ -1388,6 +1651,7 @@ void beginMonsterAttack(
 
     int dieRoll = rollDie(20);
     int total = dieRoll + monster->monster->baseAttack + abilityModifier +
+                getConditionAttackModifier(monster->character) +
                 rangePenalty;
 
     combat.monsterAttackHit = (dieRoll == 20) ||
@@ -1411,6 +1675,7 @@ void beginMonsterAttack(
 
     combat.attackingMonster = monster;
     combat.monsterAttackTarget = target;
+    combat.monsterAttackType = attackType;
     combat.monsterDefeatedPlayer = false;
     combat.monsterAttackPhase = MONSTER_ATTACK_ROLL_RESULT;
     combat.monsterAttackTime = millis();

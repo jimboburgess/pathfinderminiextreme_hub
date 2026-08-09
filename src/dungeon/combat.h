@@ -38,7 +38,15 @@ enum MonsterAttackPhase
     MONSTER_ATTACK_NONE,
     MONSTER_ATTACK_ROLL_RESULT,
     MONSTER_ATTACK_DAMAGE_RESULT,
+    MONSTER_ATTACK_POISON_RESULT,
     MONSTER_ATTACK_COMPLETE
+};
+
+enum TurnStartConditionMessagePhase
+{
+    TURN_START_CONDITION_NONE,
+    TURN_START_CONDITION_DAMAGE_MESSAGE,
+    TURN_START_CONDITION_EXPIRY_MESSAGE
 };
 
 //==================================================
@@ -98,8 +106,18 @@ struct Combat
     Entity* monsterAttackTarget = nullptr;
     int monsterPendingDamage = 0;
     bool monsterAttackHit = false;
+    CombatAttackType monsterAttackType = COMBAT_ATTACK_NONE;
     bool monsterDefeatedPlayer = false;
     unsigned long monsterAttackTime = 0;
+
+    //--------------------------------------------------
+    // Start-of-turn condition message timing
+    //--------------------------------------------------
+
+    TurnStartConditionMessagePhase turnStartConditionPhase =
+        TURN_START_CONDITION_NONE;
+    bool turnStartPoisonExpired = false;
+    bool turnStartConditionDefeated = false;
 
     //--------------------------------------------------
     // Entity inspection

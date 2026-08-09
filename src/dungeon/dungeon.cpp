@@ -125,10 +125,27 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
             {
                 case TILE_ENEMY_START:
                 {
-                    spawnEntity(
+                    // A dungeon enemy must be a fully initialized monster,
+                    // just like a forest encounter. A bare ENTITY_MONSTER
+                    // has no team, stats, weapon, sprite, or AI script and
+                    // therefore cannot join the shared combat system.
+                    spawnMonster(
                         dungeon.entities,
                         dungeon.entityCount,
-                        ENTITY_MONSTER,
+                        MONSTER_GOBLIN_SCIMITAR,
+                        x,
+                        y);
+
+                    room.map.tiles[y][x] = TILE_FLOOR;
+                    break;
+                }
+
+                case TILE_GIANT_SPIDER_START:
+                {
+                    spawnMonster(
+                        dungeon.entities,
+                        dungeon.entityCount,
+                        MONSTER_GIANT_SPIDER,
                         x,
                         y);
 

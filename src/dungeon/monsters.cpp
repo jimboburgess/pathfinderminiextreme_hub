@@ -28,6 +28,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_EIGHTH,
         LOOT_NONE,
         { ABILITY_NONE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_NONE,
+        { 0, 0 }
     },
 
     //======================================================
@@ -46,6 +47,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_THIRD,
         LOOT_HUMANOID,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     {
@@ -61,7 +63,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NONE,
         CR_ONE_THIRD,
         LOOT_HUMANOID,
-        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_RANGED
+        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_RANGED,
+        { 0, 0 }
     },
 
     {
@@ -78,6 +81,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_HUMANOID,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     //======================================================
@@ -97,6 +101,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_THIRD,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     {
@@ -113,6 +118,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_HALF,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     {
@@ -129,6 +135,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     {
@@ -145,6 +152,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_THREE,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     //======================================================
@@ -163,7 +171,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_ONE,
         LOOT_BEAST,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { ABILITY_MELEE_ATTACK, ABILITY_POISON, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 12, 3 }
     },
 
     {
@@ -180,6 +189,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_MONSTER,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     {
@@ -195,7 +205,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_3,
         CR_THREE,
         LOOT_MONSTER,
-        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SUPPORT
+        { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SUPPORT,
+        { 0, 0 }
     },
 
     {
@@ -211,6 +222,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_ABERRATION,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }
     },
 
     {
@@ -227,6 +239,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_FOUR,
         LOOT_ABERRATION,
         { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SPELLCASTER,
+        { 0, 0 }
     },
 };
 
@@ -241,6 +254,23 @@ const Monster* getMonster(MonsterID id)
         return nullptr;
 
     return &monsterDatabase[id];
+}
+
+bool monsterHasSpecialAbility(const Monster& monster, AbilityID ability)
+{
+    if (ability == ABILITY_NONE)
+        return false;
+
+    for (uint8_t i = 0;
+         i < sizeof(monster.specialAbilities) /
+                 sizeof(monster.specialAbilities[0]);
+         i++)
+    {
+        if (monster.specialAbilities[i] == ability)
+            return true;
+    }
+
+    return false;
 }
 
 uint16_t getMonsterMaxHP(const Monster& monster)
