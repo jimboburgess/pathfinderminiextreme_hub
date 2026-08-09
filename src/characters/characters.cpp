@@ -164,6 +164,16 @@ int getRangedAttackBonus(const Character& character)
          + getConditionAttackModifier(character);
 }
 
+uint8_t getSneakAttackDice(const Character& character)
+{
+    if (character.characterClass != CLASS_ROGUE || character.level == 0)
+        return 0;
+
+    uint8_t dice = (character.level + 1) / 2;
+
+    return dice > 10 ? 10 : dice;
+}
+
 int getMovementSpeed(const Character& character)
 {
     int movement = 30;

@@ -242,7 +242,13 @@ bool tryMovePlayer(Dungeon &dungeon)
                 else if (targetX == ROOM_SIZE - 1)
                     loadRoom(dungeon, ENTRY_WEST);
 
+                // A room transition replaces the entire map and entity list.
+                // Repaint its background as well as scheduling the full
+                // redraw, otherwise the old player's transparent sprite can
+                // remain visible beneath the newly loaded room.
+                backgroundNeedsRedraw = true;
                 redrawType = REDRAW_FULL;
+                needsRedraw = true;
 
                 return true;
             }

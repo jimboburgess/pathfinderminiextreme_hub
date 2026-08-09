@@ -176,6 +176,79 @@ static bool isMonsterCombatant(const Entity& entity)
            entity.character.team == TEAM_MONSTER;
 }
 
+static bool areHostile(const Entity& attacker, const Entity& target)
+{
+    return attacker.character.team != TEAM_NEUTRAL &&
+           target.character.team != TEAM_NEUTRAL &&
+           attacker.character.team != target.character.team;
+}
+
+bool canSneakAttack(const Entity& attacker, const Entity& target)
+{
+    return attacker.active &&
+           target.active &&
+           attacker.character.state == STATE_ALIVE &&
+           target.character.state == STATE_ALIVE &&
+           attacker.character.characterClass == CLASS_ROGUE &&
+           areHostile(attacker, target) &&
+           hasCondition(target.character, CONDITION_FLAT_FOOTED);
+}
+
+static int rollSneakAttackDamage(
+    const Entity& attacker,
+    const Entity& target)
+{
+    if (!canSneakAttack(attacker, target))
+        return 0;
+
+    uint8_t dice = getSneakAttackDice(attacker.character);
+
+    if (dice == 0)
+        return 0;
+
+    int damage = rollDice(dice, 6);
+
+    Serial.print("Sneak Attack: +");
+    Serial.print(dice);
+    Serial.print("d6 = ");
+    Serial.println(damage);
+
+    return damage;
+}
+
+static void applyFlatFootedToCombatants()
+{
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        Entity* entity = combat.initiativeOrder[i];
+
+        if (entity == nullptr || entity->character.state != STATE_ALIVE)
+            continue;
+
+        if (addCondition(entity->character, CONDITION_FLAT_FOOTED, 0, 0))
+        {
+            Serial.print(getEntityName(entity));
+            Serial.println(" is FLAT-FOOTED");
+        }
+    }
+}
+
+static void removeFlatFooted(Entity* entity)
+{
+    if (entity != nullptr &&
+        removeCondition(entity->character, CONDITION_FLAT_FOOTED))
+    {
+        Serial.print(getEntityName(entity));
+        Serial.println(" is no longer FLAT-FOOTED");
+    }
+}
+
+static void clearCombatFlatFootedConditions()
+{
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+        removeFlatFooted(combat.initiativeOrder[i]);
+}
+
 static bool areAllCombatMonstersDefeated()
 {
     bool hasMonster = false;
@@ -320,6 +393,8 @@ static void finishPlayerAttack()
     combat.attackResolutionPending = false;
     combat.pendingAttackTarget = nullptr;
     combat.pendingDamage = 0;
+    combat.pendingSneakAttack = false;
+    combat.pendingSneakAttackDamage = 0;
 
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
@@ -464,15 +539,35 @@ static void updateMonsterAttack()
                     generateCorpseLoot(*target);
                     combat.monsterDefeatedPlayer = true;
 
-                    snprintf(message, sizeof(message),
-                             "Player takes %d damage and falls!",
-                             combat.monsterPendingDamage);
+                    if (combat.monsterSneakAttack)
+                    {
+                        snprintf(message, sizeof(message),
+                                 "Player takes %d damage (Sneak Attack +%d) and falls!",
+                                 combat.monsterPendingDamage,
+                                 combat.monsterPendingSneakAttackDamage);
+                    }
+                    else
+                    {
+                        snprintf(message, sizeof(message),
+                                 "Player takes %d damage and falls!",
+                                 combat.monsterPendingDamage);
+                    }
                 }
                 else
                 {
-                    snprintf(message, sizeof(message),
-                             "Player takes %d damage!",
-                             combat.monsterPendingDamage);
+                    if (combat.monsterSneakAttack)
+                    {
+                        snprintf(message, sizeof(message),
+                                 "Player takes %d damage (Sneak Attack +%d)!",
+                                 combat.monsterPendingDamage,
+                                 combat.monsterPendingSneakAttackDamage);
+                    }
+                    else
+                    {
+                        snprintf(message, sizeof(message),
+                                 "Player takes %d damage!",
+                                 combat.monsterPendingDamage);
+                    }
                 }
 
                 setGameMessage(message);
@@ -507,6 +602,8 @@ static void updateMonsterAttack()
             combat.attackingMonster = nullptr;
             combat.monsterAttackTarget = nullptr;
             combat.monsterPendingDamage = 0;
+            combat.monsterSneakAttack = false;
+            combat.monsterPendingSneakAttackDamage = 0;
             combat.monsterAttackType = COMBAT_ATTACK_NONE;
 
             if (combat.monsterDefeatedPlayer)
@@ -591,8 +688,13 @@ void checkForCombat()
     {
         Entity& monster = entities[i];
 
-        if (!isMonsterCombatant(monster))
+        // Dead monsters stay active on the map until their corpse loot is
+        // collected. They are valid interaction targets, not combat targets.
+        if (!isMonsterCombatant(monster) ||
+            monster.character.state != STATE_ALIVE)
+        {
             continue;
+        }
 
         int distance = gridDistanceBetweenFootprints(playerEntity, &monster);
 
@@ -681,6 +783,7 @@ void startCombat()
     findCombatants();
     rollInitiative();
     sortInitiative();
+    applyFlatFootedToCombatants();
 
     combat.phase = COMBAT_INITIATIVE;
     combat.phaseStartTime = millis();
@@ -829,6 +932,10 @@ void resetActions(Entity* entity)
 {
     if (entity == nullptr)
         return;
+
+    // This condition is intentionally untimed: its first start-of-turn
+    // removal marks that this combatant has acted in the current combat.
+    removeFlatFooted(entity);
 
     entity->turn.moveActionUsed = false;
     entity->turn.standardActionUsed = false;
@@ -1052,15 +1159,35 @@ void updateCombat()
                            target->character.state = STATE_DEAD;
                            generateCorpseLoot(*target);
 
-                           snprintf(message, sizeof(message),
-                                    "%s takes %d damage and dies!",
-                                    getEntityName(target), combat.pendingDamage);
+                           if (combat.pendingSneakAttack)
+                           {
+                               snprintf(message, sizeof(message),
+                                        "%s takes %d damage (Sneak Attack +%d) and dies!",
+                                        getEntityName(target), combat.pendingDamage,
+                                        combat.pendingSneakAttackDamage);
+                           }
+                           else
+                           {
+                               snprintf(message, sizeof(message),
+                                        "%s takes %d damage and dies!",
+                                        getEntityName(target), combat.pendingDamage);
+                           }
                        }
                        else
                        {
-                           snprintf(message, sizeof(message),
-                                    "%s takes %d damage!",
-                                    getEntityName(target), combat.pendingDamage);
+                           if (combat.pendingSneakAttack)
+                           {
+                               snprintf(message, sizeof(message),
+                                        "%s takes %d damage (Sneak Attack +%d)!",
+                                        getEntityName(target), combat.pendingDamage,
+                                        combat.pendingSneakAttackDamage);
+                           }
+                           else
+                           {
+                               snprintf(message, sizeof(message),
+                                        "%s takes %d damage!",
+                                        getEntityName(target), combat.pendingDamage);
+                           }
                        }
 
                        setGameMessage(message);
@@ -1136,6 +1263,8 @@ void updateCombat()
 
 void endCombat()
 {
+    clearCombatFlatFootedConditions();
+
     uint8_t playerCount = 0;
     uint32_t experiencePerCharacter = awardCombatExperience(playerCount);
 
@@ -1411,6 +1540,8 @@ void confirmPlayerAttack()
 
     combat.pendingAttackTarget = target;
     combat.pendingDamage = 0;
+    combat.pendingSneakAttack = false;
+    combat.pendingSneakAttackDamage = 0;
 
     if (hit)
     {
@@ -1423,6 +1554,12 @@ void confirmPlayerAttack()
         }
 
         combat.pendingDamage = std::max(1, combat.pendingDamage);
+
+        combat.pendingSneakAttackDamage =
+            rollSneakAttackDamage(*player, *target);
+        combat.pendingSneakAttack =
+            combat.pendingSneakAttackDamage > 0;
+        combat.pendingDamage += combat.pendingSneakAttackDamage;
     }
 
     combat.attackDamagePending = hit;
@@ -1659,6 +1796,8 @@ void beginMonsterAttack(
             target->character,
             target->turn.fullDefense ? 4 : 0));
     combat.monsterPendingDamage = 0;
+    combat.monsterSneakAttack = false;
+    combat.monsterPendingSneakAttackDamage = 0;
 
     if (combat.monsterAttackHit)
     {
@@ -1671,6 +1810,13 @@ void beginMonsterAttack(
 
         combat.monsterPendingDamage = std::max(
             1, combat.monsterPendingDamage);
+
+        combat.monsterPendingSneakAttackDamage =
+            rollSneakAttackDamage(*monster, *target);
+        combat.monsterSneakAttack =
+            combat.monsterPendingSneakAttackDamage > 0;
+        combat.monsterPendingDamage +=
+            combat.monsterPendingSneakAttackDamage;
     }
 
     combat.attackingMonster = monster;

@@ -93,6 +93,8 @@ struct Combat
     int8_t selectedTargetIndex = -1;
     Entity* pendingAttackTarget = nullptr;
     int pendingDamage = 0;
+    bool pendingSneakAttack = false;
+    int pendingSneakAttackDamage = 0;
     unsigned long attackResultTime = 0;
     bool attackDamagePending = false;
     bool attackResolutionPending = false;
@@ -105,6 +107,8 @@ struct Combat
     Entity* attackingMonster = nullptr;
     Entity* monsterAttackTarget = nullptr;
     int monsterPendingDamage = 0;
+    bool monsterSneakAttack = false;
+    int monsterPendingSneakAttackDamage = 0;
     bool monsterAttackHit = false;
     CombatAttackType monsterAttackType = COMBAT_ATTACK_NONE;
     bool monsterDefeatedPlayer = false;
@@ -160,6 +164,10 @@ void announceTurn(Entity* entity);
 void nextTurn();
 
 void endPlayerTurn();
+
+// This checks the class, team, target state, and flat-footed requirements.
+// Weapon attack resolution calls it only after confirming a hit.
+bool canSneakAttack(const Entity& attacker, const Entity& target);
 
 //==================================================
 // Player / Monster Turns

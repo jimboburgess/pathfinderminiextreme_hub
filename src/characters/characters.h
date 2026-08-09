@@ -275,6 +275,11 @@ int getMeleeAttackBonus(const Character& character);
 
 int getRangedAttackBonus(const Character& character);
 
+// Rogue class feature progression. Returns zero for non-Rogues or an
+// uninitialized level, otherwise 1d6 at level 1 and one additional d6 every
+// two levels through level 20.
+uint8_t getSneakAttackDice(const Character& character);
+
 int getMovementSpeed(const Character& character);
 
 uint32_t getExperienceToNextLevel(const Character& character);
