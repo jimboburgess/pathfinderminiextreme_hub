@@ -64,6 +64,13 @@ Entity* spawnMonster(
     uint8_t x,
     uint8_t y)
 {
+    const Monster* monster = getMonster(monsterID);
+
+    // Invalid IDs and zero-hit-die definitions cannot produce a valid living
+    // monster. Reject them before consuming or reusing an entity slot.
+    if (monster == nullptr || monster->hitDice == 0)
+        return nullptr;
+
     Entity* entity = spawnEntity(
         entities,
         entityCount,
@@ -75,13 +82,7 @@ Entity* spawnMonster(
         return nullptr;
 
     entity->monsterID = monsterID;
-
-    const Monster* monster = getMonster(monsterID);
-
     entity->monster = monster;
-
-    if (monster == nullptr)
-        return entity;
 
     entity->sprite = monster->sprite;
 
@@ -97,7 +98,10 @@ Entity* spawnMonster(
     entity->character.abilities = monster->abilities;
     entity->character.speed = monster->speed;
 
-    entity->character.health.maxHP = getMonsterMaxHP(*monster);
+    // Roll the definition's intended hit-die calculation exactly once, then
+    // explicitly initialize both runtime health fields from that result.
+    const uint16_t maxHP = getMonsterMaxHP(*monster);
+    entity->character.health.maxHP = maxHP;
     entity->character.health.currentHP = entity->character.health.maxHP;
 
     // Put the creature's weapon in the matching slot.  Ranged monster
@@ -123,9 +127,6 @@ Entity* spawnMonster(
 
     entity->character.equipment.equipped[SLOT_ARMOR] =
         makeItemInstance(monster->armor);
-
-    entity->character.health.maxHP = getMonsterMaxHP(*monster);
-    entity->character.health.currentHP = entity->character.health.maxHP;
 
     return entity;
 }

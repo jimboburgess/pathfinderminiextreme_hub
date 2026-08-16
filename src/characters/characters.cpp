@@ -270,11 +270,15 @@ int getMovementSpeed(const Character& character)
 
 uint32_t getExperienceToNextLevel(const Character& character)
 {
-    if (character.level >= 20)
+    if (character.level >= MAX_CHARACTER_LEVEL)
         return 0;
 
-    return getExperienceForLevel(character.level + 1)
-         - character.xp;
+    uint32_t nextLevelExperience =
+        getExperienceForLevel(character.level + 1);
+
+    return character.xp < nextLevelExperience
+        ? nextLevelExperience - character.xp
+        : 0;
 }
 
 //==================================================

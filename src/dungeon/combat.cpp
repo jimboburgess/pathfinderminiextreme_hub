@@ -1,6 +1,7 @@
 #include "combat.h"
 
 #include <algorithm>
+#include <cstring>
 #include <stdlib.h>
 
 #include "activemap.h"
@@ -10,6 +11,7 @@
 #include "data/dice.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
+#include "data/progression.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "input/menu.h"
@@ -289,38 +291,9 @@ static bool areAllCombatMonstersDefeated()
     return hasMonster;
 }
 
-static uint32_t getDefeatedMonsterExperience()
+static uint8_t getParticipatingPlayerCount()
 {
-    uint32_t totalExperience = 0;
-
-    for (uint8_t i = 0; i < combat.combatantCount; i++)
-    {
-        Entity* entity = combat.initiativeOrder[i];
-
-        if (entity == nullptr || !isMonsterCombatant(*entity) ||
-            entity->character.state == STATE_ALIVE)
-        {
-            continue;
-        }
-
-        const Monster* monster = entity->monster;
-
-        if (monster == nullptr)
-            monster = getMonster(entity->monsterID);
-
-        if (monster != nullptr)
-            totalExperience += getExperienceAward(monster->challengeRating);
-    }
-
-    return totalExperience;
-}
-
-static uint32_t awardCombatExperience(uint8_t& playerCount)
-{
-    playerCount = 0;
-
-    if (combat.experienceAwarded || !areAllCombatMonstersDefeated())
-        return 0;
+    uint8_t playerCount = 0;
 
     for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
@@ -330,24 +303,105 @@ static uint32_t awardCombatExperience(uint8_t& playerCount)
             playerCount++;
     }
 
-    if (playerCount == 0)
-        return 0;
+    return playerCount;
+}
 
-    // The exact Pathfinder award method totals defeated creatures' CR XP,
-    // then divides that encounter total equally among participating PCs.
-    uint32_t experiencePerCharacter =
-        getDefeatedMonsterExperience() / playerCount;
+struct DefeatResult
+{
+    uint32_t experiencePerCharacter = 0;
+    uint8_t levelReached = 0;
+};
+
+static DefeatResult finalizeDefeat(Entity& defeated)
+{
+    DefeatResult result;
+
+    // This is the one-time ALIVE -> DEAD transition for combat damage and
+    // turn-start condition damage. A corpse, inactive entity, or already
+    // defeated combatant cannot pass through it again.
+    if (!defeated.active || defeated.character.state != STATE_ALIVE)
+        return result;
+
+    defeated.character.health.currentHP = 0;
+    defeated.character.state = STATE_DEAD;
+    generateCorpseLoot(defeated);
+
+    // Only a hostile static monster definition carries a combat XP award.
+    if (!isMonsterCombatant(defeated))
+        return result;
+
+    const Monster* monster = defeated.monster;
+
+    if (monster == nullptr)
+        monster = getMonster(defeated.monsterID);
+
+    uint8_t playerCount = getParticipatingPlayerCount();
+
+    if (monster == nullptr || playerCount == 0)
+        return result;
+
+    uint32_t monsterExperience =
+        getExperienceAward(monster->challengeRating);
+
+    if (monsterExperience > UINT32_MAX - combat.defeatedMonsterExperience)
+        combat.defeatedMonsterExperience = UINT32_MAX;
+    else
+        combat.defeatedMonsterExperience += monsterExperience;
+
+    // Preserve the existing encounter-total party split while still making
+    // each death transition the award event. Using the cumulative share also
+    // carries integer-division remainders into later kills.
+    uint32_t cumulativeShare =
+        combat.defeatedMonsterExperience / playerCount;
+
+    if (cumulativeShare > combat.experienceGained)
+    {
+        result.experiencePerCharacter =
+            cumulativeShare - combat.experienceGained;
+    }
+
+    if (result.experiencePerCharacter == 0)
+        return result;
 
     for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
         Entity* entity = combat.initiativeOrder[i];
 
-        if (entity != nullptr && isPlayerSideCharacter(*entity))
-            entity->character.xp += experiencePerCharacter;
+        if (entity == nullptr || !isPlayerSideCharacter(*entity))
+            continue;
+
+        uint8_t levelsGained = awardExperience(
+            entity->character, result.experiencePerCharacter);
+
+        if (levelsGained > 0)
+            result.levelReached = entity->character.level;
     }
 
-    combat.experienceAwarded = true;
-    return experiencePerCharacter;
+    combat.experienceGained = cumulativeShare;
+
+    if (result.levelReached > 0)
+        playSound(SoundEffect::LEVEL_UP);
+
+    return result;
+}
+
+static void appendLevelUpFeedback(
+    char* message,
+    size_t messageSize,
+    const DefeatResult& result)
+{
+    if (result.levelReached == 0 || messageSize == 0)
+        return;
+
+    size_t messageLength = strlen(message);
+
+    if (messageLength >= messageSize)
+        return;
+
+    snprintf(message + messageLength,
+             messageSize - messageLength,
+             " LEVEL UP! Level %u.",
+             static_cast<unsigned int>(result.levelReached));
 }
 
 static bool isInspectableEntity(const Entity& entity)
@@ -556,9 +610,7 @@ static void updateMonsterAttack()
 
                 if (target->character.health.currentHP <= 0)
                 {
-                    target->character.health.currentHP = 0;
-                    target->character.state = STATE_DEAD;
-                    generateCorpseLoot(*target);
+                    DefeatResult defeatResult = finalizeDefeat(*target);
                     combat.monsterDefeatedPlayer = true;
 
                     if (combat.monsterSneakAttack)
@@ -574,6 +626,9 @@ static void updateMonsterAttack()
                                  "Player takes %d damage and falls!",
                                  combat.monsterPendingDamage);
                     }
+
+                    appendLevelUpFeedback(
+                        message, sizeof(message), defeatResult);
                 }
                 else
                 {
@@ -818,7 +873,8 @@ void startCombat()
 
     combat.currentTurnIndex = 0;
     combat.combatRound = 1;
-    combat.experienceAwarded = false;
+    combat.defeatedMonsterExperience = 0;
+    combat.experienceGained = 0;
     combat.endPlayerTurnAfterMessage = false;
     combat.turnStartConditionPhase = TURN_START_CONDITION_NONE;
     combat.turnStartPoisonExpired = false;
@@ -889,18 +945,18 @@ static void beginTurnStartConditionMessages(
 
     if (result.damage > 0)
     {
-        char message[64];
+        char message[128];
 
         if (entity->character.health.currentHP <= 0)
         {
-            entity->character.health.currentHP = 0;
-            entity->character.state = STATE_DEAD;
-            generateCorpseLoot(*entity);
+            DefeatResult defeatResult = finalizeDefeat(*entity);
             combat.turnStartConditionDefeated = true;
 
             snprintf(message, sizeof(message),
                      "%s takes %d poison damage and dies!",
                      getEntityName(entity), result.damage);
+            appendLevelUpFeedback(
+                message, sizeof(message), defeatResult);
         }
         else if (entity->type == ENTITY_PLAYER)
         {
@@ -1191,13 +1247,12 @@ void updateCombat()
                    {
                        target->character.health.currentHP -= combat.pendingDamage;
 
-                       char message[64];
+                       char message[128];
 
                        if (target->character.health.currentHP <= 0)
                        {
-                           target->character.health.currentHP = 0;
-                           target->character.state = STATE_DEAD;
-                           generateCorpseLoot(*target);
+                            DefeatResult defeatResult =
+                                finalizeDefeat(*target);
 
                            if (combat.pendingPowerAttack)
                            {
@@ -1213,12 +1268,16 @@ void updateCombat()
                                         getEntityName(target), combat.pendingDamage,
                                         combat.pendingSneakAttackDamage);
                            }
-                           else
-                           {
-                               snprintf(message, sizeof(message),
-                                        "%s takes %d damage and dies!",
-                                        getEntityName(target), combat.pendingDamage);
-                           }
+                            else
+                            {
+                                snprintf(message, sizeof(message),
+                                         "%s takes %d damage and dies!",
+                                         getEntityName(target),
+                                         combat.pendingDamage);
+                            }
+
+                            appendLevelUpFeedback(
+                                message, sizeof(message), defeatResult);
                        }
                        else
                        {
@@ -1327,23 +1386,36 @@ void endCombat()
             combatant->turn.powerAttackActive = false;
     }
 
-    uint8_t playerCount = 0;
-    uint32_t experiencePerCharacter = awardCombatExperience(playerCount);
+    uint8_t playerCount = getParticipatingPlayerCount();
+    uint32_t experiencePerCharacter = combat.experienceGained;
+    bool victory = areAllCombatMonstersDefeated();
 
     if (experiencePerCharacter > 0)
     {
         char message[64];
 
-        if (playerCount == 1)
+        if (victory && playerCount == 1)
         {
             snprintf(message, sizeof(message),
                      "Victory! You gain %lu XP.",
                      static_cast<unsigned long>(experiencePerCharacter));
         }
-        else
+        else if (victory)
         {
             snprintf(message, sizeof(message),
                      "Victory! Party gains %lu XP each.",
+                     static_cast<unsigned long>(experiencePerCharacter));
+        }
+        else if (playerCount == 1)
+        {
+            snprintf(message, sizeof(message),
+                     "You gained %lu XP.",
+                     static_cast<unsigned long>(experiencePerCharacter));
+        }
+        else
+        {
+            snprintf(message, sizeof(message),
+                     "Party gained %lu XP each.",
                      static_cast<unsigned long>(experiencePerCharacter));
         }
 

@@ -231,6 +231,12 @@ bool tryMovePlayer(Dungeon &dungeon)
 
             if (nextRoom != 255)
             {
+                // loadRoom() replaces the entity array and rebuilds its
+                // player from the persistent Character. Preserve every
+                // runtime character change first, including XP, level, HP,
+                // conditions, inventory, and equipment.
+                ::player = player->character;
+
                 dungeon.currentRoom = nextRoom;
 
                 if (targetY == 0)

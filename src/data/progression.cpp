@@ -37,19 +37,100 @@ uint32_t getExperienceForLevel(uint8_t level)
     if (level <= 1)
         return 0;
 
-    if (level > 20)
-        level = 20;
+    if (level > MAX_CHARACTER_LEVEL)
+        level = MAX_CHARACTER_LEVEL;
 
     return mediumExperienceProgression[level - 1];
 }
 
+uint8_t getLevelForExperience(uint32_t experience)
+{
+    uint8_t level = 1;
+
+    while (level < MAX_CHARACTER_LEVEL &&
+           experience >= getExperienceForLevel(level + 1))
+    {
+        level++;
+    }
+
+    return level;
+}
+
 bool canLevelUp(const Character& character)
 {
-    if (character.level >= 20)
+    if (character.level >= MAX_CHARACTER_LEVEL)
         return false;
 
     return character.xp >=
            getExperienceForLevel(character.level + 1);
+}
+
+static void increasePrimaryClassAbility(Character& character)
+{
+    uint8_t* ability = nullptr;
+
+    switch (character.characterClass)
+    {
+        case CLASS_FIGHTER:
+            ability = &character.abilities.strength;
+            break;
+
+        case CLASS_ROGUE:
+            ability = &character.abilities.dexterity;
+            break;
+
+        case CLASS_WIZARD:
+            ability = &character.abilities.intelligence;
+            break;
+
+        case CLASS_CLERIC:
+            ability = &character.abilities.wisdom;
+            break;
+    }
+
+    if (ability != nullptr && *ability < UINT8_MAX)
+        (*ability)++;
+}
+
+static void applyLevelAdvancement(Character& character, uint8_t newLevel)
+{
+    character.level = newLevel;
+
+    // Permanent class-based ability advancement happens only while crossing
+    // the milestone. It is deliberately separate from derived-stat queries,
+    // so recalculating HP, attacks, saves, or the character sheet cannot add
+    // the bonus again.
+    if (newLevel % 4 == 0)
+        increasePrimaryClassAbility(character);
+
+    // The class HP arrays are cumulative. Recompute the maximum for the new
+    // level but leave currentHP untouched so existing damage is preserved.
+    character.health.maxHP = getMaxHP(character);
+}
+
+uint8_t awardExperience(Character& character, uint32_t amount)
+{
+    if (amount > UINT32_MAX - character.xp)
+        character.xp = UINT32_MAX;
+    else
+        character.xp += amount;
+
+    if (character.level < 1)
+        character.level = 1;
+    else if (character.level > MAX_CHARACTER_LEVEL)
+        character.level = MAX_CHARACTER_LEVEL;
+
+    uint8_t targetLevel = getLevelForExperience(character.xp);
+
+    if (targetLevel <= character.level)
+        return 0;
+
+    uint8_t previousLevel = character.level;
+
+    while (character.level < targetLevel)
+        applyLevelAdvancement(character, character.level + 1);
+
+    return character.level - previousLevel;
 }
 
 static const uint8_t noneProgression[20] =
@@ -223,7 +304,7 @@ static const uint8_t poorSave[20] =
 int getBaseAttackBonus(CharacterClass characterClass, uint8_t level)
 {
     if (level < 1) level = 1;
-    if (level > 20) level = 20;
+    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
 
     switch (characterClass)
     {
@@ -248,7 +329,7 @@ int getBaseAttackBonus(CharacterClass characterClass, uint8_t level)
 int getBaseHitPoints(CharacterClass characterClass, uint8_t level)
 {
     if (level < 1) level = 1;
-    if (level > 20) level = 20;
+    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
 
     switch (characterClass)
     {
@@ -275,7 +356,7 @@ int getBaseHitPoints(CharacterClass characterClass, uint8_t level)
 int getFortitudeSave(CharacterClass characterClass, uint8_t level)
 {
     if (level < 1) level = 1;
-    if (level > 20) level = 20;
+    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
 
     switch (characterClass)
     {
@@ -291,7 +372,7 @@ int getFortitudeSave(CharacterClass characterClass, uint8_t level)
 int getReflexSave(CharacterClass characterClass, uint8_t level)
 {
     if (level < 1) level = 1;
-    if (level > 20) level = 20;
+    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
 
     switch (characterClass)
     {
@@ -306,7 +387,7 @@ int getReflexSave(CharacterClass characterClass, uint8_t level)
 int getWillSave(CharacterClass characterClass, uint8_t level)
 {
     if (level < 1) level = 1;
-    if (level > 20) level = 20;
+    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
 
     switch (characterClass)
     {

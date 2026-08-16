@@ -275,14 +275,18 @@ bool monsterHasSpecialAbility(const Monster& monster, AbilityID ability)
 
 uint16_t getMonsterMaxHP(const Monster& monster)
 {
-    uint16_t hp = rollDice(monster.hitDice, 8);
-
-    hp += monster.hitDice * getAbilityModifier(monster.abilities.constitution);
+    // Keep the entire calculation signed. Monsters without Constitution use
+    // a score of 0, whose negative modifier can make a low hit-die roll fall
+    // below zero. Storing that intermediate in uint16_t wrapped it to a value
+    // near 65,535 before the minimum-HP check could run.
+    int hp = rollDice(monster.hitDice, 8) +
+             monster.hitDice *
+                 getAbilityModifier(monster.abilities.constitution);
 
     if (hp < monster.hitDice)
         hp = monster.hitDice;
 
-    return hp;
+    return static_cast<uint16_t>(hp);
 }
 
 uint32_t getExperienceAward(ChallengeRating challengeRating)

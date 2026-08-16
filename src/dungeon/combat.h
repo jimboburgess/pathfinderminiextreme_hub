@@ -69,7 +69,8 @@ struct Combat
     uint8_t currentTurnIndex = 0;
 
     uint8_t combatRound = 0;
-    bool experienceAwarded = false;
+    uint32_t defeatedMonsterExperience = 0;
+    uint32_t experienceGained = 0;
 
     //--------------------------------------------------
     // Player Input
