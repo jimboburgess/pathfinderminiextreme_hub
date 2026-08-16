@@ -134,6 +134,7 @@ static void giveStartingEquipment(Character &character,
     }
 
     clearInventory(character.inventory);
+    character.inventory.gold = STARTING_GOLD;
 
     const ClassStartingEquipment& gear = startingEquipment[characterClass];
 

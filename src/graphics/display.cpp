@@ -129,17 +129,21 @@ void drawTownScreen()
 
     tft.setTextSize(2);
 
-    tft.setCursor(20, 70);
-    tft.print(townSelection == TOWN_STAY_HOME ? "> " : "  ");
-    tft.print("Stay Home");
-
-    tft.setCursor(20, 100);
+    tft.setCursor(20, 60);
     tft.print(townSelection == TOWN_FOREST ? "> " : "  ");
     tft.print("Enter the Forest");
 
-    tft.setCursor(20, 130);
+    tft.setCursor(20, 90);
     tft.print(townSelection == TOWN_DUNGEON ? "> " : "  ");
     tft.print("Explore Dungeon");
+
+    tft.setCursor(20, 120);
+    tft.print(townSelection == TOWN_SHOP ? "> " : "  ");
+    tft.print("Shop");
+
+    tft.setCursor(20, 150);
+    tft.print(townSelection == TOWN_STAY_HOME ? "> " : "  ");
+    tft.print("Stay Home");
 
     if (townSelection == TOWN_STAY_HOME)
     {
@@ -798,7 +802,11 @@ void refreshDisplay()
             break;
 
         case GAME_TOWN:
-            drawTownScreen();
+            if (!menuState.isOpen ||
+                menuState.redrawType == MENU_REDRAW_FULL)
+            {
+                drawTownScreen();
+            }
             break;
 
         case GAME_FOREST:

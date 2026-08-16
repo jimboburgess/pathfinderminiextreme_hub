@@ -8,6 +8,18 @@
 #include "data/entityspawn.h"
 #include "graphics/display.h"
 
+uint16_t rollLootGold(const LootTable& table)
+{
+    if (table.maxGold < table.minGold)
+        return 0;
+
+    if (table.minGold == table.maxGold)
+        return table.minGold;
+
+    return static_cast<uint16_t>(
+        random(table.minGold, static_cast<uint32_t>(table.maxGold) + 1));
+}
+
 namespace
 {
 struct WeightedLootEntry
@@ -15,6 +27,28 @@ struct WeightedLootEntry
     ItemID item;
     uint8_t weight;
 };
+
+const LootTable lootTables[LOOT_COUNT] =
+{
+    {  0,  0 }, // None
+    {  1,  4 }, // Poor
+    {  2,  8 }, // Common
+    {  5, 12 }, // Uncommon
+    { 10, 20 }, // Rare
+    { 25, 50 }, // Boss
+    {  3, 10 }, // Monster
+    {  3, 12 }, // Humanoid
+    {  1,  5 }, // Beast
+    {  2,  8 }, // Undead
+    {  5, 15 }, // Aberration
+    {  5, 15 }, // Small chest
+    { 15, 30 }, // Medium chest
+    { 30, 60 }  // Large chest
+};
+
+static_assert(
+    LOOT_COUNT == (sizeof(lootTables) / sizeof(lootTables[0])),
+    "LootTableID and gold ranges are out of sync.");
 
 const WeightedLootEntry poorLoot[] =
 {
@@ -159,6 +193,7 @@ void clearCorpseLoot(LootData& loot)
     }
 
     loot.itemCount = 0;
+    loot.gold = 0;
 }
 
 void addLootItem(LootData& loot, ItemID item, uint8_t quantity = 1)
@@ -324,13 +359,36 @@ void generateCorpseLoot(Entity& corpse)
         addHumanoidEquipmentLoot(corpse.loot, *monster);
 
     addLootForTable(corpse.loot, monster->lootTable);
+
+    if (monster->lootTable >= LOOT_NONE &&
+        monster->lootTable < LOOT_COUNT)
+    {
+        corpse.loot.gold = rollLootGold(lootTables[monster->lootTable]);
+    }
 }
 
 bool corpseHasLoot(const Entity& corpse)
 {
     return corpse.active && corpse.type == ENTITY_MONSTER &&
            corpse.character.state == STATE_DEAD &&
-           corpse.loot.generated && corpse.loot.itemCount > 0;
+           corpse.loot.generated &&
+           (corpse.loot.itemCount > 0 || corpse.loot.gold > 0);
+}
+
+uint16_t takeCorpseGold(Entity& corpse, Character& recipient)
+{
+    if (!corpseHasLoot(corpse) || corpse.loot.gold == 0)
+        return 0;
+
+    uint16_t gold = corpse.loot.gold;
+
+    if (gold > UINT32_MAX - recipient.inventory.gold)
+        recipient.inventory.gold = UINT32_MAX;
+    else
+        recipient.inventory.gold += gold;
+
+    corpse.loot.gold = 0;
+    return gold;
 }
 
 bool takeCorpseLootItem(
@@ -356,6 +414,8 @@ bool takeCorpseLootItem(
         return false;
     }
 
+    takeCorpseGold(corpse, recipient);
+
     if (corpse.loot.itemCount == 0)
         finishLootingCorpse(corpse);
 
@@ -367,6 +427,7 @@ uint16_t takeAllCorpseLoot(Entity& corpse, Character& recipient)
     if (!corpseHasLoot(corpse))
         return 0;
 
+    uint16_t goldTaken = takeCorpseGold(corpse, recipient);
     uint16_t taken = 0;
     bool madeProgress = true;
 
@@ -392,13 +453,16 @@ uint16_t takeAllCorpseLoot(Entity& corpse, Character& recipient)
         }
     }
 
+    if (corpse.loot.itemCount == 0 && goldTaken > 0)
+        finishLootingCorpse(corpse);
+
     return taken;
 }
 
 void finishLootingCorpse(Entity& corpse)
 {
     if (!corpse.active || corpse.type != ENTITY_MONSTER ||
-        corpse.loot.itemCount != 0)
+        corpse.loot.itemCount != 0 || corpse.loot.gold != 0)
     {
         return;
     }

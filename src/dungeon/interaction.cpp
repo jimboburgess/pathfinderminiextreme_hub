@@ -4,6 +4,8 @@
 
 #include "interaction.h"
 
+#include <cstdio>
+
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "dungeon/activemap.h"
@@ -52,10 +54,23 @@ bool tryInteractWithFacingEntity()
     // entered STATE_DEAD before the loot system was added.
     generateCorpseLoot(*target);
 
+    uint16_t gold = takeCorpseGold(*target, playerEntity->character);
+
+    if (gold > 0)
+    {
+        char message[40];
+        snprintf(message, sizeof(message), "Found %u gp.",
+                 static_cast<unsigned>(gold));
+        setGameMessage(message);
+    }
+
     if (target->loot.itemCount == 0)
     {
         finishLootingCorpse(*target);
-        setGameMessage("Nothing useful remains.");
+
+        if (gold == 0)
+            setGameMessage("Nothing useful remains.");
+
         return true;
     }
 

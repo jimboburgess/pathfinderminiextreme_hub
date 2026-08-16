@@ -15,6 +15,7 @@
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "town/town.h"
+#include "town/shop.h"
 #include "data/savegame.h"
 #include "input/inventorymenu.h"
 
@@ -357,6 +358,37 @@ void handleTownButtons() {
         handleCharacterSheetButtons();
         return;
     }
+
+    if (menuState.isOpen)
+    {
+        EncoderDirection menuDirection = readEncoder();
+
+        if (menuDirection == ENCODER_CLOCKWISE)
+        {
+            menuCursorDown();
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        else if (menuDirection == ENCODER_COUNTERCLOCKWISE)
+        {
+            menuCursorUp();
+            playSound(SoundEffect::MENU_MOVE);
+        }
+
+        if (encoderPressed() || buttonAPressed())
+        {
+            playSound(SoundEffect::MENU_SELECT);
+            menuActivate();
+        }
+
+        if (buttonBPressed())
+        {
+            playSound(SoundEffect::MENU_BACK);
+            menuCancel();
+        }
+
+        return;
+    }
+
     if (isTownRestActive())
         return;
 
@@ -440,6 +472,10 @@ void handleTownButtons() {
 
             case TOWN_DUNGEON:
                 enterDungeon();
+                break;
+
+            case TOWN_SHOP:
+                openTownShop();
                 break;
         }
     }

@@ -29,6 +29,7 @@ struct LootData
     InventorySlot slots[MAX_CORPSE_LOOT_SLOTS];
     uint8_t itemCount = 0;
     bool generated = false;
+    uint16_t gold = 0;
 };
 
 struct Entity

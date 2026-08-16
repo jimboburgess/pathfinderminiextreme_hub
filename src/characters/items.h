@@ -414,7 +414,7 @@ struct Item
 
     uint16_t effectIndex;
 
-    uint16_t value;
+    uint16_t value; // Base shop buy price; zero means not normally tradable.
     uint16_t weight;
 
     ItemIcon icon;

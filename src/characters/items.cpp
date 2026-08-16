@@ -13,10 +13,10 @@ const Item itemDatabase[] =
 	// Simple Melee Weapons
 	//======================================================
 { "Club",              ITEMTYPE_WEAPON,  0,   0, 0, ICON_CLUB,       false, false, RARITY_COMMON, THEME_ANY, "A simple wooden club." },
-{ "Dagger",            ITEMTYPE_WEAPON,  1,   2, 1, ICON_DAGGER,     false, false, RARITY_COMMON, THEME_ANY, "A balanced dagger." },
+{ "Dagger",            ITEMTYPE_WEAPON,  1,  10, 1, ICON_DAGGER,     false, false, RARITY_COMMON, THEME_ANY, "A balanced dagger." },
 { "Greatclub",         ITEMTYPE_WEAPON,  2,   5, 8, ICON_CLUB,       false, false, RARITY_COMMON, THEME_ANY, "A massive wooden club." },
 { "Light Hammer",      ITEMTYPE_WEAPON,  3,   1, 2, ICON_HAMMER,     false, false, RARITY_COMMON, THEME_ANY, "A small throwing hammer." },
-{ "Mace",              ITEMTYPE_WEAPON,  4,   8, 8, ICON_MACE,       false, false, RARITY_COMMON, THEME_ANY, "A heavy iron mace." },
+{ "Mace",              ITEMTYPE_WEAPON,  4,  15, 8, ICON_MACE,       false, false, RARITY_COMMON, THEME_ANY, "A heavy iron mace." },
 { "Morningstar",       ITEMTYPE_WEAPON,  5,   8, 6, ICON_MACE,       false, false, RARITY_COMMON, THEME_ANY, "A spiked mace." },
 { "Quarterstaff",      ITEMTYPE_WEAPON,  6,   0, 4, ICON_STAFF,      false, false, RARITY_COMMON, THEME_ANY, "A sturdy wooden staff." },
 { "Shortspear",        ITEMTYPE_WEAPON,  7,   1, 3, ICON_SPEAR,      false, false, RARITY_COMMON, THEME_ANY, "A light throwing spear." },
@@ -32,7 +32,7 @@ const Item itemDatabase[] =
 { "Greatsword",        ITEMTYPE_WEAPON, 14,  50, 8, ICON_SWORD,     false, false, RARITY_COMMON, THEME_ANY, "A classic two-handed sword." },
 { "Heavy Pick",        ITEMTYPE_WEAPON, 15,   8, 6, ICON_HAMMER,     false, false, RARITY_UNCOMMON, THEME_ANY, "A brutal armor-piercing pick." },
 { "Lance",             ITEMTYPE_WEAPON, 16,  10,10, ICON_SPEAR,      false, false, RARITY_UNCOMMON, THEME_ANY, "A long cavalry lance." },
-{ "Longsword",         ITEMTYPE_WEAPON, 17,  15, 4, ICON_SWORD,      false, false, RARITY_COMMON, THEME_ANY, "The standard knight's sword." },
+{ "Longsword",         ITEMTYPE_WEAPON, 17,  20, 4, ICON_SWORD,      false, false, RARITY_COMMON, THEME_ANY, "The standard knight's sword." },
 { "Rapier",            ITEMTYPE_WEAPON, 18,  20, 2, ICON_SWORD,     false, false, RARITY_COMMON, THEME_ANY, "A slender dueling blade." },
 { "Scimitar",          ITEMTYPE_WEAPON, 19,  15, 4, ICON_SWORD,      false, false, RARITY_COMMON, THEME_GOBLIN, "A curved cavalry sword." },
 { "Trident",           ITEMTYPE_WEAPON, 20,  15, 4, ICON_SPEAR,      false, false, RARITY_UNCOMMON, THEME_ANY, "A three-pronged spear." },
@@ -63,7 +63,7 @@ const Item itemDatabase[] =
 
 { "Padded Armor",      ITEMTYPE_ARMOR,  0,    5, 10, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Quilted cloth armor offering minimal protection." },
 { "Quilted Armor",     ITEMTYPE_ARMOR,  1,   10,  8, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Comfortable layered cloth armor." },
-{ "Leather Armor",     ITEMTYPE_ARMOR,  2,   10, 15, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Hardened leather armor." },
+{ "Leather Armor",     ITEMTYPE_ARMOR,  2,   25, 15, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Hardened leather armor." },
 { "Studded Leather",   ITEMTYPE_ARMOR,  3,   25, 20, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Leather reinforced with metal studs." },
 { "Chain Shirt",       ITEMTYPE_ARMOR,  4,  100, 25, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "A light shirt of interlocking rings." },
 
@@ -74,7 +74,7 @@ const Item itemDatabase[] =
 { "Hide Armor",        ITEMTYPE_ARMOR,  5,   15, 25, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_FOREST,  "Armor crafted from thick animal hides." },
 { "Scale Mail",        ITEMTYPE_ARMOR,  6,   50, 30, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Metal scales sewn onto leather." },
 { "Breastplate",       ITEMTYPE_ARMOR,  7,  200, 30, ICON_ARMOR, false, false, RARITY_UNCOMMON, THEME_ANY, "A solid steel breastplate." },
-{ "Chainmail",         ITEMTYPE_ARMOR,  8,  150, 40, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Interlocking steel rings protecting the body." },
+{ "Chainmail",         ITEMTYPE_ARMOR,  8,   75, 40, ICON_ARMOR, false, false, RARITY_COMMON,   THEME_ANY, "Interlocking steel rings protecting the body." },
 
 //======================================================
 // Heavy Armor
@@ -101,7 +101,7 @@ const Item itemDatabase[] =
 	{ "Buckler",             ITEMTYPE_SHIELD, 0,    5,  5, ICON_SHIELD, false, false, RARITY_COMMON, THEME_ANY, "A small shield strapped to the forearm." },
 	{ "Light Wooden Shield", ITEMTYPE_SHIELD, 1,    3,  5, ICON_SHIELD, false, false, RARITY_COMMON, THEME_ANY, "A lightweight wooden shield." },
 	{ "Light Steel Shield",  ITEMTYPE_SHIELD, 2,    9,  6, ICON_SHIELD, false, false, RARITY_COMMON, THEME_ANY, "A lightweight steel shield." },
-	{ "Heavy Wooden Shield", ITEMTYPE_SHIELD, 3,    7, 10, ICON_SHIELD, false, false, RARITY_COMMON, THEME_ANY, "A sturdy wooden shield." },
+	{ "Heavy Wooden Shield", ITEMTYPE_SHIELD, 3,   40, 10, ICON_SHIELD, false, false, RARITY_COMMON, THEME_ANY, "A sturdy wooden shield." },
 	{ "Heavy Steel Shield",  ITEMTYPE_SHIELD, 4,   20, 15, ICON_SHIELD, false, false, RARITY_COMMON, THEME_ANY, "A heavy steel shield." },
 	{ "Tower Shield",        ITEMTYPE_SHIELD, 5,   30, 45, ICON_SHIELD, false, false, RARITY_RARE,   THEME_ANY, "An enormous shield providing exceptional cover." },
 

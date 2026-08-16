@@ -24,9 +24,10 @@ enum GameState
 
 enum TownOption
 {
-    TOWN_STAY_HOME,
     TOWN_FOREST,
     TOWN_DUNGEON,
+    TOWN_SHOP,
+    TOWN_STAY_HOME,
     TOWN_OPTION_COUNT
 };
 

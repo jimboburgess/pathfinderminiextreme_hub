@@ -637,6 +637,7 @@ void clearInventory(InventoryData& inventory)
     }
 
     inventory.itemCount = 0;
+    inventory.gold = 0;
 }
 
 const InventorySlot* getInventorySlot(

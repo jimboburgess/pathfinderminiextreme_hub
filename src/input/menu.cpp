@@ -14,6 +14,7 @@
 #include "dungeon/forest.h"
 #include "graphics/messagelog.h"
 #include "input/inventorymenu.h"
+#include "town/shop.h"
 
 MenuState menuState =
 {
@@ -557,6 +558,26 @@ void openMenu(const Menu* menu)
     needsRedraw = true;     // <-- add this
 }
 
+bool pushMenu(const Menu* menu)
+{
+    if (menu == nullptr ||
+        menuState.depth >=
+            sizeof(menuState.menuStack) / sizeof(menuState.menuStack[0]))
+    {
+        return false;
+    }
+
+    menuState.menuStack[menuState.depth++] = menu;
+    menuState.cursorIndex = 0;
+    menuState.previousCursorIndex = 0;
+    menuState.firstVisibleIndex = 0;
+    menuState.redrawType = MENU_REDRAW_FULL;
+
+    suppressEncoderSelectUntilRelease();
+    needsRedraw = true;
+    return true;
+}
+
 void closeMenu()
 {
     menuState.depth = 0;
@@ -646,17 +667,7 @@ void menuActivate()
 
     if (item->child != nullptr)
     {
-        menuState.menuStack[menuState.depth] = item->child;
-        menuState.depth++;
-
-        menuState.cursorIndex = 0;
-        menuState.previousCursorIndex = 0;
-        menuState.firstVisibleIndex = 0;
-
-        menuState.redrawType = MENU_REDRAW_FULL;
-        suppressEncoderSelectUntilRelease();
-        needsRedraw = true;
-
+        pushMenu(item->child);
         return;
     }
 
@@ -784,6 +795,26 @@ void menuActivate()
             redrawType = REDRAW_FULL;
             needsRedraw = true;
 
+            break;
+
+        case MENU_SHOP_BUY:
+            openShopBuyMenu();
+            break;
+
+        case MENU_SHOP_SELL:
+            openShopSellMenu();
+            break;
+
+        case MENU_SHOP_LEAVE:
+            closeMenu();
+            break;
+
+        case MENU_SHOP_BUY_ITEM:
+            buyShopItem(menuState.cursorIndex);
+            break;
+
+        case MENU_SHOP_SELL_ITEM:
+            sellShopItem(menuState.cursorIndex);
             break;
 
         case MENU_END_TURN:
@@ -1031,7 +1062,17 @@ static void drawDescription(const MenuItem* item)
         MENU_X + MENU_PADDING,
         descriptionY + 8);
 
-    tft.print(item->description);
+    const Menu* menu = getCurrentMenu();
+    const char* description = item->description;
+
+    if (menu != nullptr && menu->statusText != nullptr &&
+        menu->statusText[0] != '\0')
+    {
+        description = menu->statusText;
+    }
+
+    if (description != nullptr)
+        tft.print(description);
 }
 
 static void drawMenuSelection()
@@ -1080,7 +1121,7 @@ void drawMenu()
 
         case MENU_REDRAW_VISIBLE_ITEMS:
         {
-            drawMenuItems();
+            drawMenuList();
 
             const MenuItem* selected =
                 getVisibleMenuItem(
@@ -1114,6 +1155,13 @@ void drawMenu()
         MENU_Y + 4);
 
     tft.print(menu->title);
+
+    if (menu->headerText != nullptr && menu->headerText[0] != '\0')
+    {
+        tft.setTextSize(1);
+        tft.setCursor(MENU_X + 120, MENU_Y + 8);
+        tft.print(menu->headerText);
+    }
 
     //--------------------------------------------------
     // Description

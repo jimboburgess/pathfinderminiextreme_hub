@@ -15,6 +15,7 @@
 //==================================================
 
 constexpr uint8_t MAX_INVENTORY = 64;
+constexpr uint32_t STARTING_GOLD = 100;
 
 
 //==================================================
@@ -199,6 +200,7 @@ struct InventoryData
 {
     InventorySlot slots[MAX_INVENTORY];
     uint8_t itemCount = 0;
+    uint32_t gold = 0;
 };
 
 struct Character

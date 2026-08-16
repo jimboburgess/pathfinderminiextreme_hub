@@ -5,7 +5,8 @@
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 3;
+constexpr uint8_t SAVE_VERSION = 4;
+constexpr uint8_t ITEM_INSTANCE_SAVE_VERSION = 3;
 constexpr uint8_t ITEM_SLOT_SAVE_VERSION = 2;
 constexpr uint8_t LEGACY_SAVE_VERSION = 1;
 
@@ -20,6 +21,26 @@ struct SavedCharacter
     HealthData health;
     EquipmentData equipment;
     InventoryData inventory;
+};
+
+// Version 3 introduced ItemInstance storage but predates persistent gold.
+struct ItemInstanceInventoryData
+{
+    InventorySlot slots[MAX_INVENTORY];
+    uint8_t itemCount;
+};
+
+struct ItemInstanceSavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    EquipmentData equipment;
+    ItemInstanceInventoryData inventory;
 };
 
 // Version 2 stored compact ItemID-based equipment and inventory slots.
@@ -211,6 +232,30 @@ bool convertItemSlotInventory(const ItemSlotInventoryData& source,
     return true;
 }
 
+bool convertItemInstanceInventory(
+    const ItemInstanceInventoryData& source,
+    InventoryData& destination)
+{
+    if (source.itemCount > MAX_INVENTORY)
+        return false;
+
+    clearInventory(destination);
+
+    for (uint8_t i = 0; i < source.itemCount; i++)
+    {
+        const InventorySlot& slot = source.slots[i];
+
+        if (!isValidItemInstanceData(slot.item, false) ||
+            slot.quantity == 0 ||
+            !addInventoryItem(destination, slot.item, slot.quantity))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool convertLegacyInventory(const LegacyInventoryData& source,
                             InventoryData& destination)
 {
@@ -338,6 +383,38 @@ bool loadGame(Character& character)
             saved.health,
             saved.equipment,
             saved.inventory);
+    }
+
+    if (savedSize == sizeof(ItemInstanceSavedCharacter))
+    {
+        ItemInstanceSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes(
+            "player", &saved, sizeof(saved));
+        preferences.end();
+
+        if (bytesRead != sizeof(saved) ||
+            saved.magic != SAVE_MAGIC ||
+            saved.version != ITEM_INSTANCE_SAVE_VERSION ||
+            !isValidCharacterData(
+                saved.characterClass, saved.level, saved.health))
+        {
+            return false;
+        }
+
+        InventoryData inventory = {};
+
+        if (!convertItemInstanceInventory(saved.inventory, inventory))
+            return false;
+
+        return restoreCharacter(
+            character,
+            saved.characterClass,
+            saved.level,
+            saved.xp,
+            saved.abilities,
+            saved.health,
+            saved.equipment,
+            inventory);
     }
 
     if (savedSize == sizeof(ItemSlotSavedCharacter))

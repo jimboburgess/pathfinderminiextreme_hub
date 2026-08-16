@@ -80,7 +80,14 @@ enum MenuAction
     MENU_RETURN_TO_TOWN,
     MENU_SAVE_GAME,
     MENU_OPTIONS,
-    MENU_EXIT_TITLE
+    MENU_EXIT_TITLE,
+
+    // Town shop
+    MENU_SHOP_BUY,
+    MENU_SHOP_SELL,
+    MENU_SHOP_LEAVE,
+    MENU_SHOP_BUY_ITEM,
+    MENU_SHOP_SELL_ITEM
 };
 
 enum MenuClassMask : uint16_t
@@ -121,6 +128,10 @@ struct Menu
     const MenuItem* items;
 
     uint8_t itemCount;
+
+    // Optional fixed-buffer text used by dynamic menus such as the shop.
+    const char* headerText;
+    const char* statusText;
 };
 
 struct MenuState
@@ -152,6 +163,7 @@ bool isMenuItemEnabled(MenuAction action);
 //--------------------------------------------------
 
 void openMenu(const Menu* menu);
+bool pushMenu(const Menu* menu);
 void closeMenu();
 
 void updateMenu();
