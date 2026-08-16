@@ -27,4 +27,8 @@ bool hasLineOfSightBetweenFootprintsAt(
     int attackerY,
     const Entity& target);
 
+// Chebyshev grid distance between the nearest occupied squares of two
+// entities. This matches weapon combat and supports large footprints.
+int getEntityGridDistance(const Entity& first, const Entity& second);
+
 #endif // PATHFINDERMINIEXTREME_025_ACTIVE_MAP_H

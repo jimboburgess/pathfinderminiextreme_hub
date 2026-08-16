@@ -152,6 +152,11 @@ struct Monster
     MonsterScript script;
 
     MonsterPoisonData poison;
+
+    // Static spellcasting data copied into the runtime Character on spawn.
+    // Existing non-casters omit these trailing fields and receive zero.
+    uint8_t maxMP;
+    uint8_t casterLevel;
 };
 
 const Monster* getMonster(MonsterID id);

@@ -169,11 +169,7 @@ void createCharacter(Character &character, CharacterClass characterClass)
     character.speed = 6;
     character.health.maxHP = getMaxHP(character);
     character.health.currentHP = character.health.maxHP;
-    character.magic.currentMP = 0;
-    character.magic.maxMP = 0;
-    character.magic.knownAbilityCount = 0;
-    character.magic.arcaneCaster = false;
-    character.magic.divineCaster = false;
+    initializeCharacterMagic(character);
 
     if (character.characterClass == CLASS_FIGHTER)
         learnAbility(character, ABILITY_POWER_ATTACK);

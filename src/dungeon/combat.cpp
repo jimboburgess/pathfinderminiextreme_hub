@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "activemap.h"
+#include "abilityresolver.h"
 #include "loot.h"
 #include "monsterscripts.h"
 #include "audio/audio.h"
@@ -57,31 +58,6 @@ static int gridDistanceToTile(const Entity* entity, int tileX, int tileY)
     return std::max(abs(entity->x - tileX), abs(entity->y - tileY));
 }
 
-static int gridDistanceBetweenFootprints(
-    const Entity* first,
-    const Entity* second)
-{
-    int firstRight = first->x + getEntityTileWidth(*first) - 1;
-    int firstBottom = first->y + getEntityTileHeight(*first) - 1;
-    int secondRight = second->x + getEntityTileWidth(*second) - 1;
-    int secondBottom = second->y + getEntityTileHeight(*second) - 1;
-
-    int horizontalDistance = 0;
-    int verticalDistance = 0;
-
-    if (firstRight < second->x)
-        horizontalDistance = second->x - firstRight;
-    else if (secondRight < first->x)
-        horizontalDistance = first->x - secondRight;
-
-    if (firstBottom < second->y)
-        verticalDistance = second->y - firstBottom;
-    else if (secondBottom < first->y)
-        verticalDistance = first->y - secondBottom;
-
-    return std::max(horizontalDistance, verticalDistance);
-}
-
 static bool isChannelEnergyCreature(const Entity& entity)
 {
     return entity.type == ENTITY_PLAYER ||
@@ -99,7 +75,7 @@ static bool isValidChannelEnergyTarget(
            target.character.state == STATE_ALIVE &&
            target.character.health.currentHP <
                target.character.health.maxHP &&
-           gridDistanceBetweenFootprints(&cleric, &target) <= 6;
+           getEntityGridDistance(cleric, target) <= 6;
 }
 
 static SoundEffect getAttackSound(
@@ -203,6 +179,56 @@ static bool areHostile(const Entity& attacker, const Entity& target)
     return attacker.character.team != TEAM_NEUTRAL &&
            target.character.team != TEAM_NEUTRAL &&
            attacker.character.team != target.character.team;
+}
+
+static bool isValidAbilitySelectionTarget(
+    const Entity* caster,
+    const Entity* target)
+{
+    return caster != nullptr && target != nullptr && target != caster &&
+           target->active &&
+           (target->type == ENTITY_PLAYER ||
+            target->type == ENTITY_MONSTER ||
+            target->type == ENTITY_NPC) &&
+           target->character.state == STATE_ALIVE &&
+           areHostile(*caster, *target);
+}
+
+static bool selectNextEntityTarget(
+    Entity* player,
+    bool forward,
+    bool abilityTargeting)
+{
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+
+    if (player == nullptr || entities == nullptr || entityCount == 0)
+        return false;
+
+    int index = combat.selectedTargetIndex;
+
+    for (uint8_t checked = 0; checked < entityCount; checked++)
+    {
+        index += forward ? 1 : -1;
+
+        if (index < 0)
+            index = entityCount - 1;
+        else if (index >= entityCount)
+            index = 0;
+
+        bool valid = abilityTargeting
+            ? isValidAbilitySelectionTarget(player, &entities[index])
+            : isValidRangedTarget(player, &entities[index]);
+
+        if (valid)
+        {
+            combat.selectedTargetIndex = index;
+            return true;
+        }
+    }
+
+    combat.selectedTargetIndex = -1;
+    return false;
 }
 
 bool canSneakAttack(const Entity& attacker, const Entity& target)
@@ -385,6 +411,29 @@ static DefeatResult finalizeDefeat(Entity& defeated)
     return result;
 }
 
+CombatDamageResult applyCombatDamage(Entity& target, int damage)
+{
+    CombatDamageResult result;
+
+    if (damage <= 0 || !target.active ||
+        target.character.state != STATE_ALIVE)
+    {
+        return result;
+    }
+
+    target.character.health.currentHP -= damage;
+    result.applied = true;
+
+    if (target.character.health.currentHP <= 0)
+    {
+        DefeatResult defeatResult = finalizeDefeat(target);
+        result.defeated = target.character.state == STATE_DEAD;
+        result.levelReached = defeatResult.levelReached;
+    }
+
+    return result;
+}
+
 static void appendLevelUpFeedback(
     char* message,
     size_t messageSize,
@@ -402,6 +451,75 @@ static void appendLevelUpFeedback(
              messageSize - messageLength,
              " LEVEL UP! Level %u.",
              static_cast<unsigned int>(result.levelReached));
+}
+
+void presentAbilityResolution(
+    Entity& caster,
+    Entity& target,
+    AbilityID abilityID,
+    const AbilityResolution& resolution)
+{
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+    {
+        setGameMessage(getAbilityResultMessage(resolution.result));
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    const char* abilityName = getAbilityName(abilityID);
+    char message[128];
+
+    if (resolution.damage > 0)
+    {
+        snprintf(message, sizeof(message),
+                 "%s hits %s for %d%s",
+                 abilityName,
+                 getEntityName(&target),
+                 resolution.damage,
+                 resolution.targetDefeated ? " and defeats it!" : "!");
+    }
+    else
+    {
+        snprintf(message, sizeof(message),
+                 "%s heals %s for %d HP!",
+                 abilityName,
+                 getEntityName(&target),
+                 resolution.healing);
+    }
+
+    if (resolution.levelReached > 0)
+    {
+        DefeatResult defeatResult;
+        defeatResult.levelReached = resolution.levelReached;
+        appendLevelUpFeedback(message, sizeof(message), defeatResult);
+        // finalizeDefeat() already played the one-shot level sound.  Leave it
+        // active instead of replacing it with the ordinary impact sound.
+    }
+    else if (resolution.damage > 0)
+    {
+        // finalizeDefeat() already selected the one-shot death sound.
+        if (!resolution.targetDefeated)
+            playSound(SoundEffect::SPELL_HIT);
+    }
+    else
+        playSound(SoundEffect::SPELL_HEAL);
+
+    setGameMessage(message);
+    markEntityFootprintDirty(target);
+    requestCombatTileRedraw();
+
+    if (!combat.active)
+        return;
+
+    combat.abilityResolutionPending = true;
+    combat.abilityCaster = &caster;
+    combat.abilityEndedCombat = resolution.targetDefeated &&
+        (target.type == ENTITY_PLAYER || areAllCombatMonstersDefeated());
+    combat.abilityResultTime = millis();
+
+    if (caster.type == ENTITY_PLAYER)
+        combat.waitingForPlayer = false;
 }
 
 static bool isInspectableEntity(const Entity& entity)
@@ -778,7 +896,7 @@ void checkForCombat()
             continue;
         }
 
-        int distance = gridDistanceBetweenFootprints(playerEntity, &monster);
+        int distance = getEntityGridDistance(*playerEntity, monster);
 
         Serial.print("Monster at ");
         Serial.print(monster.x);
@@ -876,6 +994,11 @@ void startCombat()
     combat.defeatedMonsterExperience = 0;
     combat.experienceGained = 0;
     combat.endPlayerTurnAfterMessage = false;
+    combat.selectedAbility = ABILITY_NONE;
+    combat.abilityResolutionPending = false;
+    combat.abilityCaster = nullptr;
+    combat.abilityEndedCombat = false;
+    combat.abilityResultTime = 0;
     combat.turnStartConditionPhase = TURN_START_CONDITION_NONE;
     combat.turnStartPoisonExpired = false;
     combat.turnStartConditionDefeated = false;
@@ -1074,6 +1197,12 @@ void runMonsterTurn(Entity* monster)
             {
                 monster->turn.monsterState = MONSTER_ATTACK;
             }
+            else if (combat.abilityResolutionPending)
+            {
+                // The shared ability result remains visible before the turn
+                // engine advances from this caster.
+                monster->turn.monsterState = MONSTER_END;
+            }
             else
             {
                 // A ranged monster may finish its movement without a clear
@@ -1228,6 +1357,39 @@ void updateCombat()
                {
                    combat.endPlayerTurnAfterMessage = false;
                    checkEndPlayerTurn();
+               }
+
+               break;
+           }
+
+           if (combat.abilityResolutionPending)
+           {
+               if (millis() - combat.abilityResultTime >=
+                       COMBAT_MESSAGE_PAUSE_MS &&
+                   isGameMessageComplete())
+               {
+                   Entity* caster = combat.abilityCaster;
+                   bool endedCombat = combat.abilityEndedCombat;
+
+                   combat.abilityResolutionPending = false;
+                   combat.abilityCaster = nullptr;
+                   combat.abilityEndedCombat = false;
+
+                   if (endedCombat)
+                   {
+                       combat.waitingForPlayer = false;
+                       combat.phase = COMBAT_END;
+                   }
+                   else if (caster != nullptr &&
+                            caster->type == ENTITY_PLAYER)
+                   {
+                       combat.waitingForPlayer = true;
+                       checkEndPlayerTurn();
+                   }
+                   else
+                   {
+                       nextTurn();
+                   }
                }
 
                break;
@@ -1425,6 +1587,10 @@ void endCombat()
     combat.active = false;
     combat.phase = COMBAT_NONE;
     combat.endPlayerTurnAfterMessage = false;
+    combat.selectedAbility = ABILITY_NONE;
+    combat.abilityResolutionPending = false;
+    combat.abilityCaster = nullptr;
+    combat.abilityEndedCombat = false;
     backgroundNeedsRedraw = true;
     redrawType = REDRAW_FULL;
     needsRedraw = true;
@@ -1567,30 +1733,8 @@ void rotateAttackTarget(bool forward)
     }
     else
     {
-        Entity* player = getPlayerCombatant();
-        uint8_t entityCount = 0;
-        Entity* entities = getActiveMapEntities(entityCount);
-
-        if (player == nullptr || entities == nullptr || entityCount == 0)
-            return;
-
-        int start = combat.selectedTargetIndex;
-
-        for (uint8_t checked = 0; checked < entityCount; checked++)
-        {
-            start += forward ? 1 : -1;
-
-            if (start < 0)
-                start = entityCount - 1;
-            else if (start >= entityCount)
-                start = 0;
-
-            if (isValidRangedTarget(player, &entities[start]))
-            {
-                combat.selectedTargetIndex = start;
-                break;
-            }
-        }
+        selectNextEntityTarget(
+            getPlayerCombatant(), forward, false);
     }
 
     markAttackCursorDirty();
@@ -1753,6 +1897,165 @@ void cancelPlayerAttack()
 
     markAttackCursorDirty();
     combat.attackType = COMBAT_ATTACK_NONE;
+    combat.selectedTargetIndex = -1;
+    markPlayerFacingCursorDirty();
+    requestCombatTileRedraw();
+    openMenu(&mainMenu);
+}
+
+static void markAbilityCursorDirty()
+{
+    Entity* target = getSelectedAbilityTarget();
+
+    if (target != nullptr)
+        markEntityFootprintDirty(*target);
+}
+
+static void executePlayerAbility(
+    Entity& player,
+    Entity* target,
+    AbilityID abilityID)
+{
+    AbilityResolution resolution = resolveAbility(
+        player, target, abilityID);
+
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+    {
+        setGameMessage(getAbilityResultMessage(resolution.result));
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    presentAbilityResolution(
+        player,
+        target != nullptr ? *target : player,
+        abilityID,
+        resolution);
+}
+
+void beginPlayerAbility(AbilityID abilityID)
+{
+    Entity* player = getCurrentCombatant();
+    const Ability* ability = getAbility(abilityID);
+
+    if (player == nullptr || player->type != ENTITY_PLAYER ||
+        !combat.waitingForPlayer ||
+        !knowsAbility(player->character, abilityID) ||
+        !isAbilitySupported(abilityID) ||
+        ability == nullptr)
+    {
+        setGameMessage("Ability unavailable.");
+        playSound(SoundEffect::SPELL_FAIL);
+        return;
+    }
+
+    if (ability->target == TARGET_SELF)
+    {
+        executePlayerAbility(*player, player, abilityID);
+        return;
+    }
+
+    combat.selectedAbility = abilityID;
+    combat.selectedTargetIndex = -1;
+    if (!selectNextEntityTarget(player, true, true))
+    {
+        combat.selectedAbility = ABILITY_NONE;
+        setGameMessage("No valid targets.");
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    markAbilityCursorDirty();
+    setGameMessage("Choose target: A cast B back");
+    requestCombatTileRedraw();
+}
+
+bool isPlayerTargetingAbility()
+{
+    return combat.selectedAbility != ABILITY_NONE &&
+           !combat.abilityResolutionPending;
+}
+
+bool isAbilityResolving()
+{
+    return combat.abilityResolutionPending;
+}
+
+Entity* getSelectedAbilityTarget()
+{
+    Entity* player = getPlayerCombatant();
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+
+    if (player == nullptr || entities == nullptr ||
+        !isPlayerTargetingAbility() ||
+        combat.selectedTargetIndex < 0 ||
+        combat.selectedTargetIndex >= entityCount)
+    {
+        return nullptr;
+    }
+
+    Entity* target = &entities[combat.selectedTargetIndex];
+
+    return isValidAbilitySelectionTarget(player, target)
+        ? target
+        : nullptr;
+}
+
+void rotateAbilityTarget(bool forward)
+{
+    if (!isPlayerTargetingAbility())
+        return;
+
+    markAbilityCursorDirty();
+    selectNextEntityTarget(getPlayerCombatant(), forward, true);
+    markAbilityCursorDirty();
+    requestCombatTileRedraw();
+}
+
+void confirmPlayerAbility()
+{
+    Entity* player = getCurrentCombatant();
+    Entity* target = getSelectedAbilityTarget();
+
+    if (player == nullptr || target == nullptr)
+    {
+        setGameMessage("Invalid target.");
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    AbilityID abilityID = combat.selectedAbility;
+    AbilityResolution resolution = resolveAbility(
+        *player, target, abilityID);
+
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+    {
+        setGameMessage(getAbilityResultMessage(resolution.result));
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    markAbilityCursorDirty();
+    combat.selectedAbility = ABILITY_NONE;
+    combat.selectedTargetIndex = -1;
+    markPlayerFacingCursorDirty();
+
+    presentAbilityResolution(
+        *player, *target, abilityID, resolution);
+}
+
+void cancelPlayerAbility()
+{
+    if (!isPlayerTargetingAbility())
+        return;
+
+    markAbilityCursorDirty();
+    combat.selectedAbility = ABILITY_NONE;
     combat.selectedTargetIndex = -1;
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
@@ -2125,7 +2428,7 @@ void beginMonsterAttack(
     if (weapon->type == WEAPON_RANGED && weapon->rangeIncrement > 0)
     {
         int distanceFeet =
-            gridDistanceBetweenFootprints(monster, target) * 5;
+            getEntityGridDistance(*monster, *target) * 5;
         int incrementsBeyondFirst =
             (distanceFeet - 1) / weapon->rangeIncrement;
 

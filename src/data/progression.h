@@ -36,6 +36,21 @@ uint8_t getLevelForExperience(uint32_t experience);
 
 bool canLevelUp(const Character& character);
 
+// Authoritative class/level-derived MP maximum. Classes without an active MP
+// progression currently return zero.
+int getMaxMPForCharacter(const Character& character);
+
+// Clamps a persisted/runtime MP value against the authoritative class/level
+// maximum.
+int clampCurrentMPForCharacter(
+    const Character& character,
+    int currentMP);
+
+// Idempotently refreshes derived MP limits and learns every class spell
+// unlocked at the character's current level. Existing known abilities and
+// spent MP are preserved.
+void refreshCharacterMagicProgression(Character& character);
+
 // Adds XP and applies every newly crossed class level in order. The return
 // value is the number of levels gained, which lets gameplay code present
 // one-shot feedback without coupling character progression to the UI.

@@ -521,6 +521,37 @@ void handleMapButtons()
     }
 
     //--------------------------------------------------
+    // Combat ability targeting
+    //--------------------------------------------------
+
+    if (isPlayerTargetingAbility())
+    {
+        EncoderDirection direction = readEncoder();
+
+        if (direction == ENCODER_CLOCKWISE)
+        {
+            rotateAbilityTarget(true);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        else if (direction == ENCODER_COUNTERCLOCKWISE)
+        {
+            rotateAbilityTarget(false);
+            playSound(SoundEffect::MENU_MOVE);
+        }
+
+        if (buttonAPressed())
+            confirmPlayerAbility();
+
+        if (buttonBPressed())
+        {
+            cancelPlayerAbility();
+            playSound(SoundEffect::MENU_BACK);
+        }
+
+        return;
+    }
+
+    //--------------------------------------------------
     // Combat attack targeting
     //--------------------------------------------------
 
@@ -553,6 +584,9 @@ void handleMapButtons()
     }
 
     if (isPlayerAttackResolving())
+        return;
+
+    if (isAbilityResolving())
         return;
 
     //--------------------------------------------------

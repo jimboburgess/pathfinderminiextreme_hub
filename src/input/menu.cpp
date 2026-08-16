@@ -10,6 +10,7 @@
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
 #include "dungeon/activemap.h"
+#include "dungeon/abilityresolver.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/forest.h"
 #include "graphics/messagelog.h"
@@ -76,6 +77,35 @@ static bool hasKnownAbilityInCategory(
 
         if (ability != nullptr && ability->category == category)
             return true;
+    }
+
+    return false;
+}
+
+static bool isSpellMenuAbility(const Ability& ability)
+{
+    return ability.category == ABILITY_CATEGORY_SPELL &&
+           (ability.type == ABILITY_ARCANE ||
+            ability.type == ABILITY_DIVINE);
+}
+
+static bool hasSupportedKnownSpell(const Character& character)
+{
+    uint8_t abilityCount = character.magic.knownAbilityCount;
+
+    if (abilityCount > MAX_KNOWN_ABILITIES)
+        abilityCount = MAX_KNOWN_ABILITIES;
+
+    for (uint8_t i = 0; i < abilityCount; i++)
+    {
+        AbilityID abilityID = character.magic.knownAbilities[i];
+        const Ability* ability = getAbility(abilityID);
+
+        if (ability != nullptr && isSpellMenuAbility(*ability) &&
+            isAbilitySupported(abilityID))
+        {
+            return true;
+        }
     }
 
     return false;
@@ -184,23 +214,47 @@ const Menu attackMenu =
 //--------------------------------------------------
 //
 
-const MenuItem spellMenuItems[] =
-{
-    {
-        "No Spells",
-        "You have no spells available.",
-        MENU_NONE,
-        nullptr,
-        MENU_CLASS_ALL
-    }
-};
+MenuItem spellMenuItems[MAX_KNOWN_ABILITIES] = {};
 
-const Menu spellMenu =
+Menu spellMenu =
 {
     "Cast Spell",
     spellMenuItems,
-    sizeof(spellMenuItems) / sizeof(MenuItem)
+    0
 };
+
+static void rebuildSpellMenu(const Character& character)
+{
+    spellMenu.itemCount = 0;
+    uint8_t abilityCount = character.magic.knownAbilityCount;
+
+    if (abilityCount > MAX_KNOWN_ABILITIES)
+        abilityCount = MAX_KNOWN_ABILITIES;
+
+    for (uint8_t i = 0;
+         i < abilityCount && spellMenu.itemCount < MAX_KNOWN_ABILITIES;
+         i++)
+    {
+        AbilityID abilityID = character.magic.knownAbilities[i];
+        const Ability* ability = getAbility(abilityID);
+
+        if (ability == nullptr || !isSpellMenuAbility(*ability) ||
+            !isAbilitySupported(abilityID))
+        {
+            continue;
+        }
+
+        spellMenuItems[spellMenu.itemCount++] =
+        {
+            ability->name,
+            "Cast this known spell.",
+            MENU_CAST_ABILITY,
+            nullptr,
+            MENU_CLASS_ALL,
+            abilityID
+        };
+    }
+}
 
 //
 //--------------------------------------------------
@@ -551,7 +605,7 @@ void openMenu(const Menu* menu)
     menuState.cursorIndex = 0;
     menuState.previousCursorIndex = 0;
     menuState.firstVisibleIndex = 0;
-    menuState.redrawType = MENU_REDRAW_VISIBLE_ITEMS;
+    menuState.redrawType = MENU_REDRAW_FULL;
     menuState.isOpen = true;
 
     suppressEncoderSelectUntilRelease();
@@ -667,6 +721,23 @@ void menuActivate()
 
     if (item->child != nullptr)
     {
+        if (item->action == MENU_CAST_SPELL)
+        {
+            Character* character = getMenuCharacter();
+
+            if (character == nullptr)
+                return;
+
+            rebuildSpellMenu(*character);
+
+            if (spellMenu.itemCount == 0)
+            {
+                setGameMessage("No supported spells known.");
+                playSound(SoundEffect::SPELL_FAIL);
+                return;
+            }
+        }
+
         pushMenu(item->child);
         return;
     }
@@ -687,6 +758,12 @@ void menuActivate()
 
             closeMenu();
             beginPlayerAttack(COMBAT_ATTACK_RANGED);
+            break;
+
+        case MENU_CAST_ABILITY:
+
+            closeMenu();
+            beginPlayerAbility(item->abilityID);
             break;
 
         case MENU_INSPECT:
@@ -1224,10 +1301,10 @@ bool isMenuItemVisible(MenuAction action)
                    getEquippedRangedWeapon(*character) != nullptr;
 
         case MENU_CAST_SPELL:
-            // This exposes only the placeholder spell submenu for now;
-            // spell selection and casting remain unimplemented.
-            return hasKnownAbilityInCategory(
-                *character, ABILITY_CATEGORY_SPELL);
+            return isPlayerCombatTurn() &&
+                   canCharacterAct(*character) &&
+                   !getCurrentCombatant()->turn.standardActionUsed &&
+                   hasSupportedKnownSpell(*character);
 
         case MENU_SPECIAL_ABILITY:
             if (character->characterClass == CLASS_FIGHTER)

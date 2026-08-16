@@ -275,6 +275,23 @@ void drawMapCursor()
         return;
     }
 
+    if (isPlayerTargetingAbility())
+    {
+        Entity* target = getSelectedAbilityTarget();
+
+        if (target != nullptr)
+        {
+            tft.drawRect(
+                target->x * TILE_SIZE,
+                target->y * TILE_SIZE,
+                target->spriteWidth,
+                target->spriteHeight,
+                ST77XX_YELLOW);
+        }
+
+        return;
+    }
+
     switch (gameState)
     {
         case GAME_FOREST:
@@ -381,6 +398,20 @@ void redrawDungeonTile(int x, int y)
         {
             tft.drawRect(x * TILE_SIZE, y * TILE_SIZE,
                          TILE_SIZE, TILE_SIZE, ST77XX_YELLOW);
+        }
+
+        return;
+    }
+
+    if (isPlayerTargetingAbility())
+    {
+        Entity* target = getSelectedAbilityTarget();
+
+        if (target != nullptr && entityOccupiesTile(*target, x, y))
+        {
+            tft.drawRect(target->x * TILE_SIZE, target->y * TILE_SIZE,
+                         target->spriteWidth, target->spriteHeight,
+                         ST77XX_YELLOW);
         }
 
         return;
@@ -530,6 +561,20 @@ void redrawForestTile(int x, int y)
         {
             tft.drawRect(x * TILE_SIZE, y * TILE_SIZE,
                          TILE_SIZE, TILE_SIZE, ST77XX_YELLOW);
+        }
+
+        return;
+    }
+
+    if (isPlayerTargetingAbility())
+    {
+        Entity* target = getSelectedAbilityTarget();
+
+        if (target != nullptr && entityOccupiesTile(*target, x, y))
+        {
+            tft.drawRect(target->x * TILE_SIZE, target->y * TILE_SIZE,
+                         target->spriteWidth, target->spriteHeight,
+                         ST77XX_YELLOW);
         }
 
         return;

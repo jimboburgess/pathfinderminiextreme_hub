@@ -6,6 +6,14 @@
 #include "dungeon.h"
 
 struct Entity;
+struct AbilityResolution;
+
+struct CombatDamageResult
+{
+    bool applied = false;
+    bool defeated = false;
+    uint8_t levelReached = 0;
+};
 
 //==================================================
 // Combat Constants
@@ -78,6 +86,16 @@ struct Combat
 
     bool waitingForPlayer = false;
     bool endPlayerTurnAfterMessage = false;
+
+    //--------------------------------------------------
+    // Shared ability targeting and result timing
+    //--------------------------------------------------
+
+    AbilityID selectedAbility = ABILITY_NONE;
+    bool abilityResolutionPending = false;
+    Entity* abilityCaster = nullptr;
+    bool abilityEndedCombat = false;
+    unsigned long abilityResultTime = 0;
 
     //--------------------------------------------------
     // Phase Timing
@@ -196,6 +214,18 @@ void confirmPlayerAttack();
 void cancelPlayerAttack();
 
 //==================================================
+// Player Ability Targeting
+//==================================================
+
+void beginPlayerAbility(AbilityID abilityID);
+bool isPlayerTargetingAbility();
+bool isAbilityResolving();
+Entity* getSelectedAbilityTarget();
+void rotateAbilityTarget(bool forward);
+void confirmPlayerAbility();
+void cancelPlayerAbility();
+
+//==================================================
 // Monster Attacks
 //==================================================
 
@@ -226,6 +256,17 @@ bool canTogglePowerAttack(const Entity& fighter);
 bool togglePowerAttack(Entity& fighter);
 bool canUseChannelEnergy(const Entity& cleric);
 bool useChannelEnergy(Entity& cleric);
+
+// Applies damage through the existing one-time combat defeat/XP/loot path.
+CombatDamageResult applyCombatDamage(Entity& target, int damage);
+
+// Shared player/monster feedback and combat pacing after a successful
+// resolveAbility() call.
+void presentAbilityResolution(
+    Entity& caster,
+    Entity& target,
+    AbilityID abilityID,
+    const AbilityResolution& resolution);
 
 //==================================================
 // Combat Update

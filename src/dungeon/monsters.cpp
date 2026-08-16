@@ -238,8 +238,10 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_FOUR,
         LOOT_ABERRATION,
-        { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SPELLCASTER,
-        { 0, 0 }
+        { ABILITY_MAGIC_MISSILE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SPELLCASTER,
+        { 0, 0 },
+        6,
+        4
     },
 };
 

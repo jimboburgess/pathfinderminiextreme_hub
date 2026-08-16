@@ -57,6 +57,7 @@ enum MenuAction
     MENU_RANGED_ATTACK,
     MENU_INSPECT,
     MENU_CAST_SPELL,
+    MENU_CAST_ABILITY,
     MENU_SPECIAL_ABILITY,
     MENU_POWER_ATTACK,
     MENU_CHANNEL_ENERGY,
@@ -119,6 +120,10 @@ struct MenuItem
     const Menu* child;
 
     uint16_t classMask;
+
+    // Dynamic spell rows carry the AbilityID selected from knownAbilities.
+    // Static rows omit this trailing field and initialize to ABILITY_NONE.
+    AbilityID abilityID;
 };
 
 struct Menu

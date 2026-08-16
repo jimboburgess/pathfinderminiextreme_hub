@@ -4,6 +4,66 @@
 
 #include "progression.h"
 
+namespace
+{
+const uint16_t wizardMPProgression[MAX_CHARACTER_LEVEL] =
+{
+      6,   8,  11,  14,  18,
+     22,  27,  32,  38,  44,
+     51,  58,  66,  74,  83,
+     92, 102, 112, 123, 134
+};
+
+struct LearnedAbilityAtLevel
+{
+    uint8_t characterLevel;
+    AbilityID ability;
+};
+
+// This is the single Wizard known-spell progression. It deliberately includes
+// spells whose effects are not executable yet; the Cast Spell menu continues
+// to filter those through isAbilitySupported().
+const LearnedAbilityAtLevel wizardSpellProgression[] =
+{
+    { 1, ABILITY_MAGIC_MISSILE },
+    { 1, ABILITY_RAY_OF_FROST },
+    { 1, ABILITY_BURNING_HANDS },
+    { 1, ABILITY_MAGE_ARMOR },
+
+    { 3, ABILITY_ACID_ARROW },
+    { 3, ABILITY_SCORCHING_RAY },
+    { 3, ABILITY_WEB },
+
+    { 5, ABILITY_FIREBALL },
+    { 5, ABILITY_LIGHTNING_BOLT },
+    { 5, ABILITY_HASTE },
+
+    { 7, ABILITY_ICE_STORM },
+    { 7, ABILITY_GREATER_INVISIBILITY },
+    { 7, ABILITY_STONESKIN }
+};
+
+static_assert(
+    sizeof(wizardMPProgression) /
+        sizeof(wizardMPProgression[0]) == MAX_CHARACTER_LEVEL,
+    "Wizard MP progression must cover every character level.");
+
+static_assert(
+    sizeof(wizardSpellProgression) /
+        sizeof(wizardSpellProgression[0]) <= MAX_KNOWN_ABILITIES,
+    "Wizard spell progression exceeds fixed known-ability capacity.");
+
+uint8_t getBoundedCharacterLevel(uint8_t level)
+{
+    if (level < 1)
+        return 1;
+
+    return level > MAX_CHARACTER_LEVEL
+        ? MAX_CHARACTER_LEVEL
+        : level;
+}
+}
+
 //==================================================
 // Experience Progression (Medium)
 //==================================================
@@ -65,6 +125,49 @@ bool canLevelUp(const Character& character)
            getExperienceForLevel(character.level + 1);
 }
 
+int getMaxMPForCharacter(const Character& character)
+{
+    if (character.characterClass != CLASS_WIZARD)
+        return 0;
+
+    uint8_t level = getBoundedCharacterLevel(character.level);
+    return wizardMPProgression[level - 1];
+}
+
+int clampCurrentMPForCharacter(
+    const Character& character,
+    int currentMP)
+{
+    int maxMP = getMaxMPForCharacter(character);
+
+    if (currentMP < 0)
+        return 0;
+
+    return currentMP > maxMP ? maxMP : currentMP;
+}
+
+void refreshCharacterMagicProgression(Character& character)
+{
+    int currentMP = character.magic.currentMP;
+    character.magic.maxMP = getMaxMPForCharacter(character);
+    character.magic.currentMP = clampCurrentMPForCharacter(
+        character, currentMP);
+
+    if (character.characterClass != CLASS_WIZARD)
+        return;
+
+    uint8_t level = getBoundedCharacterLevel(character.level);
+
+    for (uint8_t i = 0;
+         i < sizeof(wizardSpellProgression) /
+                 sizeof(wizardSpellProgression[0]);
+         i++)
+    {
+        if (wizardSpellProgression[i].characterLevel <= level)
+            learnAbility(character, wizardSpellProgression[i].ability);
+    }
+}
+
 static void increasePrimaryClassAbility(Character& character)
 {
     uint8_t* ability = nullptr;
@@ -106,6 +209,10 @@ static void applyLevelAdvancement(Character& character, uint8_t newLevel)
     // The class HP arrays are cumulative. Recompute the maximum for the new
     // level but leave currentHP untouched so existing damage is preserved.
     character.health.maxHP = getMaxHP(character);
+
+    // Like HP damage, spent MP is preserved. Only the derived maximum and
+    // newly unlocked known spells change at this level boundary.
+    refreshCharacterMagicProgression(character);
 }
 
 uint8_t awardExperience(Character& character, uint32_t amount)

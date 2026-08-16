@@ -174,3 +174,27 @@ bool hasLineOfSightBetweenFootprintsAt(
 
     return false;
 }
+
+int getEntityGridDistance(const Entity& first, const Entity& second)
+{
+    int firstRight = first.x + getEntityTileWidth(first) - 1;
+    int firstBottom = first.y + getEntityTileHeight(first) - 1;
+    int secondRight = second.x + getEntityTileWidth(second) - 1;
+    int secondBottom = second.y + getEntityTileHeight(second) - 1;
+    int horizontalDistance = 0;
+    int verticalDistance = 0;
+
+    if (firstRight < second.x)
+        horizontalDistance = second.x - firstRight;
+    else if (secondRight < first.x)
+        horizontalDistance = first.x - secondRight;
+
+    if (firstBottom < second.y)
+        verticalDistance = second.y - firstBottom;
+    else if (secondBottom < first.y)
+        verticalDistance = first.y - secondBottom;
+
+    return horizontalDistance > verticalDistance
+        ? horizontalDistance
+        : verticalDistance;
+}

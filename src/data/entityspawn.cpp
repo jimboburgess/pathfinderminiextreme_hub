@@ -97,6 +97,9 @@ Entity* spawnMonster(
 
     entity->character.abilities = monster->abilities;
     entity->character.speed = monster->speed;
+    entity->character.level = monster->casterLevel;
+    entity->character.magic.maxMP = monster->maxMP;
+    entity->character.magic.currentMP = monster->maxMP;
 
     // Roll the definition's intended hit-die calculation exactly once, then
     // explicitly initialize both runtime health fields from that result.

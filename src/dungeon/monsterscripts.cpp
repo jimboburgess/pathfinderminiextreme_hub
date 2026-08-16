@@ -5,6 +5,7 @@
 #include "monsterscripts.h"
 
 #include "activemap.h"
+#include "abilityresolver.h"
 #include "dungeon.h"
 #include "monsters.h"
 #include "graphics/messagelog.h"
@@ -150,6 +151,75 @@ static int getPreferredRangedDistance(const Entity* monster)
     return (weapon->rangeIncrement + 4) / 5;
 }
 
+static const Ability* getSupportedMonsterAbility(
+    const Entity* monster,
+    bool requireAffordable)
+{
+    if (monster == nullptr || monster->monster == nullptr)
+        return nullptr;
+
+    for (uint8_t i = 0;
+         i < sizeof(monster->monster->specialAbilities) /
+                 sizeof(monster->monster->specialAbilities[0]);
+         i++)
+    {
+        AbilityID abilityID = monster->monster->specialAbilities[i];
+        const Ability* ability = getAbility(abilityID);
+
+        if (ability == nullptr || !isAbilitySupported(abilityID))
+            continue;
+
+        if (requireAffordable &&
+            monster->character.magic.currentMP < ability->mpCost)
+        {
+            continue;
+        }
+
+        return ability;
+    }
+
+    return nullptr;
+}
+
+static Entity* getMonsterAbilityTarget(
+    Entity* monster,
+    Entity* enemy,
+    const Ability& ability)
+{
+    return ability.target == TARGET_SELF ? monster : enemy;
+}
+
+static const Ability* getValidMonsterAbility(
+    Entity* monster,
+    Entity* enemy)
+{
+    if (monster == nullptr || monster->monster == nullptr)
+        return nullptr;
+
+    for (uint8_t i = 0;
+         i < sizeof(monster->monster->specialAbilities) /
+                 sizeof(monster->monster->specialAbilities[0]);
+         i++)
+    {
+        const Ability* ability = getAbility(
+            monster->monster->specialAbilities[i]);
+
+        if (ability == nullptr || !isAbilitySupported(ability->id))
+            continue;
+
+        Entity* target = getMonsterAbilityTarget(
+            monster, enemy, *ability);
+
+        if (validateAbility(*monster, target, ability->id) ==
+            ABILITY_RESULT_SUCCESS)
+        {
+            return ability;
+        }
+    }
+
+    return nullptr;
+}
+
 static bool canPerformRangedAttack(
     const Entity* monster,
     const Entity* target)
@@ -265,6 +335,7 @@ static bool findMeleePathStep(
 static bool findRangedPathStep(
     Entity* monster,
     Entity* target,
+    int preferredDistance,
     int& nextX,
     int& nextY)
 {
@@ -273,7 +344,6 @@ static bool findRangedPathStep(
 
     const int mapWidth = getActiveMapWidth();
     const int mapHeight = getActiveMapHeight();
-    const int preferredDistance = getPreferredRangedDistance(monster);
     PathNode frontier[PATH_NODE_COUNT];
     bool visited[PATH_MAP_HEIGHT][PATH_MAP_WIDTH] = {};
     uint16_t first = 0;
@@ -402,6 +472,10 @@ void runMonsterScript(Entity* monster)
             runGuardScript(monster);
             break;
 
+        case SCRIPT_SPELLCASTER:
+            runSpellcasterScript(monster);
+            break;
+
         case SCRIPT_MELEE:
         default:
             runMeleeScript(monster);
@@ -426,6 +500,41 @@ void runCowardScript(Entity* monster)
 
 void runGuardScript(Entity* monster)
 {
+    performStandardAction(monster);
+}
+
+void runSpellcasterScript(Entity* monster)
+{
+    if (monster == nullptr || monster->monster == nullptr ||
+        monster->turn.standardActionUsed)
+    {
+        return;
+    }
+
+    Entity* enemy = chooseTarget(monster);
+
+    if (enemy == nullptr)
+        return;
+
+    const Ability* ability = getValidMonsterAbility(monster, enemy);
+
+    if (ability != nullptr)
+    {
+        Entity* target = getMonsterAbilityTarget(
+            monster, enemy, *ability);
+        AbilityResolution resolution = resolveAbility(
+            *monster, target, ability->id);
+
+        if (resolution.result == ABILITY_RESULT_SUCCESS)
+        {
+            presentAbilityResolution(
+                *monster, *target, ability->id, resolution);
+            return;
+        }
+    }
+
+    // With no legal supported spell, retain the existing adjacent melee
+    // action as the deliberately simple first-version fallback.
     performStandardAction(monster);
 }
 
@@ -554,7 +663,35 @@ bool keepDistance(Entity* monster)
     int nextX = monster->x;
     int nextY = monster->y;
 
-    return findRangedPathStep(monster, target, nextX, nextY) &&
+    return findRangedPathStep(
+               monster,
+               target,
+               getPreferredRangedDistance(monster),
+               nextX,
+               nextY) &&
+           moveMonsterTo(monster, nextX, nextY);
+}
+
+static bool moveMonsterForAbility(Entity* monster)
+{
+    Entity* target = chooseTarget(monster);
+    const Ability* ability = getSupportedMonsterAbility(monster, true);
+
+    if (monster == nullptr || target == nullptr || ability == nullptr ||
+        ability->target != TARGET_ENEMY)
+    {
+        return false;
+    }
+
+    int nextX = monster->x;
+    int nextY = monster->y;
+
+    return findRangedPathStep(
+               monster,
+               target,
+               ability->rangeTiles,
+               nextX,
+               nextY) &&
            moveMonsterTo(monster, nextX, nextY);
 }
 
@@ -574,6 +711,16 @@ bool isMonsterReadyForAction(Entity* monster)
                    getPreferredRangedDistance(monster);
     }
 
+    if (getMonsterScript(monster) == SCRIPT_SPELLCASTER)
+    {
+        if (getValidMonsterAbility(monster, target) != nullptr)
+            return true;
+
+        // Out of MP or unable to establish a cast: become ready for the
+        // existing melee fallback only after closing to adjacency.
+        return isAdjacent(monster, target);
+    }
+
     return isAdjacent(monster, target);
 }
 
@@ -591,6 +738,11 @@ void performMovementPhase(Entity* monster)
     if (getMonsterScript(monster) == SCRIPT_RANGED)
     {
         keepDistance(monster);
+    }
+    else if (getMonsterScript(monster) == SCRIPT_SPELLCASTER &&
+             getSupportedMonsterAbility(monster, true) != nullptr)
+    {
+        moveMonsterForAbility(monster);
     }
     else
     {

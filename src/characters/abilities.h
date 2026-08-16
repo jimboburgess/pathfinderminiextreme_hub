@@ -369,10 +369,13 @@ struct Ability
 
     AbilityAnimation animation;
 
-    // This remains the final field so the large existing spell table stays
-    // compact. Arcane/divine spell rows omit it and therefore initialize to
-    // ABILITY_CATEGORY_SPELL; all non-spell rows specify it explicitly.
+    // Arcane/divine spell rows usually omit this and therefore initialize to
+    // ABILITY_CATEGORY_SPELL; non-spell rows specify it explicitly.
     AbilityCategory category;
+
+    // Zero means no ranged single-target support in the first resolver.
+    // Existing definitions keep zero through aggregate initialization.
+    uint8_t rangeTiles;
 };
 
 extern const Ability abilityDatabase[];
@@ -386,5 +389,13 @@ bool isValidAbility(AbilityID id);
 bool knowsAbility(const Character& character, AbilityID id);
 bool learnAbility(Character& character, AbilityID id);
 bool forgetAbility(Character& character, AbilityID id);
+
+// One-shot character creation initialization. Level refreshes use the
+// idempotent progression helper instead of clearing known abilities.
+void initializeCharacterMagic(Character& character);
+
+// One-shot load initialization using a persisted current MP value. Derived
+// max MP and known spells are reconstructed from class/level.
+void restoreCharacterMagic(Character& character, int savedCurrentMP);
 
 #endif

@@ -4,6 +4,7 @@
 
 #include "abilities.h"
 #include "characters.h"
+#include "data/progression.h"
 
 //--------------------------------------------------
 // Ability Database
@@ -150,7 +151,7 @@ const Ability abilityDatabase[] =
     }, // ABILITY_MAGE_ARMOR
 
     {
-        ABILITY_MAGIC_MISSILE,"Magic Missile",ABILITY_ARCANE,1,2,ACTION_STANDARD,DELIVERY_TARGET,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_FORCE, 4, 1, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_MAGIC_MISSILE
+        ABILITY_MAGIC_MISSILE,"Magic Missile",ABILITY_ARCANE,1,2,ACTION_STANDARD,DELIVERY_TARGET,TARGET_ENEMY,DURATION_INSTANT,{{ EFFECT_DAMAGE, DAMAGE_FORCE, 4, 1, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 },{ EFFECT_NONE, DAMAGE_NONE, 0, 0, 0 }},1,ANIM_MAGIC_MISSILE,ABILITY_CATEGORY_SPELL,6
     }, // ABILITY_MAGIC_MISSILE
 
     {
@@ -521,4 +522,35 @@ bool forgetAbility(Character& character,
     }
 
     return false;
+}
+
+void initializeCharacterMagic(Character& character)
+{
+    character.magic.currentMP = 0;
+    character.magic.maxMP = 0;
+    character.magic.knownAbilityCount = 0;
+    character.magic.arcaneCaster = false;
+    character.magic.divineCaster = false;
+
+    for (uint8_t i = 0; i < MAX_KNOWN_ABILITIES; i++)
+        character.magic.knownAbilities[i] = ABILITY_NONE;
+
+    if (character.characterClass == CLASS_WIZARD)
+    {
+        character.magic.arcaneCaster = true;
+    }
+    else if (character.characterClass == CLASS_CLERIC)
+    {
+        character.magic.divineCaster = true;
+    }
+
+    refreshCharacterMagicProgression(character);
+    character.magic.currentMP = character.magic.maxMP;
+}
+
+void restoreCharacterMagic(Character& character, int savedCurrentMP)
+{
+    initializeCharacterMagic(character);
+    character.magic.currentMP = clampCurrentMPForCharacter(
+        character, savedCurrentMP);
 }

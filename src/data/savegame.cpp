@@ -2,10 +2,13 @@
 
 #include <Preferences.h>
 
+#include "progression.h"
+
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 4;
+constexpr uint8_t SAVE_VERSION = 5;
+constexpr uint8_t PREVIOUS_SAVE_VERSION = 4;
 constexpr uint8_t ITEM_INSTANCE_SAVE_VERSION = 3;
 constexpr uint8_t ITEM_SLOT_SAVE_VERSION = 2;
 constexpr uint8_t LEGACY_SAVE_VERSION = 1;
@@ -21,7 +24,27 @@ struct SavedCharacter
     HealthData health;
     EquipmentData equipment;
     InventoryData inventory;
+    int16_t currentMP;
 };
+
+// Version 4 introduced persistent gold but predates persisted current MP.
+// Preserve the exact previous layout for backward-compatible loading.
+struct PreviousSavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    EquipmentData equipment;
+    InventoryData inventory;
+};
+
+static_assert(
+    sizeof(SavedCharacter) != sizeof(PreviousSavedCharacter),
+    "Current MP must produce a distinct save layout.");
 
 // Version 3 introduced ItemInstance storage but predates persistent gold.
 struct ItemInstanceInventoryData
@@ -104,6 +127,12 @@ struct LegacySavedCharacter
     LegacyEquipmentData equipment;
     LegacyInventoryData inventory;
 };
+
+static_assert(
+    sizeof(SavedCharacter) != sizeof(ItemInstanceSavedCharacter) &&
+    sizeof(SavedCharacter) != sizeof(ItemSlotSavedCharacter) &&
+    sizeof(SavedCharacter) != sizeof(LegacySavedCharacter),
+    "Current save layout must remain distinguishable from legacy layouts.");
 
 bool isValidCharacterData(CharacterClass characterClass,
                           uint8_t level,
@@ -285,7 +314,9 @@ bool restoreCharacter(Character& character,
                       const AbilityScores& abilities,
                       const HealthData& health,
                       const EquipmentData& equipment,
-                      const InventoryData& inventory)
+                      const InventoryData& inventory,
+                      bool hasSavedCurrentMP = false,
+                      int savedCurrentMP = 0)
 {
     if (!isValidCharacterData(characterClass, level, health) ||
         !isValidEquipment(equipment) ||
@@ -308,6 +339,13 @@ bool restoreCharacter(Character& character,
     loaded.health = health;
     loaded.equipment = equipment;
     loaded.inventory = inventory;
+
+    // Max MP and known spells are class/level-derived. Version 5 also restores
+    // spent MP; older saves safely migrate with a full derived pool.
+    if (hasSavedCurrentMP)
+        restoreCharacterMagic(loaded, savedCurrentMP);
+    else
+        initializeCharacterMagic(loaded);
 
     if (loaded.characterClass == CLASS_FIGHTER)
         learnAbility(loaded, ABILITY_POWER_ATTACK);
@@ -336,7 +374,9 @@ bool saveGame(const Character& character)
         character.abilities,
         character.health,
         character.equipment,
-        character.inventory
+        character.inventory,
+        static_cast<int16_t>(clampCurrentMPForCharacter(
+            character, character.magic.currentMP))
     };
 
     Preferences preferences;
@@ -370,6 +410,33 @@ bool loadGame(Character& character)
         if (bytesRead != sizeof(saved) ||
             saved.magic != SAVE_MAGIC ||
             saved.version != SAVE_VERSION)
+        {
+            return false;
+        }
+
+        return restoreCharacter(
+            character,
+            saved.characterClass,
+            saved.level,
+            saved.xp,
+            saved.abilities,
+            saved.health,
+            saved.equipment,
+            saved.inventory,
+            true,
+            saved.currentMP);
+    }
+
+    if (savedSize == sizeof(PreviousSavedCharacter))
+    {
+        PreviousSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes(
+            "player", &saved, sizeof(saved));
+        preferences.end();
+
+        if (bytesRead != sizeof(saved) ||
+            saved.magic != SAVE_MAGIC ||
+            saved.version != PREVIOUS_SAVE_VERSION)
         {
             return false;
         }
