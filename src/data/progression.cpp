@@ -26,9 +26,8 @@ struct LearnedAbilityAtLevel
 const LearnedAbilityAtLevel wizardSpellProgression[] =
 {
     { 1, ABILITY_MAGIC_MISSILE },
-    { 1, ABILITY_RAY_OF_FROST },
-    { 1, ABILITY_BURNING_HANDS },
-    { 1, ABILITY_MAGE_ARMOR },
+    { 1, ABILITY_SLEEP },
+    { 1, ABILITY_GREASE },
 
     { 3, ABILITY_ACID_ARROW },
     { 3, ABILITY_SCORCHING_RAY },

@@ -394,8 +394,13 @@ bool forgetAbility(Character& character, AbilityID id);
 // idempotent progression helper instead of clearing known abilities.
 void initializeCharacterMagic(Character& character);
 
-// One-shot load initialization using a persisted current MP value. Derived
-// max MP and known spells are reconstructed from class/level.
-void restoreCharacterMagic(Character& character, int savedCurrentMP);
+// One-shot load initialization using persisted current MP and, for current
+// saves, the bounded known-ability list. Class progression is merged afterward
+// so mandatory class spells remain present without erasing scroll learning.
+void restoreCharacterMagic(
+    Character& character,
+    int savedCurrentMP,
+    const AbilityID* savedKnownAbilities = nullptr,
+    uint8_t savedKnownAbilityCount = 0);
 
 #endif

@@ -7,7 +7,8 @@
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 5;
+constexpr uint8_t SAVE_VERSION = 6;
+constexpr uint8_t CURRENT_MP_SAVE_VERSION = 5;
 constexpr uint8_t PREVIOUS_SAVE_VERSION = 4;
 constexpr uint8_t ITEM_INSTANCE_SAVE_VERSION = 3;
 constexpr uint8_t ITEM_SLOT_SAVE_VERSION = 2;
@@ -25,10 +26,27 @@ struct SavedCharacter
     EquipmentData equipment;
     InventoryData inventory;
     int16_t currentMP;
+    uint8_t knownAbilityCount;
+    AbilityID knownAbilities[MAX_KNOWN_ABILITIES];
 };
 
-// Version 4 introduced persistent gold but predates persisted current MP.
-// Preserve the exact previous layout for backward-compatible loading.
+// Version 5 added current MP but still reconstructed every known spell from
+// class/level. Preserve its exact layout for backward-compatible loading.
+struct CurrentMPSavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    EquipmentData equipment;
+    InventoryData inventory;
+    int16_t currentMP;
+};
+
+// Version 4 introduced persistent gold but predates persisted magic data.
 struct PreviousSavedCharacter
 {
     uint32_t magic;
@@ -43,8 +61,9 @@ struct PreviousSavedCharacter
 };
 
 static_assert(
-    sizeof(SavedCharacter) != sizeof(PreviousSavedCharacter),
-    "Current MP must produce a distinct save layout.");
+    sizeof(SavedCharacter) != sizeof(CurrentMPSavedCharacter) &&
+    sizeof(CurrentMPSavedCharacter) != sizeof(PreviousSavedCharacter),
+    "Persisted magic versions must have distinct save layouts.");
 
 // Version 3 introduced ItemInstance storage but predates persistent gold.
 struct ItemInstanceInventoryData
@@ -129,10 +148,16 @@ struct LegacySavedCharacter
 };
 
 static_assert(
+    sizeof(SavedCharacter) != sizeof(CurrentMPSavedCharacter) &&
+    sizeof(SavedCharacter) != sizeof(PreviousSavedCharacter) &&
     sizeof(SavedCharacter) != sizeof(ItemInstanceSavedCharacter) &&
     sizeof(SavedCharacter) != sizeof(ItemSlotSavedCharacter) &&
-    sizeof(SavedCharacter) != sizeof(LegacySavedCharacter),
-    "Current save layout must remain distinguishable from legacy layouts.");
+    sizeof(SavedCharacter) != sizeof(LegacySavedCharacter) &&
+    sizeof(CurrentMPSavedCharacter) !=
+        sizeof(ItemInstanceSavedCharacter) &&
+    sizeof(CurrentMPSavedCharacter) != sizeof(ItemSlotSavedCharacter) &&
+    sizeof(CurrentMPSavedCharacter) != sizeof(LegacySavedCharacter),
+    "Persisted save layouts must remain distinguishable by size.");
 
 bool isValidCharacterData(CharacterClass characterClass,
                           uint8_t level,
@@ -142,6 +167,63 @@ bool isValidCharacterData(CharacterClass characterClass,
            characterClass <= CLASS_CLERIC &&
            level > 0 && health.maxHP > 0 && health.currentHP >= 0 &&
            health.currentHP <= health.maxHP;
+}
+
+bool isValidKnownAbilityData(
+    const AbilityID knownAbilities[],
+    uint8_t knownAbilityCount)
+{
+    if (knownAbilityCount > MAX_KNOWN_ABILITIES)
+        return false;
+
+    for (uint8_t i = 0; i < knownAbilityCount; i++)
+    {
+        if (!isValidAbility(knownAbilities[i]))
+            return false;
+
+        for (uint8_t previous = 0; previous < i; previous++)
+        {
+            if (knownAbilities[previous] == knownAbilities[i])
+                return false;
+        }
+    }
+
+    return true;
+}
+
+uint8_t copyKnownAbilitiesForSave(
+    const Character& character,
+    AbilityID destination[MAX_KNOWN_ABILITIES])
+{
+    uint8_t sourceCount = character.magic.knownAbilityCount;
+    if (sourceCount > MAX_KNOWN_ABILITIES)
+        sourceCount = MAX_KNOWN_ABILITIES;
+
+    uint8_t savedCount = 0;
+
+    for (uint8_t i = 0; i < sourceCount; i++)
+    {
+        AbilityID abilityID = character.magic.knownAbilities[i];
+        if (!isValidAbility(abilityID))
+            continue;
+
+        bool duplicate = false;
+        for (uint8_t savedIndex = 0;
+             savedIndex < savedCount;
+             savedIndex++)
+        {
+            if (destination[savedIndex] == abilityID)
+            {
+                duplicate = true;
+                break;
+            }
+        }
+
+        if (!duplicate)
+            destination[savedCount++] = abilityID;
+    }
+
+    return savedCount;
 }
 
 bool isValidRawItemID(uint32_t rawItem, bool allowNone)
@@ -308,19 +390,24 @@ bool convertLegacyInventory(const LegacyInventoryData& source,
 }
 
 bool restoreCharacter(Character& character,
-                      CharacterClass characterClass,
+                       CharacterClass characterClass,
                       uint8_t level,
                       uint32_t xp,
                       const AbilityScores& abilities,
                       const HealthData& health,
-                      const EquipmentData& equipment,
-                      const InventoryData& inventory,
-                      bool hasSavedCurrentMP = false,
-                      int savedCurrentMP = 0)
+                       const EquipmentData& equipment,
+                       const InventoryData& inventory,
+                       bool hasSavedCurrentMP = false,
+                       int savedCurrentMP = 0,
+                       const AbilityID* savedKnownAbilities = nullptr,
+                       uint8_t savedKnownAbilityCount = 0)
 {
     if (!isValidCharacterData(characterClass, level, health) ||
         !isValidEquipment(equipment) ||
-        !isValidInventory(inventory))
+        !isValidInventory(inventory) ||
+        (savedKnownAbilities != nullptr &&
+         !isValidKnownAbilityData(
+             savedKnownAbilities, savedKnownAbilityCount)))
     {
         return false;
     }
@@ -340,10 +427,17 @@ bool restoreCharacter(Character& character,
     loaded.equipment = equipment;
     loaded.inventory = inventory;
 
-    // Max MP and known spells are class/level-derived. Version 5 also restores
-    // spent MP; older saves safely migrate with a full derived pool.
+    // Max MP remains derived. Current saves restore the bounded known-ability
+    // list before merging mandatory class progression, preserving spells
+    // learned from scrolls. Older saves reconstruct progression as before.
     if (hasSavedCurrentMP)
-        restoreCharacterMagic(loaded, savedCurrentMP);
+    {
+        restoreCharacterMagic(
+            loaded,
+            savedCurrentMP,
+            savedKnownAbilities,
+            savedKnownAbilityCount);
+    }
     else
         initializeCharacterMagic(loaded);
 
@@ -364,20 +458,20 @@ bool restoreCharacter(Character& character,
 
 bool saveGame(const Character& character)
 {
-    SavedCharacter saved =
-    {
-        SAVE_MAGIC,
-        SAVE_VERSION,
-        character.characterClass,
-        character.level,
-        character.xp,
-        character.abilities,
-        character.health,
-        character.equipment,
-        character.inventory,
-        static_cast<int16_t>(clampCurrentMPForCharacter(
-            character, character.magic.currentMP))
-    };
+    SavedCharacter saved = {};
+    saved.magic = SAVE_MAGIC;
+    saved.version = SAVE_VERSION;
+    saved.characterClass = character.characterClass;
+    saved.level = character.level;
+    saved.xp = character.xp;
+    saved.abilities = character.abilities;
+    saved.health = character.health;
+    saved.equipment = character.equipment;
+    saved.inventory = character.inventory;
+    saved.currentMP = static_cast<int16_t>(clampCurrentMPForCharacter(
+        character, character.magic.currentMP));
+    saved.knownAbilityCount = copyKnownAbilitiesForSave(
+        character, saved.knownAbilities);
 
     Preferences preferences;
 
@@ -410,6 +504,35 @@ bool loadGame(Character& character)
         if (bytesRead != sizeof(saved) ||
             saved.magic != SAVE_MAGIC ||
             saved.version != SAVE_VERSION)
+        {
+            return false;
+        }
+
+        return restoreCharacter(
+            character,
+            saved.characterClass,
+            saved.level,
+            saved.xp,
+            saved.abilities,
+            saved.health,
+            saved.equipment,
+            saved.inventory,
+            true,
+            saved.currentMP,
+            saved.knownAbilities,
+            saved.knownAbilityCount);
+    }
+
+    if (savedSize == sizeof(CurrentMPSavedCharacter))
+    {
+        CurrentMPSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes(
+            "player", &saved, sizeof(saved));
+        preferences.end();
+
+        if (bytesRead != sizeof(saved) ||
+            saved.magic != SAVE_MAGIC ||
+            saved.version != CURRENT_MP_SAVE_VERSION)
         {
             return false;
         }

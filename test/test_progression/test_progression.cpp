@@ -99,11 +99,11 @@ void test_wizard_mp_progression_and_level_one_magic()
     TEST_ASSERT_EQUAL_INT(6, wizard.magic.maxMP);
     TEST_ASSERT_EQUAL_INT(6, wizard.magic.currentMP);
     TEST_ASSERT_TRUE(wizard.magic.arcaneCaster);
-    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_MAGIC_MISSILE));
-    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_RAY_OF_FROST));
-    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_BURNING_HANDS));
-    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_MAGE_ARMOR));
+    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_SLEEP));
+    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_GREASE));
+    TEST_ASSERT_FALSE(knowsAbility(wizard, ABILITY_RAY_OF_FROST));
     TEST_ASSERT_FALSE(knowsAbility(wizard, ABILITY_ACID_ARROW));
 }
 
@@ -117,7 +117,7 @@ void test_wizard_level_up_preserves_mp_and_learns_idempotently()
     TEST_ASSERT_EQUAL_UINT8(2, wizard.level);
     TEST_ASSERT_EQUAL_INT(8, wizard.magic.maxMP);
     TEST_ASSERT_EQUAL_INT(2, wizard.magic.currentMP);
-    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
 
     TEST_ASSERT_EQUAL_UINT8(1, awardExperience(wizard, 3000));
     TEST_ASSERT_EQUAL_UINT8(3, wizard.level);
@@ -126,7 +126,7 @@ void test_wizard_level_up_preserves_mp_and_learns_idempotently()
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_ACID_ARROW));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_SCORCHING_RAY));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_WEB));
-    TEST_ASSERT_EQUAL_UINT8(7, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(6, wizard.magic.knownAbilityCount);
 
     TEST_ASSERT_EQUAL_UINT8(4, awardExperience(wizard, 30000));
     TEST_ASSERT_EQUAL_UINT8(7, wizard.level);
@@ -138,11 +138,11 @@ void test_wizard_level_up_preserves_mp_and_learns_idempotently()
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_ICE_STORM));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_GREATER_INVISIBILITY));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_STONESKIN));
-    TEST_ASSERT_EQUAL_UINT8(13, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(12, wizard.magic.knownAbilityCount);
 
     refreshCharacterMagicProgression(wizard);
     refreshCharacterMagicProgression(wizard);
-    TEST_ASSERT_EQUAL_UINT8(13, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(12, wizard.magic.knownAbilityCount);
 }
 
 void test_loaded_wizard_mp_is_preserved_and_clamped()
@@ -154,13 +154,41 @@ void test_loaded_wizard_mp_is_preserved_and_clamped()
     TEST_ASSERT_EQUAL_INT(3, wizard.magic.currentMP);
     TEST_ASSERT_EQUAL_INT(
         3, clampCurrentMPForCharacter(wizard, wizard.magic.currentMP));
-    TEST_ASSERT_EQUAL_UINT8(7, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(6, wizard.magic.knownAbilityCount);
 
     restoreCharacterMagic(wizard, 999);
     TEST_ASSERT_EQUAL_INT(11, wizard.magic.currentMP);
 
     restoreCharacterMagic(wizard, -25);
     TEST_ASSERT_EQUAL_INT(0, wizard.magic.currentMP);
+}
+
+void test_loaded_known_abilities_merge_with_progression_without_duplicates()
+{
+    Character savedWizard = makeCharacter(CLASS_WIZARD, 1);
+    initializeCharacterMagic(savedWizard);
+    TEST_ASSERT_TRUE(learnAbility(savedWizard, ABILITY_ACID_ARROW));
+
+    AbilityID savedAbilities[MAX_KNOWN_ABILITIES] = {};
+    for (uint8_t i = 0; i < savedWizard.magic.knownAbilityCount; i++)
+        savedAbilities[i] = savedWizard.magic.knownAbilities[i];
+
+    Character loadedWizard = makeCharacter(CLASS_WIZARD, 1);
+    restoreCharacterMagic(
+        loadedWizard,
+        3,
+        savedAbilities,
+        savedWizard.magic.knownAbilityCount);
+
+    TEST_ASSERT_EQUAL_INT(3, loadedWizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(4, loadedWizard.magic.knownAbilityCount);
+    TEST_ASSERT_TRUE(knowsAbility(loadedWizard, ABILITY_MAGIC_MISSILE));
+    TEST_ASSERT_TRUE(knowsAbility(loadedWizard, ABILITY_SLEEP));
+    TEST_ASSERT_TRUE(knowsAbility(loadedWizard, ABILITY_GREASE));
+    TEST_ASSERT_TRUE(knowsAbility(loadedWizard, ABILITY_ACID_ARROW));
+
+    refreshCharacterMagicProgression(loadedWizard);
+    TEST_ASSERT_EQUAL_UINT8(4, loadedWizard.magic.knownAbilityCount);
 }
 
 void test_medium_xp_threshold_boundaries()
@@ -257,6 +285,8 @@ void setup()
     RUN_TEST(test_wizard_mp_progression_and_level_one_magic);
     RUN_TEST(test_wizard_level_up_preserves_mp_and_learns_idempotently);
     RUN_TEST(test_loaded_wizard_mp_is_preserved_and_clamped);
+    RUN_TEST(
+        test_loaded_known_abilities_merge_with_progression_without_duplicates);
     RUN_TEST(test_medium_xp_threshold_boundaries);
     RUN_TEST(test_one_award_can_advance_multiple_levels_without_healing);
     RUN_TEST(test_primary_ability_milestones_apply_once_for_every_class);

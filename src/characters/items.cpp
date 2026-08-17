@@ -4,6 +4,8 @@
 
 #include "items.h"
 
+#include "characters.h"
+
 const Item itemDatabase[] =
 {
 	// None
@@ -188,11 +190,29 @@ const Item itemDatabase[] =
 	{ "Mysterious Crystal",  ITEMTYPE_QUEST, 6, 3000,  2, ICON_GEM, false, false, RARITY_EPIC,      THEME_CAVE, "It glows with magical energy." },
 	{ "King's Letter",       ITEMTYPE_QUEST, 7,  500,  0, ICON_LETTER, false, false, RARITY_UNCOMMON,  THEME_ANY, "A sealed royal letter." },
 
+	// Scroll ItemIDs are appended after the original database entries so old
+	// inventory saves keep their existing numeric item identities.
+	{ "Scroll of Magic Missile", ITEMTYPE_SCROLL, SCROLL_MAGIC_MISSILE, 100, 0, ICON_SCROLL, true, true, RARITY_COMMON, THEME_ANY, "Teaches Magic Missile to a Wizard." },
+	{ "Scroll of Sleep",         ITEMTYPE_SCROLL, SCROLL_SLEEP,         100, 0, ICON_SCROLL, true, true, RARITY_COMMON, THEME_ANY, "Teaches Sleep to a Wizard." },
+	{ "Scroll of Grease",        ITEMTYPE_SCROLL, SCROLL_GREASE,        100, 0, ICON_SCROLL, true, true, RARITY_COMMON, THEME_ANY, "Teaches Grease to a Wizard." },
+
 };
 
 static_assert(
 	ITEM_COUNT == (sizeof(itemDatabase) / sizeof(itemDatabase[0])),
 	"Item database is out of sync with ItemID."
+);
+
+const Scroll scrollDatabase[] =
+{
+	{ ABILITY_MAGIC_MISSILE, 1 },
+	{ ABILITY_SLEEP, 1 },
+	{ ABILITY_GREASE, 1 }
+};
+
+static_assert(
+	SCROLL_COUNT == (sizeof(scrollDatabase) / sizeof(scrollDatabase[0])),
+	"Scroll database is out of sync with ScrollID."
 );
 
 const Weapon weaponDatabase[] =
@@ -363,4 +383,77 @@ const Shield* getShield(ItemID item)
 		return nullptr;
 
 	return &shieldDatabase[itemInfo->effectIndex];
+}
+
+const Scroll* getScroll(ItemID item)
+{
+	const Item* itemInfo = getItem(item);
+
+	if (itemInfo == nullptr || itemInfo->type != ITEMTYPE_SCROLL ||
+		itemInfo->effectIndex >= SCROLL_COUNT)
+	{
+		return nullptr;
+	}
+
+	const Scroll* scroll = &scrollDatabase[itemInfo->effectIndex];
+	return isValidAbility(scroll->taughtAbility) ? scroll : nullptr;
+}
+
+ScrollLearnResult learnSpellFromScroll(
+	Character& character,
+	AbilityID abilityID)
+{
+	const Ability* ability = getAbility(abilityID);
+
+	if (ability == nullptr || !isValidAbility(abilityID))
+		return SCROLL_LEARN_INVALID_SCROLL;
+
+	if (character.characterClass != CLASS_WIZARD ||
+		!character.magic.arcaneCaster)
+	{
+		return SCROLL_LEARN_NOT_ARCANE_CASTER;
+	}
+
+	if (ability->type != ABILITY_ARCANE ||
+		ability->category != ABILITY_CATEGORY_SPELL)
+	{
+		return SCROLL_LEARN_CANNOT_LEARN;
+	}
+
+	if (knowsAbility(character, abilityID))
+		return SCROLL_LEARN_ALREADY_KNOWN;
+
+	if (character.magic.knownAbilityCount >= MAX_KNOWN_ABILITIES)
+		return SCROLL_LEARN_SPELLBOOK_FULL;
+
+	return learnAbility(character, abilityID)
+		? SCROLL_LEARN_SUCCESS
+		: SCROLL_LEARN_CANNOT_LEARN;
+}
+
+ScrollLearnResult useSpellScroll(
+	Character& character,
+	const ItemInstance& scrollItem)
+{
+	const Scroll* scroll = getScroll(scrollItem.itemID);
+
+	if (scroll == nullptr || !hasItem(character, scrollItem))
+		return SCROLL_LEARN_INVALID_SCROLL;
+
+	ScrollLearnResult result = learnSpellFromScroll(
+		character, scroll->taughtAbility);
+
+	if (result != SCROLL_LEARN_SUCCESS)
+		return result;
+
+	// Learning and consumption are one transaction. The exact selected
+	// ItemInstance is removed; if inventory mutation unexpectedly fails, undo
+	// the just-learned ability so neither half of the operation remains.
+	if (!removeItem(character, scrollItem, 1))
+	{
+		forgetAbility(character, scroll->taughtAbility);
+		return SCROLL_LEARN_INVALID_SCROLL;
+	}
+
+	return SCROLL_LEARN_SUCCESS;
 }

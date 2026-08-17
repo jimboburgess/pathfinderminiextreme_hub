@@ -266,6 +266,8 @@ void useSelectedPlayerItem()
         return;
     }
 
+    const Item* item = getItem(slot->item.itemID);
+
     if (slot->item.itemID == ITEM_POTION_CURE_LIGHT_WOUNDS)
     {
         if (useCureLightWounds(*inventoryMenu.character))
@@ -274,7 +276,51 @@ void useSelectedPlayerItem()
         return;
     }
 
-    const Item* item = getItem(slot->item.itemID);
+    if (item != nullptr && item->type == ITEMTYPE_SCROLL)
+    {
+        const Scroll* scroll = getScroll(slot->item.itemID);
+        const AbilityID taughtAbility = scroll != nullptr
+            ? scroll->taughtAbility
+            : ABILITY_NONE;
+        const char* spellName = getAbilityName(taughtAbility);
+        ScrollLearnResult result = useSpellScroll(
+            *inventoryMenu.character, slot->item);
+        char message[64];
+
+        switch (result)
+        {
+            case SCROLL_LEARN_SUCCESS:
+                snprintf(message, sizeof(message), "Learned %s!", spellName);
+                playSound(SoundEffect::ITEM_PICKUP);
+                setInventoryStatus(message);
+                closeInventoryMenu();
+                return;
+
+            case SCROLL_LEARN_ALREADY_KNOWN:
+                snprintf(message, sizeof(message),
+                         "You already know %s.", spellName);
+                break;
+
+            case SCROLL_LEARN_NOT_ARCANE_CASTER:
+                snprintf(message, sizeof(message),
+                         "Only Wizards can learn this spell.");
+                break;
+
+            case SCROLL_LEARN_SPELLBOOK_FULL:
+                snprintf(message, sizeof(message), "Spellbook full.");
+                break;
+
+            case SCROLL_LEARN_INVALID_SCROLL:
+            case SCROLL_LEARN_CANNOT_LEARN:
+                snprintf(message, sizeof(message),
+                         "That scroll cannot be learned.");
+                break;
+        }
+
+        playSound(SoundEffect::ERROR);
+        setInventoryStatus(message);
+        return;
+    }
 
     if (item != nullptr && item->consumable)
         setInventoryStatus("That consumable is not ready yet.");

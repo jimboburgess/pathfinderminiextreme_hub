@@ -114,9 +114,11 @@ void test_wizard_magic_initialization_learns_magic_missile()
     TEST_ASSERT_FALSE(wizard.magic.divineCaster);
     TEST_ASSERT_EQUAL_INT(6, wizard.magic.maxMP);
     TEST_ASSERT_EQUAL_INT(6, wizard.magic.currentMP);
-    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
     TEST_ASSERT_EQUAL(
         ABILITY_MAGIC_MISSILE, wizard.magic.knownAbilities[0]);
+    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_SLEEP));
+    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_GREASE));
 
     const Ability* magicMissile = getAbility(ABILITY_MAGIC_MISSILE);
     TEST_ASSERT_NOT_NULL(magicMissile);
@@ -160,10 +162,11 @@ void test_wizard_can_know_spells_the_resolver_still_hides()
             supportedCount++;
     }
 
-    TEST_ASSERT_EQUAL_UINT8(13, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(12, wizard.magic.knownAbilityCount);
     TEST_ASSERT_EQUAL_UINT8(1, supportedCount);
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_MAGIC_MISSILE));
-    TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_RAY_OF_FROST));
+    TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_SLEEP));
+    TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_GREASE));
     TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_FIREBALL));
     TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_ICE_STORM));
 }

@@ -86,7 +86,8 @@ Entity* spawnMonster(
 
     entity->sprite = monster->sprite;
 
-    if (monsterID == MONSTER_GIANT_SPIDER)
+    if (monsterID == MONSTER_GIANT_SPIDER ||
+        monsterID == MONSTER_SPECTATOR)
     {
         entity->spriteWidth = LRGSPRITE_W;
         entity->spriteHeight = LRGSPRITE_H;

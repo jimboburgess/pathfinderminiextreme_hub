@@ -524,16 +524,22 @@ bool forgetAbility(Character& character,
     return false;
 }
 
+static void clearKnownAbilities(Character& character)
+{
+    character.magic.knownAbilityCount = 0;
+
+    for (uint8_t i = 0; i < MAX_KNOWN_ABILITIES; i++)
+        character.magic.knownAbilities[i] = ABILITY_NONE;
+}
+
 void initializeCharacterMagic(Character& character)
 {
     character.magic.currentMP = 0;
     character.magic.maxMP = 0;
-    character.magic.knownAbilityCount = 0;
     character.magic.arcaneCaster = false;
     character.magic.divineCaster = false;
 
-    for (uint8_t i = 0; i < MAX_KNOWN_ABILITIES; i++)
-        character.magic.knownAbilities[i] = ABILITY_NONE;
+    clearKnownAbilities(character);
 
     if (character.characterClass == CLASS_WIZARD)
     {
@@ -548,9 +554,30 @@ void initializeCharacterMagic(Character& character)
     character.magic.currentMP = character.magic.maxMP;
 }
 
-void restoreCharacterMagic(Character& character, int savedCurrentMP)
+void restoreCharacterMagic(
+    Character& character,
+    int savedCurrentMP,
+    const AbilityID* savedKnownAbilities,
+    uint8_t savedKnownAbilityCount)
 {
     initializeCharacterMagic(character);
+
+    if (savedKnownAbilities != nullptr)
+    {
+        clearKnownAbilities(character);
+
+        uint8_t abilityCount = savedKnownAbilityCount;
+        if (abilityCount > MAX_KNOWN_ABILITIES)
+            abilityCount = MAX_KNOWN_ABILITIES;
+
+        for (uint8_t i = 0; i < abilityCount; i++)
+            learnAbility(character, savedKnownAbilities[i]);
+
+        // Merge mandatory class/level spells idempotently after restoring the
+        // exact saved spellbook. Scroll-learned entries are never cleared.
+        refreshCharacterMagicProgression(character);
+    }
+
     character.magic.currentMP = clampCurrentMPForCharacter(
         character, savedCurrentMP);
 }

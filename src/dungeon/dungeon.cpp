@@ -145,7 +145,7 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
                     spawnMonster(
                         dungeon.entities,
                         dungeon.entityCount,
-                        MONSTER_GIANT_SPIDER,
+                        MONSTER_SPECTATOR,
                         x,
                         y);
 

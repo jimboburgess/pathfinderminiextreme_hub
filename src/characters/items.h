@@ -185,6 +185,11 @@ enum ItemID : uint8_t
     ITEM_MYSTERIOUS_CRYSTAL,
     ITEM_KINGS_LETTER,
 
+    // Appended so every previously persisted ItemID keeps its numeric value.
+    ITEM_SCROLL_MAGIC_MISSILE,
+    ITEM_SCROLL_SLEEP,
+    ITEM_SCROLL_GREASE,
+
     ITEM_COUNT
 };
 
@@ -512,8 +517,26 @@ struct Shield
 
 struct Scroll
 {
-    AbilityID ability;
+    AbilityID taughtAbility;
     uint8_t casterLevel;
+};
+
+enum ScrollID : uint8_t
+{
+    SCROLL_MAGIC_MISSILE,
+    SCROLL_SLEEP,
+    SCROLL_GREASE,
+    SCROLL_COUNT
+};
+
+enum ScrollLearnResult : uint8_t
+{
+    SCROLL_LEARN_SUCCESS,
+    SCROLL_LEARN_ALREADY_KNOWN,
+    SCROLL_LEARN_NOT_ARCANE_CASTER,
+    SCROLL_LEARN_INVALID_SCROLL,
+    SCROLL_LEARN_SPELLBOOK_FULL,
+    SCROLL_LEARN_CANNOT_LEARN
 };
 
 struct Wand
@@ -536,6 +559,8 @@ extern const Armor armorDatabase[];
 
 extern const Shield shieldDatabase[];
 
+extern const Scroll scrollDatabase[];
+
 const Item* getItem(ItemID item);
 
 const Weapon* getWeapon(ItemID item);
@@ -543,5 +568,15 @@ const Weapon* getWeapon(ItemID item);
 const Armor* getArmor(ItemID item);
 
 const Shield* getShield(ItemID item);
+
+const Scroll* getScroll(ItemID item);
+
+ScrollLearnResult learnSpellFromScroll(
+    Character& character,
+    AbilityID abilityID);
+
+ScrollLearnResult useSpellScroll(
+    Character& character,
+    const ItemInstance& scrollItem);
 
 #endif // PATHFINDERMINIEXTREME_025_ITEMS_H

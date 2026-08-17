@@ -7,8 +7,8 @@
 
 #include <Arduino.h>
 
-//playSound(SoundEffect::SOUND NAME);
-
+// Existing game code should continue to use:
+// playSound(SoundEffect::SOUND_NAME);
 enum class SoundEffect : uint8_t
 {
     NONE,
@@ -76,21 +76,124 @@ enum class SoundEffect : uint8_t
     COUNT
 };
 
-
-struct Note
+enum class AudioCommandType : uint8_t
 {
-    uint16_t frequency;
-    uint16_t duration;
+    TONE,
+    PAUSE,
+    SWEEP,
+    VIBRATO,
+    NOISE,
+    END
 };
 
+enum class AudioDuty : uint8_t
+{
+    DUTY_12_5,
+    DUTY_25,
+    DUTY_50,
+    DUTY_75
+};
+
+// Compact, fixed-size description interpreted by the single-channel playback
+// engine. The meaning of frequency2 and parameter depends on the command:
+//
+// SWEEP:  frequency -> frequency2, parameter unused
+// VIBRATO: frequency=center, frequency2=depth, parameter=rate in Hz
+// NOISE:  frequency=min, frequency2=max, parameter=update interval in ms
+struct AudioCommand
+{
+    AudioCommandType type;
+    AudioDuty duty;
+    uint16_t durationMs;
+    uint16_t frequency;
+    uint16_t frequency2;
+    uint16_t parameter;
+};
+
+static_assert(sizeof(AudioCommand) == 10,
+              "AudioCommand should remain compact for ESP32 flash storage.");
+
+constexpr AudioCommand audioTone(
+    uint16_t frequency,
+    uint16_t durationMs,
+    AudioDuty duty = AudioDuty::DUTY_50)
+{
+    return {AudioCommandType::TONE, duty, durationMs, frequency, 0, 0};
+}
+
+constexpr AudioCommand audioPause(uint16_t durationMs)
+{
+    return {
+        AudioCommandType::PAUSE,
+        AudioDuty::DUTY_50,
+        durationMs,
+        0,
+        0,
+        0};
+}
+
+constexpr AudioCommand audioSweep(
+    uint16_t startFrequency,
+    uint16_t endFrequency,
+    uint16_t durationMs,
+    AudioDuty duty = AudioDuty::DUTY_50)
+{
+    return {
+        AudioCommandType::SWEEP,
+        duty,
+        durationMs,
+        startFrequency,
+        endFrequency,
+        0};
+}
+
+constexpr AudioCommand audioVibrato(
+    uint16_t centerFrequency,
+    uint16_t depth,
+    uint16_t rateHz,
+    uint16_t durationMs,
+    AudioDuty duty = AudioDuty::DUTY_50)
+{
+    return {
+        AudioCommandType::VIBRATO,
+        duty,
+        durationMs,
+        centerFrequency,
+        depth,
+        rateHz};
+}
+
+constexpr AudioCommand audioNoise(
+    uint16_t minFrequency,
+    uint16_t maxFrequency,
+    uint16_t updateIntervalMs,
+    uint16_t durationMs,
+    AudioDuty duty = AudioDuty::DUTY_50)
+{
+    return {
+        AudioCommandType::NOISE,
+        duty,
+        durationMs,
+        minFrequency,
+        maxFrequency,
+        updateIntervalMs};
+}
+
+constexpr AudioCommand audioEnd()
+{
+    return {
+        AudioCommandType::END,
+        AudioDuty::DUTY_50,
+        0,
+        0,
+        0,
+        0};
+}
+
 void initAudio();
-void updateAudio();
-
-// TODO:
-// Separate music and sound effects into independent playback
-// channels when the audio system grows.
-
 void playSound(SoundEffect sound);
+void updateAudio();
+void stopSound();
 bool isSoundPlaying();
 
-#endif //PATHFINDERMINIEXTREME_025_AUDIO_H
+#endif // PATHFINDERMINIEXTREME_025_AUDIO_H

@@ -112,7 +112,7 @@ static void addDoors(DungeonRoom &room) {
 }
 
 static void generateEntrance(DungeonRoom &room) {
-  // The Giant Spider uses a 2x2 footprint.  This anchor is floor in every
+  // The Spectator uses a 2x2 footprint. This anchor is floor in every
   // generated room shape and keeps it away from the player's center spawn.
   int center = ROOM_SIZE / 2;
   room.map.tiles[2][center - 1] = TILE_GIANT_SPIDER_START;
