@@ -12,6 +12,7 @@
 #include "graphics/messagelog.h"
 #include "combat.h"
 #include "data/entityspawn.h"
+#include "data/entitytraits.h"
 #include "data/game.h"
 #include "graphics/display.h"
 
@@ -227,6 +228,7 @@ static bool canPerformRangedAttack(
 {
     return getMonsterRangedWeapon(monster) != nullptr &&
            target != nullptr &&
+           canSee(*monster) &&
            target->active &&
            target->character.state == STATE_ALIVE &&
            hasLineOfSightBetweenFootprintsAt(
@@ -467,7 +469,8 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
 
 void runMonsterScript(Entity* monster)
 {
-    if (monster == nullptr || monster->monster == nullptr)
+    if (monster == nullptr || monster->monster == nullptr ||
+        !monster->active || !canCharacterAct(monster->character))
         return;
 
     switch (monster->monster->script)
@@ -738,7 +741,9 @@ bool isMonsterReadyForAction(Entity* monster)
 
 void performMovementPhase(Entity* monster)
 {
-    if (monster == nullptr || monster->turn.movementRemaining == 0)
+    if (monster == nullptr || !monster->active ||
+        !canCharacterAct(monster->character) ||
+        monster->turn.movementRemaining == 0)
     {
         return;
     }

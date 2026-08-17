@@ -11,6 +11,8 @@
 
 static int controlledDistance = 1;
 static bool controlledLineOfSight = true;
+static int controlledBlockedLOSX = -1;
+static int controlledBlockedLOSY = -1;
 static int controlledSaveRoll = 10;
 static uint8_t damageApplicationCount = 0;
 static uint8_t saveRollCount = 0;
@@ -18,6 +20,18 @@ static uint8_t dirtyTileMarkCount = 0;
 static bool controlledBaseTerrainDifficult = false;
 static Entity activeTestEntities[4];
 static uint8_t activeTestEntityCount = 0;
+
+extern const DirectionOffset directionOffsets[] =
+{
+    {  0, -1 },
+    {  1, -1 },
+    {  1,  0 },
+    {  1,  1 },
+    {  0,  1 },
+    { -1,  1 },
+    { -1,  0 },
+    { -1, -1 }
+};
 
 DirtyTile dirtyTiles[MAX_DIRTY_TILES];
 uint8_t dirtyTileCount = 0;
@@ -112,10 +126,12 @@ bool hasLineOfSightFromFootprintAt(
     const Entity&,
     int,
     int,
-    int,
-    int)
+    int targetX,
+    int targetY)
 {
-    return controlledLineOfSight;
+    return controlledLineOfSight &&
+           (targetX != controlledBlockedLOSX ||
+            targetY != controlledBlockedLOSY);
 }
 
 int getActiveMapWidth()
@@ -132,6 +148,11 @@ bool isInsideActiveMap(int x, int y)
 {
     return x >= 0 && x < getActiveMapWidth() &&
            y >= 0 && y < getActiveMapHeight();
+}
+
+TileType getActiveMapTile(int x, int y)
+{
+    return isInsideActiveMap(x, y) ? TILE_FLOOR : TILE_WALL;
 }
 
 bool isBaseTerrainDifficultAt(int x, int y)
@@ -154,6 +175,14 @@ uint8_t getEntityTileWidth(const Entity&)
 uint8_t getEntityTileHeight(const Entity&)
 {
     return 1;
+}
+
+bool entityOccupiesTile(const Entity& entity, int tileX, int tileY)
+{
+    return tileX >= entity.x &&
+           tileX < entity.x + getEntityTileWidth(entity) &&
+           tileY >= entity.y &&
+           tileY < entity.y + getEntityTileHeight(entity);
 }
 
 void markTileDirty(int, int)
@@ -225,6 +254,7 @@ int getWillSave(const Character& character)
 }
 
 #include "../../src/characters/conditions.cpp"
+#include "../../src/data/entitytraits.cpp"
 #include "../../src/dungeon/abilityresolver.cpp"
 #include "../../src/dungeon/mapeffects.cpp"
 #include "../../src/dungeon/movement.cpp"
@@ -256,6 +286,8 @@ static void resetResolverControls()
     clearMapEffects();
     controlledDistance = 1;
     controlledLineOfSight = true;
+    controlledBlockedLOSX = -1;
+    controlledBlockedLOSY = -1;
     controlledSaveRoll = 10;
     damageApplicationCount = 0;
     saveRollCount = 0;
@@ -280,11 +312,12 @@ void test_wizard_magic_initialization_learns_magic_missile()
     TEST_ASSERT_FALSE(wizard.magic.divineCaster);
     TEST_ASSERT_EQUAL_INT(6, wizard.magic.maxMP);
     TEST_ASSERT_EQUAL_INT(6, wizard.magic.currentMP);
-    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
     TEST_ASSERT_EQUAL(
         ABILITY_MAGIC_MISSILE, wizard.magic.knownAbilities[0]);
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_SLEEP));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_GREASE));
+    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_COLOR_SPRAY));
 
     const Ability* magicMissile = getAbility(ABILITY_MAGIC_MISSILE);
     TEST_ASSERT_NOT_NULL(magicMissile);
@@ -315,7 +348,7 @@ void test_magic_missile_success_uses_cost_action_and_damage()
     TEST_ASSERT_EQUAL_UINT8(1, damageApplicationCount);
 }
 
-void test_wizard_supported_spell_filter_exposes_grease()
+void test_wizard_supported_spell_filter_exposes_current_spells()
 {
     Character wizard = {};
     wizard.characterClass = CLASS_WIZARD;
@@ -330,11 +363,12 @@ void test_wizard_supported_spell_filter_exposes_grease()
             supportedCount++;
     }
 
-    TEST_ASSERT_EQUAL_UINT8(12, wizard.magic.knownAbilityCount);
-    TEST_ASSERT_EQUAL_UINT8(3, supportedCount);
+    TEST_ASSERT_EQUAL_UINT8(13, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(4, supportedCount);
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_MAGIC_MISSILE));
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_SLEEP));
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_GREASE));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_COLOR_SPRAY));
     TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_FIREBALL));
     TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_ICE_STORM));
 }
@@ -517,6 +551,8 @@ void test_actual_damage_wakes_sleeping_target()
     initializeEntity(monster, ENTITY_MONSTER, TEAM_MONSTER);
     TEST_ASSERT_TRUE(addCondition(
         monster.character, CONDITION_SLEEPING, 0, 3));
+    TEST_ASSERT_TRUE(addCondition(
+        monster.character, CONDITION_BLESSED, 1, 3));
 
     AbilityResolution result = resolveAbility(
         wizard, &monster, ABILITY_MAGIC_MISSILE);
@@ -524,6 +560,8 @@ void test_actual_damage_wakes_sleeping_target()
     TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
     TEST_ASSERT_FALSE(hasCondition(
         monster.character, CONDITION_SLEEPING));
+    TEST_ASSERT_TRUE(hasCondition(
+        monster.character, CONDITION_BLESSED));
 }
 
 void test_monster_sleep_uses_the_same_save_condition_resolver()
@@ -547,6 +585,29 @@ void test_monster_sleep_uses_the_same_save_condition_resolver()
         player.character, CONDITION_SLEEPING));
     TEST_ASSERT_EQUAL_INT(0, monsterCaster.character.magic.currentMP);
     TEST_ASSERT_TRUE(monsterCaster.turn.standardActionUsed);
+}
+
+void test_sleeping_caster_is_rejected_by_generic_action_validation()
+{
+    resetResolverControls();
+    Entity sleepingCaster;
+    Entity target;
+    initializeEntity(
+        sleepingCaster, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(target, ENTITY_PLAYER, TEAM_PLAYER);
+    TEST_ASSERT_TRUE(addCondition(
+        sleepingCaster.character, CONDITION_SLEEPING, 0, 3));
+
+    const int originalMP = sleepingCaster.character.magic.currentMP;
+    const int originalHP = target.character.health.currentHP;
+    AbilityResolution result = resolveAbility(
+        sleepingCaster, &target, ABILITY_MAGIC_MISSILE);
+
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_INVALID_CASTER, result.result);
+    TEST_ASSERT_EQUAL_INT(
+        originalMP, sleepingCaster.character.magic.currentMP);
+    TEST_ASSERT_EQUAL_INT(originalHP, target.character.health.currentHP);
+    TEST_ASSERT_FALSE(sleepingCaster.turn.standardActionUsed);
 }
 
 void test_failed_casts_do_not_mutate_state()
@@ -810,9 +871,12 @@ void test_movement_cost_and_grease_expiration_are_shared()
     TEST_ASSERT_EQUAL_UINT8(2, getMovementCost(monster, 5, 5));
     tickMapEffects();
     TEST_ASSERT_EQUAL_UINT8(2, getMovementCost(monster, 5, 5));
+    uint8_t dirtyMarksBeforeExpiration = dirtyTileMarkCount;
     tickMapEffects();
     TEST_ASSERT_EQUAL_UINT8(1, getMovementCost(player, 5, 5));
     TEST_ASSERT_EQUAL_UINT8(1, getMovementCost(monster, 5, 5));
+    TEST_ASSERT_GREATER_THAN_UINT8(
+        dirtyMarksBeforeExpiration, dirtyTileMarkCount);
 }
 
 void test_entering_grease_saves_once_and_prone_stands_without_moving()
@@ -824,6 +888,8 @@ void test_entering_grease_saves_once_and_prone_stands_without_moving()
     monster.y = 5;
     monster.turn.movementRemaining = 3;
     controlledSaveRoll = 1;
+    TEST_ASSERT_TRUE(addCondition(
+        monster.character, CONDITION_BLESSED, 1, 3));
 
     MapEffect effect;
     effect.active = true;
@@ -842,6 +908,8 @@ void test_entering_grease_saves_once_and_prone_stands_without_moving()
     TEST_ASSERT_EQUAL_UINT8(1, saveRollCount);
     TEST_ASSERT_TRUE(hasCondition(
         monster.character, CONDITION_PRONE));
+    TEST_ASSERT_TRUE(hasCondition(
+        monster.character, CONDITION_BLESSED));
 
     // Terrain queries and a round tick while stationary do not invoke the
     // movement-entry hook again.
@@ -856,9 +924,434 @@ void test_entering_grease_saves_once_and_prone_stands_without_moving()
         STAND_COMPLETED, tryStandForMovement(monster, true));
     TEST_ASSERT_FALSE(hasCondition(
         monster.character, CONDITION_PRONE));
+    TEST_ASSERT_TRUE(hasCondition(
+        monster.character, CONDITION_BLESSED));
     TEST_ASSERT_EQUAL_UINT8(2, monster.turn.movementRemaining);
     TEST_ASSERT_EQUAL_UINT8(oldX, monster.x);
     TEST_ASSERT_EQUAL_UINT8(oldY, monster.y);
+}
+
+void test_color_spray_metadata_and_shared_cone_geometry()
+{
+    resetResolverControls();
+    const Ability* colorSpray = getAbility(ABILITY_COLOR_SPRAY);
+
+    TEST_ASSERT_NOT_NULL(colorSpray);
+    TEST_ASSERT_EQUAL_UINT8(2, colorSpray->mpCost);
+    TEST_ASSERT_EQUAL(TARGET_AREA, colorSpray->target);
+    TEST_ASSERT_EQUAL(DELIVERY_CONE, colorSpray->delivery);
+    TEST_ASSERT_EQUAL(DURATION_INSTANT, colorSpray->duration);
+    TEST_ASSERT_EQUAL_UINT8(3, colorSpray->rangeTiles);
+    TEST_ASSERT_EQUAL(SAVE_WILL, colorSpray->saveType);
+    TEST_ASSERT_EQUAL_UINT8(2, colorSpray->effectCount);
+    TEST_ASSERT_EQUAL(
+        CONDITION_STUNNED, colorSpray->effects[0].conditionType);
+    TEST_ASSERT_EQUAL_INT(2, colorSpray->effects[0].duration);
+    TEST_ASSERT_EQUAL(
+        CONDITION_BLINDED, colorSpray->effects[1].conditionType);
+    TEST_ASSERT_EQUAL_INT(4, colorSpray->effects[1].duration);
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_COLOR_SPRAY));
+    TEST_ASSERT_TRUE(isDirectionalAbility(ABILITY_COLOR_SPRAY));
+
+    Entity caster;
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    caster.x = 5;
+    caster.y = 5;
+
+    uint8_t northTileCount = 0;
+    for (int y = 0; y < getActiveMapHeight(); y++)
+    {
+        for (int x = 0; x < getActiveMapWidth(); x++)
+        {
+            if (isTileInDirectionalAbilityArea(
+                    caster, ABILITY_COLOR_SPRAY, DIR_NORTH, x, y))
+            {
+                northTileCount++;
+            }
+        }
+    }
+
+    // Length three uses rows 1, 3, and 5 tiles wide: nine tiles total.
+    TEST_ASSERT_EQUAL_UINT8(9, northTileCount);
+    TEST_ASSERT_TRUE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_NORTH, 5, 4));
+    TEST_ASSERT_TRUE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_NORTH, 4, 3));
+    TEST_ASSERT_TRUE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_NORTH, 7, 2));
+    TEST_ASSERT_FALSE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_NORTH, 2, 2));
+    TEST_ASSERT_FALSE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_NORTH, 5, 6));
+
+    TEST_ASSERT_TRUE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_EAST, 6, 5));
+    TEST_ASSERT_TRUE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_EAST, 8, 7));
+    TEST_ASSERT_FALSE(isTileInDirectionalAbilityArea(
+        caster, ABILITY_COLOR_SPRAY, DIR_EAST, 5, 4));
+}
+
+void test_color_spray_failed_saves_use_effective_hd_tiers()
+{
+    const uint8_t hitDice[] = { 2, 4, 5 };
+    const int expectedStun[] = { 2, 1, 1 };
+    const int expectedBlind[] = { 4, 2, 0 };
+
+    for (uint8_t tier = 0; tier < 3; tier++)
+    {
+        resetResolverControls();
+        activeTestEntityCount = 2;
+        initializeEntity(
+            activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+        initializeEntity(
+            activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+        Entity& caster = activeTestEntities[0];
+        Entity& target = activeTestEntities[1];
+        Monster definition = {};
+        definition.hitDice = hitDice[tier];
+        target.monster = &definition;
+        caster.x = 5;
+        caster.y = 5;
+        target.x = 5;
+        target.y = 3;
+        caster.character.abilities.intelligence = 18;
+        controlledSaveRoll = 1;
+
+        AbilityResolution result = resolveAbilityInDirection(
+            caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+
+        TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+        TEST_ASSERT_EQUAL(SAVE_RESULT_FAILURE, result.savingThrow.result);
+        TEST_ASSERT_EQUAL_INT(15, result.savingThrow.dc);
+        TEST_ASSERT_EQUAL_UINT8(1, saveRollCount);
+        TEST_ASSERT_EQUAL_UINT8(1, result.targetsAffected);
+        TEST_ASSERT_EQUAL_UINT8(0, result.targetsResisted);
+        TEST_ASSERT_EQUAL_UINT8(0, result.targetsImmune);
+        TEST_ASSERT_EQUAL_INT(8, caster.character.magic.currentMP);
+        TEST_ASSERT_TRUE(caster.turn.standardActionUsed);
+        TEST_ASSERT_TRUE(hasCondition(
+            target.character, CONDITION_STUNNED));
+        TEST_ASSERT_EQUAL_INT(
+            expectedStun[tier],
+            getCondition(
+                target.character,
+                CONDITION_STUNNED)->roundsRemaining);
+
+        if (expectedBlind[tier] > 0)
+        {
+            TEST_ASSERT_TRUE(hasCondition(
+                target.character, CONDITION_BLINDED));
+            TEST_ASSERT_EQUAL_INT(
+                expectedBlind[tier],
+                getCondition(
+                    target.character,
+                    CONDITION_BLINDED)->roundsRemaining);
+        }
+        else
+        {
+            TEST_ASSERT_FALSE(hasCondition(
+                target.character, CONDITION_BLINDED));
+        }
+    }
+}
+
+void test_color_spray_save_wall_team_and_area_filters_are_shared()
+{
+    resetResolverControls();
+    activeTestEntityCount = 3;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(
+        activeTestEntities[2], ENTITY_PLAYER, TEAM_PLAYER);
+    Entity& caster = activeTestEntities[0];
+    Entity& enemy = activeTestEntities[1];
+    Entity& ally = activeTestEntities[2];
+    caster.x = 5;
+    caster.y = 5;
+    enemy.x = 5;
+    enemy.y = 3;
+    ally.x = 4;
+    ally.y = 3;
+    controlledSaveRoll = 20;
+
+    AbilityResolution resisted = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, resisted.result);
+    TEST_ASSERT_EQUAL(SAVE_RESULT_SUCCESS, resisted.savingThrow.result);
+    TEST_ASSERT_EQUAL_UINT8(1, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(0, resisted.targetsAffected);
+    TEST_ASSERT_EQUAL_UINT8(1, resisted.targetsResisted);
+    TEST_ASSERT_FALSE(hasCondition(
+        enemy.character, CONDITION_STUNNED));
+    TEST_ASSERT_FALSE(hasCondition(
+        ally.character, CONDITION_STUNNED));
+
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& wallCaster = activeTestEntities[0];
+    Entity& blockedEnemy = activeTestEntities[1];
+    wallCaster.x = 5;
+    wallCaster.y = 5;
+    blockedEnemy.x = 5;
+    blockedEnemy.y = 2;
+    controlledBlockedLOSX = 5;
+    controlledBlockedLOSY = 2;
+    controlledSaveRoll = 1;
+
+    AbilityResolution blocked = resolveAbilityInDirection(
+        wallCaster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, blocked.result);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(0, blocked.targetsAffected);
+    TEST_ASSERT_FALSE(hasCondition(
+        blockedEnemy.character, CONDITION_STUNNED));
+
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& areaCaster = activeTestEntities[0];
+    Entity& outsideEnemy = activeTestEntities[1];
+    areaCaster.x = 5;
+    areaCaster.y = 5;
+    outsideEnemy.x = 2;
+    outsideEnemy.y = 2;
+    controlledSaveRoll = 1;
+
+    AbilityResolution outside = resolveAbilityInDirection(
+        areaCaster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, outside.result);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(0, outside.targetsAffected);
+}
+
+void test_color_spray_sight_immunity_precedes_saving_throw()
+{
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& caster = activeTestEntities[0];
+    Entity& sightlessTarget = activeTestEntities[1];
+    Monster sightlessDefinition = {};
+    sightlessDefinition.hitDice = 3;
+    sightlessDefinition.sightless = true;
+    sightlessTarget.monster = &sightlessDefinition;
+    caster.x = 5;
+    caster.y = 5;
+    sightlessTarget.x = 5;
+    sightlessTarget.y = 3;
+    controlledSaveRoll = 1;
+
+    TEST_ASSERT_FALSE(canSee(sightlessTarget));
+    AbilityResolution sightless = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, sightless.result);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(1, sightless.targetsImmune);
+    TEST_ASSERT_FALSE(hasCondition(
+        sightlessTarget.character, CONDITION_STUNNED));
+
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& secondCaster = activeTestEntities[0];
+    Entity& blindTarget = activeTestEntities[1];
+    secondCaster.x = 5;
+    secondCaster.y = 5;
+    blindTarget.x = 5;
+    blindTarget.y = 3;
+    TEST_ASSERT_TRUE(addCondition(
+        blindTarget.character, CONDITION_BLINDED, 0, 2));
+
+    TEST_ASSERT_FALSE(canSee(blindTarget));
+    AbilityResolution blind = resolveAbilityInDirection(
+        secondCaster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, blind.result);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(1, blind.targetsImmune);
+    TEST_ASSERT_EQUAL_INT(
+        2,
+        getCondition(
+            blindTarget.character,
+            CONDITION_BLINDED)->roundsRemaining);
+    TEST_ASSERT_FALSE(hasCondition(
+        blindTarget.character, CONDITION_STUNNED));
+}
+
+void test_color_spray_conditions_expire_independently_and_preserve_others()
+{
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& caster = activeTestEntities[0];
+    Entity& target = activeTestEntities[1];
+    Monster definition = {};
+    definition.hitDice = 2;
+    target.monster = &definition;
+    caster.x = 5;
+    caster.y = 5;
+    target.x = 5;
+    target.y = 3;
+    controlledSaveRoll = 1;
+    TEST_ASSERT_TRUE(addCondition(
+        target.character, CONDITION_BLESSED, 1, 5));
+
+    AbilityResolution result = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    TEST_ASSERT_FALSE(canCharacterAct(target.character));
+    TEST_ASSERT_FALSE(canSee(target));
+    TEST_ASSERT_EQUAL_INT(-1, getConditionAttackModifier(target.character));
+    TEST_ASSERT_EQUAL_INT(-2, getConditionArmorClassModifier(target.character));
+
+    ConditionTurnResult first = processConditionsAtTurnStart(
+        target.character);
+    TEST_ASSERT_TRUE(first.actionPrevented);
+    TEST_ASSERT_EQUAL_INT(
+        1,
+        getCondition(
+            target.character,
+            CONDITION_STUNNED)->roundsRemaining);
+    TEST_ASSERT_EQUAL_INT(
+        3,
+        getCondition(
+            target.character,
+            CONDITION_BLINDED)->roundsRemaining);
+
+    ConditionTurnResult second = processConditionsAtTurnStart(
+        target.character);
+    TEST_ASSERT_TRUE(second.actionPrevented);
+    TEST_ASSERT_FALSE(hasCondition(
+        target.character, CONDITION_STUNNED));
+    TEST_ASSERT_TRUE(canCharacterAct(target.character));
+    TEST_ASSERT_TRUE(hasCondition(
+        target.character, CONDITION_BLINDED));
+
+    ConditionTurnResult third = processConditionsAtTurnStart(
+        target.character);
+    TEST_ASSERT_FALSE(third.actionPrevented);
+    TEST_ASSERT_TRUE(hasCondition(
+        target.character, CONDITION_BLINDED));
+    ConditionTurnResult fourth = processConditionsAtTurnStart(
+        target.character);
+    TEST_ASSERT_FALSE(fourth.actionPrevented);
+    TEST_ASSERT_FALSE(hasCondition(
+        target.character, CONDITION_BLINDED));
+    TEST_ASSERT_TRUE(hasCondition(
+        target.character, CONDITION_BLESSED));
+}
+
+void test_entity_traits_and_blinded_visual_targeting_are_generic()
+{
+    resetResolverControls();
+    Entity wizard;
+    Entity monster;
+    initializeEntity(wizard, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(monster, ENTITY_MONSTER, TEAM_MONSTER);
+    wizard.character.level = 7;
+    Monster definition = {};
+    definition.hitDice = 4;
+    monster.monster = &definition;
+
+    TEST_ASSERT_EQUAL_UINT8(7, getEffectiveHitDice(wizard));
+    TEST_ASSERT_EQUAL_UINT8(4, getEffectiveHitDice(monster));
+    TEST_ASSERT_TRUE(canSee(wizard));
+    TEST_ASSERT_TRUE(addCondition(
+        wizard.character, CONDITION_BLINDED, 0, 2));
+    TEST_ASSERT_FALSE(canSee(wizard));
+
+    AbilityResolution result = resolveAbility(
+        wizard, &monster, ABILITY_MAGIC_MISSILE);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_NO_LINE_OF_SIGHT, result.result);
+    TEST_ASSERT_EQUAL_INT(10, wizard.character.magic.currentMP);
+    TEST_ASSERT_FALSE(wizard.turn.standardActionUsed);
+    TEST_ASSERT_EQUAL_INT(20, monster.character.health.currentHP);
+}
+
+void test_directional_cast_validation_is_transactional_and_stun_blocks_casting()
+{
+    Entity caster;
+
+    resetResolverControls();
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    caster.character.magic.currentMP = 1;
+    AbilityResolution noMP = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_NOT_ENOUGH_MP, noMP.result);
+    TEST_ASSERT_EQUAL_INT(1, caster.character.magic.currentMP);
+    TEST_ASSERT_FALSE(caster.turn.standardActionUsed);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+
+    resetResolverControls();
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    caster.turn.standardActionUsed = true;
+    AbilityResolution usedAction = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(
+        ABILITY_RESULT_NO_STANDARD_ACTION, usedAction.result);
+    TEST_ASSERT_EQUAL_INT(10, caster.character.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+
+    resetResolverControls();
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    TEST_ASSERT_TRUE(addCondition(
+        caster.character, CONDITION_STUNNED, 0, 1));
+    TEST_ASSERT_FALSE(canCharacterAct(caster.character));
+    AbilityResolution stunned = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_INVALID_CASTER, stunned.result);
+    TEST_ASSERT_EQUAL_INT(10, caster.character.magic.currentMP);
+    TEST_ASSERT_FALSE(caster.turn.standardActionUsed);
+}
+
+void test_monster_caster_uses_the_same_directional_resolver()
+{
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(
+        activeTestEntities[0], ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(
+        activeTestEntities[1], ENTITY_PLAYER, TEAM_PLAYER);
+    Entity& caster = activeTestEntities[0];
+    Entity& player = activeTestEntities[1];
+    caster.x = 5;
+    caster.y = 5;
+    player.x = 5;
+    player.y = 3;
+    caster.character.abilities.intelligence = 18;
+    controlledSaveRoll = 1;
+
+    AbilityResolution result = resolveAbilityInDirection(
+        caster, DIR_NORTH, ABILITY_COLOR_SPRAY);
+
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    TEST_ASSERT_EQUAL_UINT8(1, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(1, result.targetsAffected);
+    TEST_ASSERT_TRUE(hasCondition(
+        player.character, CONDITION_STUNNED));
+    TEST_ASSERT_TRUE(hasCondition(
+        player.character, CONDITION_BLINDED));
+    TEST_ASSERT_EQUAL_INT(8, caster.character.magic.currentMP);
+    TEST_ASSERT_TRUE(caster.turn.standardActionUsed);
 }
 
 void setup()
@@ -869,7 +1362,7 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_wizard_magic_initialization_learns_magic_missile);
     RUN_TEST(test_magic_missile_success_uses_cost_action_and_damage);
-    RUN_TEST(test_wizard_supported_spell_filter_exposes_grease);
+    RUN_TEST(test_wizard_supported_spell_filter_exposes_current_spells);
     RUN_TEST(test_sleep_metadata_save_dc_and_will_bonus);
     RUN_TEST(test_failed_sleep_save_applies_condition_and_spends_cast);
     RUN_TEST(test_successful_sleep_save_resists_but_spends_cast);
@@ -877,6 +1370,7 @@ void setup()
     RUN_TEST(test_condition_capacity_failure_does_not_spend_cast);
     RUN_TEST(test_actual_damage_wakes_sleeping_target);
     RUN_TEST(test_monster_sleep_uses_the_same_save_condition_resolver);
+    RUN_TEST(test_sleeping_caster_is_rejected_by_generic_action_validation);
     RUN_TEST(test_failed_casts_do_not_mutate_state);
     RUN_TEST(test_invalid_friendly_dead_and_used_action_targets_are_rejected);
     RUN_TEST(test_duration_effect_is_rejected_without_state_changes);
@@ -886,6 +1380,16 @@ void setup()
     RUN_TEST(test_invalid_grease_casts_are_transactional);
     RUN_TEST(test_movement_cost_and_grease_expiration_are_shared);
     RUN_TEST(test_entering_grease_saves_once_and_prone_stands_without_moving);
+    RUN_TEST(test_color_spray_metadata_and_shared_cone_geometry);
+    RUN_TEST(test_color_spray_failed_saves_use_effective_hd_tiers);
+    RUN_TEST(test_color_spray_save_wall_team_and_area_filters_are_shared);
+    RUN_TEST(test_color_spray_sight_immunity_precedes_saving_throw);
+    RUN_TEST(
+        test_color_spray_conditions_expire_independently_and_preserve_others);
+    RUN_TEST(test_entity_traits_and_blinded_visual_targeting_are_generic);
+    RUN_TEST(
+        test_directional_cast_validation_is_transactional_and_stun_blocks_casting);
+    RUN_TEST(test_monster_caster_uses_the_same_directional_resolver);
     UNITY_END();
 }
 

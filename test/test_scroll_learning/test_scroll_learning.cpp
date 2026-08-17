@@ -122,14 +122,15 @@ void test_wizard_starting_spellbook_is_idempotent()
 {
     Character wizard = makeWizard();
 
-    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_MAGIC_MISSILE));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_SLEEP));
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_GREASE));
+    TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_COLOR_SPRAY));
 
     refreshCharacterMagicProgression(wizard);
     refreshCharacterMagicProgression(wizard);
-    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
 }
 
 void test_scroll_items_reference_the_expected_abilities()
@@ -170,7 +171,7 @@ void test_duplicate_learning_preserves_scroll_and_spellbook()
     TEST_ASSERT_EQUAL(
         SCROLL_LEARN_ALREADY_KNOWN,
         useSpellScroll(wizard, selected));
-    TEST_ASSERT_EQUAL_UINT8(3, wizard.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(4, wizard.magic.knownAbilityCount);
     TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.itemCount);
     TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.slots[0].quantity);
 }
@@ -259,14 +260,15 @@ void test_scroll_learned_spell_survives_magic_restore()
         savedAbilities,
         wizard.magic.knownAbilityCount);
 
-    TEST_ASSERT_EQUAL_UINT8(4, loaded.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(5, loaded.magic.knownAbilityCount);
     TEST_ASSERT_TRUE(knowsAbility(loaded, ABILITY_MAGIC_MISSILE));
     TEST_ASSERT_TRUE(knowsAbility(loaded, ABILITY_SLEEP));
     TEST_ASSERT_TRUE(knowsAbility(loaded, ABILITY_GREASE));
+    TEST_ASSERT_TRUE(knowsAbility(loaded, ABILITY_COLOR_SPRAY));
     TEST_ASSERT_TRUE(knowsAbility(loaded, ABILITY_ACID_ARROW));
 
     refreshCharacterMagicProgression(loaded);
-    TEST_ASSERT_EQUAL_UINT8(4, loaded.magic.knownAbilityCount);
+    TEST_ASSERT_EQUAL_UINT8(5, loaded.magic.knownAbilityCount);
 }
 
 void setup()

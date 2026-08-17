@@ -156,11 +156,15 @@ void test_sleep_immunity_and_damage_waking_are_generic()
 
     TEST_ASSERT_TRUE(addCondition(
         living, CONDITION_SLEEPING, 0, 3));
+    TEST_ASSERT_TRUE(addCondition(
+        living, CONDITION_BLESSED, 1, 3));
     updateConditionsAfterDamage(living, 0);
     TEST_ASSERT_TRUE(hasCondition(living, CONDITION_SLEEPING));
+    TEST_ASSERT_TRUE(hasCondition(living, CONDITION_BLESSED));
 
     updateConditionsAfterDamage(living, 2);
     TEST_ASSERT_FALSE(hasCondition(living, CONDITION_SLEEPING));
+    TEST_ASSERT_TRUE(hasCondition(living, CONDITION_BLESSED));
 }
 
 void test_sleep_duration_prevents_each_intended_turn()

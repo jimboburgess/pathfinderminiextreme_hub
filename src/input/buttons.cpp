@@ -516,6 +516,19 @@ void handleMapButtons()
 
     if (isPlayerTargetingAbility())
     {
+        // Ground targeting uses the shaft click as a spatial step. Give that
+        // click priority so switch movement cannot also rotate the arrow in
+        // the same input frame.
+        if (isPlayerTargetingGroundAbility() && encoderPressed())
+        {
+            if (moveGroundAbilityTarget())
+                playSound(SoundEffect::MENU_MOVE);
+            else
+                playSound(SoundEffect::BUMP);
+
+            return;
+        }
+
         EncoderDirection direction = readEncoder();
 
         if (direction == ENCODER_CLOCKWISE)

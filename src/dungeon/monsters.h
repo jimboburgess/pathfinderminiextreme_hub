@@ -160,6 +160,10 @@ struct Monster
 
     // Runtime creature identity used by generic condition immunities.
     CreatureType creatureType;
+
+    // Visual abilities query this trait instead of hardcoding MonsterIDs.
+    // Omitted trailing aggregate fields are false for ordinary monsters.
+    bool sightless;
 };
 
 const Monster* getMonster(MonsterID id);

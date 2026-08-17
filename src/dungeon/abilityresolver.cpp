@@ -1,11 +1,15 @@
 #include "abilityresolver.h"
 
+#include <algorithm>
+
 #include "activemap.h"
 #include "combat.h"
 #include "mapeffects.h"
 #include "characters/characters.h"
 #include "data/dice.h"
 #include "data/entities.h"
+#include "data/entityspawn.h"
+#include "data/entitytraits.h"
 
 namespace
 {
@@ -73,6 +77,23 @@ bool hasSupportedMapEffect(const Ability& ability)
            effect.valuePerLevel >= 0 &&
            effect.duration == 0 &&
            isValidConditionType(effect.conditionType);
+}
+
+bool hasSupportedColorSprayProfile(const Ability& ability)
+{
+    return ability.id == ABILITY_COLOR_SPRAY &&
+           ability.target == TARGET_AREA &&
+           ability.delivery == DELIVERY_CONE &&
+           ability.duration == DURATION_INSTANT &&
+           ability.rangeTiles > 0 &&
+           ability.saveType == SAVE_WILL &&
+           ability.effectCount == 2 &&
+           ability.effects[0].effect == EFFECT_STUN &&
+           ability.effects[0].conditionType == CONDITION_STUNNED &&
+           ability.effects[0].duration > 0 &&
+           ability.effects[1].effect == EFFECT_BLIND &&
+           ability.effects[1].conditionType == CONDITION_BLINDED &&
+           ability.effects[1].duration > 0;
 }
 
 bool isValidSaveType(SaveType saveType)
@@ -203,6 +224,95 @@ bool isValidCaster(const Entity& caster)
            caster.character.state == STATE_ALIVE &&
            canCharacterAct(caster.character);
 }
+
+bool isValidDirection(Direction direction)
+{
+    int rawDirection = static_cast<int>(direction);
+    return rawDirection >= static_cast<int>(DIR_NORTH) &&
+           rawDirection <= static_cast<int>(DIR_NORTHWEST);
+}
+
+
+struct ColorSprayDurations
+{
+    uint8_t stunned;
+    uint8_t blinded;
+};
+
+ColorSprayDurations getColorSprayDurations(
+    const Entity& target,
+    const Ability& ability)
+{
+    uint8_t hitDice = getEffectiveHitDice(target);
+    uint8_t strongestStun = static_cast<uint8_t>(
+        ability.effects[0].duration);
+    uint8_t strongestBlind = static_cast<uint8_t>(
+        ability.effects[1].duration);
+
+    if (hitDice <= 2)
+        return { strongestStun, strongestBlind };
+
+    if (hitDice <= 4)
+    {
+        uint8_t shorterBlind = strongestBlind > 1
+            ? strongestBlind / 2
+            : 1;
+        return { 1, shorterBlind };
+    }
+
+    return { 1, 0 };
+}
+
+bool isConeOffset(
+    int relativeX,
+    int relativeY,
+    const DirectionOffset& direction,
+    uint8_t length)
+{
+    int forward = relativeX * direction.dx +
+                  relativeY * direction.dy;
+
+    if (forward <= 0)
+        return false;
+
+    int depth = (direction.dx == 0 || direction.dy == 0)
+        ? forward
+        : std::max(abs(relativeX), abs(relativeY));
+    int lateral = abs(
+        relativeX * direction.dy -
+        relativeY * direction.dx);
+
+    return depth >= 1 && depth <= length && lateral < depth;
+}
+
+bool entityIsInDirectionalArea(
+    const Entity& caster,
+    const Entity& target,
+    const Ability& ability,
+    Direction direction)
+{
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(target);
+         offsetY++)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(target);
+             offsetX++)
+        {
+            if (isTileInDirectionalAbilityArea(
+                    caster,
+                    ability.id,
+                    direction,
+                    target.x + offsetX,
+                    target.y + offsetY))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
 }
 
 bool isAbilitySupported(AbilityID abilityID)
@@ -217,7 +327,8 @@ bool isAbilitySupported(AbilityID abilityID)
     }
 
     return isEntityAbilitySupported(*ability) ||
-           hasSupportedMapEffect(*ability);
+           hasSupportedMapEffect(*ability) ||
+           hasSupportedColorSprayProfile(*ability);
 }
 
 bool isGroundTargetAbility(AbilityID abilityID)
@@ -228,6 +339,64 @@ bool isGroundTargetAbility(AbilityID abilityID)
            ability->target == TARGET_AREA &&
            ability->delivery == DELIVERY_AREA &&
            ability->mapEffectType != MAP_EFFECT_NONE;
+}
+
+bool isDirectionalAbility(AbilityID abilityID)
+{
+    const Ability* ability = getAbility(abilityID);
+
+    return ability != nullptr && isAbilitySupported(abilityID) &&
+           ability->target == TARGET_AREA &&
+           ability->delivery == DELIVERY_CONE;
+}
+
+bool isTileInDirectionalAbilityArea(
+    const Entity& caster,
+    AbilityID abilityID,
+    Direction direction,
+    int tileX,
+    int tileY)
+{
+    const Ability* ability = getAbility(abilityID);
+
+    if (ability == nullptr || ability->delivery != DELIVERY_CONE ||
+        !isValidDirection(direction) ||
+        ability->rangeTiles == 0 || !isInsideActiveMap(tileX, tileY) ||
+        entityOccupiesTile(caster, tileX, tileY))
+    {
+        return false;
+    }
+
+    TileType tile = getActiveMapTile(tileX, tileY);
+    if (tile == TILE_WALL || tile == TILE_TREE ||
+        !hasLineOfSightFromFootprintAt(
+            caster, caster.x, caster.y, tileX, tileY))
+    {
+        return false;
+    }
+
+    const DirectionOffset& offset = directionOffsets[direction];
+
+    for (uint8_t originY = 0;
+         originY < getEntityTileHeight(caster);
+         originY++)
+    {
+        for (uint8_t originX = 0;
+             originX < getEntityTileWidth(caster);
+             originX++)
+        {
+            if (isConeOffset(
+                    tileX - (caster.x + originX),
+                    tileY - (caster.y + originY),
+                    offset,
+                    ability->rangeTiles))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 int getAbilitySaveDC(const Entity& caster, const Ability& ability)
@@ -351,6 +520,9 @@ AbilityResult validateAbility(
 
     if (ability->target == TARGET_ENEMY)
     {
+        if (!canSee(caster))
+            return ABILITY_RESULT_NO_LINE_OF_SIGHT;
+
         if (getEntityGridDistance(caster, *resolvedTarget) >
             ability->rangeTiles)
         {
@@ -559,6 +731,126 @@ AbilityResolution resolveAbilityAt(
             resolution.targetsAffected += trigger.conditionsApplied;
             resolution.targetsResisted += trigger.savesSucceeded;
         }
+    }
+
+    caster.character.magic.currentMP -= ability->mpCost;
+    caster.turn.standardActionUsed = true;
+    return resolution;
+}
+
+AbilityResult validateDirectionalAbility(
+    const Entity& caster,
+    AbilityID abilityID)
+{
+    const Ability* ability = getAbility(abilityID);
+
+    if (ability == nullptr)
+        return ABILITY_RESULT_INVALID_ABILITY;
+
+    if (!isDirectionalAbility(abilityID) ||
+        !hasSupportedColorSprayProfile(*ability))
+    {
+        return ABILITY_RESULT_UNSUPPORTED;
+    }
+
+    if (!isValidCaster(caster))
+        return ABILITY_RESULT_INVALID_CASTER;
+
+    if (!isInsideActiveMap(caster.x, caster.y))
+        return ABILITY_RESULT_INVALID_TARGET;
+
+    if (caster.turn.standardActionUsed)
+        return ABILITY_RESULT_NO_STANDARD_ACTION;
+
+    if (caster.character.magic.currentMP < ability->mpCost)
+        return ABILITY_RESULT_NOT_ENOUGH_MP;
+
+    return ABILITY_RESULT_SUCCESS;
+}
+
+AbilityResolution resolveAbilityInDirection(
+    Entity& caster,
+    Direction direction,
+    AbilityID abilityID)
+{
+    AbilityResolution resolution;
+
+    if (!isValidDirection(direction))
+    {
+        resolution.result = ABILITY_RESULT_INVALID_TARGET;
+        return resolution;
+    }
+
+    resolution.result = validateDirectionalAbility(caster, abilityID);
+
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+        return resolution;
+
+    const Ability* ability = getAbility(abilityID);
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        Entity& target = entities[i];
+
+        if (&target == &caster || !target.active ||
+            !isCombatEntityType(target.type) ||
+            target.character.state != STATE_ALIVE ||
+            !areOpposingTeams(caster, target) ||
+            !entityIsInDirectionalArea(
+                caster, target, *ability, direction))
+        {
+            continue;
+        }
+
+        // Color Spray is visual. Innately sightless and currently blinded
+        // targets never roll because there is no visual stimulus to resist.
+        if (!canSee(target))
+        {
+            resolution.targetsImmune++;
+            continue;
+        }
+
+        AbilitySavingThrow savingThrow = resolveAbilitySavingThrow(
+            caster, target, *ability);
+        resolution.savingThrow = savingThrow;
+
+        if (savingThrow.result == SAVE_RESULT_SUCCESS)
+        {
+            resolution.targetsResisted++;
+            continue;
+        }
+
+        ColorSprayDurations durations = getColorSprayDurations(
+            target, *ability);
+        bool conditionApplied = false;
+
+        if (durations.stunned > 0 && addCondition(
+                target.character,
+                CONDITION_STUNNED,
+                0,
+                durations.stunned))
+        {
+            conditionApplied = true;
+            resolution.conditionApplied = CONDITION_STUNNED;
+            resolution.conditionDuration = durations.stunned;
+        }
+
+        if (durations.blinded > 0 && addCondition(
+                target.character,
+                CONDITION_BLINDED,
+                0,
+                durations.blinded))
+        {
+            conditionApplied = true;
+
+            if (durations.blinded > resolution.conditionDuration)
+                resolution.conditionDuration = durations.blinded;
+        }
+
+        if (conditionApplied)
+            resolution.targetsAffected++;
     }
 
     caster.character.magic.currentMP -= ability->mpCost;

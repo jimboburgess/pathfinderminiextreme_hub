@@ -28,6 +28,7 @@ const LearnedAbilityAtLevel wizardSpellProgression[] =
     { 1, ABILITY_MAGIC_MISSILE },
     { 1, ABILITY_SLEEP },
     { 1, ABILITY_GREASE },
+    { 1, ABILITY_COLOR_SPRAY },
 
     { 3, ABILITY_ACID_ARROW },
     { 3, ABILITY_SCORCHING_RAY },

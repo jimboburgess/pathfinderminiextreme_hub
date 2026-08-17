@@ -94,6 +94,7 @@ struct Combat
     AbilityID selectedAbility = ABILITY_NONE;
     int8_t selectedAbilityX = -1;
     int8_t selectedAbilityY = -1;
+    Direction selectedAbilityDirection = DIR_NORTH;
     bool abilityResolutionPending = false;
     Entity* abilityCaster = nullptr;
     bool abilityEndedCombat = false;
@@ -223,10 +224,12 @@ void cancelPlayerAttack();
 void beginPlayerAbility(AbilityID abilityID);
 bool isPlayerTargetingAbility();
 bool isPlayerTargetingGroundAbility();
+bool isPlayerTargetingDirectionalAbility();
 bool isAbilityResolving();
 Entity* getSelectedAbilityTarget();
 bool getSelectedAbilityGroundTarget(int& x, int& y);
 void rotateAbilityTarget(bool forward);
+bool moveGroundAbilityTarget();
 void confirmPlayerAbility();
 void cancelPlayerAbility();
 

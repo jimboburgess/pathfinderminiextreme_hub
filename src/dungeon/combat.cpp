@@ -12,6 +12,7 @@
 #include "audio/audio.h"
 #include "data/dice.h"
 #include "data/entityspawn.h"
+#include "data/entitytraits.h"
 #include "data/game.h"
 #include "data/progression.h"
 #include "graphics/display.h"
@@ -261,6 +262,44 @@ static bool selectNextGroundAbilityTarget(bool forward)
     }
 
     return false;
+}
+
+static bool selectInitialGroundAbilityTarget(
+    const Entity& caster,
+    const Ability& ability)
+{
+    // Start far enough forward that the complete area is easy to read, while
+    // gracefully backing toward the caster in cramped rooms or short ranges.
+    constexpr int PREFERRED_GROUND_TARGET_DISTANCE = 3;
+    int startDistance = std::min<int>(
+        PREFERRED_GROUND_TARGET_DISTANCE,
+        ability.rangeTiles);
+
+    const DirectionOffset& offset =
+        directionOffsets[combat.selectedAbilityDirection];
+
+    for (int distance = startDistance; distance >= 1; distance--)
+    {
+        int targetX = caster.x + offset.dx * distance;
+        int targetY = caster.y + offset.dy * distance;
+
+        if (!isValidGroundAbilitySelection(
+                &caster, &ability, targetX, targetY))
+        {
+            continue;
+        }
+
+        combat.selectedAbilityX = static_cast<int8_t>(targetX);
+        combat.selectedAbilityY = static_cast<int8_t>(targetY);
+        return true;
+    }
+
+    // A blocked facing direction should not make the spell unusable. Choose
+    // another legal map tile only as a deterministic fallback; normal cursor
+    // movement remains spatial after targeting begins.
+    combat.selectedAbilityX = static_cast<int8_t>(caster.x);
+    combat.selectedAbilityY = static_cast<int8_t>(caster.y);
+    return selectNextGroundAbilityTarget(true);
 }
 
 static bool selectNextEntityTarget(
@@ -1149,6 +1188,7 @@ void startCombat()
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
+    combat.selectedAbilityDirection = moveDirection;
     combat.abilityResolutionPending = false;
     combat.abilityCaster = nullptr;
     combat.abilityEndedCombat = false;
@@ -1753,6 +1793,7 @@ void endCombat()
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
+    combat.selectedAbilityDirection = moveDirection;
     combat.abilityResolutionPending = false;
     combat.abilityCaster = nullptr;
     combat.abilityEndedCombat = false;
@@ -1787,6 +1828,12 @@ void beginPlayerAttack(CombatAttackType attackType)
     if (weapon == nullptr)
     {
         setGameMessage("No weapon equipped.");
+        return;
+    }
+
+    if (attackType == COMBAT_ATTACK_RANGED && !canSee(*player))
+    {
+        setGameMessage("You cannot see a ranged target.");
         return;
     }
 
@@ -2070,6 +2117,32 @@ void cancelPlayerAttack()
 
 static void markAbilityCursorDirty()
 {
+    if (isPlayerTargetingDirectionalAbility())
+    {
+        Entity* caster = getPlayerCombatant();
+
+        if (caster != nullptr)
+        {
+            for (int y = 0; y < getActiveMapHeight(); y++)
+            {
+                for (int x = 0; x < getActiveMapWidth(); x++)
+                {
+                    if (isTileInDirectionalAbilityArea(
+                            *caster,
+                            combat.selectedAbility,
+                            combat.selectedAbilityDirection,
+                            x,
+                            y))
+                    {
+                        markTileDirty(x, y);
+                    }
+                }
+            }
+        }
+
+        return;
+    }
+
     if (isPlayerTargetingGroundAbility())
     {
         int targetX = 0;
@@ -2087,7 +2160,8 @@ static void markAbilityCursorDirty()
                      x <= targetX + ability->areaRadiusTiles;
                      x++)
                 {
-                    markTileDirty(x, y);
+                    if (isInsideActiveMap(x, y))
+                        markTileDirty(x, y);
                 }
             }
         }
@@ -2124,6 +2198,44 @@ static void executePlayerAbility(
         resolution);
 }
 
+static void presentDirectionalAbilityResolution(
+    Entity& caster,
+    AbilityID abilityID,
+    const AbilityResolution& resolution)
+{
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+    {
+        setGameMessage(getAbilityResultMessage(resolution.result));
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return;
+    }
+
+    char message[96];
+    snprintf(
+        message,
+        sizeof(message),
+        "%s: %u affected, %u resist, %u immune.",
+        getAbilityName(abilityID),
+        static_cast<unsigned int>(resolution.targetsAffected),
+        static_cast<unsigned int>(resolution.targetsResisted),
+        static_cast<unsigned int>(resolution.targetsImmune));
+    setGameMessage(message);
+    playSound(SoundEffect::SPELL_CAST);
+    requestCombatTileRedraw();
+
+    if (!combat.active)
+        return;
+
+    combat.abilityResolutionPending = true;
+    combat.abilityCaster = &caster;
+    combat.abilityEndedCombat = false;
+    combat.abilityResultTime = millis();
+
+    if (caster.type == ENTITY_PLAYER)
+        combat.waitingForPlayer = false;
+}
+
 void beginPlayerAbility(AbilityID abilityID)
 {
     Entity* player = getCurrentCombatant();
@@ -2148,42 +2260,45 @@ void beginPlayerAbility(AbilityID abilityID)
 
     combat.selectedAbility = abilityID;
     combat.selectedTargetIndex = -1;
+    combat.selectedAbilityDirection = moveDirection;
+
+    if (isDirectionalAbility(abilityID))
+    {
+        AbilityResult validation = validateDirectionalAbility(
+            *player, abilityID);
+
+        if (validation != ABILITY_RESULT_SUCCESS)
+        {
+            combat.selectedAbility = ABILITY_NONE;
+            setGameMessage(getAbilityResultMessage(validation));
+            playSound(SoundEffect::SPELL_FAIL);
+            requestCombatTileRedraw();
+            return;
+        }
+
+        combat.selectedAbilityX = -1;
+        combat.selectedAbilityY = -1;
+        markAbilityCursorDirty();
+        setGameMessage("Choose a spell direction");
+        requestCombatTileRedraw();
+        return;
+    }
 
     if (isGroundTargetAbility(abilityID))
     {
-        int facingX = player->x + directionOffsets[moveDirection].dx;
-        int facingY = player->y + directionOffsets[moveDirection].dy;
-
-        if (isValidGroundAbilitySelection(
-                player, ability, facingX, facingY))
+        if (!selectInitialGroundAbilityTarget(*player, *ability))
         {
-            combat.selectedAbilityX = static_cast<int8_t>(facingX);
-            combat.selectedAbilityY = static_cast<int8_t>(facingY);
-        }
-        else
-        {
-            combat.selectedAbilityX = static_cast<int8_t>(player->x);
-            combat.selectedAbilityY = static_cast<int8_t>(player->y);
-
-            if (!isValidGroundAbilitySelection(
-                    player,
-                    ability,
-                    combat.selectedAbilityX,
-                    combat.selectedAbilityY) &&
-                !selectNextGroundAbilityTarget(true))
-            {
-                combat.selectedAbility = ABILITY_NONE;
-                combat.selectedAbilityX = -1;
-                combat.selectedAbilityY = -1;
-                setGameMessage("No valid ground targets.");
-                playSound(SoundEffect::SPELL_FAIL);
-                requestCombatTileRedraw();
-                return;
-            }
+            combat.selectedAbility = ABILITY_NONE;
+            combat.selectedAbilityX = -1;
+            combat.selectedAbilityY = -1;
+            setGameMessage("No valid ground targets.");
+            playSound(SoundEffect::SPELL_FAIL);
+            requestCombatTileRedraw();
+            return;
         }
 
         markAbilityCursorDirty();
-        setGameMessage("Choose area: turn A cast B back");
+        setGameMessage("Choose a spell target");
         requestCombatTileRedraw();
         return;
     }
@@ -2216,6 +2331,12 @@ bool isPlayerTargetingGroundAbility()
            isGroundTargetAbility(combat.selectedAbility);
 }
 
+bool isPlayerTargetingDirectionalAbility()
+{
+    return isPlayerTargetingAbility() &&
+           isDirectionalAbility(combat.selectedAbility);
+}
+
 bool isAbilityResolving()
 {
     return combat.abilityResolutionPending;
@@ -2229,6 +2350,7 @@ Entity* getSelectedAbilityTarget()
 
     if (player == nullptr || entities == nullptr ||
         isPlayerTargetingGroundAbility() ||
+        isPlayerTargetingDirectionalAbility() ||
         !isPlayerTargetingAbility() ||
         combat.selectedTargetIndex < 0 ||
         combat.selectedTargetIndex >= entityCount)
@@ -2265,8 +2387,13 @@ void rotateAbilityTarget(bool forward)
 
     markAbilityCursorDirty();
 
-    if (isPlayerTargetingGroundAbility())
-        selectNextGroundAbilityTarget(forward);
+    if (isPlayerTargetingGroundAbility() ||
+        isPlayerTargetingDirectionalAbility())
+    {
+        int direction = static_cast<int>(combat.selectedAbilityDirection);
+        direction = (direction + (forward ? 1 : 7)) % 8;
+        combat.selectedAbilityDirection = static_cast<Direction>(direction);
+    }
     else
         selectNextEntityTarget(getPlayerCombatant(), forward, true);
 
@@ -2274,9 +2401,68 @@ void rotateAbilityTarget(bool forward)
     requestCombatTileRedraw();
 }
 
+bool moveGroundAbilityTarget()
+{
+    if (!isPlayerTargetingGroundAbility())
+        return false;
+
+    Entity* caster = getPlayerCombatant();
+    const Ability* ability = getAbility(combat.selectedAbility);
+
+    if (caster == nullptr || ability == nullptr)
+        return false;
+
+    const DirectionOffset& offset =
+        directionOffsets[combat.selectedAbilityDirection];
+    int targetX = combat.selectedAbilityX + offset.dx;
+    int targetY = combat.selectedAbilityY + offset.dy;
+
+    // Keep the preview on a castable center. This enforces map bounds, range,
+    // and the same active-map LOS convention used by resolveAbilityAt().
+    if (!isValidGroundAbilitySelection(
+            caster, ability, targetX, targetY))
+    {
+        return false;
+    }
+
+    markAbilityCursorDirty();
+    combat.selectedAbilityX = static_cast<int8_t>(targetX);
+    combat.selectedAbilityY = static_cast<int8_t>(targetY);
+    markAbilityCursorDirty();
+    setGameMessage("Choose a spell target");
+    requestCombatTileRedraw();
+    return true;
+}
+
 void confirmPlayerAbility()
 {
     Entity* player = getCurrentCombatant();
+
+    if (player != nullptr && isPlayerTargetingDirectionalAbility())
+    {
+        AbilityID abilityID = combat.selectedAbility;
+        AbilityResolution resolution = resolveAbilityInDirection(
+            *player, combat.selectedAbilityDirection, abilityID);
+
+        if (resolution.result != ABILITY_RESULT_SUCCESS)
+        {
+            setGameMessage(getAbilityResultMessage(resolution.result));
+            playSound(SoundEffect::SPELL_FAIL);
+            requestCombatTileRedraw();
+            return;
+        }
+
+        markAbilityCursorDirty();
+        combat.selectedAbility = ABILITY_NONE;
+        combat.selectedAbilityX = -1;
+        combat.selectedAbilityY = -1;
+        combat.selectedAbilityDirection = moveDirection;
+        combat.selectedTargetIndex = -1;
+        markPlayerFacingCursorDirty();
+        presentDirectionalAbilityResolution(
+            *player, abilityID, resolution);
+        return;
+    }
 
     if (player != nullptr && isPlayerTargetingGroundAbility())
     {
@@ -2307,6 +2493,7 @@ void confirmPlayerAbility()
         combat.selectedAbility = ABILITY_NONE;
         combat.selectedAbilityX = -1;
         combat.selectedAbilityY = -1;
+        combat.selectedAbilityDirection = moveDirection;
         combat.selectedTargetIndex = -1;
         markPlayerFacingCursorDirty();
         presentGroundAbilityResolution(*player, abilityID, resolution);
@@ -2339,6 +2526,7 @@ void confirmPlayerAbility()
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
+    combat.selectedAbilityDirection = moveDirection;
     combat.selectedTargetIndex = -1;
     markPlayerFacingCursorDirty();
 
@@ -2351,14 +2539,21 @@ void cancelPlayerAbility()
     if (!isPlayerTargetingAbility())
         return;
 
+    bool wasSpatialTargeting = isPlayerTargetingGroundAbility() ||
+                               isPlayerTargetingDirectionalAbility();
     markAbilityCursorDirty();
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
+    combat.selectedAbilityDirection = moveDirection;
     combat.selectedTargetIndex = -1;
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
-    openMenu(&mainMenu);
+
+    if (wasSpatialTargeting)
+        setGameMessage("Spell targeting canceled.");
+    else
+        openMenu(&mainMenu);
 }
 
 void beginInspection()

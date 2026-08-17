@@ -189,7 +189,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_MONSTER,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_MONSTER
+        { 0, 0 }, 0, 0, CREATURE_MONSTER, true
     },
 
     {

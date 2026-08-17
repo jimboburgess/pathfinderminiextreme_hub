@@ -14,6 +14,7 @@
 #include "graphics/sprites.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
+#include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
 #include "dungeon/activemap.h"
 #include "dungeon/dungeon.h"
@@ -35,33 +36,39 @@ Adafruit_ST7789 tft(
 namespace
 {
 constexpr uint16_t COLOR_GREASE = 0xB5A6;
-constexpr uint16_t COLOR_AREA_EDGE = 0xFD20;
+constexpr uint16_t COLOR_AREA_TARGET = 0xC81F;
 
 void drawMapEffectOverlayAt(int tileX, int tileY)
 {
-    const MapEffect* effect = getMapEffectAt(tileX, tileY);
-
-    if (effect == nullptr)
-        return;
-
     int screenX = tileX * TILE_SIZE;
     int screenY = tileY * TILE_SIZE;
 
-    switch (effect->type)
+    // Render every active overlay that covers this tile. Mechanical queries
+    // already support overlaps; drawing them all keeps future effects from
+    // being hidden merely because another effect occupied an earlier slot.
+    for (uint8_t i = 0; i < MAX_MAP_EFFECTS; i++)
     {
-        case MAP_EFFECT_GREASE:
-            // Sparse highlights leave the original forest/dungeon tile
-            // visible beneath the temporary overlay.
-            tft.drawLine(screenX + 2, screenY + 12,
-                         screenX + 6, screenY + 8, COLOR_GREASE);
-            tft.drawLine(screenX + 7, screenY + 13,
-                         screenX + 13, screenY + 7, COLOR_GREASE);
-            tft.drawPixel(screenX + 4, screenY + 4, COLOR_GREASE);
-            tft.drawPixel(screenX + 11, screenY + 3, COLOR_GREASE);
-            break;
+        const MapEffect& effect = activeMapEffects[i];
 
-        case MAP_EFFECT_NONE:
-            break;
+        if (!mapEffectAffectsTile(effect, tileX, tileY))
+            continue;
+
+        switch (effect.type)
+        {
+            case MAP_EFFECT_GREASE:
+                // Sparse highlights leave the original forest/dungeon tile
+                // visible beneath the temporary overlay.
+                tft.drawLine(screenX + 2, screenY + 12,
+                             screenX + 6, screenY + 8, COLOR_GREASE);
+                tft.drawLine(screenX + 7, screenY + 13,
+                             screenX + 13, screenY + 7, COLOR_GREASE);
+                tft.drawPixel(screenX + 4, screenY + 4, COLOR_GREASE);
+                tft.drawPixel(screenX + 11, screenY + 3, COLOR_GREASE);
+                break;
+
+            case MAP_EFFECT_NONE:
+                break;
+        }
     }
 }
 
@@ -80,14 +87,95 @@ void drawGroundAbilityCursorTile(int tileX, int tileY)
         return;
     }
 
+    int minimumX = targetX - ability->areaRadiusTiles;
+    int maximumX = targetX + ability->areaRadiusTiles;
+    int minimumY = targetY - ability->areaRadiusTiles;
+    int maximumY = targetY + ability->areaRadiusTiles;
+
+    if (minimumX < 0)
+        minimumX = 0;
+    if (minimumY < 0)
+        minimumY = 0;
+    if (maximumX >= getActiveMapWidth())
+        maximumX = getActiveMapWidth() - 1;
+    if (maximumY >= getActiveMapHeight())
+        maximumY = getActiveMapHeight() - 1;
+
+    int screenX = tileX * TILE_SIZE;
+    int screenY = tileY * TILE_SIZE;
+
+    // Draw only the outside edge, producing one clear perimeter around the
+    // complete affected area instead of a grid of individually boxed tiles.
+    if (tileY == minimumY)
+        tft.drawLine(screenX, screenY,
+                     screenX + TILE_SIZE - 1, screenY,
+                     COLOR_AREA_TARGET);
+    if (tileY == maximumY)
+        tft.drawLine(screenX, screenY + TILE_SIZE - 1,
+                     screenX + TILE_SIZE - 1,
+                     screenY + TILE_SIZE - 1,
+                     COLOR_AREA_TARGET);
+    if (tileX == minimumX)
+        tft.drawLine(screenX, screenY,
+                     screenX, screenY + TILE_SIZE - 1,
+                     COLOR_AREA_TARGET);
+    if (tileX == maximumX)
+        tft.drawLine(screenX + TILE_SIZE - 1, screenY,
+                     screenX + TILE_SIZE - 1,
+                     screenY + TILE_SIZE - 1,
+                     COLOR_AREA_TARGET);
+
+    if (tileX != targetX || tileY != targetY)
+        return;
+
+    // The arrow is derived from the generic targeting direction and stays in
+    // the center tile, showing where the next encoder click will move the AoE.
+    const DirectionOffset& direction =
+        directionOffsets[combat.selectedAbilityDirection];
+    int centerX = screenX + TILE_SIZE / 2;
+    int centerY = screenY + TILE_SIZE / 2;
+    int endX = centerX + direction.dx * 5;
+    int endY = centerY + direction.dy * 5;
+    int baseX = endX - direction.dx * 3;
+    int baseY = endY - direction.dy * 3;
+    int perpendicularX = -direction.dy * 2;
+    int perpendicularY = direction.dx * 2;
+
+    tft.drawLine(centerX, centerY, endX, endY, COLOR_AREA_TARGET);
+    tft.drawLine(endX, endY,
+                 baseX + perpendicularX,
+                 baseY + perpendicularY,
+                 COLOR_AREA_TARGET);
+    tft.drawLine(endX, endY,
+                 baseX - perpendicularX,
+                 baseY - perpendicularY,
+                 COLOR_AREA_TARGET);
+}
+
+void drawDirectionalAbilityCursorTile(int tileX, int tileY)
+{
+    Entity* caster = getActiveMapPlayer();
+
+    if (caster == nullptr || !isPlayerTargetingDirectionalAbility() ||
+        !isTileInDirectionalAbilityArea(
+            *caster,
+            combat.selectedAbility,
+            combat.selectedAbilityDirection,
+            tileX,
+            tileY))
+    {
+        return;
+    }
+
+    // Every effective cone tile receives the same purple outline. Because
+    // this calls the resolver's geometry predicate, walls and bounds affect
+    // the preview and the actual cast identically.
     tft.drawRect(
-        tileX * TILE_SIZE,
-        tileY * TILE_SIZE,
-        TILE_SIZE,
-        TILE_SIZE,
-        tileX == targetX && tileY == targetY
-            ? ST77XX_YELLOW
-            : COLOR_AREA_EDGE);
+        tileX * TILE_SIZE + 1,
+        tileY * TILE_SIZE + 1,
+        TILE_SIZE - 2,
+        TILE_SIZE - 2,
+        COLOR_AREA_TARGET);
 }
 }
 
@@ -344,6 +432,17 @@ void drawMapCursor()
 
     if (isPlayerTargetingAbility())
     {
+        if (isPlayerTargetingDirectionalAbility())
+        {
+            for (int y = 0; y < getActiveMapHeight(); y++)
+            {
+                for (int x = 0; x < getActiveMapWidth(); x++)
+                    drawDirectionalAbilityCursorTile(x, y);
+            }
+
+            return;
+        }
+
         if (isPlayerTargetingGroundAbility())
         {
             int targetX = 0;
@@ -498,6 +597,12 @@ void redrawDungeonTile(int x, int y)
 
     if (isPlayerTargetingAbility())
     {
+        if (isPlayerTargetingDirectionalAbility())
+        {
+            drawDirectionalAbilityCursorTile(x, y);
+            return;
+        }
+
         if (isPlayerTargetingGroundAbility())
         {
             drawGroundAbilityCursorTile(x, y);
@@ -669,6 +774,12 @@ void redrawForestTile(int x, int y)
 
     if (isPlayerTargetingAbility())
     {
+        if (isPlayerTargetingDirectionalAbility())
+        {
+            drawDirectionalAbilityCursorTile(x, y);
+            return;
+        }
+
         if (isPlayerTargetingGroundAbility())
         {
             drawGroundAbilityCursorTile(x, y);

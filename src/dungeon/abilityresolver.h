@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "characters/abilities.h"
+#include "data/game.h"
 
 struct Entity;
 struct Character;
@@ -53,13 +54,25 @@ struct AbilityResolution
     bool mapEffectCreated = false;
     uint8_t targetsAffected = 0;
     uint8_t targetsResisted = 0;
+    uint8_t targetsImmune = 0;
 };
 
 // The resolver deliberately accepts only standard-action abilities handled
 // by the current narrow feature set: entity-target instant damage/healing or
-// one timed condition, plus one persistent ground/area effect definition.
+// one timed condition, one persistent ground/area effect, and the supported
+// directional/cone effect profile.
 bool isAbilitySupported(AbilityID abilityID);
 bool isGroundTargetAbility(AbilityID abilityID);
+bool isDirectionalAbility(AbilityID abilityID);
+
+// Shared cone geometry for both rendering and execution. The predicate
+// includes map bounds and line of effect, so previewed tiles are authoritative.
+bool isTileInDirectionalAbilityArea(
+    const Entity& caster,
+    AbilityID abilityID,
+    Direction direction,
+    int tileX,
+    int tileY);
 
 // Shared player/monster saving-throw helpers. No natural-1/natural-20 rule is
 // added here because the existing game does not define one for saves.
@@ -100,6 +113,16 @@ AbilityResolution resolveAbilityAt(
     Entity& caster,
     int targetX,
     int targetY,
+    AbilityID abilityID);
+
+// Directional counterpart used by cone abilities. Current support is Color
+// Spray; the geometry and target enumeration are reusable by future cones.
+AbilityResult validateDirectionalAbility(
+    const Entity& caster,
+    AbilityID abilityID);
+AbilityResolution resolveAbilityInDirection(
+    Entity& caster,
+    Direction direction,
     AbilityID abilityID);
 
 const char* getAbilityResultMessage(AbilityResult result);
