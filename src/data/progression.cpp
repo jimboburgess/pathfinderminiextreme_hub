@@ -319,6 +319,9 @@ int getBaseSave(
     SaveType saveType,
     uint8_t level)
 {
+    if (saveType == SAVE_NONE)
+        return 0;
+
     bool goodSave = false;
 
     switch (characterClass)

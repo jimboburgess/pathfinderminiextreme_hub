@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include "conditions.h"
+
 struct Character;
 
 //--------------------------------------------------
@@ -162,6 +164,16 @@ enum AbilityType
     ABILITY_MARTIAL
 };
 
+// Saving-throw metadata shared by class progression and ability resolution.
+// SAVE_NONE remains zero so existing aggregate ability rows require no edits.
+enum SaveType : uint8_t
+{
+    SAVE_NONE,
+    SAVE_FORTITUDE,
+    SAVE_REFLEX,
+    SAVE_WILL
+};
+
 // What kind of gameplay ability this is. AbilityType remains the ability's
 // tradition (arcane, divine, martial, and so on).
 enum AbilityCategory : uint8_t
@@ -231,6 +243,19 @@ enum AbilityDuration
     DURATION_ROUNDS,
     DURATION_COMBAT,
     DURATION_PERMANENT
+};
+
+//--------------------------------------------------
+// Persistent map effects
+//--------------------------------------------------
+
+// This identifies the temporary map overlay created by an ability.  The
+// runtime storage lives in the active-map effect system; ordinary abilities
+// leave this as MAP_EFFECT_NONE through aggregate zero-initialization.
+enum MapEffectType : uint8_t
+{
+    MAP_EFFECT_NONE,
+    MAP_EFFECT_GREASE
 };
 
 //--------------------------------------------------
@@ -347,6 +372,11 @@ struct AbilityEffectData
     int valuePerLevel;  // Scaling per caster level
 
     int duration;
+
+    // CONDITION_NONE means this is not a condition-applying effect. Keeping
+    // this explicit lets the resolver apply any supported ConditionType
+    // without branching on an AbilityID.
+    ConditionType conditionType;
 };
 
 struct Ability
@@ -373,9 +403,18 @@ struct Ability
     // ABILITY_CATEGORY_SPELL; non-spell rows specify it explicitly.
     AbilityCategory category;
 
-    // Zero means no ranged single-target support in the first resolver.
+    // Zero means no ranged entity/ground support in the current resolver.
     // Existing definitions keep zero through aggregate initialization.
     uint8_t rangeTiles;
+
+    // SAVE_NONE means every otherwise-valid target receives the effect.
+    SaveType saveType;
+
+    // Ground/area abilities use these trailing fields. They deliberately
+    // remain zero for every existing entity-target ability.
+    uint8_t areaRadiusTiles;
+    MapEffectType mapEffectType;
+    uint8_t mapEffectDurationRounds;
 };
 
 extern const Ability abilityDatabase[];

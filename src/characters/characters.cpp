@@ -74,6 +74,16 @@ int getMaxHP(const Character& character)
       + getAbilityModifier(character, ABILITY_CONSTITUTION);
 }
 
+int damageCharacter(Character& character, int damage)
+{
+    if (damage <= 0 || character.state != STATE_ALIVE)
+        return 0;
+
+    character.health.currentHP -= damage;
+    updateConditionsAfterDamage(character, damage);
+    return damage;
+}
+
 int healCharacter(Character& character, int healing)
 {
     if (healing <= 0 ||

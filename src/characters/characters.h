@@ -123,7 +123,8 @@ enum CreatureType
     CREATURE_WOLF,
     CREATURE_ORC,
     CREATURE_ZOMBIE,
-    CREATURE_BEHOLDER
+    CREATURE_BEHOLDER,
+    CREATURE_MONSTER
 };
 
 //==================================================
@@ -276,6 +277,10 @@ int getAbilityModifier(int score);
 int getAbilityModifier(const Character& character, AbilityScore ability);
 
 int getMaxHP(const Character& character);
+
+// Applies positive damage to a living character and notifies the shared
+// condition system. Defeat/XP/loot state remains with combat.
+int damageCharacter(Character& character, int damage);
 
 // Applies positive healing without exceeding max HP and returns the amount
 // actually restored. Eligibility (alive, friendly, and so on) stays with the

@@ -15,10 +15,12 @@
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
 #include "dungeon/combat.h"
+#include "dungeon/activemap.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/dungeonplayer.h"
 #include "dungeon/roomdraw.h"
 #include "dungeon/forest.h"
+#include "dungeon/mapeffects.h"
 #include "graphics/tiles.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
@@ -29,6 +31,65 @@ Adafruit_ST7789 tft(
     TFT_CS,
     TFT_DC,
     TFT_RST);
+
+namespace
+{
+constexpr uint16_t COLOR_GREASE = 0xB5A6;
+constexpr uint16_t COLOR_AREA_EDGE = 0xFD20;
+
+void drawMapEffectOverlayAt(int tileX, int tileY)
+{
+    const MapEffect* effect = getMapEffectAt(tileX, tileY);
+
+    if (effect == nullptr)
+        return;
+
+    int screenX = tileX * TILE_SIZE;
+    int screenY = tileY * TILE_SIZE;
+
+    switch (effect->type)
+    {
+        case MAP_EFFECT_GREASE:
+            // Sparse highlights leave the original forest/dungeon tile
+            // visible beneath the temporary overlay.
+            tft.drawLine(screenX + 2, screenY + 12,
+                         screenX + 6, screenY + 8, COLOR_GREASE);
+            tft.drawLine(screenX + 7, screenY + 13,
+                         screenX + 13, screenY + 7, COLOR_GREASE);
+            tft.drawPixel(screenX + 4, screenY + 4, COLOR_GREASE);
+            tft.drawPixel(screenX + 11, screenY + 3, COLOR_GREASE);
+            break;
+
+        case MAP_EFFECT_NONE:
+            break;
+    }
+}
+
+void drawGroundAbilityCursorTile(int tileX, int tileY)
+{
+    int targetX = 0;
+    int targetY = 0;
+    const Ability* ability = getAbility(combat.selectedAbility);
+
+    if (ability == nullptr ||
+        !isInsideActiveMap(tileX, tileY) ||
+        !getSelectedAbilityGroundTarget(targetX, targetY) ||
+        abs(tileX - targetX) > ability->areaRadiusTiles ||
+        abs(tileY - targetY) > ability->areaRadiusTiles)
+    {
+        return;
+    }
+
+    tft.drawRect(
+        tileX * TILE_SIZE,
+        tileY * TILE_SIZE,
+        TILE_SIZE,
+        TILE_SIZE,
+        tileX == targetX && tileY == targetY
+            ? ST77XX_YELLOW
+            : COLOR_AREA_EDGE);
+}
+}
 
 void drawStartScreen()
 {
@@ -174,6 +235,12 @@ void drawMapBackground()
             drawRoom(
                 dungeon.rooms[dungeon.currentRoom]);
 
+            for (int y = 0; y < ROOM_SIZE; y++)
+            {
+                for (int x = 0; x < ROOM_SIZE; x++)
+                    drawMapEffectOverlayAt(x, y);
+            }
+
             break;
 
         default:
@@ -277,6 +344,31 @@ void drawMapCursor()
 
     if (isPlayerTargetingAbility())
     {
+        if (isPlayerTargetingGroundAbility())
+        {
+            int targetX = 0;
+            int targetY = 0;
+            const Ability* ability = getAbility(combat.selectedAbility);
+
+            if (ability != nullptr &&
+                getSelectedAbilityGroundTarget(targetX, targetY))
+            {
+                for (int y = targetY - ability->areaRadiusTiles;
+                     y <= targetY + ability->areaRadiusTiles;
+                     y++)
+                {
+                    for (int x = targetX - ability->areaRadiusTiles;
+                         x <= targetX + ability->areaRadiusTiles;
+                         x++)
+                    {
+                        drawGroundAbilityCursorTile(x, y);
+                    }
+                }
+            }
+
+            return;
+        }
+
         Entity* target = getSelectedAbilityTarget();
 
         if (target != nullptr)
@@ -373,6 +465,7 @@ void redrawDungeonTile(int x, int y)
         x,
         y,
         dungeon.rooms[dungeon.currentRoom].map.tiles[y][x]);
+    drawMapEffectOverlayAt(x, y);
 
     //--------------------------------------------------
     // Draw any entity on this tile.
@@ -405,6 +498,12 @@ void redrawDungeonTile(int x, int y)
 
     if (isPlayerTargetingAbility())
     {
+        if (isPlayerTargetingGroundAbility())
+        {
+            drawGroundAbilityCursorTile(x, y);
+            return;
+        }
+
         Entity* target = getSelectedAbilityTarget();
 
         if (target != nullptr && entityOccupiesTile(*target, x, y))
@@ -521,6 +620,8 @@ void drawForestTile(int x, int y)
         default:
             break;
     }
+
+    drawMapEffectOverlayAt(x, y);
 }
 
 void redrawForestTile(int x, int y)
@@ -568,6 +669,12 @@ void redrawForestTile(int x, int y)
 
     if (isPlayerTargetingAbility())
     {
+        if (isPlayerTargetingGroundAbility())
+        {
+            drawGroundAbilityCursorTile(x, y);
+            return;
+        }
+
         Entity* target = getSelectedAbilityTarget();
 
         if (target != nullptr && entityOccupiesTile(*target, x, y))

@@ -93,6 +93,17 @@ TileType getActiveMapTile(int x, int y)
     return TILE_WALL;
 }
 
+bool isBaseTerrainDifficultAt(int x, int y)
+{
+    if (!isInsideActiveMap(x, y))
+        return false;
+
+    // No current dungeon or forest tile carries a difficult-terrain rule.
+    // Keeping this query separate lets later terrain add that property
+    // without coupling it to Grease or any other map effect.
+    return false;
+}
+
 bool hasLineOfSight(int startX, int startY, int endX, int endY)
 {
     if (!isInsideActiveMap(startX, startY) ||
@@ -175,6 +186,38 @@ bool hasLineOfSightBetweenFootprintsAt(
     return false;
 }
 
+bool hasLineOfSightFromFootprintAt(
+    const Entity& entity,
+    int entityX,
+    int entityY,
+    int targetX,
+    int targetY)
+{
+    if (!isInsideActiveMap(targetX, targetY))
+        return false;
+
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(entity);
+         offsetY++)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(entity);
+             offsetX++)
+        {
+            if (hasLineOfSight(
+                    entityX + offsetX,
+                    entityY + offsetY,
+                    targetX,
+                    targetY))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 int getEntityGridDistance(const Entity& first, const Entity& second)
 {
     int firstRight = first.x + getEntityTileWidth(first) - 1;
@@ -193,6 +236,31 @@ int getEntityGridDistance(const Entity& first, const Entity& second)
         verticalDistance = second.y - firstBottom;
     else if (secondBottom < first.y)
         verticalDistance = first.y - secondBottom;
+
+    return horizontalDistance > verticalDistance
+        ? horizontalDistance
+        : verticalDistance;
+}
+
+int getEntityGridDistanceToTile(
+    const Entity& entity,
+    int tileX,
+    int tileY)
+{
+    int right = entity.x + getEntityTileWidth(entity) - 1;
+    int bottom = entity.y + getEntityTileHeight(entity) - 1;
+    int horizontalDistance = 0;
+    int verticalDistance = 0;
+
+    if (tileX < entity.x)
+        horizontalDistance = entity.x - tileX;
+    else if (tileX > right)
+        horizontalDistance = tileX - right;
+
+    if (tileY < entity.y)
+        verticalDistance = entity.y - tileY;
+    else if (tileY > bottom)
+        verticalDistance = tileY - bottom;
 
     return horizontalDistance > verticalDistance
         ? horizontalDistance

@@ -17,6 +17,11 @@ int getActiveMapHeight();
 bool isInsideActiveMap(int x, int y);
 TileType getActiveMapTile(int x, int y);
 
+// Base terrain and temporary overlays remain separate. No current tile is
+// difficult yet, but this is the single extension point for rubble, mud,
+// snow, and similar future terrain.
+bool isBaseTerrainDifficultAt(int x, int y);
+
 bool hasLineOfSight(int startX, int startY, int endX, int endY);
 
 // Checks every occupied square for large creatures, including a proposed
@@ -27,8 +32,22 @@ bool hasLineOfSightBetweenFootprintsAt(
     int attackerY,
     const Entity& target);
 
+// Ground-target equivalent of the footprint-aware entity LOS check.
+bool hasLineOfSightFromFootprintAt(
+    const Entity& entity,
+    int entityX,
+    int entityY,
+    int targetX,
+    int targetY);
+
 // Chebyshev grid distance between the nearest occupied squares of two
 // entities. This matches weapon combat and supports large footprints.
 int getEntityGridDistance(const Entity& first, const Entity& second);
+
+// Chebyshev distance from the nearest occupied square to one map tile.
+int getEntityGridDistanceToTile(
+    const Entity& entity,
+    int tileX,
+    int tileY);
 
 #endif // PATHFINDERMINIEXTREME_025_ACTIVE_MAP_H

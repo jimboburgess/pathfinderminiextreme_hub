@@ -8,6 +8,7 @@
 #include "abilityresolver.h"
 #include "dungeon.h"
 #include "monsters.h"
+#include "movement.h"
 #include "graphics/messagelog.h"
 #include "combat.h"
 #include "data/entityspawn.h"
@@ -430,7 +431,8 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
 {
     if (monster == nullptr ||
         (monster->x == newX && monster->y == newY) ||
-        !canMonsterMoveTo(monster, newX, newY))
+        !canMonsterMoveTo(monster, newX, newY) ||
+        !canAffordMovementCost(*monster, newX, newY))
     {
         return false;
     }
@@ -443,10 +445,20 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
     monster->x = newX;
     monster->y = newY;
 
+    spendMovementCost(*monster, newX, newY);
+    ConditionType enteredCondition = handleEnteredTile(
+        *monster, newX, newY);
+
     markEntityFootprintDirty(*monster);
 
     char message[32];
-    snprintf(message, sizeof(message), "%s moves.", getEntityName(monster));
+    snprintf(
+        message,
+        sizeof(message),
+        enteredCondition == CONDITION_PRONE
+            ? "%s falls prone!"
+            : "%s moves.",
+        getEntityName(monster));
     setGameMessage(message);
 
     return true;
@@ -726,7 +738,25 @@ bool isMonsterReadyForAction(Entity* monster)
 
 void performMovementPhase(Entity* monster)
 {
-    if (monster == nullptr || monster->turn.movementRemaining == 0 ||
+    if (monster == nullptr || monster->turn.movementRemaining == 0)
+    {
+        return;
+    }
+
+    StandForMovementResult standResult = tryStandForMovement(
+        *monster, true);
+
+    if (standResult == STAND_COMPLETED)
+    {
+        char message[32];
+        snprintf(message, sizeof(message), "%s stands up.",
+                 getEntityName(monster));
+        setGameMessage(message);
+        markEntityFootprintDirty(*monster);
+        return;
+    }
+
+    if (standResult == STAND_NO_MOVEMENT ||
         isMonsterReadyForAction(monster))
     {
         return;
@@ -757,5 +787,4 @@ void performMovementPhase(Entity* monster)
         return;
     }
 
-    monster->turn.movementRemaining--;
 }

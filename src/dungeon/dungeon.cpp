@@ -9,6 +9,7 @@
 #include "data/game.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
+#include "mapeffects.h"
 
 Dungeon dungeon;
 
@@ -111,6 +112,7 @@ void generateDungeon(Dungeon& dungeon)
 
 void loadRoom(Dungeon& dungeon, RoomEntry entry)
 {
+    clearMapEffects();
     DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
 
     // Remove any entities from the previous room.

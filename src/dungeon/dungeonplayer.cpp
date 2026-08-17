@@ -10,11 +10,63 @@
 #include "combat.h"
 #include "../audio/audio.h"
 #include "forest.h"
+#include "movement.h"
 #include "turns.h"
 #include "data/entityspawn.h"
 #include "graphics/display.h"
+#include "graphics/messagelog.h"
 
 extern Adafruit_ST7789 tft;
+
+namespace
+{
+bool handlePlayerStandAttempt(Entity& player, bool& handled)
+{
+    StandForMovementResult result = tryStandForMovement(
+        player, combat.active);
+    handled = result != STAND_NOT_PRONE;
+
+    if (result == STAND_NOT_PRONE)
+        return true;
+
+    if (result == STAND_NO_MOVEMENT)
+    {
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+
+    setGameMessage("You stand up.");
+    markEntityFootprintDirty(player);
+
+    if (combat.active && player.turn.movementRemaining == 0)
+    {
+        player.turn.moveActionUsed = true;
+        checkEndPlayerTurn();
+    }
+
+    return true;
+}
+
+void finishPlayerMovement(Entity& player, int targetX, int targetY)
+{
+    ConditionType enteredCondition = handleEnteredTile(
+        player, targetX, targetY);
+
+    if (combat.active)
+    {
+        spendMovementCost(player, targetX, targetY);
+
+        if (player.turn.movementRemaining == 0)
+        {
+            player.turn.moveActionUsed = true;
+            checkEndPlayerTurn();
+        }
+    }
+
+    if (enteredCondition == CONDITION_PRONE)
+        setGameMessage("You fall prone!");
+}
+}
 
 
 
@@ -91,6 +143,20 @@ bool tryMovePlayer(Dungeon &dungeon)
     int targetY =
         player->y + directionOffsets[moveDirection].dy;
 
+    if (combat.active &&
+        (!combat.waitingForPlayer ||
+         !canCharacterAct(player->character)))
+    {
+        return false;
+    }
+
+    bool standHandled = false;
+    if (!handlePlayerStandAttempt(*player, standHandled))
+        return false;
+
+    if (standHandled)
+        return true;
+
     DungeonRoom& room =
         dungeon.rooms[dungeon.currentRoom];
 
@@ -148,6 +214,13 @@ bool tryMovePlayer(Dungeon &dungeon)
                 }
             }
 
+            if (combat.active &&
+                !canAffordMovementCost(*player, targetX, targetY))
+            {
+                playSound(SoundEffect::BUMP);
+                return false;
+            }
+
             //--------------------------------------------------
             // Move the player.
             //--------------------------------------------------
@@ -159,17 +232,7 @@ bool tryMovePlayer(Dungeon &dungeon)
             // Consume one square of movement.
             //--------------------------------------------------
 
-            if (combat.active)
-            {
-                player->turn.movementRemaining--;
-
-                if (player->turn.movementRemaining == 0)
-                {
-                    player->turn.moveActionUsed = true;
-
-                    checkEndPlayerTurn();
-                }
-            }
+            finishPlayerMovement(*player, targetX, targetY);
 
             //--------------------------------------------------
             // Redraw affected tiles.
@@ -315,6 +378,20 @@ bool tryMoveForestPlayer()
     int targetY =
         player->y + directionOffsets[moveDirection].dy;
 
+    if (combat.active &&
+        (!combat.waitingForPlayer ||
+         !canCharacterAct(player->character)))
+    {
+        return false;
+    }
+
+    bool standHandled = false;
+    if (!handlePlayerStandAttempt(*player, standHandled))
+        return false;
+
+    if (standHandled)
+        return true;
+
     //--------------------------------------------------
     // Stay inside the map.
     //--------------------------------------------------
@@ -352,6 +429,13 @@ bool tryMoveForestPlayer()
         }
     }
 
+    if (combat.active &&
+        !canAffordMovementCost(*player, targetX, targetY))
+    {
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+
     //--------------------------------------------------
     // Move player.
     //--------------------------------------------------
@@ -363,17 +447,7 @@ bool tryMoveForestPlayer()
     // Consume one square of movement.
     //--------------------------------------------------
 
-    if (combat.active)
-    {
-        player->turn.movementRemaining--;
-
-        if (player->turn.movementRemaining == 0)
-        {
-            player->turn.moveActionUsed = true;
-
-            checkEndPlayerTurn();
-        }
-    }
+    finishPlayerMovement(*player, targetX, targetY);
 
     //--------------------------------------------------
     // Redraw tiles.

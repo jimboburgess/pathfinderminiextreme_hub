@@ -95,6 +95,7 @@ Entity* spawnMonster(
 
     entity->character.team = TEAM_MONSTER;
     entity->character.state = STATE_ALIVE;
+    entity->character.creatureType = monster->creatureType;
 
     entity->character.abilities = monster->abilities;
     entity->character.speed = monster->speed;

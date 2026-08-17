@@ -116,6 +116,7 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL(CR_ONE_HALF, zombie.challengeRating);
     TEST_ASSERT_EQUAL(LOOT_UNDEAD, zombie.lootTable);
     TEST_ASSERT_EQUAL(SCRIPT_MELEE, zombie.script);
+    TEST_ASSERT_EQUAL(CREATURE_ZOMBIE, zombie.creatureType);
 
     const Monster& spectator = monsterDatabase[MONSTER_SPECTATOR];
     TEST_ASSERT_EQUAL(
@@ -123,6 +124,7 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL(SCRIPT_SPELLCASTER, spectator.script);
     TEST_ASSERT_EQUAL_UINT8(6, spectator.maxMP);
     TEST_ASSERT_EQUAL_UINT8(4, spectator.casterLevel);
+    TEST_ASSERT_EQUAL(CREATURE_BEHOLDER, spectator.creatureType);
 }
 
 void test_reused_entity_gets_one_fresh_monster_hp_roll()
@@ -157,6 +159,8 @@ void test_reused_entity_gets_one_fresh_monster_hp_roll()
     TEST_ASSERT_EQUAL_UINT8(5, zombie->y);
     TEST_ASSERT_EQUAL(TEAM_MONSTER, zombie->character.team);
     TEST_ASSERT_EQUAL(STATE_ALIVE, zombie->character.state);
+    TEST_ASSERT_EQUAL(
+        CREATURE_ZOMBIE, zombie->character.creatureType);
     TEST_ASSERT_EQUAL_UINT16(2, zombie->character.health.maxHP);
     TEST_ASSERT_EQUAL_UINT16(2, zombie->character.health.currentHP);
     TEST_ASSERT_EQUAL(MONSTER_ZOMBIE, zombie->monsterID);
@@ -191,6 +195,8 @@ void test_spellcaster_spawn_receives_definition_mp_pool()
         spectatorDefinition->maxMP, spectator->character.magic.currentMP);
     TEST_ASSERT_EQUAL_UINT8(
         spectatorDefinition->casterLevel, spectator->character.level);
+    TEST_ASSERT_EQUAL(
+        CREATURE_BEHOLDER, spectator->character.creatureType);
     TEST_ASSERT_EQUAL_UINT8(1, hitPointRollCount);
 }
 

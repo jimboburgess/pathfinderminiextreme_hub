@@ -92,6 +92,8 @@ struct Combat
     //--------------------------------------------------
 
     AbilityID selectedAbility = ABILITY_NONE;
+    int8_t selectedAbilityX = -1;
+    int8_t selectedAbilityY = -1;
     bool abilityResolutionPending = false;
     Entity* abilityCaster = nullptr;
     bool abilityEndedCombat = false;
@@ -144,6 +146,7 @@ struct Combat
         TURN_START_CONDITION_NONE;
     bool turnStartPoisonExpired = false;
     bool turnStartConditionDefeated = false;
+    bool turnStartActionPrevented = false;
 
     //--------------------------------------------------
     // Entity inspection
@@ -219,8 +222,10 @@ void cancelPlayerAttack();
 
 void beginPlayerAbility(AbilityID abilityID);
 bool isPlayerTargetingAbility();
+bool isPlayerTargetingGroundAbility();
 bool isAbilityResolving();
 Entity* getSelectedAbilityTarget();
+bool getSelectedAbilityGroundTarget(int& x, int& y);
 void rotateAbilityTarget(bool forward);
 void confirmPlayerAbility();
 void cancelPlayerAbility();

@@ -34,6 +34,9 @@ enum ConditionType
     CONDITION_CURSED,
     CONDITION_DISEASED,
 
+    // Movement
+    CONDITION_PRONE,
+
     CONDITION_MAX
 };
 
@@ -65,9 +68,18 @@ struct ConditionTurnResult
     int damage = 0;
     ConditionType damageCondition = CONDITION_NONE;
     bool poisonExpired = false;
+    bool actionPrevented = false;
 };
 
 bool hasCondition(const Character& character, ConditionType type);
+
+bool isValidConditionType(ConditionType type);
+
+// Generic condition eligibility hook used by ability resolution. The first
+// immunity rule is intentionally narrow: undead cannot be put to sleep.
+bool canReceiveCondition(
+    const Character& character,
+    ConditionType type);
 
 Condition* getCondition(Character& character, ConditionType type);
 const Condition* getCondition(const Character& character,
@@ -81,6 +93,10 @@ bool addCondition(Character& character,
 bool removeCondition(Character& character, ConditionType type);
 
 void clearConditions(Character& character);
+
+// Central reaction hook for condition changes caused by actual damage.
+// Zero or negative damage deliberately has no effect.
+void updateConditionsAfterDamage(Character& character, int damage);
 
 // Advance positive condition durations once.  Zero-duration conditions
 // remain until explicitly removed.

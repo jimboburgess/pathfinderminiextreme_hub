@@ -9,17 +9,34 @@
 
 namespace
 {
-bool isValidConditionType(ConditionType type)
-{
-    return type > CONDITION_NONE && type < CONDITION_MAX;
-}
-
 void logPoisonApplied(int rounds)
 {
     Serial.print("POISONED applied: ");
     Serial.print(rounds);
     Serial.println(" rounds");
 }
+}
+
+bool isValidConditionType(ConditionType type)
+{
+    return type > CONDITION_NONE && type < CONDITION_MAX;
+}
+
+bool canReceiveCondition(
+    const Character& character,
+    ConditionType type)
+{
+    if (!isValidConditionType(type))
+        return false;
+
+    if (type == CONDITION_SLEEPING &&
+        (character.creatureType == CREATURE_SKELETON ||
+         character.creatureType == CREATURE_ZOMBIE))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 bool hasCondition(const Character& character, ConditionType type)
@@ -137,6 +154,12 @@ void clearConditions(Character& character)
     character.conditions = ConditionData{};
 }
 
+void updateConditionsAfterDamage(Character& character, int damage)
+{
+    if (damage > 0)
+        removeCondition(character, CONDITION_SLEEPING);
+}
+
 void tickConditions(Character& character)
 {
     for (uint8_t i = 0; i < character.conditions.count;)
@@ -172,11 +195,17 @@ ConditionTurnResult processConditionsAtTurnStart(Character& character)
     if (character.state != STATE_ALIVE)
         return result;
 
+    // Capture action eligibility before durations advance. A one-round
+    // disabling condition therefore prevents exactly one turn even though it
+    // expires during that turn's start processing.
+    result.actionPrevented = !canCharacterAct(character);
+
     if (hasCondition(character, CONDITION_POISONED))
     {
         result.damage = rollDie(4);
         result.damageCondition = CONDITION_POISONED;
         character.health.currentHP -= result.damage;
+        updateConditionsAfterDamage(character, result.damage);
     }
 
     bool wasPoisoned = hasCondition(character, CONDITION_POISONED);

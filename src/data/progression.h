@@ -16,13 +16,6 @@
 // Progression
 //======================================
 
-enum SaveType
-{
-    SAVE_FORTITUDE,
-    SAVE_REFLEX,
-    SAVE_WILL
-};
-
 constexpr uint8_t MAX_CHARACTER_LEVEL = 20;
 
 int getBaseSave(

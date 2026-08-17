@@ -16,6 +16,7 @@
 #include "graphics/messagelog.h"
 #include "input/menu.h"
 #include "characters/characters.h"
+#include "mapeffects.h"
 
 
 
@@ -134,6 +135,7 @@ TileType getForestTile(int x, int y){
 
 static void initForest()
 {
+    clearMapEffects();
     //--------------------------------------------------
     // Fill the map with grass.
     //--------------------------------------------------

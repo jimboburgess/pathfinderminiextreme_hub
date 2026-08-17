@@ -157,6 +157,9 @@ struct Monster
     // Existing non-casters omit these trailing fields and receive zero.
     uint8_t maxMP;
     uint8_t casterLevel;
+
+    // Runtime creature identity used by generic condition immunities.
+    CreatureType creatureType;
 };
 
 const Monster* getMonster(MonsterID id);

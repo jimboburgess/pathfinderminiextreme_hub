@@ -133,6 +133,89 @@ void test_condition_queries()
     TEST_ASSERT_FALSE(canCharacterAct(character));
 }
 
+void test_sleep_immunity_and_damage_waking_are_generic()
+{
+    Character living = {};
+    living.state = STATE_ALIVE;
+    living.creatureType = CREATURE_GOBLIN;
+
+    Character skeleton = living;
+    skeleton.creatureType = CREATURE_SKELETON;
+
+    Character zombie = living;
+    zombie.creatureType = CREATURE_ZOMBIE;
+
+    TEST_ASSERT_TRUE(
+        canReceiveCondition(living, CONDITION_SLEEPING));
+    TEST_ASSERT_FALSE(
+        canReceiveCondition(skeleton, CONDITION_SLEEPING));
+    TEST_ASSERT_FALSE(
+        canReceiveCondition(zombie, CONDITION_SLEEPING));
+    TEST_ASSERT_TRUE(
+        canReceiveCondition(zombie, CONDITION_POISONED));
+
+    TEST_ASSERT_TRUE(addCondition(
+        living, CONDITION_SLEEPING, 0, 3));
+    updateConditionsAfterDamage(living, 0);
+    TEST_ASSERT_TRUE(hasCondition(living, CONDITION_SLEEPING));
+
+    updateConditionsAfterDamage(living, 2);
+    TEST_ASSERT_FALSE(hasCondition(living, CONDITION_SLEEPING));
+}
+
+void test_sleep_duration_prevents_each_intended_turn()
+{
+    Character character = {};
+    character.state = STATE_ALIVE;
+
+    TEST_ASSERT_TRUE(addCondition(
+        character, CONDITION_SLEEPING, 0, 3));
+
+    ConditionTurnResult first = processConditionsAtTurnStart(character);
+    TEST_ASSERT_TRUE(first.actionPrevented);
+    TEST_ASSERT_FALSE(canCharacterAct(character));
+    TEST_ASSERT_EQUAL_INT(
+        2,
+        getCondition(character, CONDITION_SLEEPING)->roundsRemaining);
+
+    ConditionTurnResult second = processConditionsAtTurnStart(character);
+    TEST_ASSERT_TRUE(second.actionPrevented);
+    TEST_ASSERT_EQUAL_INT(
+        1,
+        getCondition(character, CONDITION_SLEEPING)->roundsRemaining);
+
+    ConditionTurnResult third = processConditionsAtTurnStart(character);
+    TEST_ASSERT_TRUE(third.actionPrevented);
+    TEST_ASSERT_FALSE(hasCondition(character, CONDITION_SLEEPING));
+    TEST_ASSERT_TRUE(canCharacterAct(character));
+
+    ConditionTurnResult fourth = processConditionsAtTurnStart(character);
+    TEST_ASSERT_FALSE(fourth.actionPrevented);
+}
+
+void test_condition_capacity_failure_is_safe()
+{
+    Character character = {};
+
+    for (int rawType = CONDITION_NONE + 1;
+         rawType < CONDITION_MAX &&
+         character.conditions.count < MAX_CONDITIONS_PER_CHARACTER;
+         rawType++)
+    {
+        ConditionType type = static_cast<ConditionType>(rawType);
+        if (type != CONDITION_SLEEPING)
+            TEST_ASSERT_TRUE(addCondition(character, type, 0, 2));
+    }
+
+    TEST_ASSERT_EQUAL_UINT8(
+        MAX_CONDITIONS_PER_CHARACTER, character.conditions.count);
+    TEST_ASSERT_FALSE(addCondition(
+        character, CONDITION_SLEEPING, 0, 3));
+    TEST_ASSERT_EQUAL_UINT8(
+        MAX_CONDITIONS_PER_CHARACTER, character.conditions.count);
+    TEST_ASSERT_FALSE(hasCondition(character, CONDITION_SLEEPING));
+}
+
 void test_poison_ticks_at_turn_start_and_expires()
 {
     Character character = {};
@@ -175,6 +258,9 @@ void setup()
     RUN_TEST(test_add_get_and_refresh_condition);
     RUN_TEST(test_tick_removes_timed_conditions_only);
     RUN_TEST(test_condition_queries);
+    RUN_TEST(test_sleep_immunity_and_damage_waking_are_generic);
+    RUN_TEST(test_sleep_duration_prevents_each_intended_turn);
+    RUN_TEST(test_condition_capacity_failure_is_safe);
     RUN_TEST(test_poison_ticks_at_turn_start_and_expires);
     UNITY_END();
 }
