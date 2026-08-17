@@ -68,6 +68,8 @@ void generateDungeon(Dungeon& dungeon)
         dungeon.rooms[i].east  = NO_ROOM;
         dungeon.rooms[i].west  = NO_ROOM;
 
+        clearRoomConnections(dungeon.rooms[i]);
+
         dungeon.rooms[i].discovered = false;
         dungeon.rooms[i].completed = false;
     }
@@ -102,8 +104,21 @@ void generateDungeon(Dungeon& dungeon)
     // Generate every room
     for (int i = 0; i < MAX_ROOMS; i++)
     {
-        dungeon.rooms[i].shape = (RoomShape)random(3);
+        populateRoomConnections(dungeon.rooms[i]);
+        dungeon.rooms[i].shape =
+            randomProductionRoomShape(dungeon.rooms[i]);
         generateRoom(dungeon.rooms[i]);
+    }
+
+    // Keep the temporary Giant Spider encounter out of the entrance. Prefer
+    // the deepest room, then walk backward through later rooms if its current
+    // content leaves no valid 2x2 floor footprint.
+    for (int roomIndex = GIANT_SPIDER_TEST_ROOM_INDEX;
+         roomIndex > 0;
+         roomIndex--)
+    {
+        if (placeGiantSpiderEncounter(dungeon.rooms[roomIndex]))
+            break;
     }
 
     // Load the starting room
@@ -147,7 +162,7 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
                     spawnMonster(
                         dungeon.entities,
                         dungeon.entityCount,
-                        MONSTER_SPECTATOR,
+                        MONSTER_GIANT_SPIDER,
                         x,
                         y);
 
@@ -217,33 +232,15 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
     playerEntity->sprite = getPlayerSprite(
         playerEntity->character.characterClass);
 
-    switch (entry)
-    {
-        case ENTRY_START:
-            playerEntity->x = ROOM_SIZE / 2;
-            playerEntity->y = ROOM_SIZE / 2;
-            break;
+    uint8_t entryX = ROOM_SIZE / 2;
+    uint8_t entryY = ROOM_SIZE / 2;
 
-        case ENTRY_NORTH:
-            playerEntity->x = ROOM_SIZE / 2;
-            playerEntity->y = 1;
-            break;
+    // Cardinal entries use the destination room's connection. The centered
+    // values above remain only as a defensive fallback for corrupted data.
+    getRoomEntryPosition(room, entry, entryX, entryY);
 
-        case ENTRY_EAST:
-            playerEntity->x = ROOM_SIZE - 2;
-            playerEntity->y = ROOM_SIZE / 2;
-            break;
-
-        case ENTRY_SOUTH:
-            playerEntity->x = ROOM_SIZE / 2;
-            playerEntity->y = ROOM_SIZE - 2;
-            break;
-
-        case ENTRY_WEST:
-            playerEntity->x = 1;
-            playerEntity->y = ROOM_SIZE / 2;
-            break;
-    }
+    playerEntity->x = entryX;
+    playerEntity->y = entryY;
 }
 
 void addCharacterToDungeon(Character* character)

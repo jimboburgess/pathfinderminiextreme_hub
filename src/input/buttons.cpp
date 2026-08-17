@@ -18,13 +18,13 @@
 #include "town/shop.h"
 #include "data/savegame.h"
 #include "input/inventorymenu.h"
+#include "input/encoderdecoder.h"
 
 //======================================
 // Input State
 //======================================
 
-bool encoderLastCLK = HIGH;
-unsigned long encoderLastMove = 0;
+QuadratureDecoderState encoderDecoder;
 
 bool selectLast = HIGH;
 bool aLast = HIGH;
@@ -40,7 +40,6 @@ bool encoderLongPressHandled = false;
 
 constexpr unsigned long LONG_PRESS_TIME = 750;
 
-const uint16_t ENCODER_DEBOUNCE = 3;
 constexpr unsigned long ENCODER_SELECT_RELEASE_DEBOUNCE_MS = 25;
 constexpr unsigned long ENCODER_MENU_OPEN_GUARD_MS = 200;
 
@@ -161,27 +160,18 @@ bool encoderButtonLongPressed()
 
 EncoderDirection readEncoder()
 {
-    bool clkNow = digitalRead(ENCODER_CLK);
-    bool dtNow  = digitalRead(ENCODER_DT);
+    const int8_t step = updateQuadratureDecoder(
+        encoderDecoder,
+        digitalRead(ENCODER_CLK) == HIGH,
+        digitalRead(ENCODER_DT) == HIGH);
 
-    EncoderDirection direction = ENCODER_NONE;
+    if (step == QUADRATURE_CLOCKWISE_STEP)
+        return ENCODER_CLOCKWISE;
 
-    if (clkNow != encoderLastCLK && clkNow == LOW)
-    {
-        if (millis() - encoderLastMove > ENCODER_DEBOUNCE)
-        {
-            encoderLastMove = millis();
+    if (step == QUADRATURE_COUNTERCLOCKWISE_STEP)
+        return ENCODER_COUNTERCLOCKWISE;
 
-            if (dtNow == clkNow)
-                direction = ENCODER_CLOCKWISE;
-            else
-                direction = ENCODER_COUNTERCLOCKWISE;
-        }
-    }
-
-    encoderLastCLK = clkNow;
-
-    return direction;
+    return ENCODER_NONE;
 }
 
 
@@ -634,6 +624,30 @@ void handleMapButtons()
     }
 
     //--------------------------------------------------
+    // Move Player
+    //--------------------------------------------------
+
+    // Give a shaft click priority over rotary input. Mechanical movement
+    // while pressing the encoder can disturb CLK/DT; it must not change the
+    // selected direction immediately before this movement attempt.
+    if (encoderPressed())
+    {
+        Serial.println("Encoder Pressed");
+
+        bool moved = false;
+
+        if (gameState == GAME_FOREST)
+            moved = tryMoveForestPlayer();
+        else if (gameState == GAME_DUNGEON)
+            moved = tryMovePlayer(dungeon);
+
+        if (moved)
+            playSound(SoundEffect::WALK);
+
+        return;
+    }
+
+    //--------------------------------------------------
     // Facing Direction
     //--------------------------------------------------
     EncoderDirection direction = readEncoder();
@@ -660,26 +674,6 @@ void handleMapButtons()
             markTileDirty(
                 player->x + directionOffsets[moveDirection].dx,
                 player->y + directionOffsets[moveDirection].dy);
-        }
-    }
-
-    //--------------------------------------------------
-    // Move Player
-    //--------------------------------------------------
-
-    if (encoderPressed())
-    {
-        Serial.println("Encoder Pressed");
-
-        if (gameState == GAME_FOREST)
-        {
-            tryMoveForestPlayer();
-            playSound(SoundEffect::WALK);
-        }
-        else if (gameState == GAME_DUNGEON)
-        {
-            tryMovePlayer(dungeon);
-            playSound(SoundEffect::WALK);
         }
     }
 
@@ -753,15 +747,17 @@ void handleCharacterSheetButtons() {
 
 void resetButtonStates()
 {
-    encoderLastCLK = digitalRead(ENCODER_CLK);
+    resetQuadratureDecoder(
+        encoderDecoder,
+        digitalRead(ENCODER_CLK) == HIGH,
+        digitalRead(ENCODER_DT) == HIGH);
 
     selectLast = digitalRead(ENCODER_SW);
     aLast = digitalRead(BUTTON_A);
     bLast = digitalRead(BUTTON_B);
 
-    encoderLastMove = millis();
     encoderSelectReady = selectLast == HIGH;
-    encoderSelectReleasedAt = encoderLastMove;
+    encoderSelectReleasedAt = millis();
     encoderSelectSuppressed = false;
     encoderSelectSuppressedAt = 0;
 }

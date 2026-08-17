@@ -70,6 +70,8 @@ void setup()
     pinMode(BUTTON_A, INPUT_PULLUP);
     pinMode(BUTTON_B, INPUT_PULLUP);
 
+    resetButtonStates();
+
     needsRedraw = true;
 }
 

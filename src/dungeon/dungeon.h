@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include "../characters/characters.h"
+#include "../data/game.h"
 #include "graphics/tiles.h"
 #include "../data/entities.h"
 
@@ -32,7 +33,11 @@ enum RoomType : uint8_t {
 enum RoomShape : uint8_t {
     SHAPE_SQUARE,
     SHAPE_CROSS,
-    SHAPE_CIRCLE
+    SHAPE_CIRCLE,
+    SHAPE_SMALL_RECTANGLE,
+    SHAPE_L,
+    SHAPE_WINDING_CORRIDOR,
+    SHAPE_CAVE
   };
 
 enum RoomEntry {
@@ -66,6 +71,21 @@ struct RoomMap {
     TileType tiles[ROOM_SIZE][ROOM_SIZE];
 };
 
+constexpr uint8_t MAX_ROOM_CONNECTIONS = 4;
+constexpr uint8_t ROOM_CONNECTION_MIN = 2;
+constexpr uint8_t ROOM_CONNECTION_MAX = ROOM_SIZE - 3;
+
+static_assert(
+    ROOM_CONNECTION_MIN <= ROOM_CONNECTION_MAX,
+    "ROOM_SIZE is too small for safe room connections");
+
+struct RoomConnection
+{
+    Direction direction;
+    uint8_t x;
+    uint8_t y;
+};
+
 struct DungeonRoom {
     RoomType type;
     RoomShape shape;
@@ -79,11 +99,15 @@ struct DungeonRoom {
     uint8_t east;
     uint8_t west;
 
+    RoomConnection connections[MAX_ROOM_CONNECTIONS] = {};
+    uint8_t connectionCount = 0;
+
     RoomMap map;
 };
 
 
 constexpr uint8_t MAX_ROOMS = 5;
+constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = MAX_ROOMS - 1;
 constexpr uint8_t MAX_DUNGEON_CHARACTERS = 16;
 
 struct Dungeon {
