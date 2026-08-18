@@ -29,8 +29,8 @@ uint8_t getLevelForExperience(uint32_t experience);
 
 bool canLevelUp(const Character& character);
 
-// Authoritative class/level-derived MP maximum. Classes without an active MP
-// progression currently return zero.
+// Authoritative class/level/ability-derived MP maximum. Classes without an
+// active MP progression currently return zero.
 int getMaxMPForCharacter(const Character& character);
 
 // Clamps a persisted/runtime MP value against the authoritative class/level

@@ -60,17 +60,19 @@ const WeightedLootEntry poorLoot[] =
 
 const WeightedLootEntry commonLoot[] =
 {
-    { ITEM_NONE, 25 },
+    { ITEM_NONE, 15 },
     { ITEM_RATIONS, 25 },
     { ITEM_TORCH, 20 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 15 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_SILVER_RING, 15 }
 };
 
 const WeightedLootEntry uncommonLoot[] =
 {
-    { ITEM_NONE, 20 },
+    { ITEM_NONE, 10 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 30 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_SILVER_RING, 25 },
     { ITEM_GOLD_RING, 15 },
     { ITEM_ROPE, 10 }
@@ -78,8 +80,9 @@ const WeightedLootEntry uncommonLoot[] =
 
 const WeightedLootEntry rareLoot[] =
 {
-    { ITEM_NONE, 15 },
+    { ITEM_NONE, 5 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 30 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_GOLD_RING, 25 },
     { ITEM_PEARL, 20 },
     { ITEM_RUBY, 10 }
@@ -88,16 +91,18 @@ const WeightedLootEntry rareLoot[] =
 const WeightedLootEntry bossLoot[] =
 {
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 30 },
-    { ITEM_GOLD_RING, 25 },
-    { ITEM_PEARL, 20 },
+    { ITEM_MANA_POTION, 10 },
+    { ITEM_GOLD_RING, 20 },
+    { ITEM_PEARL, 15 },
     { ITEM_RUBY, 15 },
     { ITEM_GOLDEN_IDOL, 10 }
 };
 
 const WeightedLootEntry humanoidLoot[] =
 {
-    { ITEM_NONE, 15 },
+    { ITEM_NONE, 5 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 25 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_RATIONS, 20 },
     { ITEM_TORCH, 15 },
     { ITEM_ROPE, 10 },
@@ -106,32 +111,36 @@ const WeightedLootEntry humanoidLoot[] =
 
 const WeightedLootEntry beastLoot[] =
 {
-    { ITEM_NONE, 55 },
+    { ITEM_NONE, 50 },
     { ITEM_RATIONS, 25 },
     { ITEM_TORCH, 10 },
-    { ITEM_POTION_CURE_LIGHT_WOUNDS, 10 }
+    { ITEM_POTION_CURE_LIGHT_WOUNDS, 10 },
+    { ITEM_MANA_POTION, 5 }
 };
 
 const WeightedLootEntry undeadLoot[] =
 {
-    { ITEM_NONE, 35 },
+    { ITEM_NONE, 25 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 20 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_SILVER_RING, 25 },
     { ITEM_TORCH, 20 }
 };
 
 const WeightedLootEntry monsterLoot[] =
 {
-    { ITEM_NONE, 35 },
+    { ITEM_NONE, 25 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 20 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_RATIONS, 25 },
     { ITEM_PEARL, 20 }
 };
 
 const WeightedLootEntry aberrationLoot[] =
 {
-    { ITEM_NONE, 30 },
+    { ITEM_NONE, 20 },
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 20 },
+    { ITEM_MANA_POTION, 10 },
     { ITEM_SILVER_RING, 20 },
     { ITEM_PEARL, 20 },
     { ITEM_MYSTERIOUS_CRYSTAL, 10 }

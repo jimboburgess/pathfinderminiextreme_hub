@@ -14,6 +14,16 @@ const uint16_t wizardMPProgression[MAX_CHARACTER_LEVEL] =
      92, 102, 112, 123, 134
 };
 
+// Kept separate from the Wizard table so divine progression can be balanced
+// independently later without changing the shared MP calculation path.
+const uint16_t clericMPProgression[MAX_CHARACTER_LEVEL] =
+{
+      6,   8,  11,  14,  18,
+     22,  27,  32,  38,  44,
+     51,  58,  66,  74,  83,
+     92, 102, 112, 123, 134
+};
+
 struct LearnedAbilityAtLevel
 {
     uint8_t characterLevel;
@@ -47,6 +57,11 @@ static_assert(
     sizeof(wizardMPProgression) /
         sizeof(wizardMPProgression[0]) == MAX_CHARACTER_LEVEL,
     "Wizard MP progression must cover every character level.");
+
+static_assert(
+    sizeof(clericMPProgression) /
+        sizeof(clericMPProgression[0]) == MAX_CHARACTER_LEVEL,
+    "Cleric MP progression must cover every character level.");
 
 static_assert(
     sizeof(wizardSpellProgression) /
@@ -127,11 +142,23 @@ bool canLevelUp(const Character& character)
 
 int getMaxMPForCharacter(const Character& character)
 {
-    if (character.characterClass != CLASS_WIZARD)
-        return 0;
+    const uint8_t level = getBoundedCharacterLevel(character.level);
 
-    uint8_t level = getBoundedCharacterLevel(character.level);
-    return wizardMPProgression[level - 1];
+    switch (character.characterClass)
+    {
+        case CLASS_WIZARD:
+            return wizardMPProgression[level - 1] +
+                   getAbilityModifier(character.abilities.intelligence);
+
+        case CLASS_CLERIC:
+            return clericMPProgression[level - 1] +
+                   getAbilityModifier(character.abilities.wisdom);
+
+        case CLASS_FIGHTER:
+        case CLASS_ROGUE:
+        default:
+            return 0;
+    }
 }
 
 int clampCurrentMPForCharacter(

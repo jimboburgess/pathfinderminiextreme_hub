@@ -250,6 +250,64 @@ bool useCureLightWounds(Character& character)
     return true;
 }
 
+bool useSelectedManaPotion(
+    Character& character,
+    const ItemInstance& potionItem)
+{
+    if (!canUseCombatItem(character))
+    {
+        setInventoryStatus("Cannot use an item now.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    int restored = 0;
+    ManaPotionUseResult result =
+        useManaPotion(character, potionItem, restored);
+
+    switch (result)
+    {
+        case MANA_POTION_USE_SUCCESS:
+            break;
+
+        case MANA_POTION_USE_NO_MANA_POOL:
+            setInventoryStatus("You have no mana to restore.");
+            playSound(SoundEffect::ERROR);
+            return false;
+
+        case MANA_POTION_USE_MANA_FULL:
+            setInventoryStatus("Mana already full.");
+            playSound(SoundEffect::ERROR);
+            return false;
+
+        case MANA_POTION_USE_INVALID_ITEM:
+        case MANA_POTION_USE_INVENTORY_ERROR:
+        default:
+            setInventoryStatus("Potion is no longer available.");
+            playSound(SoundEffect::ERROR);
+            return false;
+    }
+
+    char message[48];
+    snprintf(message, sizeof(message), "Restored %d MP.", restored);
+
+    if (combat.active)
+    {
+        Entity* combatant = getCurrentCombatant();
+
+        // canUseCombatItem() already validated this exact combatant.
+        combatant->turn.standardActionUsed = true;
+        checkEndPlayerTurn();
+
+        if (combat.active && !isPlayerTurn())
+            combat.nextMonsterStep = millis() + COMBAT_MESSAGE_PAUSE_MS;
+    }
+
+    playSound(SoundEffect::POTION);
+    setInventoryStatus(message);
+    return true;
+}
+
 void useSelectedPlayerItem()
 {
     if (inventoryMenu.character == nullptr)
@@ -272,6 +330,19 @@ void useSelectedPlayerItem()
     {
         if (useCureLightWounds(*inventoryMenu.character))
             closeInventoryMenu();
+
+        return;
+    }
+
+    if (slot->item.itemID == ITEM_MANA_POTION)
+    {
+        const ItemInstance selectedPotion = slot->item;
+
+        if (useSelectedManaPotion(
+                *inventoryMenu.character, selectedPotion))
+        {
+            closeInventoryMenu();
+        }
 
         return;
     }

@@ -106,6 +106,17 @@ void test_wizard_mp_progression_and_level_one_magic()
     TEST_ASSERT_TRUE(knowsAbility(wizard, ABILITY_COLOR_SPRAY));
     TEST_ASSERT_FALSE(knowsAbility(wizard, ABILITY_RAY_OF_FROST));
     TEST_ASSERT_FALSE(knowsAbility(wizard, ABILITY_ACID_ARROW));
+
+    Character intelligentWizard = makeCharacter(CLASS_WIZARD);
+    intelligentWizard.abilities.intelligence = 18;
+    initializeCharacterMagic(intelligentWizard);
+
+    TEST_ASSERT_EQUAL_INT(10, intelligentWizard.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(10, intelligentWizard.magic.currentMP);
+
+    Character intelligentFighter = makeCharacter(CLASS_FIGHTER);
+    intelligentFighter.abilities.intelligence = 18;
+    TEST_ASSERT_EQUAL_INT(0, getMaxMPForCharacter(intelligentFighter));
 }
 
 void test_wizard_level_up_preserves_mp_and_learns_idempotently()
@@ -146,19 +157,93 @@ void test_wizard_level_up_preserves_mp_and_learns_idempotently()
     TEST_ASSERT_EQUAL_UINT8(13, wizard.magic.knownAbilityCount);
 }
 
+void test_wizard_int_milestone_updates_max_mp_without_refilling()
+{
+    Character wizard = makeCharacter(CLASS_WIZARD, 3, 8999);
+    wizard.abilities.intelligence = 17;
+    initializeCharacterMagic(wizard);
+
+    TEST_ASSERT_EQUAL_INT(14, wizard.magic.maxMP);
+    wizard.magic.currentMP = 3;
+
+    TEST_ASSERT_EQUAL_UINT8(1, awardExperience(wizard, 1));
+    TEST_ASSERT_EQUAL_UINT8(4, wizard.level);
+    TEST_ASSERT_EQUAL_UINT8(18, wizard.abilities.intelligence);
+    TEST_ASSERT_EQUAL_INT(18, wizard.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(3, wizard.magic.currentMP);
+
+    refreshCharacterMagicProgression(wizard);
+    TEST_ASSERT_EQUAL_INT(18, wizard.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(3, wizard.magic.currentMP);
+}
+
+void test_cleric_mp_progression_and_initialization()
+{
+    const int expectedBaseMP[MAX_CHARACTER_LEVEL] =
+    {
+          6,   8,  11,  14,  18,
+         22,  27,  32,  38,  44,
+         51,  58,  66,  74,  83,
+         92, 102, 112, 123, 134
+    };
+
+    for (uint8_t level = 1; level <= MAX_CHARACTER_LEVEL; level++)
+    {
+        Character cleric = makeCharacter(CLASS_CLERIC, level);
+        TEST_ASSERT_EQUAL_INT(
+            expectedBaseMP[level - 1], getMaxMPForCharacter(cleric));
+    }
+
+    Character wiseCleric = makeCharacter(CLASS_CLERIC);
+    wiseCleric.abilities.wisdom = 18;
+    initializeCharacterMagic(wiseCleric);
+
+    TEST_ASSERT_TRUE(wiseCleric.magic.divineCaster);
+    TEST_ASSERT_FALSE(wiseCleric.magic.arcaneCaster);
+    TEST_ASSERT_EQUAL_INT(10, wiseCleric.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(10, wiseCleric.magic.currentMP);
+}
+
+void test_cleric_level_up_and_load_preserve_spent_mp()
+{
+    Character cleric = makeCharacter(CLASS_CLERIC, 3, 8999);
+    cleric.abilities.wisdom = 17;
+    initializeCharacterMagic(cleric);
+
+    TEST_ASSERT_EQUAL_INT(14, cleric.magic.maxMP);
+    cleric.magic.currentMP = 3;
+
+    TEST_ASSERT_EQUAL_UINT8(1, awardExperience(cleric, 1));
+    TEST_ASSERT_EQUAL_UINT8(4, cleric.level);
+    TEST_ASSERT_EQUAL_UINT8(18, cleric.abilities.wisdom);
+    TEST_ASSERT_EQUAL_INT(18, cleric.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(3, cleric.magic.currentMP);
+
+    Character loadedCleric = makeCharacter(CLASS_CLERIC, 3);
+    loadedCleric.abilities.wisdom = 18;
+    restoreCharacterMagic(loadedCleric, 3);
+    TEST_ASSERT_TRUE(loadedCleric.magic.divineCaster);
+    TEST_ASSERT_EQUAL_INT(15, loadedCleric.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(3, loadedCleric.magic.currentMP);
+
+    restoreCharacterMagic(loadedCleric, 999);
+    TEST_ASSERT_EQUAL_INT(15, loadedCleric.magic.currentMP);
+}
+
 void test_loaded_wizard_mp_is_preserved_and_clamped()
 {
     Character wizard = makeCharacter(CLASS_WIZARD, 3);
+    wizard.abilities.intelligence = 18;
 
     restoreCharacterMagic(wizard, 3);
-    TEST_ASSERT_EQUAL_INT(11, wizard.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(15, wizard.magic.maxMP);
     TEST_ASSERT_EQUAL_INT(3, wizard.magic.currentMP);
     TEST_ASSERT_EQUAL_INT(
         3, clampCurrentMPForCharacter(wizard, wizard.magic.currentMP));
     TEST_ASSERT_EQUAL_UINT8(7, wizard.magic.knownAbilityCount);
 
     restoreCharacterMagic(wizard, 999);
-    TEST_ASSERT_EQUAL_INT(11, wizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_INT(15, wizard.magic.currentMP);
 
     restoreCharacterMagic(wizard, -25);
     TEST_ASSERT_EQUAL_INT(0, wizard.magic.currentMP);
@@ -286,6 +371,9 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_wizard_mp_progression_and_level_one_magic);
     RUN_TEST(test_wizard_level_up_preserves_mp_and_learns_idempotently);
+    RUN_TEST(test_wizard_int_milestone_updates_max_mp_without_refilling);
+    RUN_TEST(test_cleric_mp_progression_and_initialization);
+    RUN_TEST(test_cleric_level_up_and_load_preserve_spent_mp);
     RUN_TEST(test_loaded_wizard_mp_is_preserved_and_clamped);
     RUN_TEST(
         test_loaded_known_abilities_merge_with_progression_without_duplicates);

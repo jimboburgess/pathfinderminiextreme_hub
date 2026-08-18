@@ -190,11 +190,20 @@ enum ItemID : uint8_t
     ITEM_SCROLL_SLEEP,
     ITEM_SCROLL_GREASE,
 
+    // Appended so every previously persisted ItemID keeps its numeric value.
+    ITEM_MANA_POTION,
+
     ITEM_COUNT
 };
 
 static_assert(ITEM_COUNT <= UINT8_MAX,
               "ItemID no longer fits in its compact storage type.");
+
+// Existing potion rows use effect indices 0-19. This names the appended
+// definition's opaque index even though restoration strength is kept in its
+// own rule constant below.
+constexpr uint16_t MANA_POTION_EFFECT_INDEX = 20;
+constexpr int MANA_POTION_RESTORE_AMOUNT = 4;
 
 enum WeaponEnhancement : uint8_t
 {
@@ -539,6 +548,15 @@ enum ScrollLearnResult : uint8_t
     SCROLL_LEARN_CANNOT_LEARN
 };
 
+enum ManaPotionUseResult : uint8_t
+{
+    MANA_POTION_USE_SUCCESS,
+    MANA_POTION_USE_INVALID_ITEM,
+    MANA_POTION_USE_NO_MANA_POOL,
+    MANA_POTION_USE_MANA_FULL,
+    MANA_POTION_USE_INVENTORY_ERROR
+};
+
 struct Wand
 {
     AbilityID ability;
@@ -578,5 +596,12 @@ ScrollLearnResult learnSpellFromScroll(
 ScrollLearnResult useSpellScroll(
     Character& character,
     const ItemInstance& scrollItem);
+
+// Restores MP and consumes exactly the selected potion as one transaction.
+// amountRestored is set to zero on every failure.
+ManaPotionUseResult useManaPotion(
+    Character& character,
+    const ItemInstance& potionItem,
+    int& amountRestored);
 
 #endif // PATHFINDERMINIEXTREME_025_ITEMS_H

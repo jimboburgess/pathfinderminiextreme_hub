@@ -287,6 +287,10 @@ int damageCharacter(Character& character, int damage);
 // calling gameplay system.
 int healCharacter(Character& character, int healing);
 
+// Restores a positive amount without exceeding max MP and returns the amount
+// actually restored. This does not alter max MP.
+int restoreMana(Character& character, int amount);
+
 uint8_t getMaxChannelEnergyUses(const Character& character);
 uint8_t getChannelEnergyDice(const Character& character);
 void restoreClassAbilityUses(Character& character);

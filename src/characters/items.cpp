@@ -196,6 +196,9 @@ const Item itemDatabase[] =
 	{ "Scroll of Sleep",         ITEMTYPE_SCROLL, SCROLL_SLEEP,         100, 0, ICON_SCROLL, true, true, RARITY_COMMON, THEME_ANY, "Teaches Sleep to a Wizard." },
 	{ "Scroll of Grease",        ITEMTYPE_SCROLL, SCROLL_GREASE,        100, 0, ICON_SCROLL, true, true, RARITY_COMMON, THEME_ANY, "Teaches Grease to a Wizard." },
 
+	// Appended with ItemID so older inventory saves keep their item identities.
+	{ "Mana Potion", ITEMTYPE_POTION, MANA_POTION_EFFECT_INDEX, 30, 1, ICON_POTION, true, true, RARITY_COMMON, THEME_ANY, "Restores 4 MP." },
+
 };
 
 static_assert(
@@ -456,4 +459,49 @@ ScrollLearnResult useSpellScroll(
 	}
 
 	return SCROLL_LEARN_SUCCESS;
+}
+
+ManaPotionUseResult useManaPotion(
+	Character& character,
+	const ItemInstance& potionItem,
+	int& amountRestored)
+{
+	amountRestored = 0;
+
+	const Item* item = getItem(potionItem.itemID);
+
+	if (potionItem.itemID != ITEM_MANA_POTION || item == nullptr ||
+		item->type != ITEMTYPE_POTION || !item->consumable ||
+		!hasItem(character, potionItem))
+	{
+		return MANA_POTION_USE_INVALID_ITEM;
+	}
+
+	if (character.magic.maxMP <= 0)
+		return MANA_POTION_USE_NO_MANA_POOL;
+
+	if (character.magic.currentMP >= character.magic.maxMP)
+	{
+		if (character.magic.currentMP > character.magic.maxMP)
+			character.magic.currentMP = character.magic.maxMP;
+
+		return MANA_POTION_USE_MANA_FULL;
+	}
+
+	const int previousMP = character.magic.currentMP;
+	amountRestored = restoreMana(character, MANA_POTION_RESTORE_AMOUNT);
+
+	if (amountRestored <= 0)
+		return MANA_POTION_USE_MANA_FULL;
+
+	// Restoration and consumption are one transaction. If inventory mutation
+	// unexpectedly fails, restore the exact pre-use MP value.
+	if (!removeItem(character, potionItem, 1))
+	{
+		character.magic.currentMP = previousMP;
+		amountRestored = 0;
+		return MANA_POTION_USE_INVENTORY_ERROR;
+	}
+
+	return MANA_POTION_USE_SUCCESS;
 }

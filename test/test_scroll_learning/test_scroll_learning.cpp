@@ -44,6 +44,8 @@ int getMaxHP(const Character& character)
 
 static bool forceRemoveFailure = false;
 
+#include "../../src/characters/magic.cpp"
+
 bool hasItem(const Character& character, const ItemInstance& item)
 {
     for (uint8_t i = 0; i < character.inventory.itemCount; i++)
@@ -116,6 +118,143 @@ static void giveScroll(
     character.inventory.itemCount = 1;
     character.inventory.slots[0].item = makeItemInstance(itemID);
     character.inventory.slots[0].quantity = quantity;
+}
+
+static void giveItem(
+    Character& character,
+    ItemID itemID,
+    uint8_t quantity = 1)
+{
+    giveScroll(character, itemID, quantity);
+}
+
+void test_mana_potion_definition()
+{
+    const Item* potion = getItem(ITEM_MANA_POTION);
+
+    TEST_ASSERT_NOT_NULL(potion);
+    TEST_ASSERT_EQUAL(ITEMTYPE_POTION, potion->type);
+    TEST_ASSERT_TRUE(potion->stackable);
+    TEST_ASSERT_TRUE(potion->consumable);
+    TEST_ASSERT_EQUAL_UINT16(30, potion->value);
+    TEST_ASSERT_EQUAL_INT(4, MANA_POTION_RESTORE_AMOUNT);
+    TEST_ASSERT_NULL(getScroll(ITEM_MANA_POTION));
+}
+
+void test_restore_mana_rejects_invalid_amount_and_clamps_safely()
+{
+    Character character = {};
+    character.magic.maxMP = 6;
+    character.magic.currentMP = 2;
+
+    TEST_ASSERT_EQUAL_INT(0, restoreMana(character, 0));
+    TEST_ASSERT_EQUAL_INT(2, character.magic.currentMP);
+    TEST_ASSERT_EQUAL_INT(0, restoreMana(character, -3));
+    TEST_ASSERT_EQUAL_INT(2, character.magic.currentMP);
+
+    character.magic.currentMP = -2;
+    TEST_ASSERT_EQUAL_INT(4, restoreMana(character, 4));
+    TEST_ASSERT_EQUAL_INT(4, character.magic.currentMP);
+
+    character.magic.currentMP = 99;
+    TEST_ASSERT_EQUAL_INT(0, restoreMana(character, 4));
+    TEST_ASSERT_EQUAL_INT(6, character.magic.currentMP);
+}
+
+void test_mana_potion_restores_four_and_consumes_exactly_one()
+{
+    Character wizard = makeWizard();
+    wizard.magic.currentMP = 1;
+    giveItem(wizard, ITEM_MANA_POTION, 2);
+    const ItemInstance selected = wizard.inventory.slots[0].item;
+    int restored = -1;
+
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_SUCCESS,
+        useManaPotion(wizard, selected, restored));
+    TEST_ASSERT_EQUAL_INT(4, restored);
+    TEST_ASSERT_EQUAL_INT(5, wizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.itemCount);
+    TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.slots[0].quantity);
+}
+
+void test_mana_potion_clamps_and_reports_partial_restoration()
+{
+    Character wizard = makeWizard();
+    wizard.magic.currentMP = 4;
+    giveItem(wizard, ITEM_MANA_POTION);
+    int restored = -1;
+
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_SUCCESS,
+        useManaPotion(wizard, wizard.inventory.slots[0].item, restored));
+    TEST_ASSERT_EQUAL_INT(2, restored);
+    TEST_ASSERT_EQUAL_INT(6, wizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(0, wizard.inventory.itemCount);
+}
+
+void test_full_mp_and_non_caster_preserve_mana_potion()
+{
+    Character wizard = makeWizard();
+    giveItem(wizard, ITEM_MANA_POTION);
+    int restored = -1;
+
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_MANA_FULL,
+        useManaPotion(wizard, wizard.inventory.slots[0].item, restored));
+    TEST_ASSERT_EQUAL_INT(0, restored);
+    TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.slots[0].quantity);
+
+    Character fighter = {};
+    fighter.magic.currentMP = 0;
+    fighter.magic.maxMP = 0;
+    giveItem(fighter, ITEM_MANA_POTION);
+
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_NO_MANA_POOL,
+        useManaPotion(fighter, fighter.inventory.slots[0].item, restored));
+    TEST_ASSERT_EQUAL_INT(0, restored);
+    TEST_ASSERT_EQUAL_UINT8(1, fighter.inventory.slots[0].quantity);
+
+    wizard.magic.currentMP = 99;
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_MANA_FULL,
+        useManaPotion(wizard, wizard.inventory.slots[0].item, restored));
+    TEST_ASSERT_EQUAL_INT(6, wizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.slots[0].quantity);
+}
+
+void test_mana_use_rejects_healing_potion_without_consuming_it()
+{
+    Character wizard = makeWizard();
+    wizard.magic.currentMP = 1;
+    giveItem(wizard, ITEM_POTION_CURE_LIGHT_WOUNDS);
+    int restored = -1;
+
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_INVALID_ITEM,
+        useManaPotion(wizard, wizard.inventory.slots[0].item, restored));
+    TEST_ASSERT_EQUAL_INT(0, restored);
+    TEST_ASSERT_EQUAL_INT(1, wizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.slots[0].quantity);
+}
+
+void test_mana_potion_removal_failure_rolls_back_mp()
+{
+    Character wizard = makeWizard();
+    wizard.magic.currentMP = 1;
+    giveItem(wizard, ITEM_MANA_POTION);
+    int restored = -1;
+
+    forceRemoveFailure = true;
+    TEST_ASSERT_EQUAL(
+        MANA_POTION_USE_INVENTORY_ERROR,
+        useManaPotion(wizard, wizard.inventory.slots[0].item, restored));
+    forceRemoveFailure = false;
+
+    TEST_ASSERT_EQUAL_INT(0, restored);
+    TEST_ASSERT_EQUAL_INT(1, wizard.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(1, wizard.inventory.slots[0].quantity);
 }
 
 void test_wizard_starting_spellbook_is_idempotent()
@@ -275,6 +414,13 @@ void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_wizard_starting_spellbook_is_idempotent);
+    RUN_TEST(test_mana_potion_definition);
+    RUN_TEST(test_restore_mana_rejects_invalid_amount_and_clamps_safely);
+    RUN_TEST(test_mana_potion_restores_four_and_consumes_exactly_one);
+    RUN_TEST(test_mana_potion_clamps_and_reports_partial_restoration);
+    RUN_TEST(test_full_mp_and_non_caster_preserve_mana_potion);
+    RUN_TEST(test_mana_use_rejects_healing_potion_without_consuming_it);
+    RUN_TEST(test_mana_potion_removal_failure_rolls_back_mp);
     RUN_TEST(test_scroll_items_reference_the_expected_abilities);
     RUN_TEST(test_successful_scroll_learning_consumes_exactly_one);
     RUN_TEST(test_duplicate_learning_preserves_scroll_and_spellbook);
