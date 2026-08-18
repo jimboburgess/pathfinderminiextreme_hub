@@ -269,7 +269,7 @@ int getMovementSpeed(const Character& character)
 {
     int movement = 30;
 
-    // Future:
+    // TODO Future:
     // Armor penalties
     // Encumbrance
     // Racial bonuses

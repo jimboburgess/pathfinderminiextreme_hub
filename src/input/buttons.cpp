@@ -402,7 +402,7 @@ void handleTownButtons() {
             playSound(SoundEffect::MENU_MOVE);
         }
 
-        if (encoderPressed())
+        if (buttonAPressed())
         {
             playSound(SoundEffect::MENU_SELECT);
 
@@ -451,7 +451,7 @@ void handleTownButtons() {
         needsRedraw = true;
     }
 
-    if (encoderPressed())
+    if (buttonAPressed())
     {
         playSound(SoundEffect::MENU_SELECT);
 

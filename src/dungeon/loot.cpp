@@ -43,7 +43,8 @@ const LootTable lootTables[LOOT_COUNT] =
     {  5, 15 }, // Aberration
     {  5, 15 }, // Small chest
     { 15, 30 }, // Medium chest
-    { 30, 60 }  // Large chest
+    { 30, 60 }, // Large chest
+    {  0,  0 }  // Skeleton Mage
 };
 
 static_assert(
@@ -125,6 +126,12 @@ const WeightedLootEntry undeadLoot[] =
     { ITEM_MANA_POTION, 10 },
     { ITEM_SILVER_RING, 25 },
     { ITEM_TORCH, 20 }
+};
+
+const WeightedLootEntry skeletonMageLoot[] =
+{
+    { ITEM_GOLD_RING, 50 },
+    { ITEM_PEARL, 50 }
 };
 
 const WeightedLootEntry monsterLoot[] =
@@ -322,6 +329,12 @@ void addLootForTable(LootData& loot, LootTableID table)
         case LOOT_ABERRATION:
             addOneWeightedLoot(loot, aberrationLoot,
                                sizeof(aberrationLoot) / sizeof(aberrationLoot[0]));
+            break;
+
+        case LOOT_SKELETON_MAGE:
+            addOneWeightedLoot(loot, skeletonMageLoot,
+                               sizeof(skeletonMageLoot) /
+                                   sizeof(skeletonMageLoot[0]));
             break;
 
         case LOOT_CHEST_SMALL:

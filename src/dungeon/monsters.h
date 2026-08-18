@@ -71,6 +71,9 @@ enum LootTableID
     LOOT_CHEST_MEDIUM,
     LOOT_CHEST_LARGE,
 
+    // Dedicated one-item boss drop: Gold Ring or Pearl.
+    LOOT_SKELETON_MAGE,
+
     LOOT_COUNT
 };
 

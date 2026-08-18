@@ -260,7 +260,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_SCYTHE,
         ITEM_NATURAL_ARMOR_3,
         CR_TWO,
-        LOOT_UNDEAD,
+        LOOT_SKELETON_MAGE,
         { ABILITY_COLOR_SPRAY, ABILITY_GREASE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_CONTROL_SPELLCASTER,
         { 0, 0 },
         // Both current spells cost 2 MP, allowing four casts before melee fallback.
