@@ -866,6 +866,21 @@ void menuActivate()
                     player = *currentCharacter;
             }
 
+            // Leaving an encounter is not combat victory: discard only the
+            // combat session, with no XP/loot/death side effects.
+            abortCombat();
+
+            if (gameState == GAME_DUNGEON)
+            {
+                updateCurrentDungeonRoomCompletion(dungeon);
+                suspendDungeonRun(dungeon);
+
+                // A run is complete only after every room has been visited
+                // and cleared and no unlooted monster corpse remains.
+                if (isDungeonRunComplete(dungeon))
+                    resetDungeonRun(dungeon);
+            }
+
             gameState = GAME_TOWN;
             townSelection = TOWN_STAY_HOME;
 

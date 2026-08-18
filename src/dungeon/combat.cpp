@@ -1755,6 +1755,9 @@ void endCombat()
     uint32_t experiencePerCharacter = combat.experienceGained;
     bool victory = areAllCombatMonstersDefeated();
 
+    if (gameState == GAME_DUNGEON)
+        updateCurrentDungeonRoomCompletion(dungeon);
+
     if (experiencePerCharacter > 0)
     {
         char message[64];

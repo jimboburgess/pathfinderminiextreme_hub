@@ -294,10 +294,9 @@ bool tryMovePlayer(Dungeon &dungeon)
 
             if (nextRoom != 255)
             {
-                // loadRoom() replaces the entity array and rebuilds its
-                // player from the persistent Character. Preserve every
-                // runtime character change first, including XP, level, HP,
-                // conditions, inventory, and equipment.
+                // The player Character remains global while loadRoom() swaps
+                // the active view to the destination room's persistent
+                // occupants. Preserve all runtime character changes first.
                 ::player = player->character;
 
                 dungeon.currentRoom = nextRoom;
@@ -311,10 +310,8 @@ bool tryMovePlayer(Dungeon &dungeon)
                 else if (targetX == ROOM_SIZE - 1)
                     loadRoom(dungeon, ENTRY_WEST);
 
-                // A room transition replaces the entire map and entity list.
-                // Repaint its background as well as scheduling the full
-                // redraw, otherwise the old player's transparent sprite can
-                // remain visible beneath the newly loaded room.
+                // Repaint the destination map, otherwise the old player's
+                // transparent sprite can remain visible beneath the room.
                 backgroundNeedsRedraw = true;
                 redrawType = REDRAW_FULL;
                 needsRedraw = true;

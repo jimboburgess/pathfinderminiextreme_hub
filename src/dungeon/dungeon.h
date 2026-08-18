@@ -109,14 +109,33 @@ struct DungeonRoom {
 constexpr uint8_t MAX_ROOMS = 5;
 constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = MAX_ROOMS - 1;
 constexpr uint8_t MAX_DUNGEON_CHARACTERS = 16;
+constexpr uint8_t NO_ENTITY_SLOT = 255;
+
+// Mutable room occupants live separately from the generated room map.  The
+// active dungeon entity pointer below aliases one of these arrays, so there is
+// only one authoritative copy of monster HP, conditions, corpse loot, and
+// position for each room.
+struct DungeonRoomRuntime
+{
+    Entity entities[MAX_ENTITIES];
+    uint8_t entityCount = 0;
+    uint8_t playerSlot = NO_ENTITY_SLOT;
+    bool initialized = false;
+};
 
 struct Dungeon {
     DungeonRoom rooms[MAX_ROOMS];
-    Entity entities[MAX_ENTITIES];
+    DungeonRoomRuntime roomRuntime[MAX_ROOMS];
+
+    // Compatibility view of the currently loaded room.  This points directly
+    // into roomRuntime[currentRoom]; it is not a second entity collection.
+    Entity* entities = nullptr;
     Character* characters[MAX_DUNGEON_CHARACTERS];
     uint8_t characterCount = 0;
     uint8_t currentRoom = 0;
     uint8_t entityCount = 0;
+    uint8_t loadedRoom = NO_ROOM;
+    bool runActive = false;
     };
 
 extern Dungeon dungeon;
@@ -126,6 +145,10 @@ void enterDungeon();
 void generateDungeon(Dungeon& dungeon);
 void generateRoom(DungeonRoom& room);
 void loadRoom(Dungeon& dungeon, RoomEntry entry);
+void suspendDungeonRun(Dungeon& dungeon);
+void resetDungeonRun(Dungeon& dungeon);
+void updateCurrentDungeonRoomCompletion(Dungeon& dungeon);
+bool isDungeonRunComplete(const Dungeon& dungeon);
 void addCharacterToDungeon(Character* character);
 
 Character* getPlayerCharacter(Dungeon& dungeon);

@@ -198,6 +198,11 @@ void handleStartButtons()
             return;
         }
 
+        // Dungeon runs are runtime-only and belong to the character that
+        // created them. Loading a character starts with no retained run.
+        abortCombat();
+        resetDungeonRun(dungeon);
+
         playSound(SoundEffect::MENU_SELECT);
         clearGameMessage();
         resetButtonStates();

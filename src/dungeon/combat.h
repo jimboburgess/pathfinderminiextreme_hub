@@ -284,6 +284,11 @@ void updateCombat();
 
 void endCombat();
 
+// Stops an encounter without running victory/reward handling. Character
+// state is preserved; only combat bookkeeping and transient TurnState data
+// are discarded.
+void abortCombat();
+
 bool isCombatActive();
 
 #endif // PATHFINDERMINIEXTREME_025_COMBAT_H

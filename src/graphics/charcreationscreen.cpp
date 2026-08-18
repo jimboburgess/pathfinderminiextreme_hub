@@ -7,6 +7,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 #include "dungeon/dungeon.h"
+#include "dungeon/combat.h"
 #include "characters/charactercreation.h"
 #include "config.h"
 #include "data/game.h"
@@ -32,6 +33,8 @@ static CharacterCreationMenuOption selectedMenu = MENU_ACCEPT;
 
 void enterCharacterCreation()
 {
+    abortCombat();
+    resetDungeonRun(dungeon);
     selectedClass = CLASS_FIGHTER;
     showingPreview = false;
     creationState = CCS_CLASS_SELECT;

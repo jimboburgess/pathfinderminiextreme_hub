@@ -3,6 +3,7 @@
 //
 
 #include "forest.h"
+#include "combat.h"
 #include "data/game.h"
 #include "graphics/tiles.h"
 #include "graphics/display.h"
@@ -210,6 +211,9 @@ int getForestPlayerY()
 
 void enterForest()
 {
+    // Forest runs are regenerated, but they must never inherit a dungeon or
+    // prior forest encounter's initiative/targeting state.
+    abortCombat();
     gameState = GAME_FOREST;
     initForest();
     setGameMessage("Entered forest");

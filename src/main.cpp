@@ -45,22 +45,8 @@ void setup()
     // Seed random number generator
     randomSeed(esp_random());
 
-    // Generate dungeon
-    generateDungeon(dungeon);
-
-    // Create monsters
-    drawRoom(dungeon.rooms[dungeon.currentRoom]);
-    printRoom(dungeon.rooms[dungeon.currentRoom]);
-
-    Serial.println("Dungeon:");
-
-    for (int i = 0; i < MAX_ROOMS; i++)
-    {
-        Serial.print("Room ");
-        Serial.print(i);
-        Serial.print(": ");
-        Serial.println(roomTypeName(dungeon.rooms[i].type));
-    }
+    // No dungeon run exists until the player chooses Explore Dungeon.
+    resetDungeonRun(dungeon);
 
     // Initialize controls
     pinMode(ENCODER_CLK, INPUT_PULLUP);
