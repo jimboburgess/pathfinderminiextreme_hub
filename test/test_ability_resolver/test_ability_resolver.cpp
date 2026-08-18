@@ -4,8 +4,8 @@
 #include "../../src/data/entities.h"
 #include "../../src/dungeon/abilityresolver.h"
 #include "../../src/dungeon/combat.h"
-#include "../../src/dungeon/mapeffects.h"
-#include "../../src/dungeon/movement.h"
+#include "../../src/map/mapeffects.h"
+#include "../../src/map/movement.h"
 #include "../../src/data/game.h"
 #include "../../src/graphics/display.h"
 
@@ -256,8 +256,8 @@ int getWillSave(const Character& character)
 #include "../../src/characters/conditions.cpp"
 #include "../../src/data/entitytraits.cpp"
 #include "../../src/dungeon/abilityresolver.cpp"
-#include "../../src/dungeon/mapeffects.cpp"
-#include "../../src/dungeon/movement.cpp"
+#include "../../src/map/mapeffects.cpp"
+#include "../../src/map/movement.cpp"
 
 static void initializeEntity(
     Entity& entity,

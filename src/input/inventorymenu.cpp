@@ -9,7 +9,7 @@
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
-#include "dungeon/activemap.h"
+#include "map/activemap.h"
 #include "dungeon/combat.h"
 #include "dungeon/loot.h"
 #include "graphics/display.h"

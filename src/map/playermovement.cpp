@@ -2,22 +2,27 @@
 // Created by james on 7/12/2026.
 //
 
-#include "dungeonplayer.h"
+#include "map/playermovement.h"
+#include "dungeon/dungeon.h"
+#include "audio/audio.h"
+#include "data/game.h"
 #include <Adafruit_ST7789.h>
 #include "config.h"
 #include <Arduino.h>
 
-#include "combat.h"
+#include "dungeon/combat.h"
 #include "../audio/audio.h"
-#include "forest.h"
-#include "movement.h"
-#include "turns.h"
+#include "forest/forest.h"
+#include "map/movement.h"
+#include "dungeon/turns.h"
 #include "data/dice.h"
 #include "data/entityspawn.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 
 extern Adafruit_ST7789 tft;
+
+static bool tryMoveForestPlayer();
 
 namespace
 {
@@ -81,7 +86,8 @@ bool canPlayerTraverseEnemy(
     // This is a two-square combat movement: into the occupied square and
     // immediately out the far side. Validate the landing square before any
     // Acrobatics roll so blocked destinations behave like normal movement.
-    if (!combat.active || player.turn.movementRemaining < 2)
+    // A two-tile traversal at half speed costs four normal movement points.
+    if (!combat.active || player.turn.movementRemaining < 4)
         return false;
 
     beyondX = enemyX + moveX;
@@ -98,6 +104,17 @@ bool canPlayerTraverseEnemy(
     Entity* occupant = getEntityAt(
         dungeon.entities, dungeon.entityCount, beyondX, beyondY);
     return occupant == nullptr || occupant == &player;
+}
+
+int getEnemyCombatManeuverDefense(const Entity& enemy)
+{
+    const int baseAttack = enemy.monster != nullptr
+        ? enemy.monster->baseAttack
+        : 0;
+
+    return 10 + baseAttack +
+        getAbilityModifier(enemy.character, ABILITY_STRENGTH) +
+        getAbilityModifier(enemy.character, ABILITY_DEXTERITY);
 }
 
 bool tryPlayerAcrobaticsTraversal(
@@ -120,12 +137,20 @@ bool tryPlayerAcrobaticsTraversal(
         return false;
     }
 
+    const int acrobaticsDC = getEnemyCombatManeuverDefense(enemy) + 5;
     const int acrobaticsRoll = rollDice(1, 20) +
         getSkillBonus(player.character, SKILL_ACROBATICS);
 
-    if (acrobaticsRoll < 13)
+    if (acrobaticsRoll < acrobaticsDC)
     {
-        setGameMessage("acrobatics check failed");
+        player.turn.movementRemaining = 0;
+        player.turn.moveActionUsed = true;
+        checkEndPlayerTurn();
+
+        // Use the normal monster melee resolver for the AoO. The player never
+        // occupies the enemy square, so this remains a normal adjacent attack.
+        beginMonsterAttack(&enemy, &player, COMBAT_ATTACK_MELEE);
+        setGameMessage("Acrobatics check failed!");
         playSound(SoundEffect::ERROR);
         return false;
     }
@@ -134,7 +159,7 @@ bool tryPlayerAcrobaticsTraversal(
     // project has no AoO system yet, so no combat reaction is triggered here.
     player.x = beyondX;
     player.y = beyondY;
-    player.turn.movementRemaining -= 2;
+    player.turn.movementRemaining -= 4;
     handleEnteredTile(player, beyondX, beyondY);
 
     if (player.turn.movementRemaining == 0)
@@ -150,51 +175,13 @@ bool tryPlayerAcrobaticsTraversal(
                   oldY + directionOffsets[oldDirection].dy);
     markTileDirty(player.x + directionOffsets[moveDirection].dx,
                   player.y + directionOffsets[moveDirection].dy);
-    setGameMessage("Acrobatics successful");
+    setGameMessage("Acrobatics successful!");
     checkForCombat();
     return true;
 }
 }
 
 
-
-void drawMoveCursor(const Dungeon &dungeon)
-{
-    int x;
-    int y;
-
-    if (gameState == GAME_FOREST)
-    {
-        Entity* player = getPlayerEntity(
-            forestEntities,
-            forestEntityCount);
-
-        if (player == nullptr)
-            return;
-
-        x = player->x + directionOffsets[moveDirection].dx;
-        y = player->y + directionOffsets[moveDirection].dy;
-    }
-    else
-    {
-        const Entity* player = getPlayerEntity(
-        dungeon.entities,
-        dungeon.entityCount);
-
-        if (player == nullptr)
-            return;
-
-        x = player->x + directionOffsets[moveDirection].dx;
-        y = player->y + directionOffsets[moveDirection].dy;
-    }
-
-    tft.drawRect(
-        x * TILE_SIZE,
-        y * TILE_SIZE,
-        TILE_SIZE,
-        TILE_SIZE,
-        ST77XX_WHITE);
-}
 
 //--------------------------------------------------
 // TODO:
@@ -206,6 +193,9 @@ void drawMoveCursor(const Dungeon &dungeon)
 
 bool tryMovePlayer(Dungeon &dungeon)
 {
+    if (gameState == GAME_FOREST)
+        return tryMoveForestPlayer();
+
     //--------------------------------------------------
     // Find the player.
     //--------------------------------------------------
@@ -429,7 +419,7 @@ bool tryMovePlayer(Dungeon &dungeon)
     return false;
 }
 
-bool tryMoveForestPlayer()
+static bool tryMoveForestPlayer()
 {
     Entity* player = nullptr;
 

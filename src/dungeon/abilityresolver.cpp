@@ -2,9 +2,9 @@
 
 #include <algorithm>
 
-#include "activemap.h"
+#include "map/activemap.h"
 #include "combat.h"
-#include "mapeffects.h"
+#include "map/mapeffects.h"
 #include "characters/characters.h"
 #include "data/dice.h"
 #include "data/entities.h"

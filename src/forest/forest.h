@@ -7,7 +7,7 @@
 #include "graphics/tiles.h"
 #include <stdint.h>
 
-#include "dungeon.h"
+#include "dungeon/dungeon.h"
 #include "../data/entities.h"
 
 constexpr uint8_t FOREST_WIDTH  = 15;
@@ -17,16 +17,9 @@ TileType getForestTile(int x, int y);
 
 
 void enterForest();
-void updateForest();
-void redrawForestMovement();
-void redrawForestCursor();
 
 extern Entity forestEntities[MAX_ENTITIES];
 extern uint8_t forestEntityCount;
-
-int getForestPlayerX();
-int getForestPlayerY();
-
 
 
 #endif

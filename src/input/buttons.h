@@ -5,14 +5,6 @@
 #ifndef PATHFINDERMINIEXTREME_025_BUTTONS_H
 #define PATHFINDERMINIEXTREME_025_BUTTONS_H
 
-#include <Arduino.h>
-#include "config.h"
-#include "audio/audio.h"
-#include "graphics/charcreationscreen.h"
-#include "dungeon/dungeon.h"
-#include "dungeon/dungeonplayer.h"
-#include "data/game.h"
-
 enum EncoderDirection
 {
     ENCODER_NONE,

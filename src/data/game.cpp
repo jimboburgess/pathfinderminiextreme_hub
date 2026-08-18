@@ -3,7 +3,7 @@
 //
 
 #include "game.h"
-#include "dungeon/dungeonplayer.h"
+#include "map/playermovement.h"
 
 GameState gameState = GAME_START;
 TownOption townSelection = TOWN_STAY_HOME;

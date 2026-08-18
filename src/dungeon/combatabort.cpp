@@ -1,7 +1,7 @@
 #include "combat.h"
 
-#include "activemap.h"
-#include "mapeffects.h"
+#include "map/activemap.h"
+#include "map/mapeffects.h"
 #include "characters/conditions.h"
 #include "graphics/display.h"
 

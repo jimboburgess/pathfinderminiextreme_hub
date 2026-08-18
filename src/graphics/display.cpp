@@ -16,12 +16,11 @@
 #include "data/entityspawn.h"
 #include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
-#include "dungeon/activemap.h"
+#include "map/activemap.h"
 #include "dungeon/dungeon.h"
-#include "dungeon/dungeonplayer.h"
 #include "dungeon/roomdraw.h"
-#include "dungeon/forest.h"
-#include "dungeon/mapeffects.h"
+#include "forest/forest.h"
+#include "map/mapeffects.h"
 #include "graphics/tiles.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
@@ -339,36 +338,34 @@ void drawMapBackground()
 
 void drawMapEntities()
 {
-    switch (gameState)
-    {
-        case GAME_FOREST:
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
 
-            for (uint8_t i = 0;
-                 i < forestEntityCount;
-                 i++)
-            {
-                drawEntity(
-                    forestEntities[i]);
-            }
+    if (entities == nullptr)
+        return;
 
-            break;
+    for (uint8_t i = 0; i < entityCount; i++)
+        drawEntity(entities[i]);
+}
 
-        case GAME_DUNGEON:
+static void drawMoveCursor()
+{
+    Entity* player = getActiveMapPlayer();
 
-            for (uint8_t i = 0;
-                 i < dungeon.entityCount;
-                 i++)
-            {
-                drawEntity(
-                    dungeon.entities[i]);
-            }
+    if (player == nullptr)
+        return;
 
-            break;
+    const int cursorX =
+        player->x + directionOffsets[moveDirection].dx;
+    const int cursorY =
+        player->y + directionOffsets[moveDirection].dy;
 
-        default:
-
-            break;
-    }
+    tft.drawRect(
+        cursorX * TILE_SIZE,
+        cursorY * TILE_SIZE,
+        TILE_SIZE,
+        TILE_SIZE,
+        ST77XX_WHITE);
 }
 
 void drawMapCursor()
@@ -396,9 +393,7 @@ void drawMapCursor()
 
         if (combat.attackType == COMBAT_ATTACK_MELEE)
         {
-            Entity* player = getPlayerEntity(
-                forestEntities,
-                forestEntityCount);
+            Entity* player = getActiveMapPlayer();
 
             if (player != nullptr)
             {
@@ -483,69 +478,19 @@ void drawMapCursor()
         return;
     }
 
-    switch (gameState)
-    {
-        case GAME_FOREST:
-
-        {
-            Entity* player =
-                getPlayerEntity(
-                    forestEntities,
-                    forestEntityCount);
-
-            if (player)
-            {
-                int cursorX =
-                    player->x +
-                    directionOffsets[moveDirection].dx;
-
-                int cursorY =
-                    player->y +
-                    directionOffsets[moveDirection].dy;
-
-                tft.drawRect(
-                    cursorX * TILE_SIZE,
-                    cursorY * TILE_SIZE,
-                    TILE_SIZE,
-                    TILE_SIZE,
-                    ST77XX_WHITE);
-            }
-
-            break;
-        }
-
-        case GAME_DUNGEON:
-
-            drawMoveCursor(dungeon);
-
-            break;
-
-        default:
-
-            break;
-    }
+    drawMoveCursor();
 }
 
-void drawMapMessage()
+void redrawMapMessage()
 {
-    switch (gameState)
-    {
-        case GAME_FOREST:
+    if (gameState != GAME_FOREST && gameState != GAME_DUNGEON)
+        return;
 
-            redrawForestMessage();
-
-            break;
-
-        case GAME_DUNGEON:
-
-            redrawDungeonMessage();
-
-            break;
-
-        default:
-
-            break;
-    }
+    tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setCursor(2, 228);
+    tft.print(getGameMessage());
 }
 
 void redrawDungeonTile(int x, int y)
@@ -625,9 +570,7 @@ void redrawDungeonTile(int x, int y)
     // Draw the movement cursor if it is on this tile.
     //--------------------------------------------------
 
-    Entity* player = getPlayerEntity(
-        dungeon.entities,
-        dungeon.entityCount);
+    Entity* player = getActiveMapPlayer();
 
     if (player != nullptr)
     {
@@ -650,15 +593,6 @@ void redrawDungeonTile(int x, int y)
     }
 }
 
-void redrawDungeonMessage()
-{
-    tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
-    tft.setTextSize(1);
-    tft.setTextColor(ST77XX_WHITE);
-    tft.setCursor(2, 228);
-    tft.print(getGameMessage());
-}
-
 void drawDungeonScreen()
 {
     if (isCharacterSheetVisible())
@@ -675,7 +609,7 @@ void drawDungeonScreen()
 
     drawMapEntities();
     drawMapCursor();
-    drawMapMessage();
+    redrawMapMessage();
 }
 
 
@@ -696,16 +630,7 @@ void drawForestScreen()
 
     drawMapEntities();
     drawMapCursor();
-    drawMapMessage();
-}
-
-void redrawForestMessage()
-{
-    tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
-    tft.setTextSize(1);
-    tft.setTextColor(ST77XX_WHITE);
-    tft.setCursor(2, 228);
-    tft.print(getGameMessage());
+    redrawMapMessage();
 }
 
 void drawForestTile(int x, int y)
@@ -804,8 +729,7 @@ void redrawForestTile(int x, int y)
 
         if (combat.attackType == COMBAT_ATTACK_MELEE)
         {
-            Entity* player = getPlayerEntity(
-                forestEntities, forestEntityCount);
+            Entity* player = getActiveMapPlayer();
 
             if (player != nullptr &&
                 player->x + directionOffsets[moveDirection].dx == x &&
@@ -831,9 +755,7 @@ void redrawForestTile(int x, int y)
     // Draw the movement cursor if it is on this tile.
     //--------------------------------------------------
 
-    Entity* player = getPlayerEntity(
-        forestEntities,
-        forestEntityCount);
+    Entity* player = getActiveMapPlayer();
 
     if (player != nullptr)
     {
@@ -903,19 +825,7 @@ void redrawDirtyTiles()
 
     dirtyTileCount = 0;
 
-    switch (gameState)
-    {
-        case GAME_FOREST:
-            redrawForestMessage();
-            break;
-
-        case GAME_DUNGEON:
-            redrawDungeonMessage();
-            break;
-
-        default:
-            break;
-    }
+    redrawMapMessage();
 }
 
 DirtyTile dirtyTiles[MAX_DIRTY_TILES];

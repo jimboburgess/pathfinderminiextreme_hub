@@ -52,21 +52,6 @@ enum RoomEntry {
 // Dungeon
 //==================================================
 
-struct DungeonSettings
-{
-    DungeonTheme theme;
-
-    uint8_t partyStrength;
-
-    //DungeonDifficulty difficulty;
-
-    uint8_t roomCount;
-
-    float encounterMultiplier;
-    float treasureMultiplier;
-    float bossMultiplier;
-};
-
 struct RoomMap {
     TileType tiles[ROOM_SIZE][ROOM_SIZE];
 };
@@ -108,7 +93,7 @@ struct DungeonRoom {
 
 constexpr uint8_t MAX_ROOMS = 5;
 constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = MAX_ROOMS - 1;
-constexpr uint8_t MAX_DUNGEON_CHARACTERS = 16;
+constexpr uint8_t MAX_COMBATANTS = 16;
 constexpr uint8_t NO_ENTITY_SLOT = 255;
 
 // Mutable room occupants live separately from the generated room map.  The
@@ -130,8 +115,6 @@ struct Dungeon {
     // Compatibility view of the currently loaded room.  This points directly
     // into roomRuntime[currentRoom]; it is not a second entity collection.
     Entity* entities = nullptr;
-    Character* characters[MAX_DUNGEON_CHARACTERS];
-    uint8_t characterCount = 0;
     uint8_t currentRoom = 0;
     uint8_t entityCount = 0;
     uint8_t loadedRoom = NO_ROOM;
@@ -149,8 +132,5 @@ void suspendDungeonRun(Dungeon& dungeon);
 void resetDungeonRun(Dungeon& dungeon);
 void updateCurrentDungeonRoomCompletion(Dungeon& dungeon);
 bool isDungeonRunComplete(const Dungeon& dungeon);
-void addCharacterToDungeon(Character* character);
-
-Character* getPlayerCharacter(Dungeon& dungeon);
 
 #endif //PATHFINDERMINIEXTREME_025_DUNGEON_H

@@ -4,13 +4,19 @@
 
 #include "buttons.h"
 #include "Arduino.h"
+#include "config.h"
+#include "audio/audio.h"
+#include "graphics/charcreationscreen.h"
+#include "dungeon/dungeon.h"
+#include "map/playermovement.h"
+#include "data/game.h"
 #include "menu.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
-#include "dungeon/activemap.h"
+#include "map/activemap.h"
 #include "dungeon/combat.h"
-#include "dungeon/forest.h"
-#include "dungeon/interaction.h"
+#include "forest/forest.h"
+#include "map/interaction.h"
 #include "dungeon/turns.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
@@ -655,7 +661,7 @@ void handleMapButtons()
         bool moved = false;
 
         if (gameState == GAME_FOREST)
-            moved = tryMoveForestPlayer();
+            moved = tryMovePlayer(dungeon);
         else if (gameState == GAME_DUNGEON)
             moved = tryMovePlayer(dungeon);
 

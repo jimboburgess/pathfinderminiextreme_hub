@@ -5,17 +5,9 @@
 #ifndef PATHFINDERMINIEXTREME_025_DUNGEONPLAYER_H
 #define PATHFINDERMINIEXTREME_025_DUNGEONPLAYER_H
 
-#include "dungeon.h"
-#include "audio/audio.h"
-#include "data/game.h"
-
-
-
-void drawMoveCursor(const Dungeon &dungeon);
+struct Dungeon;
 
 bool tryMovePlayer(Dungeon &dungeon);
-
-bool tryMoveForestPlayer();
 
 bool canPlayerMoveTo(int x, int y);
 

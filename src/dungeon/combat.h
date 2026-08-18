@@ -71,7 +71,7 @@ struct Combat
     // Initiative
     //--------------------------------------------------
 
-    Entity* initiativeOrder[MAX_DUNGEON_CHARACTERS];
+    Entity* initiativeOrder[MAX_COMBATANTS];
 
     uint8_t combatantCount = 0;
     uint8_t currentTurnIndex = 0;

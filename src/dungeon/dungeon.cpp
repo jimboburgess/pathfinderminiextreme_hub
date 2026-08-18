@@ -10,7 +10,7 @@
 #include "combat.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
-#include "mapeffects.h"
+#include "map/mapeffects.h"
 
 Dungeon dungeon;
 
@@ -449,7 +449,6 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.entityCount = 0;
     dungeon.loadedRoom = NO_ROOM;
     dungeon.currentRoom = 0;
-    dungeon.characterCount = 0;
 
     for (uint8_t roomIndex = 0; roomIndex < MAX_ROOMS; roomIndex++)
     {
@@ -468,9 +467,6 @@ void resetDungeonRun(Dungeon& dungeon)
         dungeon.rooms[roomIndex].discovered = false;
         dungeon.rooms[roomIndex].completed = false;
     }
-
-    for (uint8_t i = 0; i < MAX_DUNGEON_CHARACTERS; i++)
-        dungeon.characters[i] = nullptr;
 }
 
 void updateCurrentDungeonRoomCompletion(Dungeon& dungeon)
@@ -514,13 +510,5 @@ bool isDungeonRunComplete(const Dungeon& dungeon)
     }
 
     return true;
-}
-
-void addCharacterToDungeon(Character* character)
-{
-    if (dungeon.characterCount >= MAX_DUNGEON_CHARACTERS)
-        return;
-
-    dungeon.characters[dungeon.characterCount++] = character;
 }
 

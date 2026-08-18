@@ -15,13 +15,10 @@ void drawTownScreen();
 void drawMapBackground();
 void drawMapEntities();
 void drawMapCursor();
-void drawMapMessage();
+void redrawMapMessage();
 
 void drawForestScreen();
-void redrawForestMessage();
 void drawDungeonScreen();
-void redrawDungeonMessage();
-void redrawDungeonTole();
 void drawEntity(const Entity& entity);
 void drawForestTile(int x, int y);
 void redrawForestTile(int x, int y);
@@ -44,7 +41,6 @@ extern uint8_t dirtyTileCount;
 extern bool backgroundNeedsRedraw;
 
 
-void drawCriticalHit();
 
 void drawSpriteTransparent(int x,int y,const uint16_t* sprite);
 void drawSpriteTransparent(int x,int y,const uint16_t* sprite,uint8_t width,uint8_t height);

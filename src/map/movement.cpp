@@ -1,7 +1,7 @@
-#include "movement.h"
+#include "map/movement.h"
 
-#include "activemap.h"
-#include "mapeffects.h"
+#include "map/activemap.h"
+#include "map/mapeffects.h"
 #include "characters/conditions.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"

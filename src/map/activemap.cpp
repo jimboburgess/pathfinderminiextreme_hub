@@ -1,9 +1,9 @@
-#include "activemap.h"
+#include "map/activemap.h"
 
 #include <stdlib.h>
 
-#include "dungeon.h"
-#include "forest.h"
+#include "dungeon/dungeon.h"
+#include "forest/forest.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
 

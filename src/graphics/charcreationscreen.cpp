@@ -204,9 +204,6 @@ void acceptCharacter() {
     // Copy preview into the real player
     player = previewCharacter;
 
-    // Add the player to the dungeon
-    addCharacterToDungeon(&player);
-
     // Continue to town
     resetButtonStates();
     gameState = GAME_TOWN;

@@ -4,10 +4,10 @@
 #include <cstring>
 #include <stdlib.h>
 
-#include "activemap.h"
+#include "map/activemap.h"
 #include "abilityresolver.h"
 #include "loot.h"
-#include "mapeffects.h"
+#include "map/mapeffects.h"
 #include "monsterscripts.h"
 #include "audio/audio.h"
 #include "data/dice.h"
@@ -1028,7 +1028,7 @@ void findCombatants()
             continue;
         }
 
-        if (combat.combatantCount >= MAX_DUNGEON_CHARACTERS)
+        if (combat.combatantCount >= MAX_COMBATANTS)
             break;
 
         combat.initiativeOrder[combat.combatantCount++] = &entity;

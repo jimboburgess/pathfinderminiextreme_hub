@@ -1,9 +1,9 @@
-#include "mapeffects.h"
+#include "map/mapeffects.h"
 
 #include <stdlib.h>
 
-#include "abilityresolver.h"
-#include "activemap.h"
+#include "dungeon/abilityresolver.h"
+#include "map/activemap.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "data/game.h"

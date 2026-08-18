@@ -48,12 +48,6 @@ Entity* spawnEntity(
     entity->x = x;
     entity->y = y;
 
-    entity->monsterID = MONSTER_NONE;
-
-    entity->sprite = nullptr;
-    entity->spriteWidth = SPRITE_W;
-    entity->spriteHeight = SPRITE_H;
-
     return entity;
 }
 

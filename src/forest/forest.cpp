@@ -2,14 +2,14 @@
 // Created by james on 7/20/2026.
 //
 
-#include "forest.h"
-#include "combat.h"
+#include "forest/forest.h"
+#include "dungeon/combat.h"
 #include "data/game.h"
 #include "graphics/tiles.h"
 #include "graphics/display.h"
-#include "dungeonplayer.h"
-#include "dungeon.h"
-#include "turns.h"
+#include "map/playermovement.h"
+#include "dungeon/dungeon.h"
+#include "dungeon/turns.h"
 #include "graphics/sprites.h"
 #include "graphics/monstersprites.h"
 #include "audio/audio.h"
@@ -17,7 +17,7 @@
 #include "graphics/messagelog.h"
 #include "input/menu.h"
 #include "characters/characters.h"
-#include "mapeffects.h"
+#include "map/mapeffects.h"
 
 
 
@@ -189,24 +189,6 @@ static void initForest()
     }
 
     spawnForestEncounter();
-}
-
-int getForestPlayerX()
-{
-    Entity* player = getPlayerEntity(
-        forestEntities,
-        forestEntityCount);
-
-    return player ? player->x : 0;
-}
-
-int getForestPlayerY()
-{
-    Entity* player = getPlayerEntity(
-        forestEntities,
-        forestEntityCount);
-
-    return player ? player->y : 0;
 }
 
 void enterForest()

@@ -4,13 +4,13 @@
 
 #include "monsterscripts.h"
 
-#include "activemap.h"
+#include "map/activemap.h"
 #include "abilityresolver.h"
 #include "characters/conditions.h"
 #include "characters/items.h"
 #include "dungeon.h"
 #include "monsters.h"
-#include "movement.h"
+#include "map/movement.h"
 #include "graphics/messagelog.h"
 #include "combat.h"
 #include "data/entityspawn.h"

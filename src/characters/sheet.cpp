@@ -8,7 +8,7 @@
 #include "data/game.h"
 #include "data/entityspawn.h"
 #include "dungeon/dungeon.h"
-#include "dungeon/forest.h"
+#include "forest/forest.h"
 #include <cstdio>
 #include <cstring>
 

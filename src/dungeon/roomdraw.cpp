@@ -3,7 +3,6 @@
 //
 
 #include "roomdraw.h"
-#include <Arduino.h>
 #include <Adafruit_ST7789.h>
 #include "config.h"
 
@@ -22,7 +21,6 @@ void drawRoom(const DungeonRoom &room) {
     }
   }
 }
-
 void drawTile(int tileX, int tileY, TileType tile) {
   uint16_t color = COLOR_VOID;
 
@@ -54,58 +52,4 @@ void drawTile(int tileX, int tileY, TileType tile) {
     TILE_SIZE,
     TILE_SIZE,
     color);
-}
-
-void printRoom(const DungeonRoom &room) {
-  Serial.println();
-
-  for (int y = 0; y < ROOM_SIZE; y++) {
-    for (int x = 0; x < ROOM_SIZE; x++) {
-      switch (room.map.tiles[y][x]) {
-        case TILE_WALL:
-          Serial.print('#');
-          break;
-
-        case TILE_FLOOR:
-          Serial.print('.');
-          break;
-
-        case TILE_DOOR:
-          Serial.print('D');
-          break;
-
-        case TILE_TRAP:
-          Serial.print('T');
-          break;
-
-        case TILE_ENEMY_START:
-          Serial.print('E');
-          break;
-
-        case TILE_SKELETON_MAGE_START:
-          Serial.print('M');
-          break;
-
-        case TILE_CHEST_SPAWN:
-          Serial.print('C');
-          break;
-
-        case TILE_LOOT_SPAWN:
-          Serial.print('L');
-          break;
-
-        case TILE_NPC_SPAWN:
-          Serial.print('N');
-          break;
-
-        default:
-          Serial.print('?');
-          break;
-      }
-    }
-
-    Serial.println();
-  }
-
-  Serial.println();
 }
