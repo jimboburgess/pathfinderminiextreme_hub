@@ -492,6 +492,7 @@ static bool isRoomGeometryWalkable(TileType tile) {
     case TILE_PLAYER_START:
     case TILE_ENEMY_START:
     case TILE_GIANT_SPIDER_START:
+    case TILE_SKELETON_MAGE_START:
       return true;
 
     default:
@@ -1828,7 +1829,7 @@ static void generateBoss(DungeonRoom &room) {
 
   // Boss positions
   placeContentMarkerNear(room, TILE_ENEMY_START, 2, 2);
-  placeContentMarkerNear(room, TILE_ENEMY_START, center, 2);
+  placeContentMarkerNear(room, TILE_SKELETON_MAGE_START, center, 2);
   placeContentMarkerNear(room, TILE_ENEMY_START, 12, 2);
 }
 

@@ -126,6 +126,16 @@ void initializeRoomEntities(
                     room.map.tiles[y][x] = TILE_FLOOR;
                     break;
 
+                case TILE_SKELETON_MAGE_START:
+                    spawnMonster(
+                        dungeon.entities,
+                        dungeon.entityCount,
+                        MONSTER_SKELETON_MAGE,
+                        x,
+                        y);
+                    room.map.tiles[y][x] = TILE_FLOOR;
+                    break;
+
                 case TILE_CHEST_SPAWN:
                     spawnEntity(
                         dungeon.entities,

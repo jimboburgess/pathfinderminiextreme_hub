@@ -82,6 +82,10 @@ void printRoom(const DungeonRoom &room) {
           Serial.print('E');
           break;
 
+        case TILE_SKELETON_MAGE_START:
+          Serial.print('M');
+          break;
+
         case TILE_CHEST_SPAWN:
           Serial.print('C');
           break;
