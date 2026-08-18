@@ -12,6 +12,7 @@
 #include "forest.h"
 #include "movement.h"
 #include "turns.h"
+#include "data/dice.h"
 #include "data/entityspawn.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
@@ -65,6 +66,93 @@ void finishPlayerMovement(Entity& player, int targetX, int targetY)
 
     if (enteredCondition == CONDITION_PRONE)
         setGameMessage("You fall prone!");
+}
+
+bool canPlayerTraverseEnemy(
+    const Dungeon& dungeon,
+    const Entity& player,
+    int enemyX,
+    int enemyY,
+    int moveX,
+    int moveY,
+    int& beyondX,
+    int& beyondY)
+{
+    // This is a two-square combat movement: into the occupied square and
+    // immediately out the far side. Validate the landing square before any
+    // Acrobatics roll so blocked destinations behave like normal movement.
+    if (!combat.active || player.turn.movementRemaining < 2)
+        return false;
+
+    beyondX = enemyX + moveX;
+    beyondY = enemyY + moveY;
+
+    if (beyondX < 0 || beyondX >= ROOM_SIZE ||
+        beyondY < 0 || beyondY >= ROOM_SIZE ||
+        dungeon.rooms[dungeon.currentRoom].map.tiles[beyondY][beyondX] !=
+            TILE_FLOOR)
+    {
+        return false;
+    }
+
+    Entity* occupant = getEntityAt(
+        dungeon.entities, dungeon.entityCount, beyondX, beyondY);
+    return occupant == nullptr || occupant == &player;
+}
+
+bool tryPlayerAcrobaticsTraversal(
+    Dungeon& dungeon,
+    Entity& player,
+    Entity& enemy,
+    int oldX,
+    int oldY,
+    Direction oldDirection,
+    int moveX,
+    int moveY)
+{
+    int beyondX = 0;
+    int beyondY = 0;
+
+    if (!canPlayerTraverseEnemy(
+            dungeon, player, enemy.x, enemy.y, moveX, moveY, beyondX, beyondY))
+    {
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+
+    const int acrobaticsRoll = rollDice(1, 20) +
+        getSkillBonus(player.character, SKILL_ACROBATICS);
+
+    if (acrobaticsRoll < 13)
+    {
+        setGameMessage("acrobatics check failed");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    // A successful Acrobatics traversal avoids an attack of opportunity. The
+    // project has no AoO system yet, so no combat reaction is triggered here.
+    player.x = beyondX;
+    player.y = beyondY;
+    player.turn.movementRemaining -= 2;
+    handleEnteredTile(player, beyondX, beyondY);
+
+    if (player.turn.movementRemaining == 0)
+    {
+        player.turn.moveActionUsed = true;
+        checkEndPlayerTurn();
+    }
+
+    markTileDirty(oldX, oldY);
+    markTileDirty(enemy.x, enemy.y);
+    markTileDirty(player.x, player.y);
+    markTileDirty(oldX + directionOffsets[oldDirection].dx,
+                  oldY + directionOffsets[oldDirection].dy);
+    markTileDirty(player.x + directionOffsets[moveDirection].dx,
+                  player.y + directionOffsets[moveDirection].dy);
+    setGameMessage("Acrobatics successful");
+    checkForCombat();
+    return true;
 }
 }
 
@@ -184,10 +272,18 @@ bool tryMovePlayer(Dungeon &dungeon)
         targetY);
 
     if (targetEntity != nullptr && targetEntity != player &&
-        targetEntity->type == ENTITY_MONSTER)
+        targetEntity->type == ENTITY_MONSTER &&
+        targetEntity->character.state == STATE_ALIVE)
     {
-        playSound(SoundEffect::BUMP);
-        return false;
+        return tryPlayerAcrobaticsTraversal(
+            dungeon,
+            *player,
+            *targetEntity,
+            oldX,
+            oldY,
+            oldDirection,
+            directionOffsets[moveDirection].dx,
+            directionOffsets[moveDirection].dy);
     }
 
     switch (tile)
