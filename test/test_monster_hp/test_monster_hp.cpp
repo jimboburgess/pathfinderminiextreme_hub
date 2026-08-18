@@ -11,6 +11,7 @@ const uint16_t goblinSprite16x16r2[SPRITE_W * SPRITE_H] = {};
 const uint16_t goblinArcher16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t bugbear16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t skeleton16x16[SPRITE_W * SPRITE_H] = {};
+const uint16_t skeletonMage16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t zombie16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t ghoul16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t wight16x16[SPRITE_W * SPRITE_H] = {};
@@ -42,6 +43,35 @@ int getAbilityModifier(int score)
 const Weapon* getWeapon(ItemID)
 {
     return nullptr;
+}
+
+// spawnMonster() stocks explicitly configured monster consumables through the
+// normal Character inventory. Keep this unit self-contained while preserving
+// the production call boundary.
+bool addItem(Character& character, ItemID item, uint8_t quantity)
+{
+    if (quantity == 0)
+        return true;
+
+    for (uint8_t i = 0; i < character.inventory.itemCount; i++)
+    {
+        InventorySlot& slot = character.inventory.slots[i];
+
+        if (slot.item.itemID == item)
+        {
+            slot.quantity += quantity;
+            return true;
+        }
+    }
+
+    if (character.inventory.itemCount >= MAX_INVENTORY)
+        return false;
+
+    InventorySlot& slot =
+        character.inventory.slots[character.inventory.itemCount++];
+    slot.item = makeItemInstance(item);
+    slot.quantity = quantity;
+    return true;
 }
 
 #include "../../src/dungeon/monsters.cpp"
@@ -125,6 +155,25 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL_UINT8(6, spectator.maxMP);
     TEST_ASSERT_EQUAL_UINT8(4, spectator.casterLevel);
     TEST_ASSERT_EQUAL(CREATURE_BEHOLDER, spectator.creatureType);
+
+    const Monster& skeletonMage = monsterDatabase[MONSTER_SKELETON_MAGE];
+    TEST_ASSERT_EQUAL_STRING("Skeleton Mage", skeletonMage.name);
+    TEST_ASSERT_EQUAL_PTR(skeletonMage16x16, skeletonMage.sprite);
+    TEST_ASSERT_EQUAL_UINT8(3, skeletonMage.hitDice);
+    TEST_ASSERT_EQUAL_UINT8(1, skeletonMage.baseAttack);
+    TEST_ASSERT_EQUAL_UINT8(15, skeletonMage.armorClass);
+    TEST_ASSERT_EQUAL_INT8(5, skeletonMage.fortitude);
+    TEST_ASSERT_EQUAL_INT8(1, skeletonMage.reflex);
+    TEST_ASSERT_EQUAL_INT8(5, skeletonMage.will);
+    TEST_ASSERT_EQUAL_UINT8(6, skeletonMage.speed);
+    TEST_ASSERT_EQUAL(ITEM_SCYTHE, skeletonMage.weapon);
+    TEST_ASSERT_EQUAL(ITEM_NATURAL_ARMOR_3, skeletonMage.armor);
+    TEST_ASSERT_EQUAL(ABILITY_COLOR_SPRAY, skeletonMage.specialAbilities[0]);
+    TEST_ASSERT_EQUAL(ABILITY_GREASE, skeletonMage.specialAbilities[1]);
+    TEST_ASSERT_EQUAL(SCRIPT_SPELLCASTER, skeletonMage.script);
+    TEST_ASSERT_EQUAL_UINT8(8, skeletonMage.maxMP);
+    TEST_ASSERT_EQUAL_UINT8(3, skeletonMage.casterLevel);
+    TEST_ASSERT_EQUAL(CREATURE_SKELETON, skeletonMage.creatureType);
 }
 
 void test_reused_entity_gets_one_fresh_monster_hp_roll()
@@ -200,6 +249,45 @@ void test_spellcaster_spawn_receives_definition_mp_pool()
     TEST_ASSERT_EQUAL_UINT8(1, hitPointRollCount);
 }
 
+void test_skeleton_mage_spawns_from_normal_monster_data()
+{
+    Entity entities[MAX_ENTITIES] = {};
+    uint8_t entityCount = 0;
+    const Monster* definition = getMonster(MONSTER_SKELETON_MAGE);
+    TEST_ASSERT_NOT_NULL(definition);
+
+    useHitPointRoll(12);
+    Entity* skeletonMage = spawnMonster(
+        entities, entityCount, MONSTER_SKELETON_MAGE, 7, 8);
+
+    TEST_ASSERT_NOT_NULL(skeletonMage);
+    TEST_ASSERT_EQUAL_PTR(definition, skeletonMage->monster);
+    TEST_ASSERT_EQUAL(MONSTER_SKELETON_MAGE, skeletonMage->monsterID);
+    TEST_ASSERT_EQUAL_PTR(skeletonMage16x16, skeletonMage->sprite);
+    TEST_ASSERT_EQUAL_UINT8(SPRITE_W, skeletonMage->spriteWidth);
+    TEST_ASSERT_EQUAL_UINT8(SPRITE_H, skeletonMage->spriteHeight);
+    TEST_ASSERT_EQUAL(TEAM_MONSTER, skeletonMage->character.team);
+    TEST_ASSERT_EQUAL(STATE_ALIVE, skeletonMage->character.state);
+    TEST_ASSERT_EQUAL(CREATURE_SKELETON, skeletonMage->character.creatureType);
+    TEST_ASSERT_EQUAL_UINT16(24, skeletonMage->character.health.maxHP);
+    TEST_ASSERT_EQUAL_UINT16(24, skeletonMage->character.health.currentHP);
+    TEST_ASSERT_EQUAL_INT(8, skeletonMage->character.magic.maxMP);
+    TEST_ASSERT_EQUAL_INT(8, skeletonMage->character.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(3, skeletonMage->character.level);
+    TEST_ASSERT_EQUAL_UINT8(2, skeletonMage->character.inventory.itemCount);
+    TEST_ASSERT_EQUAL(
+        ITEM_POTION_CURE_LIGHT_WOUNDS,
+        skeletonMage->character.inventory.slots[0].item.itemID);
+    TEST_ASSERT_EQUAL_UINT8(2, skeletonMage->character.inventory.slots[0].quantity);
+    TEST_ASSERT_EQUAL(
+        ITEM_MANA_POTION,
+        skeletonMage->character.inventory.slots[1].item.itemID);
+    TEST_ASSERT_EQUAL_UINT8(2, skeletonMage->character.inventory.slots[1].quantity);
+    TEST_ASSERT_EQUAL(
+        ITEM_SCYTHE,
+        skeletonMage->character.equipment.equipped[SLOT_MELEE_WEAPON].itemID);
+}
+
 void test_invalid_monster_does_not_consume_entity_slot()
 {
     Entity entities[MAX_ENTITIES] = {};
@@ -221,6 +309,7 @@ void setup()
     RUN_TEST(test_zombie_database_fields_and_id_lookup_are_aligned);
     RUN_TEST(test_reused_entity_gets_one_fresh_monster_hp_roll);
     RUN_TEST(test_spellcaster_spawn_receives_definition_mp_pool);
+    RUN_TEST(test_skeleton_mage_spawns_from_normal_monster_data);
     RUN_TEST(test_invalid_monster_does_not_consume_entity_slot);
     UNITY_END();
 }

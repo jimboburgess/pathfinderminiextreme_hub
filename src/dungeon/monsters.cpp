@@ -244,6 +244,33 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         4,
         CREATURE_BEHOLDER
     },
+
+    {
+        "Skeleton Mage",
+        skeletonMage16x16,
+        // The existing hit-point helper derives HP from d8 HD plus Constitution.
+        // Three HD with CON 18 averages 25 HP, keeping this a modest boss-capable
+        // spellcaster without adding a separate fixed-HP path.
+        {10,14,18,16,14,12},
+        3,
+        1,
+        15,
+        5,1,5,
+        6,
+        ITEM_SCYTHE,
+        ITEM_NATURAL_ARMOR_3,
+        CR_TWO,
+        LOOT_UNDEAD,
+        { ABILITY_COLOR_SPRAY, ABILITY_GREASE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_CONTROL_SPELLCASTER,
+        { 0, 0 },
+        // Both current spells cost 2 MP, allowing four casts before melee fallback.
+        8,
+        3,
+        CREATURE_SKELETON,
+        false,
+        2,
+        2
+    },
 };
 
 static_assert(

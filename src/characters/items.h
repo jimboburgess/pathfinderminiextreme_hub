@@ -193,6 +193,9 @@ enum ItemID : uint8_t
     // Appended so every previously persisted ItemID keeps its numeric value.
     ITEM_MANA_POTION,
 
+    // Appended so every previously persisted ItemID keeps its numeric value.
+    ITEM_SCYTHE,
+
     ITEM_COUNT
 };
 
@@ -204,6 +207,10 @@ static_assert(ITEM_COUNT <= UINT8_MAX,
 // own rule constant below.
 constexpr uint16_t MANA_POTION_EFFECT_INDEX = 20;
 constexpr int MANA_POTION_RESTORE_AMOUNT = 4;
+
+// Weapon database indices are independent from ItemID values.  Keep this
+// appended entry named so later item additions cannot accidentally shift it.
+constexpr uint16_t SCYTHE_WEAPON_EFFECT_INDEX = 33;
 
 enum WeaponEnhancement : uint8_t
 {
@@ -596,6 +603,11 @@ ScrollLearnResult learnSpellFromScroll(
 ScrollLearnResult useSpellScroll(
     Character& character,
     const ItemInstance& scrollItem);
+
+// Restores HP with the normal Cure Light Wounds potion effect and consumes one
+// potion only on success.  This is shared by player inventory use and any
+// explicitly configured monster that carries the same normal item.
+bool useCureLightWoundsPotion(Character& character, int& amountRestored);
 
 // Restores MP and consumes exactly the selected potion as one transaction.
 // amountRestored is set to zero on every failure.

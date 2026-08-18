@@ -18,6 +18,7 @@ void runGuardScript(Entity* monster);
 void runWanderScript(Entity* monster);
 void runSupportScript(Entity* monster);
 void runSpellcasterScript(Entity* monster);
+void runControlSpellcasterScript(Entity* monster);
 void runDebugScript(Entity* monster);
 
 Entity* chooseTarget(Entity* monster);

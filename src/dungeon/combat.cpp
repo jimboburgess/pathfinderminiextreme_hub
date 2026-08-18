@@ -650,7 +650,7 @@ void presentAbilityResolution(
         combat.waitingForPlayer = false;
 }
 
-static void presentGroundAbilityResolution(
+void presentGroundAbilityResolution(
     Entity& caster,
     AbilityID abilityID,
     const AbilityResolution& resolution)
@@ -2201,7 +2201,7 @@ static void executePlayerAbility(
         resolution);
 }
 
-static void presentDirectionalAbilityResolution(
+void presentDirectionalAbilityResolution(
     Entity& caster,
     AbilityID abilityID,
     const AbilityResolution& resolution)

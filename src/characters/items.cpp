@@ -5,6 +5,7 @@
 #include "items.h"
 
 #include "characters.h"
+#include "data/dice.h"
 
 const Item itemDatabase[] =
 {
@@ -198,6 +199,7 @@ const Item itemDatabase[] =
 
 	// Appended with ItemID so older inventory saves keep their item identities.
 	{ "Mana Potion", ITEMTYPE_POTION, MANA_POTION_EFFECT_INDEX, 30, 1, ICON_POTION, true, true, RARITY_COMMON, THEME_ANY, "Restores 4 MP." },
+	{ "Scythe", ITEMTYPE_WEAPON, SCYTHE_WEAPON_EFFECT_INDEX, 18, 12, ICON_SWORD, false, false, RARITY_UNCOMMON, THEME_ANY, "A two-handed harvesting blade." },
 
 };
 
@@ -304,7 +306,9 @@ const Weapon weaponDatabase[] =
 	// Tentacle
 	{ WEAPON_MELEE, DAMAGE_BLUDGEONING, 1, 4, 20, 2,   0, WEAPON_PROP_REACH },
 	// Pseudopod
-	{ WEAPON_MELEE, DAMAGE_BLUDGEONING, 1, 6, 20, 2,   0, WEAPON_PROP_NONE }
+	{ WEAPON_MELEE, DAMAGE_BLUDGEONING, 1, 6, 20, 2,   0, WEAPON_PROP_NONE },
+	// Scythe
+	{ WEAPON_MELEE, DAMAGE_SLASHING,    2, 4, 20, 4,   0, WEAPON_PROP_TWO_HANDED }
 };
 
 const Armor armorDatabase[] =
@@ -400,6 +404,32 @@ const Scroll* getScroll(ItemID item)
 
 	const Scroll* scroll = &scrollDatabase[itemInfo->effectIndex];
 	return isValidAbility(scroll->taughtAbility) ? scroll : nullptr;
+}
+
+bool useCureLightWoundsPotion(Character& character, int& amountRestored)
+{
+    amountRestored = 0;
+
+    if (!hasItem(character, ITEM_POTION_CURE_LIGHT_WOUNDS) ||
+        character.health.currentHP >= character.health.maxHP)
+    {
+        return false;
+    }
+
+    const int previousHP = character.health.currentHP;
+    amountRestored = healCharacter(character, rollDice(1, 8) + 1);
+
+    if (amountRestored <= 0)
+        return false;
+
+    if (!removeItem(character, ITEM_POTION_CURE_LIGHT_WOUNDS))
+    {
+        character.health.currentHP = previousHP;
+        amountRestored = 0;
+        return false;
+    }
+
+    return true;
 }
 
 ScrollLearnResult learnSpellFromScroll(

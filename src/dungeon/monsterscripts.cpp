@@ -6,6 +6,8 @@
 
 #include "activemap.h"
 #include "abilityresolver.h"
+#include "characters/conditions.h"
+#include "characters/items.h"
 #include "dungeon.h"
 #include "monsters.h"
 #include "movement.h"
@@ -15,6 +17,7 @@
 #include "data/entitytraits.h"
 #include "data/game.h"
 #include "graphics/display.h"
+#include "audio/audio.h"
 
 namespace
 {
@@ -22,6 +25,8 @@ constexpr uint8_t PATH_MAP_WIDTH = ROOM_SIZE;
 constexpr uint8_t PATH_MAP_HEIGHT = ROOM_SIZE;
 constexpr uint16_t PATH_NODE_COUNT =
     PATH_MAP_WIDTH * PATH_MAP_HEIGHT;
+constexpr uint8_t CONTROL_CASTER_LOW_HP_PERCENT = 40;
+constexpr int CONTROL_CASTER_PREFERRED_DISTANCE = 3;
 
 struct PathNode
 {
@@ -465,6 +470,241 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
 
     return true;
 }
+
+static bool isControlSpellcaster(const Entity* monster)
+{
+    return getMonsterScript(monster) == SCRIPT_CONTROL_SPELLCASTER;
+}
+
+static bool isControlTargetImpaired(const Entity& target)
+{
+    return hasCondition(target.character, CONDITION_PRONE) ||
+           hasCondition(target.character, CONDITION_STUNNED) ||
+           hasCondition(target.character, CONDITION_BLINDED);
+}
+
+static const Ability* getControlAbility(
+    const Entity* monster,
+    AbilityID abilityID)
+{
+    if (monster == nullptr || monster->monster == nullptr ||
+        !monsterHasSpecialAbility(*monster->monster, abilityID) ||
+        !isAbilitySupported(abilityID))
+    {
+        return nullptr;
+    }
+
+    return getAbility(abilityID);
+}
+
+static bool findControlColorSprayDirection(
+    const Entity& monster,
+    const Entity& target,
+    Direction& direction)
+{
+    const Ability* ability = getControlAbility(&monster, ABILITY_COLOR_SPRAY);
+
+    if (ability == nullptr ||
+        !hasLineOfSightBetweenFootprintsAt(monster, monster.x, monster.y, target))
+    {
+        return false;
+    }
+
+    const Direction directions[] = { DIR_NORTH, DIR_EAST, DIR_SOUTH, DIR_WEST };
+
+    for (Direction candidate : directions)
+    {
+        for (uint8_t y = target.y;
+             y < target.y + getEntityTileHeight(target);
+             y++)
+        {
+            for (uint8_t x = target.x;
+                 x < target.x + getEntityTileWidth(target);
+                 x++)
+            {
+                if (isTileInDirectionalAbilityArea(
+                        monster, ability->id, candidate, x, y))
+                {
+                    direction = candidate;
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+static AbilityResult getControlGreaseValidation(
+    const Entity& monster,
+    const Entity& target)
+{
+    const Ability* ability = getControlAbility(&monster, ABILITY_GREASE);
+    return ability != nullptr
+        ? validateAbilityAt(monster, target.x, target.y, ability->id)
+        : ABILITY_RESULT_UNSUPPORTED;
+}
+
+static bool canControlCastGrease(const Entity& monster, const Entity& target)
+{
+    AbilityResult result = getControlGreaseValidation(monster, target);
+    return result == ABILITY_RESULT_SUCCESS ||
+           result == ABILITY_RESULT_NOT_ENOUGH_MP;
+}
+
+static bool hasControlPotion(const Entity& monster, ItemID item);
+
+static bool canControlPrepareAbility(
+    const Entity& monster,
+    const Ability* ability)
+{
+    return ability != nullptr &&
+           (monster.character.magic.currentMP >= ability->mpCost ||
+            hasControlPotion(monster, ITEM_MANA_POTION));
+}
+
+static bool hasControlSpellPlan(const Entity& monster, const Entity& target)
+{
+    Direction direction = DIR_NORTH;
+    const Ability* colorSpray = getControlAbility(
+        &monster, ABILITY_COLOR_SPRAY);
+
+    if (findControlColorSprayDirection(monster, target, direction) &&
+        canControlPrepareAbility(monster, colorSpray))
+    {
+        return true;
+    }
+
+    const Ability* grease = getControlAbility(&monster, ABILITY_GREASE);
+    return canControlCastGrease(monster, target) &&
+           canControlPrepareAbility(monster, grease);
+}
+
+static bool hasControlPotion(const Entity& monster, ItemID item)
+{
+    return hasItem(monster.character, item);
+}
+
+static bool isControlCasterLowHealth(const Entity& monster)
+{
+    const HealthData& health = monster.character.health;
+    return health.maxHP > 0 &&
+           health.currentHP * 100 <=
+               static_cast<int>(health.maxHP) * CONTROL_CASTER_LOW_HP_PERCENT;
+}
+
+static void presentMonsterPotionUse(Entity& monster, const char* message)
+{
+    monster.turn.standardActionUsed = true;
+    setGameMessage(message);
+    playSound(SoundEffect::POTION);
+    markEntityFootprintDirty(monster);
+}
+
+static bool useControlHealingPotion(Entity& monster)
+{
+    int restored = 0;
+
+    if (!useCureLightWoundsPotion(monster.character, restored))
+        return false;
+
+    char message[48];
+    snprintf(message, sizeof(message), "%s drinks a potion (+%d HP).",
+             getEntityName(&monster), restored);
+    presentMonsterPotionUse(monster, message);
+    return true;
+}
+
+static bool useControlManaPotion(Entity& monster)
+{
+    int restored = 0;
+    ManaPotionUseResult result = useManaPotion(
+        monster.character, makeItemInstance(ITEM_MANA_POTION), restored);
+
+    if (result != MANA_POTION_USE_SUCCESS)
+        return false;
+
+    char message[48];
+    snprintf(message, sizeof(message), "%s drinks a mana potion (+%d MP).",
+             getEntityName(&monster), restored);
+    presentMonsterPotionUse(monster, message);
+    return true;
+}
+
+static bool tryControlColorSpray(Entity& monster, Entity& target)
+{
+    const Ability* ability = getControlAbility(&monster, ABILITY_COLOR_SPRAY);
+    Direction direction = DIR_NORTH;
+
+    if (ability == nullptr ||
+        monster.character.magic.currentMP < ability->mpCost ||
+        !findControlColorSprayDirection(monster, target, direction))
+    {
+        return false;
+    }
+
+    AbilityResolution resolution = resolveAbilityInDirection(
+        monster, direction, ability->id);
+
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+        return false;
+
+    presentDirectionalAbilityResolution(monster, ability->id, resolution);
+    return true;
+}
+
+static bool tryControlGrease(Entity& monster, Entity& target)
+{
+    const Ability* ability = getControlAbility(&monster, ABILITY_GREASE);
+
+    if (ability == nullptr ||
+        monster.character.magic.currentMP < ability->mpCost ||
+        getControlGreaseValidation(monster, target) != ABILITY_RESULT_SUCCESS)
+    {
+        return false;
+    }
+
+    AbilityResolution resolution = resolveAbilityAt(
+        monster, target.x, target.y, ability->id);
+
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+        return false;
+
+    presentGroundAbilityResolution(monster, ability->id, resolution);
+    return true;
+}
+
+static bool moveControlCasterToSpellDistance(Entity* monster)
+{
+    Entity* target = chooseTarget(monster);
+
+    if (monster == nullptr || target == nullptr)
+        return false;
+
+    int nextX = monster->x;
+    int nextY = monster->y;
+
+    return findRangedPathStep(
+               monster, target, CONTROL_CASTER_PREFERRED_DISTANCE,
+               nextX, nextY) &&
+           moveMonsterTo(monster, nextX, nextY);
+}
+
+static bool isControlCasterReadyForAction(Entity* monster)
+{
+    Entity* target = chooseTarget(monster);
+
+    if (monster == nullptr || target == nullptr)
+        return true;
+
+    if (isControlTargetImpaired(*target))
+        return isAdjacent(monster, target);
+
+    if (isAdjacent(monster, target))
+        return false;
+
+    return hasControlSpellPlan(*monster, *target);
+}
 }
 
 void runMonsterScript(Entity* monster)
@@ -489,6 +729,10 @@ void runMonsterScript(Entity* monster)
 
         case SCRIPT_SPELLCASTER:
             runSpellcasterScript(monster);
+            break;
+
+        case SCRIPT_CONTROL_SPELLCASTER:
+            runControlSpellcasterScript(monster);
             break;
 
         case SCRIPT_MELEE:
@@ -550,6 +794,77 @@ void runSpellcasterScript(Entity* monster)
 
     // With no legal supported spell, retain the existing adjacent melee
     // action as the deliberately simple first-version fallback.
+    performStandardAction(monster);
+}
+
+void runControlSpellcasterScript(Entity* monster)
+{
+    if (monster == nullptr || monster->monster == nullptr ||
+        monster->turn.standardActionUsed)
+    {
+        return;
+    }
+
+    Entity* target = chooseTarget(monster);
+
+    if (target == nullptr)
+        return;
+
+    // Priority 1: stay alive. A potion is a normal standard action and is
+    // removed from this individual monster's normal inventory on success.
+    if (isControlCasterLowHealth(*monster) &&
+        hasControlPotion(*monster, ITEM_POTION_CURE_LIGHT_WOUNDS) &&
+        useControlHealingPotion(*monster))
+    {
+        return;
+    }
+
+    // Priority 2: exploit an already-controlled player with the equipped
+    // melee weapon instead of spending another control spell.
+    if (isControlTargetImpaired(*target))
+    {
+        performStandardAction(monster);
+        return;
+    }
+
+    // Priority 3: after the movement phase has tried to retreat, use the
+    // short control cone when its exact shared geometry includes the player.
+    Direction direction = DIR_NORTH;
+    const Ability* colorSpray = getControlAbility(
+        monster, ABILITY_COLOR_SPRAY);
+
+    if (colorSpray != nullptr &&
+        findControlColorSprayDirection(*monster, *target, direction))
+    {
+        if (monster->character.magic.currentMP < colorSpray->mpCost)
+        {
+            if (hasControlPotion(*monster, ITEM_MANA_POTION))
+                useControlManaPotion(*monster);
+            return;
+        }
+
+        if (tryControlColorSpray(*monster, *target))
+            return;
+    }
+
+    // Priority 4: Grease controls a standing target outside the useful cone.
+    const Ability* grease = getControlAbility(monster, ABILITY_GREASE);
+
+    if (grease != nullptr && canControlCastGrease(*monster, *target))
+    {
+        if (monster->character.magic.currentMP < grease->mpCost)
+        {
+            if (hasControlPotion(*monster, ITEM_MANA_POTION))
+                useControlManaPotion(*monster);
+            return;
+        }
+
+        if (tryControlGrease(*monster, *target))
+            return;
+    }
+
+    // If retreat was impossible or spells are unavailable, the normal melee
+    // action remains the final fallback and uses the equipped scythe.
     performStandardAction(monster);
 }
 
@@ -736,6 +1051,9 @@ bool isMonsterReadyForAction(Entity* monster)
         return isAdjacent(monster, target);
     }
 
+    if (isControlSpellcaster(monster))
+        return isControlCasterReadyForAction(monster);
+
     return isAdjacent(monster, target);
 }
 
@@ -770,7 +1088,21 @@ void performMovementPhase(Entity* monster)
     int oldX = monster->x;
     int oldY = monster->y;
 
-    if (getMonsterScript(monster) == SCRIPT_RANGED)
+    if (isControlSpellcaster(monster))
+    {
+        Entity* target = chooseTarget(monster);
+
+        if (target != nullptr && isControlTargetImpaired(*target))
+            moveMonsterTowardsPlayer(monster);
+        else if (target != nullptr && isAdjacent(monster, target))
+            moveControlCasterToSpellDistance(monster);
+        else if (target != nullptr &&
+                 !hasControlSpellPlan(*monster, *target))
+            moveMonsterTowardsPlayer(monster);
+        else
+            moveControlCasterToSpellDistance(monster);
+    }
+    else if (getMonsterScript(monster) == SCRIPT_RANGED)
     {
         keepDistance(monster);
     }

@@ -103,6 +103,16 @@ Entity* spawnMonster(
     entity->character.magic.maxMP = monster->maxMP;
     entity->character.magic.currentMP = monster->maxMP;
 
+    // Monster consumables are normal inventory items. Only definitions that
+    // explicitly configure a count receive them; all existing monsters retain
+    // their empty inventories.
+    if (monster->healingPotionCount > 0)
+        addItem(entity->character, ITEM_POTION_CURE_LIGHT_WOUNDS,
+                monster->healingPotionCount);
+
+    if (monster->manaPotionCount > 0)
+        addItem(entity->character, ITEM_MANA_POTION, monster->manaPotionCount);
+
     // Roll the definition's intended hit-die calculation exactly once, then
     // explicitly initialize both runtime health fields from that result.
     const uint16_t maxHP = getMonsterMaxHP(*monster);

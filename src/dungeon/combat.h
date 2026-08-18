@@ -276,6 +276,17 @@ void presentAbilityResolution(
     AbilityID abilityID,
     const AbilityResolution& resolution);
 
+// Shared feedback/pacing for successful ground and directional resolver calls.
+// Player targeting and reusable monster scripts both use these helpers.
+void presentGroundAbilityResolution(
+    Entity& caster,
+    AbilityID abilityID,
+    const AbilityResolution& resolution);
+void presentDirectionalAbilityResolution(
+    Entity& caster,
+    AbilityID abilityID,
+    const AbilityResolution& resolution);
+
 //==================================================
 // Combat Update
 //==================================================

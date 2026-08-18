@@ -6,7 +6,6 @@
 #include "audio/audio.h"
 #include "characters/characters.h"
 #include "characters/items.h"
-#include "data/dice.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
@@ -214,14 +213,10 @@ bool useCureLightWounds(Character& character)
         return false;
     }
 
-    int previousHP = character.health.currentHP;
-    int healed = healCharacter(character, rollDice(1, 8) + 1);
+    int healed = 0;
 
-    // Heal first, then consume exactly one item. If an unexpected inventory
-    // failure occurs, restore HP so the operation remains atomic.
-    if (!removeItem(character, ITEM_POTION_CURE_LIGHT_WOUNDS))
+    if (!useCureLightWoundsPotion(character, healed))
     {
-        character.health.currentHP = previousHP;
         setInventoryStatus("Potion is no longer available.");
         playSound(SoundEffect::ERROR);
         return false;

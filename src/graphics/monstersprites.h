@@ -30,5 +30,7 @@ extern const uint16_t violetFungus16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t choker16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t spectator16x16[SPRITE_W * SPRITE_H];
 
+extern const uint16_t skeletonMage16x16[SPRITE_W * SPRITE_H];
+
 
 #endif //PATHFINDERMINIEXTREME_025_MONSTERSPRITES_H

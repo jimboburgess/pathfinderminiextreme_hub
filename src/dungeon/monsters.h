@@ -93,6 +93,9 @@ enum MonsterID
     MONSTER_CHOKER,
     MONSTER_SPECTATOR,
 
+    // Appended so existing serialized MonsterIDs remain stable.
+    MONSTER_SKELETON_MAGE,
+
     MONSTER_COUNT
 };
 
@@ -107,6 +110,7 @@ enum MonsterScript
     SCRIPT_WANDER,        // Roam when idle.
     SCRIPT_SUPPORT,       // Heal or assist allies.
     SCRIPT_SPELLCASTER,   // Cast spells based on the situation.
+    SCRIPT_CONTROL_SPELLCASTER, // Control magic, potions, retreat, then melee.
 
     SCRIPT_BOSS,          // Uses multiple attacks and special abilities.
     SCRIPT_PASSIVE,       // Will not attack unless provoked.
@@ -164,6 +168,12 @@ struct Monster
     // Visual abilities query this trait instead of hardcoding MonsterIDs.
     // Omitted trailing aggregate fields are false for ordinary monsters.
     bool sightless;
+
+    // Optional per-monster combat consumables. Spawn copies these normal item
+    // counts into the monster's own inventory; ordinary definitions default
+    // to zero and never use potions.
+    uint8_t healingPotionCount;
+    uint8_t manaPotionCount;
 };
 
 const Monster* getMonster(MonsterID id);
