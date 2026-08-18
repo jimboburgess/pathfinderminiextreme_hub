@@ -17,6 +17,7 @@
 #include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
 #include "map/activemap.h"
+#include "map/awareness.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/roomdraw.h"
 #include "forest/forest.h"
@@ -775,6 +776,10 @@ void drawEntity(const Entity& entity)
     if (!entity.active)
         return;
 
+    if (entity.type == ENTITY_MONSTER &&
+        entity.character.state == STATE_ALIVE && !entity.revealedToPlayer)
+        return;
+
     if (entity.sprite == nullptr)
         return;
 
@@ -785,7 +790,8 @@ void drawEntity(const Entity& entity)
         entity.spriteWidth,
         entity.spriteHeight);
 
-    if (entity.character.state == STATE_DEAD)
+    if (entity.character.state == STATE_DEAD ||
+        entity.character.state == STATE_TURNED)
     {
         int x = entity.x * TILE_SIZE;
         int y = entity.y * TILE_SIZE;
@@ -939,6 +945,7 @@ void drawSpriteTransparent64(
 
 void refreshDisplay()
 {
+    updateAwareness();
     // Inventory/loot is an opaque, full-screen modal. It owns the display
     // until it closes, at which point it schedules a normal full map redraw.
     if (isInventoryMenuOpen())

@@ -265,6 +265,14 @@ bool tryMovePlayer(Dungeon &dungeon)
         targetEntity->type == ENTITY_MONSTER &&
         targetEntity->character.state == STATE_ALIVE)
     {
+        if (!targetEntity->revealedToPlayer)
+        {
+            targetEntity->revealedToPlayer = true;
+            targetEntity->awareOfPlayer = true;
+            markEntityFootprintDirty(*targetEntity);
+            startCombat();
+            return false;
+        }
         return tryPlayerAcrobaticsTraversal(
             dungeon,
             *player,

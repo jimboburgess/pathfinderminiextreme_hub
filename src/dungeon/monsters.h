@@ -177,6 +177,10 @@ struct Monster
     // to zero and never use potions.
     uint8_t healingPotionCount;
     uint8_t manaPotionCount;
+
+    // Awareness bonuses are static monster traits; Entity owns mutable state.
+    int8_t perceptionBonus;
+    int8_t stealthBonus;
 };
 
 const Monster* getMonster(MonsterID id);

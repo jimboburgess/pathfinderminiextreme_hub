@@ -175,6 +175,7 @@ void createCharacter(Character &character, CharacterClass characterClass)
         learnAbility(character, ABILITY_POWER_ATTACK);
     else if (character.characterClass == CLASS_CLERIC)
         learnAbility(character, ABILITY_CHANNEL_ENERGY);
+        learnAbility(character, ABILITY_TURN_UNDEAD);
 
     restoreClassAbilityUses(character);
 

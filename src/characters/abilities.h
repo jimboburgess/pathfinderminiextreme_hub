@@ -37,6 +37,7 @@ enum AbilityID
     //------------------------------------------------
 
     ABILITY_CHANNEL_ENERGY,
+    ABILITY_TURN_UNDEAD,
     ABILITY_POWER_ATTACK,
 
 

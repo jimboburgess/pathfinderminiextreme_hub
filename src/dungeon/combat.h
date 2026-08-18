@@ -123,6 +123,7 @@ struct Combat
     unsigned long attackResultTime = 0;
     bool attackDamagePending = false;
     bool attackResolutionPending = false;
+    bool openingAttackTargeting = false;
 
     //--------------------------------------------------
     // Monster attack result timing
@@ -210,6 +211,8 @@ void checkEndPlayerTurn();
 //==================================================
 
 void beginPlayerAttack(CombatAttackType attackType);
+void beginOutOfCombatAttack(CombatAttackType attackType);
+bool canPlayerAttackOutsideCombat(CombatAttackType attackType);
 bool isPlayerTargetingAttack();
 bool isPlayerAttackResolving();
 Entity* getSelectedAttackTarget();

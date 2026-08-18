@@ -751,13 +751,19 @@ void menuActivate()
         case MENU_MELEE_ATTACK:
 
             closeMenu();
-            beginPlayerAttack(COMBAT_ATTACK_MELEE);
+            if (combat.active)
+                beginPlayerAttack(COMBAT_ATTACK_MELEE);
+            else
+                beginOutOfCombatAttack(COMBAT_ATTACK_MELEE);
             break;
 
         case MENU_RANGED_ATTACK:
 
             closeMenu();
-            beginPlayerAttack(COMBAT_ATTACK_RANGED);
+            if (combat.active)
+                beginPlayerAttack(COMBAT_ATTACK_RANGED);
+            else
+                beginOutOfCombatAttack(COMBAT_ATTACK_RANGED);
             break;
 
         case MENU_CAST_ABILITY:
@@ -1300,18 +1306,22 @@ bool isMenuItemVisible(MenuAction action)
     switch (action)
     {
         case MENU_ATTACK:
-            return isPlayerCombatTurn() &&
+            return (isPlayerCombatTurn() ||
+                    canPlayerAttackOutsideCombat(COMBAT_ATTACK_MELEE) ||
+                    canPlayerAttackOutsideCombat(COMBAT_ATTACK_RANGED)) &&
                    canCharacterAct(*character) &&
                    (getEquippedMeleeWeapon(*character) != nullptr ||
                     getEquippedRangedWeapon(*character) != nullptr);
 
         case MENU_MELEE_ATTACK:
-            return isPlayerCombatTurn() &&
+            return (isPlayerCombatTurn() ||
+                    canPlayerAttackOutsideCombat(COMBAT_ATTACK_MELEE)) &&
                    canCharacterAct(*character) &&
                    getEquippedMeleeWeapon(*character) != nullptr;
 
         case MENU_RANGED_ATTACK:
-            return isPlayerCombatTurn() &&
+            return (isPlayerCombatTurn() ||
+                    canPlayerAttackOutsideCombat(COMBAT_ATTACK_RANGED)) &&
                    canCharacterAct(*character) &&
                    getEquippedRangedWeapon(*character) != nullptr;
 

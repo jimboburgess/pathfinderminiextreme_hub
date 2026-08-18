@@ -28,7 +28,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_EIGHTH,
         LOOT_NONE,
         { ABILITY_NONE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_NONE,
-        { 0, 0 }, 0, 0, CREATURE_PLAYER
+        { 0, 0 }, 0, 0, CREATURE_PLAYER, false, 0, 0, 0, 0
     },
 
     //======================================================
@@ -47,7 +47,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_THIRD,
         LOOT_HUMANOID,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_GOBLIN
+        { 0, 0 }, 0, 0, CREATURE_GOBLIN, false, 0, 0, 2, 2
     },
 
     {
@@ -64,7 +64,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_THIRD,
         LOOT_HUMANOID,
         { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_RANGED,
-        { 0, 0 }, 0, 0, CREATURE_GOBLIN
+        { 0, 0 }, 0, 0, CREATURE_GOBLIN, false, 0, 0, 3, 2
     },
 
     {
@@ -81,7 +81,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_HUMANOID,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_ORC
+        { 0, 0 }, 0, 0, CREATURE_ORC, false, 0, 0, 2, 1
     },
 
     //======================================================
@@ -101,7 +101,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_THIRD,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_SKELETON
+        { 0, 0 }, 0, 0, CREATURE_SKELETON, false, 0, 0, 1, -2
     },
 
     {
@@ -118,7 +118,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE_HALF,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_ZOMBIE
+        { 0, 0 }, 0, 0, CREATURE_ZOMBIE, false, 0, 0, 0, -3
     },
 
     {
@@ -135,7 +135,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_ZOMBIE
+        { 0, 0 }, 0, 0, CREATURE_ZOMBIE, false, 0, 0, 3, 1
     },
 
     {
@@ -152,7 +152,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_THREE,
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_ZOMBIE
+        { 0, 0 }, 0, 0, CREATURE_ZOMBIE, false, 0, 0, 4, 2
     },
 
     //======================================================
@@ -172,7 +172,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_ONE,
         LOOT_BEAST,
         { ABILITY_MELEE_ATTACK, ABILITY_POISON, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 12, 3 }, 0, 0, CREATURE_MONSTER
+        { 12, 3 }, 0, 0, CREATURE_MONSTER, false, 0, 0, 4, 6
     },
 
     {
@@ -189,7 +189,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_MONSTER,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_MONSTER, true
+        { 0, 0 }, 0, 0, CREATURE_MONSTER, true, 0, 0, 1, 1
     },
 
     {
@@ -206,7 +206,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_THREE,
         LOOT_MONSTER,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SUPPORT,
-        { 0, 0 }, 0, 0, CREATURE_MONSTER
+        { 0, 0 }, 0, 0, CREATURE_MONSTER, false, 0, 0, 1, -1
     },
 
     {
@@ -222,7 +222,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CR_TWO,
         LOOT_ABERRATION,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 0, 0 }, 0, 0, CREATURE_MONSTER
+        { 0, 0 }, 0, 0, CREATURE_MONSTER, false, 0, 0, 3, 4
     },
 
     {
@@ -242,7 +242,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         { 0, 0 },
         6,
         4,
-        CREATURE_BEHOLDER
+        CREATURE_BEHOLDER, false, 0, 0, 6, 2
     },
 
     {
@@ -269,7 +269,9 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         CREATURE_SKELETON,
         false,
         2,
-        2
+        2,
+        5,
+        1
     },
 };
 

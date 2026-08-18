@@ -45,6 +45,8 @@ struct Entity
 
     MonsterID monsterID = MONSTER_NONE;
     const Monster* monster = nullptr;
+    bool awareOfPlayer = false;
+    bool revealedToPlayer = false;
 
     LootData loot;
 

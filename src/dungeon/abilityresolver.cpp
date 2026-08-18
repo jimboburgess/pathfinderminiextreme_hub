@@ -326,6 +326,9 @@ bool isAbilitySupported(AbilityID abilityID)
         return false;
     }
 
+    if (abilityID == ABILITY_TURN_UNDEAD)
+        return true;
+
     return isEntityAbilitySupported(*ability) ||
            hasSupportedMapEffect(*ability) ||
            hasSupportedColorSprayProfile(*ability);

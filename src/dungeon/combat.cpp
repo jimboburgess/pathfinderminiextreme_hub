@@ -173,7 +173,15 @@ static bool isMonsterCombatant(const Entity& entity)
 {
     return entity.active &&
            entity.type == ENTITY_MONSTER &&
-           entity.character.team == TEAM_MONSTER;
+           entity.character.team == TEAM_MONSTER &&
+           entity.character.state == STATE_ALIVE;
+}
+
+static bool isUndead(const Entity& entity)
+{
+    return entity.character.creatureType == CREATURE_UNDEAD ||
+           entity.character.creatureType == CREATURE_SKELETON ||
+           entity.character.creatureType == CREATURE_ZOMBIE;
 }
 
 static bool areHostile(const Entity& attacker, const Entity& target)
@@ -1023,7 +1031,7 @@ void findCombatants()
             continue;
 
         if (!isPlayerSideCharacter(entity) &&
-            !isMonsterCombatant(entity))
+            !(isMonsterCombatant(entity) && entity.awareOfPlayer))
         {
             continue;
         }
@@ -1058,61 +1066,7 @@ void findCombatants()
 
 void checkForCombat()
 {
-    Serial.println("checkForCombat()");
-    if (combat.active)
-        return;
-
-    uint8_t entityCount = 0;
-    Entity* entities = getActiveMapEntities(entityCount);
-    Entity* playerEntity = getActiveMapPlayer();
-
-    // A defeated player remains an active map entity so their final state can
-    // still be drawn, but they cannot trigger a new encounter.
-    if (entities == nullptr || playerEntity == nullptr ||
-        playerEntity->character.state != STATE_ALIVE)
-    {
-        return;
-    }
-
-    for (uint8_t i = 0; i < entityCount; i++)
-    {
-        Entity& monster = entities[i];
-
-        // Dead monsters stay active on the map until their corpse loot is
-        // collected. They are valid interaction targets, not combat targets.
-        if (!isMonsterCombatant(monster) ||
-            monster.character.state != STATE_ALIVE)
-        {
-            continue;
-        }
-
-        int distance = getEntityGridDistance(*playerEntity, monster);
-
-        Serial.print("Monster at ");
-        Serial.print(monster.x);
-        Serial.print(", ");
-        Serial.print(monster.y);
-        Serial.print("  Distance = ");
-        Serial.println(distance);
-
-        if (distance > COMBAT_DETECTION_RANGE)
-            continue;
-
-        if (!hasLineOfSightBetweenFootprintsAt(
-                *playerEntity,
-                playerEntity->x,
-                playerEntity->y,
-                monster))
-        {
-            continue;
-        }
-
-        setGameMessage("You hear something nearby.");
-
-        startCombat();
-
-        return;
-    }
+    // Normal awareness is interval-driven so movement is not the trigger.
 }
 
 void rollInitiative()
@@ -1858,6 +1812,43 @@ void beginPlayerAttack(CombatAttackType attackType)
     requestCombatTileRedraw();
 }
 
+bool canPlayerAttackOutsideCombat(CombatAttackType attackType)
+{
+    Entity* player = getActiveMapPlayer();
+    if (combat.active || player == nullptr || !canCharacterAct(player->character))
+        return false;
+    const Weapon* weapon = attackType == COMBAT_ATTACK_MELEE
+        ? getEquippedMeleeWeapon(player->character)
+        : getEquippedRangedWeapon(player->character);
+    if (weapon == nullptr)
+        return false;
+    uint8_t count = 0;
+    Entity* entities = getActiveMapEntities(count);
+    for (uint8_t i = 0; entities != nullptr && i < count; i++)
+        if (isMonsterCombatant(entities[i]) && entities[i].revealedToPlayer &&
+            areHostile(*player, entities[i]) &&
+            (attackType == COMBAT_ATTACK_RANGED ||
+             getEntityGridDistance(*player, entities[i]) <= 1))
+            return true;
+    return false;
+}
+
+void beginOutOfCombatAttack(CombatAttackType attackType)
+{
+    if (!canPlayerAttackOutsideCombat(attackType))
+        return;
+    combat.openingAttackTargeting = true;
+    combat.attackType = attackType;
+    combat.selectedTargetIndex = -1;
+    if (attackType == COMBAT_ATTACK_RANGED)
+        rotateAttackTarget(true);
+    setGameMessage(attackType == COMBAT_ATTACK_MELEE
+        ? "Choose direction: A attack B back"
+        : "Choose target: A attack B back");
+    markAttackCursorDirty();
+    requestCombatTileRedraw();
+}
+
 bool isPlayerTargetingAttack()
 {
     return combat.attackType != COMBAT_ATTACK_NONE &&
@@ -1871,7 +1862,9 @@ bool isPlayerAttackResolving()
 
 Entity* getSelectedAttackTarget()
 {
-    Entity* player = getPlayerCombatant();
+    Entity* player = combat.openingAttackTargeting
+        ? getActiveMapPlayer()
+        : getPlayerCombatant();
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
 
@@ -1895,7 +1888,8 @@ Entity* getSelectedAttackTarget()
             targetX,
             targetY);
 
-        return target != nullptr &&
+        return target != nullptr && target->revealedToPlayer &&
+               areHostile(*player, *target) &&
                target->character.state == STATE_ALIVE
                    ? target
                    : nullptr;
@@ -1909,7 +1903,8 @@ Entity* getSelectedAttackTarget()
 
     Entity* target = &entities[combat.selectedTargetIndex];
 
-    return isValidRangedTarget(player, target) ? target : nullptr;
+    return target->revealedToPlayer && areHostile(*player, *target) &&
+           isValidRangedTarget(player, target) ? target : nullptr;
 }
 
 static void markAttackCursorDirty()
@@ -1958,7 +1953,9 @@ void rotateAttackTarget(bool forward)
 
 void confirmPlayerAttack()
 {
-    Entity* player = getCurrentCombatant();
+    Entity* player = combat.openingAttackTargeting
+        ? getActiveMapPlayer()
+        : getCurrentCombatant();
     Entity* target = getSelectedAttackTarget();
 
     if (player == nullptr || target == nullptr ||
@@ -1967,6 +1964,22 @@ void confirmPlayerAttack()
         setGameMessage("No target selected.");
         needsRedraw = true;
         return;
+    }
+
+    if (combat.openingAttackTargeting)
+    {
+        const bool targetWasAware = target->awareOfPlayer;
+        target->awareOfPlayer = true;
+        target->revealedToPlayer = true;
+        startCombat();
+        for (uint8_t i = 0; i < combat.combatantCount; i++)
+            if (combat.initiativeOrder[i] == player)
+                combat.currentTurnIndex = i;
+        combat.phase = COMBAT_TURN;
+        combat.waitingForPlayer = true;
+        combat.openingAttackTargeting = false;
+        if (!targetWasAware)
+            addCondition(target->character, CONDITION_FLAT_FOOTED, 1, 1);
     }
 
     const Weapon* weapon =
@@ -2112,6 +2125,7 @@ void cancelPlayerAttack()
 
     markAttackCursorDirty();
     combat.attackType = COMBAT_ATTACK_NONE;
+    combat.openingAttackTargeting = false;
     combat.selectedTargetIndex = -1;
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
@@ -2201,6 +2215,60 @@ static void executePlayerAbility(
         resolution);
 }
 
+static void executeTurnUndead(Entity& cleric)
+{
+    const Ability* ability = getAbility(ABILITY_TURN_UNDEAD);
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    int turned = 0;
+    char names[80] = {};
+
+    if (ability == nullptr || entities == nullptr)
+        return;
+
+    const int dc = getAbilitySaveDC(cleric, *ability);
+
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        Entity& target = entities[i];
+        if (!target.active || target.type != ENTITY_MONSTER ||
+            target.character.team != TEAM_MONSTER ||
+            target.character.state != STATE_ALIVE || !isUndead(target) ||
+            getEntityGridDistance(cleric, target) > ability->rangeTiles ||
+            !hasLineOfSightBetweenFootprintsAt(cleric, cleric.x, cleric.y, target))
+            continue;
+
+        AbilitySavingThrow save = resolveAbilitySavingThrow(
+            cleric, target, *ability);
+        if (save.result == SAVE_RESULT_FAILURE)
+        {
+            target.character.state = STATE_TURNED;
+            target.turn.movementRemaining = 0;
+            target.turn.standardActionUsed = true;
+            markEntityFootprintDirty(target);
+            const char* name = getEntityName(&target);
+            if (turned > 0)
+                strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+            strncat(names, name, sizeof(names) - strlen(names) - 1);
+            turned++;
+        }
+    }
+
+    cleric.character.magic.currentMP -= ability->mpCost;
+    cleric.turn.standardActionUsed = true;
+    if (turned == 0)
+        setGameMessage("No undead were turned");
+    else
+    {
+        char message[112];
+        snprintf(message, sizeof(message), "Turned %d undead: %s", turned, names);
+        setGameMessage(message);
+    }
+    playSound(SoundEffect::SPELL_CAST);
+    combat.waitingForPlayer = false;
+    requestCombatTileRedraw();
+}
+
 void presentDirectionalAbilityResolution(
     Entity& caster,
     AbilityID abilityID,
@@ -2257,6 +2325,11 @@ void beginPlayerAbility(AbilityID abilityID)
 
     if (ability->target == TARGET_SELF)
     {
+        if (abilityID == ABILITY_TURN_UNDEAD)
+        {
+            executeTurnUndead(*player);
+            return;
+        }
         executePlayerAbility(*player, player, abilityID);
         return;
     }

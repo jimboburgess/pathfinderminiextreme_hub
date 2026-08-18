@@ -123,6 +123,7 @@ enum CreatureType
     CREATURE_WOLF,
     CREATURE_ORC,
     CREATURE_ZOMBIE,
+    CREATURE_UNDEAD,
     CREATURE_BEHOLDER,
     CREATURE_MONSTER
 };
@@ -148,6 +149,7 @@ enum CharacterState
     STATE_UNCONSCIOUS,
     STATE_DEAD,
     STATE_LOOTED
+    ,STATE_TURNED
 };
 //==================================================
 // Character
