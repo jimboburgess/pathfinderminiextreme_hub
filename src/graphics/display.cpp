@@ -344,8 +344,30 @@ void drawMapEntities()
     if (entities == nullptr)
         return;
 
+    Entity* player = getActiveMapPlayer();
+    const bool playerBlinded = player != nullptr &&
+        hasCondition(player->character, CONDITION_BLINDED);
+
     for (uint8_t i = 0; i < entityCount; i++)
         drawEntity(entities[i]);
+
+    if (!playerBlinded)
+        return;
+
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        const Entity& monster = entities[i];
+        if (!monster.active || monster.type != ENTITY_MONSTER ||
+            monster.character.state != STATE_ALIVE ||
+            !monster.hasLastKnownPosition || monster.sprite == nullptr ||
+            monster.lastKnownX >= getActiveMapWidth() ||
+            monster.lastKnownY >= getActiveMapHeight())
+            continue;
+
+        drawSpriteGrayscaleTransparent(monster.lastKnownX * TILE_SIZE,
+            monster.lastKnownY * TILE_SIZE, monster.sprite,
+            monster.spriteWidth, monster.spriteHeight);
+    }
 }
 
 static void drawMoveCursor()
@@ -775,10 +797,13 @@ void drawEntity(const Entity& entity)
     if (!entity.active)
         return;
 
-    if (entity.type == ENTITY_MONSTER &&
-        entity.character.state == STATE_ALIVE &&
-        !entity.visibleToPlayer)
-        return;
+    if (entity.type == ENTITY_MONSTER && entity.character.state == STATE_ALIVE)
+    {
+        Entity* player = getActiveMapPlayer();
+        if (!entity.visibleToPlayer || (player != nullptr &&
+            hasCondition(player->character, CONDITION_BLINDED)))
+            return;
+    }
 
     if (entity.sprite == nullptr)
         return;
@@ -1048,4 +1073,30 @@ void refreshDisplay()
 
     redrawType = REDRAW_NONE;
     needsRedraw = false;
+}
+
+void drawSpriteGrayscaleTransparent(
+    int x, int y, const uint16_t* sprite, uint8_t width, uint8_t height)
+{
+    if (sprite == nullptr)
+        return;
+
+    tft.startWrite();
+    for (uint8_t row = 0; row < height; row++)
+    {
+        for (uint8_t col = 0; col < width; col++)
+        {
+            const uint16_t color = pgm_read_word(&sprite[row * width + col]);
+            if (color == 0xF81F)
+                continue;
+
+            const uint8_t red = (color >> 11) & 0x1F;
+            const uint8_t green = (color >> 5) & 0x3F;
+            const uint8_t blue = color & 0x1F;
+            const uint8_t gray = (red * 30 + green * 59 + blue * 11) / 100;
+            tft.writePixel(x + col, y + row,
+                (gray << 11) | (gray << 6) | gray);
+        }
+    }
+    tft.endWrite();
 }

@@ -103,6 +103,13 @@ void updateMonsterVisibility()
             monster.revealedToPlayer,
             hasCurrentLineOfSight);
 
+        if (hasCurrentLineOfSight)
+        {
+            monster.lastKnownX = monster.x;
+            monster.lastKnownY = monster.y;
+            monster.hasLastKnownPosition = true;
+        }
+
         if (combatParticipant && hasCurrentLineOfSight &&
             !monster.revealedToPlayer)
         {
@@ -111,10 +118,11 @@ void updateMonsterVisibility()
             monster.revealedToPlayer = true;
         }
 
-        if (monster.visibleToPlayer == visible)
+        const bool liveVisible = playerCanSee && visible;
+        if (monster.visibleToPlayer == liveVisible)
             continue;
 
-        monster.visibleToPlayer = visible;
+        monster.visibleToPlayer = liveVisible;
         markEntityFootprintDirty(monster);
     }
 }

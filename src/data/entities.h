@@ -48,6 +48,9 @@ struct Entity
     bool awareOfPlayer = false;
     bool revealedToPlayer = false;
     bool visibleToPlayer = false;
+    uint8_t lastKnownX = 0;
+    uint8_t lastKnownY = 0;
+    bool hasLastKnownPosition = false;
 
     LootData loot;
 

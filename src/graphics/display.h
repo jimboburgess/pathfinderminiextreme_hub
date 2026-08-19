@@ -45,6 +45,8 @@ extern bool backgroundNeedsRedraw;
 void drawSpriteTransparent(int x,int y,const uint16_t* sprite);
 void drawSpriteTransparent(int x,int y,const uint16_t* sprite,uint8_t width,uint8_t height);
 void drawSpriteTransparent64(int x, int y, const uint16_t* sprite);
+void drawSpriteGrayscaleTransparent(
+    int x, int y, const uint16_t* sprite, uint8_t width, uint8_t height);
 
 void refreshDisplay();
 
