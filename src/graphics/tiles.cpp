@@ -44,3 +44,23 @@ const uint16_t treeTile[16 * 16] PROGMEM = {
     0xF81F, 0xF81F, 0xF81F, 0x0040, 0x10c0, 0x1121, 0x1961, 0x2a21, 0x2a41, 0x21c1, 0x3ac1, 0x1941, 0x0040, 0xF81F, 0xF81F, 0xF81F,
     0xF81F, 0xF81F, 0xF81F, 0xF81F, 0xF81F, 0xF81F, 0x0040, 0x10e0, 0x1100, 0x0040, 0x0860, 0xF81F, 0xF81F, 0xF81F, 0xF81F, 0xF81F
 };
+
+// Subtle, seam-free wall tones let adjacent tiles read as continuous masonry.
+// Floor rows intentionally retain wider slab seams and sparse crack/moss marks.
+#define DUNGEON_ROW16(c) c,c,c,c,c,c,c,c,c,c,c,c,c,c,c,c
+#define DUNGEON_ROWS16(c) DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c),DUNGEON_ROW16(c)
+
+const uint16_t dungeonWallTiles[3][16 * 16] PROGMEM = {
+    { DUNGEON_ROWS16(0x2945) },
+    { DUNGEON_ROWS16(0x3186) },
+    { DUNGEON_ROWS16(0x2104) }
+};
+
+const uint16_t dungeonFloorTiles[3][16 * 16] PROGMEM = {
+    { DUNGEON_ROWS16(0x6B4D) },
+    { DUNGEON_ROWS16(0x634C) },
+    { DUNGEON_ROWS16(0x5B6B) }
+};
+
+#undef DUNGEON_ROWS16
+#undef DUNGEON_ROW16

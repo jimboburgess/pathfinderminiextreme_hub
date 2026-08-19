@@ -493,6 +493,7 @@ static bool isRoomGeometryWalkable(TileType tile) {
     case TILE_ENEMY_START:
     case TILE_GIANT_SPIDER_START:
     case TILE_SKELETON_MAGE_START:
+    case TILE_SKELETON_START:
       return true;
 
     default:
@@ -1826,11 +1827,11 @@ static void generateAmbush(DungeonRoom &room) {
 static void generateBoss(DungeonRoom &room) {
   int center = ROOM_SIZE / 2;
 
-
-  // Boss positions
-  placeContentMarkerNear(room, TILE_ENEMY_START, 2, 2);
+  // The final encounter deliberately replaces normal random population:
+  // Skeleton Mage with two existing longsword Skeleton guards.
+  placeContentMarkerNear(room, TILE_SKELETON_START, 2, 2);
   placeContentMarkerNear(room, TILE_SKELETON_MAGE_START, center, 2);
-  placeContentMarkerNear(room, TILE_ENEMY_START, 12, 2);
+  placeContentMarkerNear(room, TILE_SKELETON_START, 12, 2);
 }
 
 static void generateTreasure(DungeonRoom &room) {

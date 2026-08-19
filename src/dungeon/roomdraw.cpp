@@ -5,6 +5,7 @@
 #include "roomdraw.h"
 #include <Adafruit_ST7789.h>
 #include "config.h"
+#include "graphics/tiles.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -26,12 +27,16 @@ void drawTile(int tileX, int tileY, TileType tile) {
 
   switch (tile) {
     case TILE_WALL:
-      color = COLOR_WALL;
-      break;
+      tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                        dungeonWallTiles[(tileX * 7 + tileY * 11) % 3],
+                        TILE_SIZE, TILE_SIZE);
+      return;
 
     case TILE_FLOOR:
-      color = COLOR_FLOOR;
-      break;
+      tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                        dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                        TILE_SIZE, TILE_SIZE);
+      return;
 
     case TILE_DOOR:
       color = COLOR_DOOR;

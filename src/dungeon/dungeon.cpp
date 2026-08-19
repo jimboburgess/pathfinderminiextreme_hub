@@ -10,6 +10,7 @@
 #include "combat.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
+#include "map/awareness.h"
 #include "map/mapeffects.h"
 
 Dungeon dungeon;
@@ -49,6 +50,9 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
     }
 
     dungeon.rooms[roomIndex].completed = !hasLivingMonster;
+
+    if (roomIndex == FINAL_DUNGEON_ROOM_INDEX)
+        dungeon.finalEncounterCleared = !hasLivingMonster;
 }
 
 void detachLoadedDungeonPlayer(Dungeon& dungeon)
@@ -131,6 +135,16 @@ void initializeRoomEntities(
                         dungeon.entities,
                         dungeon.entityCount,
                         MONSTER_SKELETON_MAGE,
+                        x,
+                        y);
+                    room.map.tiles[y][x] = TILE_FLOOR;
+                    break;
+
+                case TILE_SKELETON_START:
+                    spawnMonster(
+                        dungeon.entities,
+                        dungeon.entityCount,
+                        MONSTER_SKELETON,
                         x,
                         y);
                     room.map.tiles[y][x] = TILE_FLOOR;
@@ -272,7 +286,13 @@ void enterDungeon()
     // the primary cleanup path; this is the requested defensive safety net.
     abortCombat();
 
-    const bool resumingRun = dungeon.runActive;
+    const bool resumingRun = hasResumableDungeon(dungeon);
+
+    // A completed run is not a resumable adventure. Normally town travel has
+    // already reset it, but keep entry defensive if completion was reached by
+    // another path.
+    if (dungeon.runActive && !resumingRun)
+        resetDungeonRun(dungeon);
 
     if (resumingRun)
     {
@@ -346,8 +366,8 @@ void generateDungeon(Dungeon& dungeon)
             break;
     }
 
-    dungeon.rooms[3].type = ROOM_BOSS;
-    dungeon.rooms[4].type = ROOM_TREASURE;
+    dungeon.rooms[3].type = ROOM_TREASURE;
+    dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].type = ROOM_BOSS;
 
     dungeon.rooms[0].discovered = true;
 
@@ -358,17 +378,6 @@ void generateDungeon(Dungeon& dungeon)
         dungeon.rooms[i].shape =
             randomProductionRoomShape(dungeon.rooms[i]);
         generateRoom(dungeon.rooms[i]);
-    }
-
-    // Keep the temporary Giant Spider encounter out of the entrance. Prefer
-    // the deepest room, then walk backward through later rooms if its current
-    // content leaves no valid 2x2 floor footprint.
-    for (int roomIndex = GIANT_SPIDER_TEST_ROOM_INDEX;
-         roomIndex > 0;
-         roomIndex--)
-    {
-        if (placeGiantSpiderEncounter(dungeon.rooms[roomIndex]))
-            break;
     }
 
     dungeon.runActive = true;
@@ -429,6 +438,7 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
     room.discovered = true;
     dungeon.loadedRoom = dungeon.currentRoom;
     runtime.entityCount = dungeon.entityCount;
+    resetAwarenessTimer();
 }
 
 void suspendDungeonRun(Dungeon& dungeon)
@@ -449,6 +459,8 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.entityCount = 0;
     dungeon.loadedRoom = NO_ROOM;
     dungeon.currentRoom = 0;
+    dungeon.finalEncounterCleared = false;
+    dungeon.completed = false;
 
     for (uint8_t roomIndex = 0; roomIndex < MAX_ROOMS; roomIndex++)
     {
@@ -482,33 +494,17 @@ void updateCurrentDungeonRoomCompletion(Dungeon& dungeon)
 
 bool isDungeonRunComplete(const Dungeon& dungeon)
 {
-    if (!dungeon.runActive)
-        return false;
+    return dungeon.runActive && dungeon.finalEncounterCleared;
+}
 
-    for (uint8_t roomIndex = 0; roomIndex < MAX_ROOMS; roomIndex++)
-    {
-        const DungeonRoom& room = dungeon.rooms[roomIndex];
-        const DungeonRoomRuntime& runtime =
-            dungeon.roomRuntime[roomIndex];
+bool hasResumableDungeon(const Dungeon& dungeon)
+{
+    return dungeon.runActive && !dungeon.completed;
+}
 
-        if (!room.discovered || !room.completed || !runtime.initialized)
-            return false;
-
-        // An unlooted corpse remains an active monster entity. Keep the run
-        // resumable until every corpse has been dealt with, so town travel can
-        // never discard loot that was legitimately generated before fleeing.
-        for (uint8_t i = 0; i < runtime.entityCount; i++)
-        {
-            const Entity& entity = runtime.entities[i];
-
-            if (entity.active && entity.type == ENTITY_MONSTER &&
-                entity.character.state != STATE_LOOTED)
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
+void markDungeonCompletedOnTownReturn(Dungeon& dungeon)
+{
+    if (isDungeonRunComplete(dungeon))
+        dungeon.completed = true;
 }
 

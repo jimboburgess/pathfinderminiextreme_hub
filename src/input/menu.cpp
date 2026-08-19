@@ -482,6 +482,72 @@ const Menu gameMenu =
 
 //
 //--------------------------------------------------
+// Town Dungeon Entry
+//--------------------------------------------------
+//
+
+const MenuItem startNewDungeonConfirmItems[] =
+{
+    {
+        "No",
+        "Keep the current dungeon progress.",
+        MENU_DUNGEON_START_NEW_NO,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Yes",
+        "Discard progress and generate a new dungeon.",
+        MENU_DUNGEON_START_NEW_YES,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
+const Menu startNewDungeonConfirmMenu =
+{
+    "Start new dungeon?",
+    startNewDungeonConfirmItems,
+    sizeof(startNewDungeonConfirmItems) /
+        sizeof(MenuItem),
+    nullptr,
+    "Current progress will be lost."
+};
+
+const MenuItem dungeonEntryMenuItems[] =
+{
+    {
+        "Resume Dungeon",
+        "Continue the saved dungeon run.",
+        MENU_DUNGEON_RESUME,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Start New Dungeon",
+        "Discard the saved dungeon and begin again.",
+        MENU_DUNGEON_START_NEW,
+        &startNewDungeonConfirmMenu,
+        MENU_CLASS_ALL
+    },
+    {
+        "Back",
+        "Return to town.",
+        MENU_DUNGEON_BACK,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
+const Menu dungeonEntryMenu =
+{
+    "Dungeon",
+    dungeonEntryMenuItems,
+    sizeof(dungeonEntryMenuItems) / sizeof(MenuItem)
+};
+
+//
+//--------------------------------------------------
 // Combat Menu
 //--------------------------------------------------
 //
@@ -608,7 +674,7 @@ void openMenu(const Menu* menu)
     menuState.redrawType = MENU_REDRAW_FULL;
     menuState.isOpen = true;
 
-    suppressEncoderSelectUntilRelease();
+    suppressMenuInputUntilRelease();
     needsRedraw = true;     // <-- add this
 }
 
@@ -627,7 +693,7 @@ bool pushMenu(const Menu* menu)
     menuState.firstVisibleIndex = 0;
     menuState.redrawType = MENU_REDRAW_FULL;
 
-    suppressEncoderSelectUntilRelease();
+    suppressMenuInputUntilRelease();
     needsRedraw = true;
     return true;
 }
@@ -639,11 +705,27 @@ void closeMenu()
     menuState.firstVisibleIndex = 0;
     menuState.isOpen = false;
 
+    suppressMenuInputUntilRelease();
+
     backgroundNeedsRedraw = true;
 
     redrawType = REDRAW_FULL;
     needsRedraw = true;
 }
+
+void openDungeonEntryMenu()
+{
+    // Town only opens this selector for an unfinished run. Keep the helper
+    // defensive so a completed/stale run cannot gain a Resume option.
+    if (!hasResumableDungeon(dungeon))
+    {
+        enterDungeon();
+        return;
+    }
+
+    openMenu(&dungeonEntryMenu);
+}
+
 void updateMenu()
 {
     // Reserved for future menu animation.
@@ -881,10 +963,9 @@ void menuActivate()
                 updateCurrentDungeonRoomCompletion(dungeon);
                 suspendDungeonRun(dungeon);
 
-                // A run is complete only after every room has been visited
-                // and cleared and no unlooted monster corpse remains.
-                if (isDungeonRunComplete(dungeon))
-                    resetDungeonRun(dungeon);
+                // Final-encounter victory becomes a completed run only when
+                // the player has safely returned to town.
+                markDungeonCompletedOnTownReturn(dungeon);
             }
 
             gameState = GAME_TOWN;
@@ -893,6 +974,27 @@ void menuActivate()
             redrawType = REDRAW_FULL;
             needsRedraw = true;
 
+            break;
+
+        case MENU_DUNGEON_RESUME:
+            closeMenu();
+            enterDungeon();
+            break;
+
+        case MENU_DUNGEON_START_NEW_NO:
+            // The confirmation is a child of the dungeon submenu, so popping
+            // it restores that submenu with the retained run untouched.
+            menuCancel();
+            break;
+
+        case MENU_DUNGEON_START_NEW_YES:
+            closeMenu();
+            resetDungeonRun(dungeon);
+            enterDungeon();
+            break;
+
+        case MENU_DUNGEON_BACK:
+            closeMenu();
             break;
 
         case MENU_SHOP_BUY:
@@ -938,6 +1040,7 @@ void menuCancel()
         menuState.firstVisibleIndex = 0;
 
         menuState.redrawType = MENU_REDRAW_FULL;
+        suppressMenuInputUntilRelease();
         needsRedraw = true;
     }
     else

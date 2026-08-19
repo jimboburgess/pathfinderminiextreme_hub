@@ -17,6 +17,7 @@
 #include "graphics/messagelog.h"
 #include "input/menu.h"
 #include "characters/characters.h"
+#include "map/awareness.h"
 #include "map/mapeffects.h"
 
 
@@ -198,6 +199,7 @@ void enterForest()
     abortCombat();
     gameState = GAME_FOREST;
     initForest();
+    resetAwarenessTimer();
     setGameMessage("Entered forest");
 
     Entity* player = getPlayerEntity(

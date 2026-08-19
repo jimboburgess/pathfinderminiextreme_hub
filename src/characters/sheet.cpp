@@ -9,6 +9,7 @@
 #include "data/entityspawn.h"
 #include "dungeon/dungeon.h"
 #include "forest/forest.h"
+#include "input/buttons.h"
 #include <cstdio>
 #include <cstring>
 
@@ -407,11 +408,13 @@ void openCharacterView(CharacterView view)
     }
 
     scrollOffset = 0;
+    suppressMenuInputUntilRelease();
     needsRedraw = true;
 }
 
 void closeCharacterSheet(){
     isCharacterSheetOpen = false;
+    suppressMenuInputUntilRelease();
     backgroundNeedsRedraw = true;
     redrawType = REDRAW_FULL;
     needsRedraw = true;

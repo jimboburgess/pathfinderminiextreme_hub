@@ -92,6 +92,7 @@ struct DungeonRoom {
 
 
 constexpr uint8_t MAX_ROOMS = 5;
+constexpr uint8_t FINAL_DUNGEON_ROOM_INDEX = MAX_ROOMS - 1;
 constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = MAX_ROOMS - 1;
 constexpr uint8_t MAX_COMBATANTS = 16;
 constexpr uint8_t NO_ENTITY_SLOT = 255;
@@ -119,6 +120,8 @@ struct Dungeon {
     uint8_t entityCount = 0;
     uint8_t loadedRoom = NO_ROOM;
     bool runActive = false;
+    bool finalEncounterCleared = false;
+    bool completed = false;
     };
 
 extern Dungeon dungeon;
@@ -132,5 +135,7 @@ void suspendDungeonRun(Dungeon& dungeon);
 void resetDungeonRun(Dungeon& dungeon);
 void updateCurrentDungeonRoomCompletion(Dungeon& dungeon);
 bool isDungeonRunComplete(const Dungeon& dungeon);
+bool hasResumableDungeon(const Dungeon& dungeon);
+void markDungeonCompletedOnTownReturn(Dungeon& dungeon);
 
 #endif //PATHFINDERMINIEXTREME_025_DUNGEON_H

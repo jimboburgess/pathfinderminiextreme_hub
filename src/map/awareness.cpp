@@ -6,6 +6,7 @@
 #include "data/dice.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
+#include "data/entitytraits.h"
 #include "dungeon/combat.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
@@ -34,6 +35,88 @@ int getStealthSituationModifier(const Entity& player, const Entity& observer)
     // Future shadow/light modifiers belong here.
     return hasLineOfSightBetweenFootprintsAt(
         observer, observer.x, observer.y, player) ? 0 : 5;
+}
+
+bool tryMonsterDetectPlayer(Entity& monster, const Entity& player)
+{
+    if (monster.awareOfPlayer)
+        return true;
+
+    if (!isHostileLivingMonster(monster) || monster.monster == nullptr ||
+        getEntityGridDistance(player, monster) > COMBAT_DETECTION_RANGE)
+    {
+        return false;
+    }
+
+    const int playerStealth = rollDie(20) +
+        getSkillBonus(player.character, SKILL_STEALTH) +
+        getStealthSituationModifier(player, monster);
+    const int monsterPerception =
+        rollDie(20) + monster.monster->perceptionBonus;
+
+    Serial.printf("Player Stealth %d; %s Perception %d\n",
+                  playerStealth, getEntityName(&monster), monsterPerception);
+
+    if (!applyMonsterDetectionResult(
+            monster,
+            monsterPerceptionBeatsStealth(
+                monsterPerception, playerStealth)))
+    {
+        return false;
+    }
+
+    markEntityFootprintDirty(monster);
+    return true;
+}
+
+void updateMonsterVisibility()
+{
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    Entity* player = getActiveMapPlayer();
+
+    if (entities == nullptr || player == nullptr)
+        return;
+
+    const bool playerCanSee = canSee(*player);
+
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        Entity& monster = entities[i];
+
+        if (!monster.active || monster.type != ENTITY_MONSTER ||
+            monster.character.state != STATE_ALIVE)
+        {
+            continue;
+        }
+
+        const bool hasCurrentLineOfSight = playerCanSee &&
+            hasLineOfSightBetweenFootprintsAt(
+                *player, player->x, player->y, monster);
+        const bool combatParticipant =
+            combatParticipationGrantsVisibility(
+                isCombatParticipant(monster),
+                combat.openingAttackInProgress,
+                monster.awareOfPlayer);
+        const bool visible = shouldMonsterBeVisible(
+            combatParticipant,
+            monster.revealedToPlayer,
+            hasCurrentLineOfSight);
+
+        if (combatParticipant && hasCurrentLineOfSight &&
+            !monster.revealedToPlayer)
+        {
+            // Seeing a room combatant corrects stale pre-combat discovery
+            // state, but LOS loss never changes awareness or discovery back.
+            monster.revealedToPlayer = true;
+        }
+
+        if (monster.visibleToPlayer == visible)
+            continue;
+
+        monster.visibleToPlayer = visible;
+        markEntityFootprintDirty(monster);
+    }
 }
 
 void updateAwareness()
@@ -72,17 +155,8 @@ void updateAwareness()
         if (distance > COMBAT_DETECTION_RANGE || monster.awareOfPlayer)
             continue;
 
-        const int playerStealth = rollDie(20) +
-            getSkillBonus(player->character, SKILL_STEALTH) +
-            getStealthSituationModifier(*player, monster);
-        const int monsterPerception = rollDie(20) + monster.monster->perceptionBonus;
-        Serial.printf("Player Stealth %d; %s Perception %d\n",
-                      playerStealth, getEntityName(&monster), monsterPerception);
-        if (monsterPerception > playerStealth)
+        if (tryMonsterDetectPlayer(monster, *player))
         {
-            monster.awareOfPlayer = true;
-            monster.revealedToPlayer = true;
-            markEntityFootprintDirty(monster);
             char message[64];
             snprintf(message, sizeof(message), "%s looks your way!", getEntityName(&monster));
             setGameMessage(message);

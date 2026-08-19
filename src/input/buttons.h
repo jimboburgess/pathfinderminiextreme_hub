@@ -26,6 +26,10 @@ bool encoderButtonLongPressed();
 // with the same physical press that opened it.
 void suppressEncoderSelectUntilRelease();
 
+// Arms all confirm/back controls only after their current press has been
+// released and a brief menu-transition guard has elapsed.
+void suppressMenuInputUntilRelease();
+
 // Individual state handlers
 void handleStartButtons();
 void handleCharacterCreationButtons();

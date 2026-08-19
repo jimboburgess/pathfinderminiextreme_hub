@@ -47,6 +47,7 @@ struct Entity
     const Monster* monster = nullptr;
     bool awareOfPlayer = false;
     bool revealedToPlayer = false;
+    bool visibleToPlayer = false;
 
     LootData loot;
 

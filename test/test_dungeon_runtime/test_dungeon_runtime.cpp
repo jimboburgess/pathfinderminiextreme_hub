@@ -36,6 +36,10 @@ void clearMapEffects()
     mapEffectClearCount++;
 }
 
+void resetAwarenessTimer()
+{
+}
+
 bool removeCondition(Character& character, ConditionType type)
 {
     for (uint8_t i = 0; i < character.conditions.count; i++)
@@ -321,6 +325,8 @@ void test_living_monster_hp_and_conditions_survive_room_reload()
     runtime.entities[0].character.conditions.conditions[0].type =
         CONDITION_BLINDED;
     runtime.entities[0].character.conditions.conditions[0].roundsRemaining = 3;
+    runtime.entities[0].awareOfPlayer = true;
+    runtime.entities[0].revealedToPlayer = true;
 
     suspendDungeonRun(dungeon);
     dungeon.currentRoom = 2;
@@ -337,12 +343,18 @@ void test_living_monster_hp_and_conditions_survive_room_reload()
         runtime.entities[0].character.conditions.conditions[0].type);
     TEST_ASSERT_EQUAL_INT(3,
         runtime.entities[0].character.conditions.conditions[0].roundsRemaining);
+    TEST_ASSERT_TRUE(runtime.entities[0].awareOfPlayer);
+    TEST_ASSERT_TRUE(runtime.entities[0].revealedToPlayer);
 }
 
 void test_resume_uses_existing_layout_and_does_not_regenerate()
 {
     configureLoadedRoom(3);
     dungeon.rooms[0].map.tiles[4][5] = TILE_WALL;
+    dungeon.rooms[3].map.tiles[7][8] = TILE_WALL;
+    dungeon.roomRuntime[3].entities[0].character.state = STATE_DEAD;
+    dungeon.roomRuntime[3].entities[0].loot.generated = true;
+    dungeon.roomRuntime[3].entities[0].loot.gold = 17;
 
     DungeonRoomRuntime& entrance = dungeon.roomRuntime[0];
     entrance.initialized = true;
@@ -356,9 +368,29 @@ void test_resume_uses_existing_layout_and_does_not_regenerate()
     TEST_ASSERT_EQUAL_UINT8(0, dungeon.currentRoom);
     TEST_ASSERT_EQUAL_UINT8(0, generatedRoomCount);
     TEST_ASSERT_EQUAL(TILE_WALL, dungeon.rooms[0].map.tiles[4][5]);
+    TEST_ASSERT_EQUAL(TILE_WALL, dungeon.rooms[3].map.tiles[7][8]);
+    TEST_ASSERT_EQUAL(STATE_DEAD,
+        dungeon.roomRuntime[3].entities[0].character.state);
+    TEST_ASSERT_TRUE(dungeon.roomRuntime[3].entities[0].loot.generated);
+    TEST_ASSERT_EQUAL_UINT16(17,
+        dungeon.roomRuntime[3].entities[0].loot.gold);
     TEST_ASSERT_NOT_NULL(getPlayerEntity(
         dungeon.entities, dungeon.entityCount));
     TEST_ASSERT_FALSE(combat.active);
+}
+
+void test_only_unfinished_runs_are_resumable()
+{
+    configureLoadedRoom(1);
+    TEST_ASSERT_TRUE(hasResumableDungeon(dungeon));
+
+    dungeon.finalEncounterCleared = true;
+    TEST_ASSERT_TRUE(isDungeonRunComplete(dungeon));
+    TEST_ASSERT_TRUE(hasResumableDungeon(dungeon));
+
+    markDungeonCompletedOnTownReturn(dungeon);
+    TEST_ASSERT_TRUE(dungeon.completed);
+    TEST_ASSERT_FALSE(hasResumableDungeon(dungeon));
 }
 
 void test_new_run_generates_only_when_no_run_is_active()
@@ -372,30 +404,46 @@ void test_new_run_generates_only_when_no_run_is_active()
     TEST_ASSERT_EQUAL_UINT8(0, dungeon.currentRoom);
 }
 
-void test_unlooted_corpse_blocks_completion()
+void test_final_encounter_must_be_fully_defeated_before_completion()
 {
     resetDungeonRun(dungeon);
     dungeon.runActive = true;
+    dungeon.currentRoom = FINAL_DUNGEON_ROOM_INDEX;
+    dungeon.loadedRoom = FINAL_DUNGEON_ROOM_INDEX;
+    DungeonRoomRuntime& runtime =
+        dungeon.roomRuntime[FINAL_DUNGEON_ROOM_INDEX];
+    runtime.initialized = true;
+    runtime.entityCount = 3;
+    dungeon.entities = runtime.entities;
+    dungeon.entityCount = runtime.entityCount;
 
-    for (uint8_t i = 0; i < MAX_ROOMS; i++)
+    const MonsterID monsters[] = {
+        MONSTER_SKELETON_MAGE,
+        MONSTER_SKELETON,
+        MONSTER_SKELETON};
+
+    for (uint8_t i = 0; i < runtime.entityCount; i++)
     {
-        dungeon.rooms[i].discovered = true;
-        dungeon.rooms[i].completed = true;
-        dungeon.roomRuntime[i].initialized = true;
+        runtime.entities[i] = Entity{};
+        runtime.entities[i].active = true;
+        runtime.entities[i].type = ENTITY_MONSTER;
+        runtime.entities[i].monsterID = monsters[i];
+        runtime.entities[i].character.team = TEAM_MONSTER;
+        runtime.entities[i].character.state = STATE_DEAD;
     }
 
-    DungeonRoomRuntime& runtime = dungeon.roomRuntime[4];
-    runtime.entityCount = 1;
-    runtime.entities[0] = Entity{};
-    runtime.entities[0].active = true;
-    runtime.entities[0].type = ENTITY_MONSTER;
-    runtime.entities[0].character.state = STATE_DEAD;
-
+    runtime.entities[2].character.state = STATE_ALIVE;
+    updateCurrentDungeonRoomCompletion(dungeon);
     TEST_ASSERT_FALSE(isDungeonRunComplete(dungeon));
 
-    runtime.entities[0].character.state = STATE_LOOTED;
-    runtime.entities[0].active = false;
+    runtime.entities[2].character.state = STATE_DEAD;
+    updateCurrentDungeonRoomCompletion(dungeon);
     TEST_ASSERT_TRUE(isDungeonRunComplete(dungeon));
+    TEST_ASSERT_FALSE(dungeon.completed);
+
+    markDungeonCompletedOnTownReturn(dungeon);
+    TEST_ASSERT_TRUE(dungeon.completed);
+    TEST_ASSERT_FALSE(hasResumableDungeon(dungeon));
 }
 
 void test_reset_discards_runtime_run_without_touching_player()
@@ -412,6 +460,27 @@ void test_reset_discards_runtime_run_without_touching_player()
     TEST_ASSERT_FALSE(dungeon.roomRuntime[1].initialized);
     TEST_ASSERT_EQUAL_INT(5, player.health.currentHP);
     TEST_ASSERT_EQUAL_INT(1, player.magic.currentMP);
+}
+
+void test_starting_new_run_clears_old_runtime_before_generation()
+{
+    configureLoadedRoom(2);
+    dungeon.roomRuntime[2].entities[0].character.state = STATE_DEAD;
+    dungeon.roomRuntime[2].entities[0].loot.generated = true;
+    dungeon.roomRuntime[2].entities[0].loot.gold = 23;
+
+    resetDungeonRun(dungeon);
+
+    TEST_ASSERT_FALSE(dungeon.runActive);
+    TEST_ASSERT_FALSE(dungeon.roomRuntime[2].initialized);
+    TEST_ASSERT_EQUAL_UINT8(0, dungeon.roomRuntime[2].entityCount);
+    TEST_ASSERT_FALSE(dungeon.roomRuntime[2].entities[0].active);
+    TEST_ASSERT_EQUAL_UINT16(0, dungeon.roomRuntime[2].entities[0].loot.gold);
+
+    enterDungeon();
+
+    TEST_ASSERT_TRUE(dungeon.runActive);
+    TEST_ASSERT_EQUAL_UINT8(MAX_ROOMS, generatedRoomCount);
 }
 
 void test_abort_clears_combat_only_state_and_preserves_characters()
@@ -513,9 +582,11 @@ void setup()
     RUN_TEST(test_dead_unlooted_and_looted_state_survive_room_reload);
     RUN_TEST(test_living_monster_hp_and_conditions_survive_room_reload);
     RUN_TEST(test_resume_uses_existing_layout_and_does_not_regenerate);
+    RUN_TEST(test_only_unfinished_runs_are_resumable);
     RUN_TEST(test_new_run_generates_only_when_no_run_is_active);
-    RUN_TEST(test_unlooted_corpse_blocks_completion);
+    RUN_TEST(test_final_encounter_must_be_fully_defeated_before_completion);
     RUN_TEST(test_reset_discards_runtime_run_without_touching_player);
+    RUN_TEST(test_starting_new_run_clears_old_runtime_before_generation);
     RUN_TEST(test_abort_clears_combat_only_state_and_preserves_characters);
     UNITY_END();
 }

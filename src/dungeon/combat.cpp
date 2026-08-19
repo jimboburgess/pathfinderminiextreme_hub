@@ -6,7 +6,9 @@
 
 #include "map/activemap.h"
 #include "abilityresolver.h"
+#include "combatpolicy.h"
 #include "loot.h"
+#include "map/awareness.h"
 #include "map/mapeffects.h"
 #include "monsterscripts.h"
 #include "audio/audio.h"
@@ -54,6 +56,8 @@ static void markPlayerFacingCursorDirty()
 
 static void markAttackCursorDirty();
 static void markInspectionCursorDirty();
+static uint8_t getLivingEnemyCombatantCount();
+static void showCombatStartMessage();
 
 static int gridDistanceToTile(const Entity* entity, int tileX, int tileY)
 {
@@ -167,14 +171,6 @@ static bool isPlayerSideCharacter(const Entity& entity)
     return entity.active &&
            entity.type == ENTITY_PLAYER &&
            entity.character.team == TEAM_PLAYER;
-}
-
-static bool isMonsterCombatant(const Entity& entity)
-{
-    return entity.active &&
-           entity.type == ENTITY_MONSTER &&
-           entity.character.team == TEAM_MONSTER &&
-           entity.character.state == STATE_ALIVE;
 }
 
 static bool isUndead(const Entity& entity)
@@ -336,6 +332,12 @@ static bool selectNextEntityTarget(
             ? isValidAbilitySelectionTarget(player, &entities[index])
             : isValidRangedTarget(player, &entities[index]);
 
+        if (valid && !abilityTargeting && combat.openingAttackTargeting)
+        {
+            valid = entities[index].revealedToPlayer &&
+                    areHostile(*player, entities[index]);
+        }
+
         if (valid)
         {
             combat.selectedTargetIndex = index;
@@ -349,13 +351,7 @@ static bool selectNextEntityTarget(
 
 bool canSneakAttack(const Entity& attacker, const Entity& target)
 {
-    return attacker.active &&
-           target.active &&
-           attacker.character.state == STATE_ALIVE &&
-           target.character.state == STATE_ALIVE &&
-           attacker.character.characterClass == CLASS_ROGUE &&
-           areHostile(attacker, target) &&
-           hasCondition(target.character, CONDITION_FLAT_FOOTED);
+    return qualifiesForSneakAttack(attacker, target);
 }
 
 static int rollSneakAttackDamage(
@@ -421,7 +417,7 @@ static bool areAllCombatMonstersDefeated()
     {
         Entity* entity = combat.initiativeOrder[i];
 
-        if (entity == nullptr || !isMonsterCombatant(*entity))
+        if (entity == nullptr || !isHostileMonsterForCombat(*entity))
             continue;
 
         hasMonster = true;
@@ -469,7 +465,7 @@ static DefeatResult finalizeDefeat(Entity& defeated)
     generateCorpseLoot(defeated);
 
     // Only a hostile static monster definition carries a combat XP award.
-    if (!isMonsterCombatant(defeated))
+    if (!isHostileMonsterForCombat(defeated))
         return result;
 
     const Monster* monster = defeated.monster;
@@ -774,8 +770,59 @@ static void showInspection(const Entity* entity)
     requestCombatTileRedraw();
 }
 
+static bool anotherMonsterDetectsAfterOpeningAttack(
+    const Entity* openingTarget)
+{
+    Entity* player = getPlayerCombatant();
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+
+    if (player == nullptr || entities == nullptr)
+        return false;
+
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        Entity& monster = entities[i];
+
+        if (&monster == openingTarget || !isLivingHostileForCombat(monster))
+            continue;
+
+        if (monster.awareOfPlayer ||
+            tryMonsterDetectPlayer(monster, *player))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void beginInitiativeAfterOpeningAttack()
+{
+    // The provisional roster existed only so the established attack resolver
+    // could run. Rebuild now so a dead opener is removed and a forest monster
+    // that detected the player after the strike is included.
+    clearCombatFlatFootedConditions();
+    findCombatants();
+    rollInitiative();
+    sortInitiative();
+    applyFlatFootedToCombatants();
+
+    combat.phase = COMBAT_INITIATIVE;
+    combat.phaseStartTime = millis();
+    combat.initiativeMessageShown = false;
+    combat.currentTurnIndex = 0;
+    combat.combatRound = 1;
+    combat.waitingForPlayer = false;
+    showCombatStartMessage();
+}
+
 static void finishPlayerAttack()
 {
+    Entity* resolvedTarget = combat.pendingAttackTarget;
+    const bool wasOpeningAttack = combat.openingAttackInProgress;
+    const bool wasAmbush = combat.openingAttackWasAmbush;
+
     combat.attackType = COMBAT_ATTACK_NONE;
     combat.selectedTargetIndex = -1;
     combat.attackDamagePending = false;
@@ -786,9 +833,42 @@ static void finishPlayerAttack()
     combat.pendingSneakAttackDamage = 0;
     combat.pendingPowerAttack = false;
     combat.pendingPowerAttackDamage = 0;
+    combat.openingAttackInProgress = false;
+    combat.openingAttackWasAmbush = false;
 
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
+
+    if (wasOpeningAttack)
+    {
+        const bool targetDefeated = resolvedTarget == nullptr ||
+            resolvedTarget->character.state != STATE_ALIVE;
+
+        const bool anotherMonsterDetected =
+            wasAmbush && targetDefeated &&
+            anotherMonsterDetectsAfterOpeningAttack(resolvedTarget);
+
+        if (!shouldContinueCombatAfterOpeningAttack(
+                wasAmbush, targetDefeated, anotherMonsterDetected))
+        {
+            // A quiet stealth kill does not establish a room-wide encounter.
+            // endCombat() preserves the normal XP/death/loot feedback while
+            // clearing provisional initiative conditions.
+            endCombat();
+            resetAwarenessTimer();
+            return;
+        }
+
+        beginInitiativeAfterOpeningAttack();
+
+        if (getLivingEnemyCombatantCount() == 0)
+        {
+            endCombat();
+            resetAwarenessTimer();
+        }
+
+        return;
+    }
 
     if (areAllCombatMonstersDefeated())
     {
@@ -1020,27 +1100,17 @@ void findCombatants()
     if (entities == nullptr)
         return;
 
-    for (uint8_t i = 0; i < entityCount; i++)
-    {
-        Entity& entity = entities[i];
+    Entity* player = getActiveMapPlayer();
 
-        if (!entity.active)
-            continue;
-
-        if (entity.character.state != STATE_ALIVE)
-            continue;
-
-        if (!isPlayerSideCharacter(entity) &&
-            !(isMonsterCombatant(entity) && entity.awareOfPlayer))
-        {
-            continue;
-        }
-
-        if (combat.combatantCount >= MAX_COMBATANTS)
-            break;
-
-        combat.initiativeOrder[combat.combatantCount++] = &entity;
-    }
+    // The active entity array scopes dungeon combat to the current retained
+    // room and forest combat to the current forest map. Detection starts an
+    // encounter, but it never limits its initiative membership.
+    combat.combatantCount = buildCombatRoster(
+        entities,
+        entityCount,
+        player,
+        combat.initiativeOrder,
+        MAX_COMBATANTS);
 
     //--------------------------------------------------
     // Debug
@@ -1062,6 +1132,38 @@ void findCombatants()
     }
 
     Serial.println();
+}
+
+bool isCombatParticipant(const Entity& entity)
+{
+    if (!combat.active)
+        return false;
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        if (combat.initiativeOrder[i] == &entity)
+            return true;
+    }
+
+    return false;
+}
+
+static uint8_t getLivingEnemyCombatantCount()
+{
+    return countLivingHostilesInCombatRoster(
+        combat.initiativeOrder, combat.combatantCount);
+}
+
+static void showCombatStartMessage()
+{
+    const uint8_t enemyCount = getLivingEnemyCombatantCount();
+    char message[48];
+
+    snprintf(message, sizeof(message),
+             "Combat begins! %u %s.",
+             static_cast<unsigned int>(enemyCount),
+             enemyCount == 1 ? "enemy" : "enemies");
+    setGameMessage(message);
 }
 
 void checkForCombat()
@@ -1151,6 +1253,10 @@ void startCombat()
     combat.turnStartPoisonExpired = false;
     combat.turnStartConditionDefeated = false;
     combat.turnStartActionPrevented = false;
+    combat.openingAttackInProgress = false;
+    combat.openingAttackWasAmbush = false;
+
+    showCombatStartMessage();
 
     backgroundNeedsRedraw = true;
 
@@ -1323,6 +1429,30 @@ void runMonsterTurn(Entity* monster)
     switch (monster->turn.monsterState)
     {
         case MONSTER_START:
+
+            if (!shouldMonsterRunCombatAI(*monster))
+            {
+                Entity* player = getPlayerCombatant();
+
+                if (player == nullptr ||
+                    !tryMonsterDetectPlayer(*monster, *player))
+                {
+                    // This creature is in initiative because the room is in
+                    // combat, but it still has no perceived target. It gets
+                    // one normal detection chance and otherwise yields the
+                    // turn without invoking movement or attack AI.
+                    monster->turn.movementRemaining = 0;
+                    monster->turn.standardActionUsed = true;
+                    monster->turn.monsterState = MONSTER_END;
+                    break;
+                }
+
+                char message[64];
+                snprintf(message, sizeof(message), "%s notices you!",
+                         getEntityName(monster));
+                setGameMessage(message);
+                needsRedraw = true;
+            }
 
             monster->turn.monsterState = MONSTER_MOVE;
             break;
@@ -1746,7 +1876,11 @@ void endCombat()
 
     combat.active = false;
     combat.phase = COMBAT_NONE;
+    combat.waitingForPlayer = false;
     combat.endPlayerTurnAfterMessage = false;
+    combat.openingAttackTargeting = false;
+    combat.openingAttackInProgress = false;
+    combat.openingAttackWasAmbush = false;
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
@@ -1825,11 +1959,18 @@ bool canPlayerAttackOutsideCombat(CombatAttackType attackType)
     uint8_t count = 0;
     Entity* entities = getActiveMapEntities(count);
     for (uint8_t i = 0; entities != nullptr && i < count; i++)
-        if (isMonsterCombatant(entities[i]) && entities[i].revealedToPlayer &&
-            areHostile(*player, entities[i]) &&
-            (attackType == COMBAT_ATTACK_RANGED ||
-             getEntityGridDistance(*player, entities[i]) <= 1))
+    {
+        const bool validGeometry = attackType == COMBAT_ATTACK_MELEE
+            ? getEntityGridDistance(*player, entities[i]) <= 1
+            : isValidRangedTarget(player, &entities[i]);
+
+        if (isLivingHostileForCombat(entities[i]) &&
+            entities[i].revealedToPlayer &&
+            areHostile(*player, entities[i]) && validGeometry)
+        {
             return true;
+        }
+    }
     return false;
 }
 
@@ -1969,9 +2110,13 @@ void confirmPlayerAttack()
     if (combat.openingAttackTargeting)
     {
         const bool targetWasAware = target->awareOfPlayer;
+        const bool targetWasAlreadyFlatFooted =
+            hasCondition(target->character, CONDITION_FLAT_FOOTED);
         target->awareOfPlayer = true;
         target->revealedToPlayer = true;
         startCombat();
+        combat.openingAttackInProgress = true;
+        combat.openingAttackWasAmbush = !targetWasAware;
         for (uint8_t i = 0; i < combat.combatantCount; i++)
             if (combat.initiativeOrder[i] == player)
                 combat.currentTurnIndex = i;
@@ -1980,6 +2125,8 @@ void confirmPlayerAttack()
         combat.openingAttackTargeting = false;
         if (!targetWasAware)
             addCondition(target->character, CONDITION_FLAT_FOOTED, 1, 1);
+        else if (!targetWasAlreadyFlatFooted)
+            removeFlatFooted(target);
     }
 
     const Weapon* weapon =

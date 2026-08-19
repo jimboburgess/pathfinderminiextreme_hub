@@ -728,14 +728,16 @@ void test_oversized_encounter_templates_now_place_two_monsters()
         TEST_ASSERT_EQUAL_UINT16(2, countTiles(room, TILE_ENEMY_START));
     }
 
-    // This is not a global monster cap: the separate boss template keeps its
-    // existing three-monster setup.
+    // The boss template has exactly two Skeleton guards and one Skeleton Mage.
     DungeonRoom boss{};
     boss.type = ROOM_BOSS;
     boss.shape = SHAPE_SQUARE;
     addHorizontalTestConnections(boss);
     generateRoom(boss);
-    TEST_ASSERT_EQUAL_UINT16(3, countTiles(boss, TILE_ENEMY_START));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(boss, TILE_ENEMY_START));
+    TEST_ASSERT_EQUAL_UINT16(2, countTiles(boss, TILE_SKELETON_START));
+    TEST_ASSERT_EQUAL_UINT16(
+        1, countTiles(boss, TILE_SKELETON_MAGE_START));
 }
 
 void test_cave_parameter_selection_and_eligibility_are_bounded()

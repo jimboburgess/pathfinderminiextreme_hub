@@ -21,6 +21,7 @@ enum TileType : uint8_t {
     TILE_ENEMY_START,
     TILE_GIANT_SPIDER_START,
     TILE_SKELETON_MAGE_START,
+    TILE_SKELETON_START,
     TILE_GRASS,
     TILE_TREE,
     TILE_MUD,
@@ -33,5 +34,7 @@ TileType getForestTile(int x, int y);
 
 extern const uint16_t grassTile[16 * 16];
 extern const uint16_t treeTile[16 * 16];
+extern const uint16_t dungeonWallTiles[3][16 * 16];
+extern const uint16_t dungeonFloorTiles[3][16 * 16];
 
 #endif //PATHFINDERMINIEXTREME_025_TILES_H

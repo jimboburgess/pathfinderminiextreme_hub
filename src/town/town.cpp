@@ -18,13 +18,14 @@ void openTownHome()
 {
     townHomeOpen = true;
     townHomeSelection = TOWN_HOME_REST;
-    suppressEncoderSelectUntilRelease();
+    suppressMenuInputUntilRelease();
     needsRedraw = true;
 }
 
 void closeTownHome()
 {
     townHomeOpen = false;
+    suppressMenuInputUntilRelease();
     needsRedraw = true;
 }
 

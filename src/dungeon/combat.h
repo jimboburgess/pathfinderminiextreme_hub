@@ -124,6 +124,8 @@ struct Combat
     bool attackDamagePending = false;
     bool attackResolutionPending = false;
     bool openingAttackTargeting = false;
+    bool openingAttackInProgress = false;
+    bool openingAttackWasAmbush = false;
 
     //--------------------------------------------------
     // Monster attack result timing
@@ -167,6 +169,7 @@ extern Combat combat;
 void checkForCombat();
 
 void findCombatants();
+bool isCombatParticipant(const Entity& entity);
 
 //==================================================
 // Combat Startup

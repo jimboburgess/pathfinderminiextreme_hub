@@ -607,7 +607,7 @@ void openPlayerInventoryMenu()
     inventoryMenu.cursorIndex = 0;
     inventoryMenu.firstVisibleIndex = 0;
     clearInventoryStatus();
-    suppressEncoderSelectUntilRelease();
+    suppressMenuInputUntilRelease();
     needsRedraw = true;
 }
 
@@ -621,7 +621,7 @@ void openCorpseLootMenu(Entity& corpse)
     inventoryMenu.firstVisibleIndex = 0;
     clearInventoryStatus();
     clampInventorySelection();
-    suppressEncoderSelectUntilRelease();
+    suppressMenuInputUntilRelease();
     needsRedraw = true;
 }
 
@@ -636,6 +636,8 @@ void closeInventoryMenu()
     inventoryMenu.cursorIndex = 0;
     inventoryMenu.firstVisibleIndex = 0;
     clearInventoryStatus();
+
+    suppressMenuInputUntilRelease();
 
     // This full-screen modal is opaque, so the map/town must be restored in
     // full when it closes. Normal combat/map activity remains dirty-tile

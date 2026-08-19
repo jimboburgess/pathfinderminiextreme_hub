@@ -41,13 +41,18 @@ bool encoderSelectSuppressed = false;
 unsigned long encoderSelectReleasedAt = 0;
 unsigned long encoderSelectSuppressedAt = 0;
 
+bool aSuppressed = false;
+bool bSuppressed = false;
+unsigned long aSuppressedAt = 0;
+unsigned long bSuppressedAt = 0;
+
 unsigned long encoderPressStart = 0;
 bool encoderLongPressHandled = false;
 
 constexpr unsigned long LONG_PRESS_TIME = 750;
 
 constexpr unsigned long ENCODER_SELECT_RELEASE_DEBOUNCE_MS = 25;
-constexpr unsigned long ENCODER_MENU_OPEN_GUARD_MS = 200;
+constexpr unsigned long MENU_INPUT_GUARD_MS = 300;
 
 void suppressEncoderSelectUntilRelease()
 {
@@ -88,7 +93,7 @@ bool encoderPressed()
 
         if (now == HIGH && encoderSelectReady &&
             nowMillis - encoderSelectSuppressedAt >=
-                ENCODER_MENU_OPEN_GUARD_MS)
+                MENU_INPUT_GUARD_MS)
         {
             encoderSelectSuppressed = false;
         }
@@ -111,6 +116,19 @@ bool buttonAPressed()
 {
     bool now = digitalRead(BUTTON_A);
 
+    if (aSuppressed)
+    {
+        aLast = now;
+
+        if (now == HIGH && millis() - aSuppressedAt >=
+            MENU_INPUT_GUARD_MS)
+        {
+            aSuppressed = false;
+        }
+
+        return false;
+    }
+
     bool pressed = (now == LOW && aLast == HIGH);
 
     aLast = now;
@@ -122,11 +140,37 @@ bool buttonBPressed()
 {
     bool now = digitalRead(BUTTON_B);
 
+    if (bSuppressed)
+    {
+        bLast = now;
+
+        if (now == HIGH && millis() - bSuppressedAt >=
+            MENU_INPUT_GUARD_MS)
+        {
+            bSuppressed = false;
+        }
+
+        return false;
+    }
+
     bool pressed = (now == LOW && bLast == HIGH);
 
     bLast = now;
 
     return pressed;
+}
+
+void suppressMenuInputUntilRelease()
+{
+    suppressEncoderSelectUntilRelease();
+
+    const unsigned long now = millis();
+    aLast = digitalRead(BUTTON_A);
+    bLast = digitalRead(BUTTON_B);
+    aSuppressed = true;
+    bSuppressed = true;
+    aSuppressedAt = now;
+    bSuppressedAt = now;
 }
 
 bool encoderButtonLongPressed()
@@ -472,7 +516,10 @@ void handleTownButtons() {
                 break;
 
             case TOWN_DUNGEON:
-                enterDungeon();
+                if (hasResumableDungeon(dungeon))
+                    openDungeonEntryMenu();
+                else
+                    enterDungeon();
                 break;
 
             case TOWN_SHOP:
@@ -784,6 +831,10 @@ void resetButtonStates()
     encoderSelectReleasedAt = millis();
     encoderSelectSuppressed = false;
     encoderSelectSuppressedAt = 0;
+    aSuppressed = false;
+    bSuppressed = false;
+    aSuppressedAt = 0;
+    bSuppressedAt = 0;
 }
 
 void handleButtons()

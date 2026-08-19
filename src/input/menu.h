@@ -83,6 +83,13 @@ enum MenuAction
     MENU_OPTIONS,
     MENU_EXIT_TITLE,
 
+    // Town dungeon entry
+    MENU_DUNGEON_RESUME,
+    MENU_DUNGEON_START_NEW,
+    MENU_DUNGEON_START_NEW_NO,
+    MENU_DUNGEON_START_NEW_YES,
+    MENU_DUNGEON_BACK,
+
     // Town shop
     MENU_SHOP_BUY,
     MENU_SHOP_SELL,
@@ -170,6 +177,7 @@ bool isMenuItemEnabled(MenuAction action);
 void openMenu(const Menu* menu);
 bool pushMenu(const Menu* menu);
 void closeMenu();
+void openDungeonEntryMenu();
 
 void updateMenu();
 void drawMenu();
