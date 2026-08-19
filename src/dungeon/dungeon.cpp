@@ -17,6 +17,45 @@ Dungeon dungeon;
 
 namespace
 {
+MonsterID getThemedMonster(EncounterTheme theme, uint8_t spawnIndex)
+{
+    switch (theme)
+    {
+        case ENCOUNTER_GOBLIN:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_GOBLIN_SCIMITAR,
+                MONSTER_GOBLIN_ARCHER,
+                MONSTER_BUGBEAR};
+            return monsters[spawnIndex % 3];
+        }
+
+        case ENCOUNTER_UNDEAD:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_SKELETON,
+                MONSTER_ZOMBIE,
+                MONSTER_GHOUL,
+                MONSTER_WIGHT};
+            return monsters[spawnIndex % 4];
+        }
+
+        case ENCOUNTER_ABERRATION:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_GRAY_OOZE,
+                MONSTER_VIOLET_FUNGUS,
+                MONSTER_CHOKER,
+                MONSTER_SPECTATOR};
+            return monsters[spawnIndex % 4];
+        }
+
+        case ENCOUNTER_NONE:
+        default:
+            return MONSTER_GOBLIN_SCIMITAR;
+    }
+}
+
 void resetRoomTurnState(DungeonRoomRuntime& runtime)
 {
     for (uint8_t i = 0; i < runtime.entityCount; i++)
@@ -101,6 +140,7 @@ void initializeRoomEntities(
         runtime.entities[i] = Entity{};
 
     dungeon.entityCount = 0;
+    uint8_t themedSpawnIndex = 0;
 
     // Marker tiles are consumed exactly once for this dungeon run. Subsequent
     // visits bind the same runtime array instead of reconstructing monsters.
@@ -114,7 +154,9 @@ void initializeRoomEntities(
                     spawnMonster(
                         dungeon.entities,
                         dungeon.entityCount,
-                        MONSTER_GOBLIN_SCIMITAR,
+                        getThemedMonster(
+                            room.encounterTheme,
+                            themedSpawnIndex++),
                         x,
                         y);
                     room.map.tiles[y][x] = TILE_FLOOR;
@@ -269,12 +311,11 @@ const char* roomTypeName(RoomType type)
     {
         case ROOM_ENTRANCE:     return "Entrance";
         case ROOM_COMBAT:       return "Combat";
-        case ROOM_PUZZLE:       return "Puzzle";
-        case ROOM_TRAP:         return "Trap";
         case ROOM_AMBUSH:       return "Ambush";
-        case ROOM_LOCKED_DOOR:  return "Locked Door";
-        case ROOM_BOSS:         return "Boss";
+        case ROOM_PUZZLE:       return "Puzzle";
         case ROOM_TREASURE:     return "Treasure";
+        case ROOM_EMPTY:        return "Empty";
+        case ROOM_BOSS:         return "Boss";
     }
 
     return "Unknown";
@@ -353,21 +394,42 @@ void generateDungeon(Dungeon& dungeon)
 
     dungeon.rooms[0].type = ROOM_ENTRANCE;
 
-    dungeon.rooms[1].type = random(2) ? ROOM_COMBAT : ROOM_PUZZLE;
+    static constexpr RoomType middleRoomTypes[] = {
+        ROOM_COMBAT,
+        ROOM_AMBUSH,
+        ROOM_PUZZLE,
+        ROOM_TREASURE,
+        ROOM_EMPTY};
 
-    switch (random(2))
+    for (uint8_t roomIndex = 1;
+         roomIndex < FINAL_DUNGEON_ROOM_INDEX;
+         roomIndex++)
     {
-        case 0:
-            dungeon.rooms[2].type = ROOM_TRAP;
-            break;
+        uint8_t typeIndex = random(
+            sizeof(middleRoomTypes) / sizeof(middleRoomTypes[0]));
 
-        case 1:
-            dungeon.rooms[2].type = ROOM_AMBUSH;
-            break;
+        // A bounded reroll prevents a monotonous three-room middle stretch.
+        if (roomIndex == FINAL_DUNGEON_ROOM_INDEX - 1 &&
+            dungeon.rooms[1].type == dungeon.rooms[2].type &&
+            middleRoomTypes[typeIndex] == dungeon.rooms[1].type)
+        {
+            typeIndex = (typeIndex + 1) %
+                (sizeof(middleRoomTypes) / sizeof(middleRoomTypes[0]));
+        }
+
+        DungeonRoom& room = dungeon.rooms[roomIndex];
+        room.type = middleRoomTypes[typeIndex];
+        room.encounterTheme =
+            (room.type == ROOM_COMBAT || room.type == ROOM_AMBUSH)
+                ? static_cast<EncounterTheme>(random(
+                    ENCOUNTER_GOBLIN,
+                    ENCOUNTER_ABERRATION + 1))
+                : ENCOUNTER_NONE;
     }
 
-    dungeon.rooms[3].type = ROOM_TREASURE;
+    dungeon.rooms[0].encounterTheme = ENCOUNTER_NONE;
     dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].type = ROOM_BOSS;
+    dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].encounterTheme = ENCOUNTER_NONE;
 
     dungeon.rooms[0].discovered = true;
 

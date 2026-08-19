@@ -22,13 +22,19 @@ constexpr uint8_t NO_ROOM = 255;
 enum RoomType : uint8_t {
     ROOM_ENTRANCE,
     ROOM_COMBAT,
-    ROOM_PUZZLE,
-    ROOM_TRAP,
     ROOM_AMBUSH,
-    ROOM_LOCKED_DOOR,
-    ROOM_BOSS,
-    ROOM_TREASURE
-  };
+    ROOM_PUZZLE,
+    ROOM_TREASURE,
+    ROOM_EMPTY,
+    ROOM_BOSS
+};
+
+enum EncounterTheme : uint8_t {
+    ENCOUNTER_NONE,
+    ENCOUNTER_GOBLIN,
+    ENCOUNTER_UNDEAD,
+    ENCOUNTER_ABERRATION
+};
 
 enum RoomShape : uint8_t {
     SHAPE_SQUARE,
@@ -73,6 +79,7 @@ struct RoomConnection
 
 struct DungeonRoom {
     RoomType type;
+    EncounterTheme encounterTheme = ENCOUNTER_NONE;
     RoomShape shape;
 
 

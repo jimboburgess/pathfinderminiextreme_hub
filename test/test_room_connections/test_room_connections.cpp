@@ -740,6 +740,58 @@ void test_oversized_encounter_templates_now_place_two_monsters()
         1, countTiles(boss, TILE_SKELETON_MAGE_START));
 }
 
+void test_empty_room_has_no_encounter_markers()
+{
+    DungeonRoom room{};
+    room.type = ROOM_EMPTY;
+    room.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(room);
+
+    generateRoom(room);
+
+    TEST_ASSERT_TRUE(validateRoomConnectivity(room));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(room, TILE_ENEMY_START));
+}
+
+void test_combat_and_ambush_markers_use_distinct_placement_biases()
+{
+    DungeonRoom combat{};
+    combat.type = ROOM_COMBAT;
+    combat.encounterTheme = ENCOUNTER_UNDEAD;
+    combat.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(combat);
+    generateRoom(combat);
+
+    DungeonRoom ambush{};
+    ambush.type = ROOM_AMBUSH;
+    ambush.encounterTheme = ENCOUNTER_GOBLIN;
+    ambush.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(ambush);
+    generateRoom(ambush);
+
+    const int center = ROOM_SIZE / 2;
+    int combatDistance = 0;
+    int ambushDistance = 0;
+
+    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+    {
+        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        {
+            const int distance = abs(static_cast<int>(x) - center) +
+                abs(static_cast<int>(y) - center);
+
+            if (combat.map.tiles[y][x] == TILE_ENEMY_START)
+                combatDistance += distance;
+            if (ambush.map.tiles[y][x] == TILE_ENEMY_START)
+                ambushDistance += distance;
+        }
+    }
+
+    TEST_ASSERT_EQUAL(ENCOUNTER_UNDEAD, combat.encounterTheme);
+    TEST_ASSERT_EQUAL(ENCOUNTER_GOBLIN, ambush.encounterTheme);
+    TEST_ASSERT_TRUE(combatDistance < ambushDistance);
+}
+
 void test_cave_parameter_selection_and_eligibility_are_bounded()
 {
     TEST_ASSERT_EQUAL_UINT8(1, selectCaveChamberCount(0));
@@ -1007,6 +1059,8 @@ void setup()
     RUN_TEST(test_invalid_winding_corridor_requests_fall_back_safely);
     RUN_TEST(test_winding_room_content_markers_remain_on_connected_interior_floor);
     RUN_TEST(test_oversized_encounter_templates_now_place_two_monsters);
+    RUN_TEST(test_empty_room_has_no_encounter_markers);
+    RUN_TEST(test_combat_and_ambush_markers_use_distinct_placement_biases);
     RUN_TEST(test_cave_parameter_selection_and_eligibility_are_bounded);
     RUN_TEST(test_caves_support_one_through_four_connected_entries);
     RUN_TEST(test_cave_choke_validator_allows_a_short_neck_only);

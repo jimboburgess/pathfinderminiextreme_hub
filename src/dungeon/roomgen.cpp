@@ -91,7 +91,6 @@ static bool placeContentMarkerNear(
 static void generateEntrance(DungeonRoom &room);
 static void generateCombat(DungeonRoom &room);
 static void generatePuzzle(DungeonRoom &room);
-static void generateTrap(DungeonRoom &room);
 static void generateAmbush(DungeonRoom &room);
 static void generateBoss(DungeonRoom &room);
 static void generateTreasure(DungeonRoom &room);
@@ -1797,10 +1796,10 @@ bool placeGiantSpiderEncounter(DungeonRoom &room) {
 }
 
 static void generateCombat(DungeonRoom &room) {
-  // Keep the temporary combat encounter small while combat is being tuned.
-  // Placement still uses the shared valid-floor search.
-  placeContentMarkerNear(room, TILE_ENEMY_START, 2, 2);
-  placeContentMarkerNear(room, TILE_ENEMY_START, 12, 12);
+  const int center = ROOM_SIZE / 2;
+  // A direct encounter occupies central connected floor rather than corners.
+  placeContentMarkerNear(room, TILE_ENEMY_START, center - 2, center);
+  placeContentMarkerNear(room, TILE_ENEMY_START, center + 2, center);
 }
 
 
@@ -1811,17 +1810,12 @@ static void generatePuzzle(DungeonRoom &room) {
   // Pressure plates
 }
 
-static void generateTrap(DungeonRoom &room) {
-  // Later:
-  // Entering this room may trigger a trap.
-}
-
 static void generateAmbush(DungeonRoom &room) {
-  // Preserve the ambush's flanking placement while limiting it to two
-  // monsters during combat playtesting.
-  placeContentMarkerNear(room, TILE_ENEMY_START, 2, ROOM_SIZE / 2);
+  // Favor the far side/periphery, leaving the central entry area clear.
   placeContentMarkerNear(
-      room, TILE_ENEMY_START, ROOM_SIZE - 3, ROOM_SIZE / 2);
+      room, TILE_ENEMY_START, ROOM_SIZE - 3, 3);
+  placeContentMarkerNear(
+      room, TILE_ENEMY_START, ROOM_SIZE - 3, ROOM_SIZE - 3);
 }
 
 static void generateBoss(DungeonRoom &room) {
@@ -1870,10 +1864,6 @@ void generateRoom(DungeonRoom &room) {
       generatePuzzle(room);
       break;
 
-    case ROOM_TRAP:
-      generateTrap(room);
-      break;
-
     case ROOM_AMBUSH:
       generateAmbush(room);
       break;
@@ -1884,6 +1874,9 @@ void generateRoom(DungeonRoom &room) {
 
     case ROOM_TREASURE:
       generateTreasure(room);
+      break;
+
+    case ROOM_EMPTY:
       break;
   }
 }

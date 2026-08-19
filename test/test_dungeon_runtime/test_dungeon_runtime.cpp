@@ -404,6 +404,48 @@ void test_new_run_generates_only_when_no_run_is_active()
     TEST_ASSERT_EQUAL_UINT8(0, dungeon.currentRoom);
 }
 
+void test_themed_encounters_spawn_only_their_theme_monsters()
+{
+    static constexpr EncounterTheme themes[] = {
+        ENCOUNTER_GOBLIN,
+        ENCOUNTER_UNDEAD,
+        ENCOUNTER_ABERRATION};
+
+    for (EncounterTheme theme : themes)
+    {
+        resetDungeonRun(dungeon);
+        DungeonRoom& room = dungeon.rooms[1];
+        DungeonRoomRuntime& runtime = dungeon.roomRuntime[1];
+        room.encounterTheme = theme;
+
+        for (uint8_t y = 0; y < ROOM_SIZE; y++)
+            for (uint8_t x = 0; x < ROOM_SIZE; x++)
+                room.map.tiles[y][x] = TILE_FLOOR;
+
+        room.map.tiles[3][3] = TILE_ENEMY_START;
+        room.map.tiles[3][5] = TILE_ENEMY_START;
+        dungeon.entities = runtime.entities;
+
+        initializeRoomEntities(dungeon, room, runtime);
+
+        TEST_ASSERT_EQUAL_UINT8(2, runtime.entityCount);
+        for (uint8_t i = 0; i < runtime.entityCount; i++)
+        {
+            const MonsterID id = runtime.entities[i].monsterID;
+            if (theme == ENCOUNTER_GOBLIN)
+                TEST_ASSERT_TRUE(id == MONSTER_GOBLIN_SCIMITAR ||
+                    id == MONSTER_GOBLIN_ARCHER || id == MONSTER_BUGBEAR);
+            else if (theme == ENCOUNTER_UNDEAD)
+                TEST_ASSERT_TRUE(id == MONSTER_SKELETON || id == MONSTER_ZOMBIE ||
+                    id == MONSTER_GHOUL || id == MONSTER_WIGHT);
+            else
+                TEST_ASSERT_TRUE(id == MONSTER_GRAY_OOZE ||
+                    id == MONSTER_VIOLET_FUNGUS || id == MONSTER_CHOKER ||
+                    id == MONSTER_SPECTATOR);
+        }
+    }
+}
+
 void test_final_encounter_must_be_fully_defeated_before_completion()
 {
     resetDungeonRun(dungeon);
@@ -584,6 +626,7 @@ void setup()
     RUN_TEST(test_resume_uses_existing_layout_and_does_not_regenerate);
     RUN_TEST(test_only_unfinished_runs_are_resumable);
     RUN_TEST(test_new_run_generates_only_when_no_run_is_active);
+    RUN_TEST(test_themed_encounters_spawn_only_their_theme_monsters);
     RUN_TEST(test_final_encounter_must_be_fully_defeated_before_completion);
     RUN_TEST(test_reset_discards_runtime_run_without_touching_player);
     RUN_TEST(test_starting_new_run_clears_old_runtime_before_generation);
