@@ -1030,7 +1030,7 @@ void test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint()
 
     TEST_ASSERT_TRUE(GIANT_SPIDER_TEST_ROOM_INDEX > 1);
     TEST_ASSERT_EQUAL_UINT8(
-        MAX_ROOMS - 1,
+        BOSS_ROOM_INDEX,
         GIANT_SPIDER_TEST_ROOM_INDEX);
 }
 

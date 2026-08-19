@@ -56,6 +56,22 @@ MonsterID getThemedMonster(EncounterTheme theme, uint8_t spawnIndex)
     }
 }
 
+RoomType selectMiddleRoomType()
+{
+    const uint8_t roll = random(100);
+
+    if (roll < 40)
+        return ROOM_COMBAT;
+    if (roll < 70)
+        return ROOM_AMBUSH;
+    if (roll < 85)
+        return ROOM_PUZZLE;
+    if (roll < 95)
+        return ROOM_TREASURE;
+
+    return ROOM_EMPTY;
+}
+
 void resetRoomTurnState(DungeonRoomRuntime& runtime)
 {
     for (uint8_t i = 0; i < runtime.entityCount; i++)
@@ -91,6 +107,20 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
     dungeon.rooms[roomIndex].completed = !hasLivingMonster;
 
     if (roomIndex == FINAL_DUNGEON_ROOM_INDEX)
+    {
+        for (uint8_t i = 0; i < runtime.entityCount; i++)
+        {
+            const Entity& entity = runtime.entities[i];
+            if (entity.active && entity.type == ENTITY_CHEST &&
+                entity.loot.generated && entity.loot.itemCount == 0 &&
+                entity.loot.gold == 0)
+            {
+                dungeon.finalTreasureLooted = true;
+            }
+        }
+    }
+
+    if (roomIndex == BOSS_ROOM_INDEX)
         dungeon.finalEncounterCleared = !hasLivingMonster;
 }
 
@@ -193,14 +223,18 @@ void initializeRoomEntities(
                     break;
 
                 case TILE_CHEST_SPAWN:
-                    spawnEntity(
+                {
+                    Entity* chest = spawnEntity(
                         dungeon.entities,
                         dungeon.entityCount,
                         ENTITY_CHEST,
                         x,
                         y);
+                    if (chest != nullptr)
+                        chest->sprite = chestclosed;
                     room.map.tiles[y][x] = TILE_FLOOR;
                     break;
+                }
 
                 case TILE_LOOT_SPAWN:
                     spawnEntity(
@@ -394,31 +428,27 @@ void generateDungeon(Dungeon& dungeon)
 
     dungeon.rooms[0].type = ROOM_ENTRANCE;
 
-    static constexpr RoomType middleRoomTypes[] = {
-        ROOM_COMBAT,
-        ROOM_AMBUSH,
-        ROOM_PUZZLE,
-        ROOM_TREASURE,
-        ROOM_EMPTY};
-
     for (uint8_t roomIndex = 1;
          roomIndex < FINAL_DUNGEON_ROOM_INDEX;
          roomIndex++)
     {
-        uint8_t typeIndex = random(
-            sizeof(middleRoomTypes) / sizeof(middleRoomTypes[0]));
+        RoomType type = selectMiddleRoomType();
 
         // A bounded reroll prevents a monotonous three-room middle stretch.
         if (roomIndex == FINAL_DUNGEON_ROOM_INDEX - 1 &&
             dungeon.rooms[1].type == dungeon.rooms[2].type &&
-            middleRoomTypes[typeIndex] == dungeon.rooms[1].type)
+            type == dungeon.rooms[1].type)
         {
-            typeIndex = (typeIndex + 1) %
-                (sizeof(middleRoomTypes) / sizeof(middleRoomTypes[0]));
+            type = selectMiddleRoomType();
+
+            if (type == dungeon.rooms[1].type)
+                type = dungeon.rooms[1].type == ROOM_COMBAT
+                    ? ROOM_AMBUSH
+                    : ROOM_COMBAT;
         }
 
         DungeonRoom& room = dungeon.rooms[roomIndex];
-        room.type = middleRoomTypes[typeIndex];
+        room.type = type;
         room.encounterTheme =
             (room.type == ROOM_COMBAT || room.type == ROOM_AMBUSH)
                 ? static_cast<EncounterTheme>(random(
@@ -428,7 +458,9 @@ void generateDungeon(Dungeon& dungeon)
     }
 
     dungeon.rooms[0].encounterTheme = ENCOUNTER_NONE;
-    dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].type = ROOM_BOSS;
+    dungeon.rooms[BOSS_ROOM_INDEX].type = ROOM_BOSS;
+    dungeon.rooms[BOSS_ROOM_INDEX].encounterTheme = ENCOUNTER_NONE;
+    dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].type = ROOM_TREASURE;
     dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].encounterTheme = ENCOUNTER_NONE;
 
     dungeon.rooms[0].discovered = true;
@@ -522,6 +554,7 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.loadedRoom = NO_ROOM;
     dungeon.currentRoom = 0;
     dungeon.finalEncounterCleared = false;
+    dungeon.finalTreasureLooted = false;
     dungeon.completed = false;
 
     for (uint8_t roomIndex = 0; roomIndex < MAX_ROOMS; roomIndex++)
@@ -556,7 +589,8 @@ void updateCurrentDungeonRoomCompletion(Dungeon& dungeon)
 
 bool isDungeonRunComplete(const Dungeon& dungeon)
 {
-    return dungeon.runActive && dungeon.finalEncounterCleared;
+    return dungeon.runActive && dungeon.finalEncounterCleared &&
+           dungeon.finalTreasureLooted;
 }
 
 bool hasResumableDungeon(const Dungeon& dungeon)

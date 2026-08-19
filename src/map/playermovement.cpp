@@ -388,6 +388,14 @@ bool tryMovePlayer(Dungeon &dungeon)
 
             if (nextRoom != 255)
             {
+                if (dungeon.currentRoom == BOSS_ROOM_INDEX &&
+                    nextRoom == FINAL_DUNGEON_ROOM_INDEX &&
+                    !dungeon.rooms[BOSS_ROOM_INDEX].completed)
+                {
+                    setGameMessage("Defeat the enemies first!");
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
                 // The player Character remains global while loadRoom() swaps
                 // the active view to the destination room's persistent
                 // occupants. Preserve all runtime character changes first.

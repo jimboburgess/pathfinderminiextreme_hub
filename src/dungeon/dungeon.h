@@ -98,9 +98,10 @@ struct DungeonRoom {
 };
 
 
-constexpr uint8_t MAX_ROOMS = 5;
-constexpr uint8_t FINAL_DUNGEON_ROOM_INDEX = MAX_ROOMS - 1;
-constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = MAX_ROOMS - 1;
+constexpr uint8_t MAX_ROOMS = 6;
+constexpr uint8_t BOSS_ROOM_INDEX = 4;
+constexpr uint8_t FINAL_DUNGEON_ROOM_INDEX = 5;
+constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = BOSS_ROOM_INDEX;
 constexpr uint8_t MAX_COMBATANTS = 16;
 constexpr uint8_t NO_ENTITY_SLOT = 255;
 
@@ -128,6 +129,7 @@ struct Dungeon {
     uint8_t loadedRoom = NO_ROOM;
     bool runActive = false;
     bool finalEncounterCleared = false;
+    bool finalTreasureLooted = false;
     bool completed = false;
     };
 

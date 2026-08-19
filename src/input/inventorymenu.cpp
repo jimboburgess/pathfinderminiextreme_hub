@@ -54,8 +54,9 @@ Character* getActivePlayerCharacter()
 bool isValidLootCorpse(const Entity* corpse)
 {
     return corpse != nullptr && corpse->active &&
-           corpse->type == ENTITY_MONSTER &&
-           corpse->character.state == STATE_DEAD &&
+           ((corpse->type == ENTITY_MONSTER &&
+             corpse->character.state == STATE_DEAD) ||
+            corpse->type == ENTITY_CHEST) &&
            corpse->loot.generated;
 }
 

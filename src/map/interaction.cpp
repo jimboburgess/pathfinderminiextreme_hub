@@ -12,6 +12,8 @@
 #include "dungeon/combat.h"
 #include "dungeon/loot.h"
 #include "graphics/messagelog.h"
+#include "graphics/display.h"
+#include "graphics/tiles.h"
 #include "input/inventorymenu.h"
 
 bool tryInteractWithFacingEntity()
@@ -44,11 +46,41 @@ bool tryInteractWithFacingEntity()
         static_cast<uint8_t>(targetX),
         static_cast<uint8_t>(targetY));
 
-    if (target == nullptr || target->type != ENTITY_MONSTER ||
-        !isLootable(target->character))
+    if (target == nullptr)
     {
         return false;
     }
+
+    if (target->type == ENTITY_CHEST)
+    {
+        if (!target->loot.generated)
+        {
+            generateChestLoot(*target, LOOT_CHEST_LARGE);
+            target->sprite = chestopenwith;
+            markEntityFootprintDirty(*target);
+            setGameMessage("You open the chest.");
+        }
+
+        if (target->loot.itemCount == 0 && target->loot.gold == 0)
+        {
+            target->sprite = chestopenwithout;
+            setGameMessage("The chest is empty.");
+            return true;
+        }
+
+        uint16_t gold = takeCorpseGold(*target, playerEntity->character);
+        if (target->loot.itemCount == 0)
+        {
+            finishLootingCorpse(*target);
+            return true;
+        }
+
+        openCorpseLootMenu(*target);
+        return true;
+    }
+
+    if (target->type != ENTITY_MONSTER || !isLootable(target->character))
+        return false;
 
     // The generator is idempotent. This also supports an older corpse that
     // entered STATE_DEAD before the loot system was added.

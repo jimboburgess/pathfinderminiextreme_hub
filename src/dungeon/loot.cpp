@@ -7,6 +7,7 @@
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "graphics/display.h"
+#include "graphics/tiles.h"
 
 uint16_t rollLootGold(const LootTable& table)
 {
@@ -389,10 +390,23 @@ void generateCorpseLoot(Entity& corpse)
     }
 }
 
+void generateChestLoot(Entity& chest, LootTableID table)
+{
+    if (chest.type != ENTITY_CHEST || chest.loot.generated)
+        return;
+
+    clearCorpseLoot(chest.loot);
+    chest.loot.generated = true;
+    addLootForTable(chest.loot, table);
+    chest.loot.gold = rollLootGold(lootTables[table]);
+}
+
 bool corpseHasLoot(const Entity& corpse)
 {
-    return corpse.active && corpse.type == ENTITY_MONSTER &&
-           corpse.character.state == STATE_DEAD &&
+    return corpse.active &&
+           ((corpse.type == ENTITY_MONSTER &&
+             corpse.character.state == STATE_DEAD) ||
+            corpse.type == ENTITY_CHEST) &&
            corpse.loot.generated &&
            (corpse.loot.itemCount > 0 || corpse.loot.gold > 0);
 }
@@ -483,13 +497,19 @@ uint16_t takeAllCorpseLoot(Entity& corpse, Character& recipient)
 
 void finishLootingCorpse(Entity& corpse)
 {
-    if (!corpse.active || corpse.type != ENTITY_MONSTER ||
+    if (!corpse.active || (corpse.type != ENTITY_MONSTER &&
+        corpse.type != ENTITY_CHEST) ||
         corpse.loot.itemCount != 0 || corpse.loot.gold != 0)
     {
         return;
     }
 
     markEntityFootprintDirty(corpse);
+    if (corpse.type == ENTITY_CHEST)
+    {
+        corpse.sprite = chestopenwithout;
+        return;
+    }
     corpse.character.state = STATE_LOOTED;
     removeEntity(corpse);
 }

@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "monsters.h"
+
 struct Character;
 struct Entity;
 
@@ -17,6 +19,7 @@ uint16_t rollLootGold(const LootTable& table);
 // Rolls an entity's Monster::lootTable once. Repeated calls are safe and do
 // not reroll or replace loot already stored on the corpse.
 void generateCorpseLoot(Entity& corpse);
+void generateChestLoot(Entity& chest, LootTableID table);
 
 bool corpseHasLoot(const Entity& corpse);
 

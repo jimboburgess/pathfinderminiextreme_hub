@@ -25,6 +25,8 @@ static uint8_t activeTestEntityCount = 0;
 
 Combat combat = {};
 
+const uint16_t chestclosed[16 * 16] = {};
+
 Entity* getActiveMapEntities(uint8_t& entityCount)
 {
     entityCount = activeTestEntityCount;
@@ -385,6 +387,7 @@ void test_only_unfinished_runs_are_resumable()
     TEST_ASSERT_TRUE(hasResumableDungeon(dungeon));
 
     dungeon.finalEncounterCleared = true;
+    dungeon.finalTreasureLooted = true;
     TEST_ASSERT_TRUE(isDungeonRunComplete(dungeon));
     TEST_ASSERT_TRUE(hasResumableDungeon(dungeon));
 
@@ -450,10 +453,10 @@ void test_final_encounter_must_be_fully_defeated_before_completion()
 {
     resetDungeonRun(dungeon);
     dungeon.runActive = true;
-    dungeon.currentRoom = FINAL_DUNGEON_ROOM_INDEX;
-    dungeon.loadedRoom = FINAL_DUNGEON_ROOM_INDEX;
+    dungeon.currentRoom = BOSS_ROOM_INDEX;
+    dungeon.loadedRoom = BOSS_ROOM_INDEX;
     DungeonRoomRuntime& runtime =
-        dungeon.roomRuntime[FINAL_DUNGEON_ROOM_INDEX];
+        dungeon.roomRuntime[BOSS_ROOM_INDEX];
     runtime.initialized = true;
     runtime.entityCount = 3;
     dungeon.entities = runtime.entities;
@@ -480,9 +483,12 @@ void test_final_encounter_must_be_fully_defeated_before_completion()
 
     runtime.entities[2].character.state = STATE_DEAD;
     updateCurrentDungeonRoomCompletion(dungeon);
-    TEST_ASSERT_TRUE(isDungeonRunComplete(dungeon));
+    TEST_ASSERT_TRUE(dungeon.finalEncounterCleared);
+    TEST_ASSERT_FALSE(isDungeonRunComplete(dungeon));
     TEST_ASSERT_FALSE(dungeon.completed);
 
+    dungeon.finalTreasureLooted = true;
+    TEST_ASSERT_TRUE(isDungeonRunComplete(dungeon));
     markDungeonCompletedOnTownReturn(dungeon);
     TEST_ASSERT_TRUE(dungeon.completed);
     TEST_ASSERT_FALSE(hasResumableDungeon(dungeon));
