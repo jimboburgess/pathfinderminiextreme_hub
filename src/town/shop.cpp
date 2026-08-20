@@ -7,6 +7,7 @@
 #include "data/game.h"
 #include "graphics/display.h"
 #include "input/menu.h"
+#include "map/skillactions.h"
 
 const Shop townShop =
 {
@@ -72,7 +73,7 @@ Menu shopMenu =
     shopMenuItems,
     sizeof(shopMenuItems) / sizeof(shopMenuItems[0]),
     shopGoldText,
-    nullptr
+    shopStatus
 };
 
 Menu buyMenu =
@@ -229,7 +230,8 @@ void openTownShop()
     updateShopGoldText();
     buildBuyMenu();
     buildSellMenu();
-    setShopStatus("");
+    setShopStatus(getShopDiplomacyMessage(
+        resolveAutomaticSocialCheck(player, SKILL_DIPLOMACY, 15)));
     openMenu(&shopMenu);
     menuState.redrawType = MENU_REDRAW_FULL;
 }

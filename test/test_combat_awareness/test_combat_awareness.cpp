@@ -2,6 +2,7 @@
 #include <unity.h>
 
 #include "../../src/dungeon/combatpolicy.h"
+#include "../../src/map/skillactions.h"
 #include "../../src/map/awareness.h"
 
 bool hasCondition(const Character& character, ConditionType type)
@@ -286,6 +287,15 @@ void test_iterative_sequence_stops_at_end_or_when_target_dies()
     TEST_ASSERT_FALSE(shouldContinueIterativeAttack(0, 3, false, true));
 }
 
+void test_skill_action_policy()
+{
+    TEST_ASSERT_EQUAL_INT(17, calculateIntimidateDC(5, 2));
+    TEST_ASSERT_TRUE(intimidateSucceeds(17, 17));
+    TEST_ASSERT_FALSE(intimidateSucceeds(16, 17));
+    TEST_ASSERT_EQUAL(SOCIAL_FAVORABLE, resolveSocialCheckTotal(15, 15));
+    TEST_ASSERT_EQUAL(SOCIAL_NEUTRAL, resolveSocialCheckTotal(14, 15));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -310,6 +320,7 @@ void setup()
     RUN_TEST(test_full_attack_requires_unused_normal_movement);
     RUN_TEST(test_natural_weapons_do_not_gain_iteratives);
     RUN_TEST(test_iterative_sequence_stops_at_end_or_when_target_dies);
+    RUN_TEST(test_skill_action_policy);
     UNITY_END();
 }
 

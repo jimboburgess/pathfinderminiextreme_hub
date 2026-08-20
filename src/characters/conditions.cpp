@@ -223,7 +223,8 @@ bool canCharacterAct(const Character& character)
 
     return !hasCondition(character, CONDITION_STUNNED) &&
            !hasCondition(character, CONDITION_PARALYZED) &&
-           !hasCondition(character, CONDITION_SLEEPING);
+           !hasCondition(character, CONDITION_SLEEPING) &&
+           !hasCondition(character, CONDITION_FRIGHTENED);
 }
 
 int getConditionAttackModifier(const Character& character)

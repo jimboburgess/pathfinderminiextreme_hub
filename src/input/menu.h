@@ -67,6 +67,14 @@ enum MenuAction
     MENU_DELAY,
     MENU_END_TURN,
 
+    // Active map skills
+    MENU_USE_SKILL,
+    MENU_SKILL_ACROBATICS,
+    MENU_SKILL_INTIMIDATE,
+    MENU_SKILL_PERCEPTION,
+    MENU_SKILL_STEALTH,
+    MENU_SKILL_BACK,
+
     // Character
     MENU_CHARACTER_SHEET,
     MENU_INVENTORY,

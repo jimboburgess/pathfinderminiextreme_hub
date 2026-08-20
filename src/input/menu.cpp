@@ -10,6 +10,7 @@
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
 #include "map/activemap.h"
+#include "map/skillactions.h"
 #include "dungeon/abilityresolver.h"
 #include "dungeon/dungeon.h"
 #include "forest/forest.h"
@@ -480,6 +481,27 @@ const Menu gameMenu =
     sizeof(gameMenuItems) / sizeof(MenuItem)
 };
 
+const MenuItem useSkillMenuItems[] =
+{
+    { "Acrobatics", "Use Acrobatics when the situation permits.",
+      MENU_SKILL_ACROBATICS, nullptr, MENU_CLASS_ALL },
+    { "Intimidate", "Frighten one visible enemy.",
+      MENU_SKILL_INTIMIDATE, nullptr, MENU_CLASS_ALL },
+    { "Perception", "Actively search the current area.",
+      MENU_SKILL_PERCEPTION, nullptr, MENU_CLASS_ALL },
+    { "Stealth", "Attempt to remain unnoticed.",
+      MENU_SKILL_STEALTH, nullptr, MENU_CLASS_ALL },
+    { "Back", "Return to the previous menu.",
+      MENU_SKILL_BACK, nullptr, MENU_CLASS_ALL }
+};
+
+const Menu useSkillMenu =
+{
+    "Use Skill",
+    useSkillMenuItems,
+    sizeof(useSkillMenuItems) / sizeof(MenuItem)
+};
+
 //
 //--------------------------------------------------
 // Town Dungeon Entry
@@ -554,6 +576,13 @@ const Menu dungeonEntryMenu =
 
 const MenuItem combatMenuItems[] =
 {
+    {
+        "Use Skill",
+        "Use an active character skill.",
+        MENU_USE_SKILL,
+        &useSkillMenu,
+        MENU_CLASS_ALL
+    },
     {
         "Attack",
         "Perform a melee or ranged attack.",
@@ -897,6 +926,28 @@ void menuActivate()
 
             break;
         }
+
+        case MENU_SKILL_ACROBATICS:
+        case MENU_SKILL_INTIMIDATE:
+        case MENU_SKILL_PERCEPTION:
+        case MENU_SKILL_STEALTH:
+        {
+            Skill skill = SKILL_ACROBATICS;
+            if (item->action == MENU_SKILL_INTIMIDATE)
+                skill = SKILL_INTIMIDATE;
+            else if (item->action == MENU_SKILL_PERCEPTION)
+                skill = SKILL_PERCEPTION;
+            else if (item->action == MENU_SKILL_STEALTH)
+                skill = SKILL_STEALTH;
+
+            closeMenu();
+            useSkill(skill);
+            break;
+        }
+
+        case MENU_SKILL_BACK:
+            menuCancel();
+            break;
 
         case MENU_USE_ITEM:
         case MENU_INVENTORY:
@@ -1471,7 +1522,13 @@ bool isMenuItemVisible(MenuAction action)
                    &combatant->character == character &&
                    canCharacterAct(*character) &&
                    !combatant->turn.standardActionUsed;
-        }
+            }
+
+        case MENU_USE_SKILL:
+            return (gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&
+                   (!combat.active ||
+                    (isPlayerCombatTurn() && canCharacterAct(*character) &&
+                     !getCurrentCombatant()->turn.standardActionUsed));
 
         case MENU_USE_ITEM:
             return character->inventory.itemCount > 0 &&

@@ -8,6 +8,7 @@ void updateMonsterVisibility();
 void resetAwarenessTimer();
 int getStealthSituationModifier(const Entity& player, const Entity& observer);
 bool tryMonsterDetectPlayer(Entity& monster, const Entity& player);
+bool tryPlayerDetectMonster(Entity& player, Entity& monster);
 
 inline bool monsterPerceptionBeatsStealth(
     int monsterPerception,

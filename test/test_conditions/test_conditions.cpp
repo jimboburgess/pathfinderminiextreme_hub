@@ -197,6 +197,21 @@ void test_sleep_duration_prevents_each_intended_turn()
     TEST_ASSERT_FALSE(fourth.actionPrevented);
 }
 
+void test_frightened_for_one_round_prevents_exactly_one_turn()
+{
+    Character character = {};
+    character.state = STATE_ALIVE;
+
+    TEST_ASSERT_TRUE(addCondition(
+        character, CONDITION_FRIGHTENED, 0, 1));
+    TEST_ASSERT_FALSE(canCharacterAct(character));
+
+    ConditionTurnResult result = processConditionsAtTurnStart(character);
+    TEST_ASSERT_TRUE(result.actionPrevented);
+    TEST_ASSERT_FALSE(hasCondition(character, CONDITION_FRIGHTENED));
+    TEST_ASSERT_TRUE(canCharacterAct(character));
+}
+
 void test_condition_capacity_failure_is_safe()
 {
     Character character = {};
@@ -264,6 +279,7 @@ void setup()
     RUN_TEST(test_condition_queries);
     RUN_TEST(test_sleep_immunity_and_damage_waking_are_generic);
     RUN_TEST(test_sleep_duration_prevents_each_intended_turn);
+    RUN_TEST(test_frightened_for_one_round_prevents_exactly_one_turn);
     RUN_TEST(test_condition_capacity_failure_is_safe);
     RUN_TEST(test_poison_ticks_at_turn_start_and_expires);
     UNITY_END();

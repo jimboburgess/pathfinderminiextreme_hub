@@ -69,6 +69,33 @@ bool tryMonsterDetectPlayer(Entity& monster, const Entity& player)
     return true;
 }
 
+bool tryPlayerDetectMonster(Entity& player, Entity& monster)
+{
+    if (!isHostileLivingMonster(monster) || monster.monster == nullptr ||
+        monster.revealedToPlayer ||
+        !hasLineOfSightBetweenFootprintsAt(
+            player, player.x, player.y, monster))
+    {
+        return false;
+    }
+
+    const int distance = getEntityGridDistance(player, monster);
+    const int perception = rollDie(20) +
+        getSkillBonus(player.character, SKILL_PERCEPTION) -
+        (distance > 10 ? distance - 10 : 0);
+    const int stealth = rollDie(20) + monster.monster->stealthBonus;
+
+    Serial.printf("Player Perception %d; %s Stealth %d\n",
+                  perception, getEntityName(&monster), stealth);
+
+    if (perception <= stealth)
+        return false;
+
+    monster.revealedToPlayer = true;
+    markEntityFootprintDirty(monster);
+    return true;
+}
+
 void updateMonsterVisibility()
 {
     uint8_t entityCount = 0;
@@ -146,19 +173,7 @@ void updateAwareness()
             continue;
 
         const int distance = getEntityGridDistance(*player, monster);
-        if (!monster.revealedToPlayer &&
-            hasLineOfSightBetweenFootprintsAt(*player, player->x, player->y, monster))
-        {
-            const int perception = rollDie(20) +
-                getSkillBonus(player->character, SKILL_PERCEPTION) -
-                (distance > 10 ? distance - 10 : 0);
-            const int stealth = rollDie(20) + monster.monster->stealthBonus;
-            if (perception > stealth)
-            {
-                monster.revealedToPlayer = true;
-                markEntityFootprintDirty(monster);
-            }
-        }
+        tryPlayerDetectMonster(*player, monster);
 
         if (distance > COMBAT_DETECTION_RANGE || monster.awareOfPlayer)
             continue;
