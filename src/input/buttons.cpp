@@ -469,6 +469,10 @@ void handleTownButtons() {
                     needsRedraw = true;
                     break;
 
+                case TOWN_HOME_CHARACTER_SHEET:
+                    openCharacterSheet();
+                    break;
+
                 case TOWN_HOME_BACK:
                     closeTownHome();
                     break;

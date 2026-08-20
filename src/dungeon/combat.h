@@ -126,6 +126,9 @@ struct Combat
     bool openingAttackTargeting = false;
     bool openingAttackInProgress = false;
     bool openingAttackWasAmbush = false;
+    bool iterativeAttackActive = false;
+    uint8_t iterativeAttackIndex = 0;
+    uint8_t iterativeAttackCount = 1;
 
     //--------------------------------------------------
     // Monster attack result timing
@@ -140,6 +143,9 @@ struct Combat
     bool monsterAttackHit = false;
     CombatAttackType monsterAttackType = COMBAT_ATTACK_NONE;
     bool monsterDefeatedPlayer = false;
+    bool monsterIterativeAttackActive = false;
+    uint8_t monsterIterativeAttackIndex = 0;
+    uint8_t monsterIterativeAttackCount = 1;
     unsigned long monsterAttackTime = 0;
 
     //--------------------------------------------------

@@ -823,6 +823,31 @@ static void finishPlayerAttack()
     const bool wasOpeningAttack = combat.openingAttackInProgress;
     const bool wasAmbush = combat.openingAttackWasAmbush;
 
+    if (!wasOpeningAttack && combat.iterativeAttackActive &&
+        resolvedTarget != nullptr &&
+        shouldContinueIterativeAttack(
+            combat.iterativeAttackIndex,
+            combat.iterativeAttackCount,
+            resolvedTarget->active,
+            resolvedTarget->character.state == STATE_ALIVE))
+    {
+        combat.attackDamagePending = false;
+        combat.attackResolutionPending = false;
+        combat.pendingAttackTarget = nullptr;
+        combat.pendingDamage = 0;
+        combat.pendingSneakAttack = false;
+        combat.pendingSneakAttackDamage = 0;
+        combat.pendingPowerAttack = false;
+        combat.pendingPowerAttackDamage = 0;
+        combat.iterativeAttackIndex++;
+        combat.waitingForPlayer = true;
+        confirmPlayerAttack();
+        return;
+    }
+
+    const bool completedFullAttack = combat.iterativeAttackActive &&
+        combat.iterativeAttackCount > 1;
+
     combat.attackType = COMBAT_ATTACK_NONE;
     combat.selectedTargetIndex = -1;
     combat.attackDamagePending = false;
@@ -835,6 +860,9 @@ static void finishPlayerAttack()
     combat.pendingPowerAttackDamage = 0;
     combat.openingAttackInProgress = false;
     combat.openingAttackWasAmbush = false;
+    combat.iterativeAttackActive = false;
+    combat.iterativeAttackIndex = 0;
+    combat.iterativeAttackCount = 1;
 
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
@@ -881,6 +909,12 @@ static void finishPlayerAttack()
 
     if (player == nullptr)
         return;
+
+    if (completedFullAttack)
+    {
+        player->turn.moveActionUsed = true;
+        player->turn.movementRemaining = 0;
+    }
 
     player->turn.standardActionUsed = true;
     combat.waitingForPlayer = true;
@@ -1071,6 +1105,20 @@ static void updateMonsterAttack()
             break;
 
         case MONSTER_ATTACK_COMPLETE:
+        {
+            const CombatAttackType completedAttackType =
+                combat.monsterAttackType;
+            const bool continueFullAttack =
+                combat.monsterIterativeAttackActive &&
+                monster != nullptr && monster->active &&
+                monster->character.state == STATE_ALIVE &&
+                target != nullptr &&
+                shouldContinueIterativeAttack(
+                    combat.monsterIterativeAttackIndex,
+                    combat.monsterIterativeAttackCount,
+                    target->active,
+                    target->character.state == STATE_ALIVE);
+
             combat.monsterAttackPhase = MONSTER_ATTACK_NONE;
             combat.attackingMonster = nullptr;
             combat.monsterAttackTarget = nullptr;
@@ -1080,9 +1128,23 @@ static void updateMonsterAttack()
             combat.monsterAttackType = COMBAT_ATTACK_NONE;
 
             if (combat.monsterDefeatedPlayer)
+            {
                 combat.phase = COMBAT_END;
+            }
+            else if (continueFullAttack)
+            {
+                combat.monsterIterativeAttackIndex++;
+                beginMonsterAttack(monster, target, completedAttackType);
+            }
+            else
+            {
+                combat.monsterIterativeAttackActive = false;
+                combat.monsterIterativeAttackIndex = 0;
+                combat.monsterIterativeAttackCount = 1;
+            }
 
             break;
+        }
 
         default:
             break;
@@ -1255,6 +1317,13 @@ void startCombat()
     combat.turnStartActionPrevented = false;
     combat.openingAttackInProgress = false;
     combat.openingAttackWasAmbush = false;
+
+    combat.iterativeAttackActive = false;
+    combat.iterativeAttackIndex = 0;
+    combat.iterativeAttackCount = 1;
+    combat.monsterIterativeAttackActive = false;
+    combat.monsterIterativeAttackIndex = 0;
+    combat.monsterIterativeAttackCount = 1;
 
     showCombatStartMessage();
 
@@ -1881,6 +1950,12 @@ void endCombat()
     combat.openingAttackTargeting = false;
     combat.openingAttackInProgress = false;
     combat.openingAttackWasAmbush = false;
+    combat.iterativeAttackActive = false;
+    combat.iterativeAttackIndex = 0;
+    combat.iterativeAttackCount = 1;
+    combat.monsterIterativeAttackActive = false;
+    combat.monsterIterativeAttackIndex = 0;
+    combat.monsterIterativeAttackCount = 1;
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
@@ -2141,6 +2216,24 @@ void confirmPlayerAttack()
         return;
     }
 
+    if (!combat.iterativeAttackActive)
+    {
+        const EquipmentSlot slot = combat.attackType == COMBAT_ATTACK_MELEE
+            ? SLOT_MELEE_WEAPON
+            : SLOT_RANGED_WEAPON;
+        const ItemID weaponID = player->character.equipment.equipped[slot].itemID;
+        const int bab = getBaseAttackBonus(
+            player->character.characterClass, player->character.level);
+
+        combat.iterativeAttackActive = true;
+        combat.iterativeAttackIndex = 0;
+        combat.iterativeAttackCount =
+            !combat.openingAttackInProgress &&
+            !isNaturalWeaponItem(weaponID) && canMakeFullAttack(*player)
+                ? getIterativeAttackCount(bab)
+                : 1;
+    }
+
     playSound(getAttackSound(player, weapon));
 
     // Clear the targeting cursor before it stops being a targeting action.
@@ -2179,7 +2272,13 @@ void confirmPlayerAttack()
         (combat.attackType == COMBAT_ATTACK_MELEE)
             ? getMeleeAttackBonus(player->character)
             : getRangedAttackBonus(player->character);
-    int attackBonus = normalAttackBonus + powerAttackPenalty;
+    const int bab = getBaseAttackBonus(
+        player->character.characterClass, player->character.level);
+    const int iterativeBAB = getIterativeBAB(
+        bab, combat.iterativeAttackIndex);
+    const int iterativePenalty = iterativeBAB - bab;
+    int attackBonus = normalAttackBonus + powerAttackPenalty +
+        iterativePenalty;
     int total = dieRoll + attackBonus + rangePenalty;
     bool hit = (dieRoll == 20) ||
                (dieRoll != 1 && total >= getArmorClass(
@@ -2188,23 +2287,8 @@ void confirmPlayerAttack()
 
     char message[64];
 
-    if (rangePenalty < 0)
-    {
-        snprintf(message, sizeof(message), "%s! %d + %d - %d = %d",
-                 hit ? "Hit" : "Miss", dieRoll, attackBonus,
-                 -rangePenalty, total);
-    }
-    else if (powerAttackPenalty < 0)
-    {
-        snprintf(message, sizeof(message), "%s! %d + %d - %d = %d",
-                 hit ? "Hit" : "Miss", dieRoll, normalAttackBonus,
-                 -powerAttackPenalty, total);
-    }
-    else
-    {
-        snprintf(message, sizeof(message), "%s! %d + %d = %d",
-                 hit ? "Hit" : "Miss", dieRoll, attackBonus, total);
-    }
+    snprintf(message, sizeof(message), "Attack %+d: %s! (%d)",
+             iterativeBAB, hit ? "Hit" : "Miss", total);
 
     setGameMessage(message);
 
@@ -2272,6 +2356,9 @@ void cancelPlayerAttack()
 
     markAttackCursorDirty();
     combat.attackType = COMBAT_ATTACK_NONE;
+    combat.iterativeAttackActive = false;
+    combat.iterativeAttackIndex = 0;
+    combat.iterativeAttackCount = 1;
     combat.openingAttackTargeting = false;
     combat.selectedTargetIndex = -1;
     markPlayerFacingCursorDirty();
@@ -3133,6 +3220,18 @@ void beginMonsterAttack(
          weapon->type != WEAPON_MELEE))
     return;
 
+    const ItemID weaponID = getEquippedItem(monster->character, weaponSlot);
+
+    if (!combat.monsterIterativeAttackActive)
+    {
+        combat.monsterIterativeAttackActive = true;
+        combat.monsterIterativeAttackIndex = 0;
+        combat.monsterIterativeAttackCount =
+            !isNaturalWeaponItem(weaponID) && canMakeFullAttack(*monster)
+                ? getIterativeAttackCount(monster->monster->baseAttack)
+                : 1;
+    }
+
     playSound(getAttackSound(monster, weapon));
 
     int abilityModifier = getAbilityModifier(
@@ -3153,7 +3252,10 @@ void beginMonsterAttack(
     }
 
     int dieRoll = rollDie(20);
-    int total = dieRoll + monster->monster->baseAttack + abilityModifier +
+    const int iterativeBAB = getIterativeBAB(
+        monster->monster->baseAttack,
+        combat.monsterIterativeAttackIndex);
+    int total = dieRoll + iterativeBAB + abilityModifier +
                 getConditionAttackModifier(monster->character) +
                 rangePenalty;
 
@@ -3194,9 +3296,9 @@ void beginMonsterAttack(
     monster->turn.standardActionUsed = true;
 
     char message[64];
-    snprintf(message, sizeof(message), "%s makes a %s attack with %s.",
+    snprintf(message, sizeof(message), "%s attack %+d with %s.",
              getEntityName(monster),
-             weapon->type == WEAPON_RANGED ? "ranged" : "melee",
+             iterativeBAB,
              getEquippedItemName(
                  monster->character,
                  weaponSlot));

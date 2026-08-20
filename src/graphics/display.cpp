@@ -249,15 +249,20 @@ void drawTownScreen()
         tft.print("Home");
 
         tft.setTextSize(2);
-        tft.setCursor(20, 75);
+        tft.setCursor(20, 65);
         tft.print(getTownHomeSelection() == TOWN_HOME_REST ? "> " : "  ");
         tft.print("Rest");
 
-        tft.setCursor(20, 110);
+        tft.setCursor(20, 95);
         tft.print(getTownHomeSelection() == TOWN_HOME_SAVE_GAME ? "> " : "  ");
         tft.print("Save Game");
 
-        tft.setCursor(20, 145);
+        tft.setCursor(20, 125);
+        tft.print(getTownHomeSelection() == TOWN_HOME_CHARACTER_SHEET
+            ? "> " : "  ");
+        tft.print("Character Sheet");
+
+        tft.setCursor(20, 155);
         tft.print(getTownHomeSelection() == TOWN_HOME_BACK ? "> " : "  ");
         tft.print("Back");
 

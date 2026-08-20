@@ -3,6 +3,7 @@
 
 #include "../../src/characters/characters.h"
 #include "../../src/data/progression.h"
+#include "../../src/dungeon/combatpolicy.h"
 
 // The project currently has only embedded Unity suites. Build the progression
 // implementation directly and provide its small character-rule dependencies,
@@ -363,6 +364,18 @@ void test_new_level_immediately_selects_existing_class_progression()
         fighter.characterClass, fighter.level));
 }
 
+void test_all_class_bab_progressions_unlock_iterative_attacks()
+{
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
+        getBaseAttackBonus(CLASS_FIGHTER, 6)));
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
+        getBaseAttackBonus(CLASS_ROGUE, 8)));
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
+        getBaseAttackBonus(CLASS_CLERIC, 8)));
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
+        getBaseAttackBonus(CLASS_WIZARD, 12)));
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -381,6 +394,7 @@ void setup()
     RUN_TEST(test_one_award_can_advance_multiple_levels_without_healing);
     RUN_TEST(test_primary_ability_milestones_apply_once_for_every_class);
     RUN_TEST(test_new_level_immediately_selects_existing_class_progression);
+    RUN_TEST(test_all_class_bab_progressions_unlock_iterative_attacks);
     UNITY_END();
 }
 

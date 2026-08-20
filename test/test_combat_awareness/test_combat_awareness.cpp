@@ -228,6 +228,64 @@ void test_combat_start_enemy_count_matches_living_roster()
         2, countLivingHostilesInCombatRoster(roster, count));
 }
 
+void test_pathfinder_iterative_attack_progression()
+{
+    TEST_ASSERT_EQUAL_UINT8(1, getIterativeAttackCount(5));
+    TEST_ASSERT_EQUAL_INT(5, getIterativeBAB(5, 0));
+
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(6));
+    TEST_ASSERT_EQUAL_INT(6, getIterativeBAB(6, 0));
+    TEST_ASSERT_EQUAL_INT(1, getIterativeBAB(6, 1));
+
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(10));
+    TEST_ASSERT_EQUAL_INT(5, getIterativeBAB(10, 1));
+    TEST_ASSERT_EQUAL_UINT8(3, getIterativeAttackCount(11));
+    TEST_ASSERT_EQUAL_INT(1, getIterativeBAB(11, 2));
+    TEST_ASSERT_EQUAL_UINT8(3, getIterativeAttackCount(15));
+    TEST_ASSERT_EQUAL_INT(5, getIterativeBAB(15, 2));
+    TEST_ASSERT_EQUAL_UINT8(4, getIterativeAttackCount(16));
+    TEST_ASSERT_EQUAL_INT(1, getIterativeBAB(16, 3));
+    TEST_ASSERT_EQUAL_UINT8(4, getIterativeAttackCount(20));
+    TEST_ASSERT_EQUAL_INT(5, getIterativeBAB(20, 3));
+}
+
+void test_full_attack_requires_unused_normal_movement()
+{
+    Entity attacker = makeEntity(ENTITY_PLAYER, TEAM_PLAYER);
+    attacker.character.speed = 6;
+    attacker.turn.movementRemaining = 6;
+    TEST_ASSERT_TRUE(canMakeFullAttack(attacker));
+
+    attacker.turn.movementRemaining = 5;
+    TEST_ASSERT_FALSE(canMakeFullAttack(attacker));
+
+    attacker.turn.movementRemaining = 6;
+    attacker.turn.moveActionUsed = true;
+    TEST_ASSERT_FALSE(canMakeFullAttack(attacker));
+
+    attacker.turn.moveActionUsed = false;
+    attacker.turn.fiveFootStepUsed = true;
+    TEST_ASSERT_TRUE(canMakeFullAttack(attacker));
+}
+
+void test_natural_weapons_do_not_gain_iteratives()
+{
+    TEST_ASSERT_TRUE(isNaturalWeaponItem(ITEM_BITE));
+    TEST_ASSERT_TRUE(isNaturalWeaponItem(ITEM_CLAWS));
+    TEST_ASSERT_TRUE(isNaturalWeaponItem(ITEM_SLAM));
+    TEST_ASSERT_FALSE(isNaturalWeaponItem(ITEM_LONGSWORD));
+    TEST_ASSERT_FALSE(isNaturalWeaponItem(ITEM_LONGBOW));
+}
+
+void test_iterative_sequence_stops_at_end_or_when_target_dies()
+{
+    TEST_ASSERT_TRUE(shouldContinueIterativeAttack(0, 3, true, true));
+    TEST_ASSERT_TRUE(shouldContinueIterativeAttack(1, 3, true, true));
+    TEST_ASSERT_FALSE(shouldContinueIterativeAttack(2, 3, true, true));
+    TEST_ASSERT_FALSE(shouldContinueIterativeAttack(0, 3, true, false));
+    TEST_ASSERT_FALSE(shouldContinueIterativeAttack(0, 3, false, true));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -248,6 +306,10 @@ void setup()
     RUN_TEST(test_second_monster_detection_establishes_combat_after_ambush_kill);
     RUN_TEST(test_flat_footed_condition_preserves_existing_sneak_attack_rule);
     RUN_TEST(test_combat_start_enemy_count_matches_living_roster);
+    RUN_TEST(test_pathfinder_iterative_attack_progression);
+    RUN_TEST(test_full_attack_requires_unused_normal_movement);
+    RUN_TEST(test_natural_weapons_do_not_gain_iteratives);
+    RUN_TEST(test_iterative_sequence_stops_at_end_or_when_target_dies);
     UNITY_END();
 }
 

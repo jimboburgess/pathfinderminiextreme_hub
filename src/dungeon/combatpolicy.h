@@ -6,6 +6,41 @@
 #include "characters/conditions.h"
 #include "data/entities.h"
 
+inline uint8_t getIterativeAttackCount(int bab)
+{
+    if (bab < 1)
+        return 1;
+
+    const int count = 1 + (bab - 1) / 5;
+    return static_cast<uint8_t>(count > 4 ? 4 : count);
+}
+
+inline int getIterativeBAB(int bab, uint8_t attackIndex)
+{
+    return bab - static_cast<int>(attackIndex) * 5;
+}
+
+inline bool isNaturalWeaponItem(ItemID itemID)
+{
+    return itemID >= ITEM_BITE && itemID <= ITEM_PSEUDOPOD;
+}
+
+inline bool canMakeFullAttack(const Entity& attacker)
+{
+    return !attacker.turn.moveActionUsed &&
+           (attacker.turn.fiveFootStepUsed ||
+            attacker.turn.movementRemaining >= attacker.character.speed);
+}
+
+inline bool shouldContinueIterativeAttack(
+    uint8_t attackIndex,
+    uint8_t attackCount,
+    bool targetActive,
+    bool targetAlive)
+{
+    return targetActive && targetAlive && attackIndex + 1 < attackCount;
+}
+
 inline bool isHostileMonsterForCombat(const Entity& entity)
 {
     return entity.active && entity.type == ENTITY_MONSTER &&
