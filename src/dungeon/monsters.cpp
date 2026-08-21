@@ -171,8 +171,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_ONE,
         LOOT_BEAST,
-        { ABILITY_MELEE_ATTACK, ABILITY_POISON, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
-        { 12, 3 }, 0, 0, CREATURE_MONSTER, false, 0, 0, 4, 6
+        { ABILITY_MELEE_ATTACK, ABILITY_POISON, ABILITY_WEB, ABILITY_NONE }, SCRIPT_MELEE,
+        { 12, 3 }, 4, 2, CREATURE_MONSTER, false, 0, 0, 4, 6
     },
 
     {

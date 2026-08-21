@@ -71,6 +71,8 @@ void finishPlayerMovement(Entity& player, int targetX, int targetY)
 
     if (enteredCondition == CONDITION_PRONE)
         setGameMessage("You fall prone!");
+    else if (enteredCondition == CONDITION_WEBBED)
+        setGameMessage("Caught in the web!");
 }
 
 bool canPlayerTraverseEnemy(

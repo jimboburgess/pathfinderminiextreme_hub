@@ -256,7 +256,8 @@ enum AbilityDuration
 enum MapEffectType : uint8_t
 {
     MAP_EFFECT_NONE,
-    MAP_EFFECT_GREASE
+    MAP_EFFECT_GREASE,
+    MAP_EFFECT_WEB
 };
 
 //--------------------------------------------------

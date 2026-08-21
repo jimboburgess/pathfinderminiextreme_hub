@@ -74,6 +74,8 @@ enum MenuAction
     MENU_SKILL_PERCEPTION,
     MENU_SKILL_STEALTH,
     MENU_SKILL_BACK,
+    MENU_CUT_FREE,
+    MENU_IGNITE_WEB,
 
     // Character
     MENU_CHARACTER_SHEET,

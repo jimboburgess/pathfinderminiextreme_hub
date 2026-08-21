@@ -11,6 +11,9 @@ uint8_t getMovementCost(
     int targetX,
     int targetY)
 {
+    if (hasCondition(mover.character, CONDITION_WEBBED))
+        return 0;
+
     uint8_t width = getEntityTileWidth(mover);
     uint8_t height = getEntityTileHeight(mover);
 

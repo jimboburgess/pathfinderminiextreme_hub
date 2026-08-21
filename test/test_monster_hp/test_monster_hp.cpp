@@ -156,6 +156,11 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL_UINT8(4, spectator.casterLevel);
     TEST_ASSERT_EQUAL(CREATURE_BEHOLDER, spectator.creatureType);
 
+    const Monster& spider = monsterDatabase[MONSTER_GIANT_SPIDER];
+    TEST_ASSERT_EQUAL(ABILITY_WEB, spider.specialAbilities[2]);
+    TEST_ASSERT_EQUAL_UINT8(4, spider.maxMP);
+    TEST_ASSERT_EQUAL_UINT8(2, spider.casterLevel);
+
     const Monster& skeletonMage = monsterDatabase[MONSTER_SKELETON_MAGE];
     TEST_ASSERT_EQUAL_STRING("Skeleton Mage", skeletonMage.name);
     TEST_ASSERT_EQUAL_PTR(skeletonMage16x16, skeletonMage.sprite);

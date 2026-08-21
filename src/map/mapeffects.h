@@ -19,6 +19,7 @@ struct MapEffect
     int8_t y = 0;
     uint8_t radius = 0;
     uint8_t roundsRemaining = 0;
+    bool expiresWithCombat = false;
 
     SaveType saveType = SAVE_NONE;
     int16_t saveDC = 0;
@@ -63,5 +64,7 @@ MapEffectTriggerResult handleEnteredMapEffects(
     int entityY);
 
 void markMapEffectTilesDirty(const MapEffect& effect);
+const MapEffect* getWebEffectAffectingEntity(const Entity& entity);
+bool removeWebEffect(MapEffect& effect);
 
 #endif // PATHFINDERMINIEXTREME_025_MAP_EFFECTS_H

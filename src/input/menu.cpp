@@ -584,6 +584,20 @@ const MenuItem combatMenuItems[] =
         MENU_CLASS_ALL
     },
     {
+        "Cut Free",
+        "Use a physical attack to escape a web.",
+        MENU_CUT_FREE,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Burn Web",
+        "Ignite this web with a flaming weapon.",
+        MENU_IGNITE_WEB,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
         "Attack",
         "Perform a melee or ranged attack.",
         MENU_ATTACK,
@@ -947,6 +961,16 @@ void menuActivate()
 
         case MENU_SKILL_BACK:
             menuCancel();
+            break;
+
+        case MENU_CUT_FREE:
+            closeMenu();
+            cutFreeFromWeb();
+            break;
+
+        case MENU_IGNITE_WEB:
+            closeMenu();
+            igniteWeb();
             break;
 
         case MENU_USE_ITEM:
@@ -1529,6 +1553,24 @@ bool isMenuItemVisible(MenuAction action)
                    (!combat.active ||
                     (isPlayerCombatTurn() && canCharacterAct(*character) &&
                      !getCurrentCombatant()->turn.standardActionUsed));
+
+        case MENU_CUT_FREE:
+        {
+            Entity* entity = getActiveMapPlayer();
+            return entity != nullptr && canCutFreeFromWeb(*entity) &&
+                   (!combat.active ||
+                    (isPlayerCombatTurn() &&
+                     !entity->turn.standardActionUsed));
+        }
+
+        case MENU_IGNITE_WEB:
+        {
+            Entity* entity = getActiveMapPlayer();
+            return entity != nullptr && canIgniteWeb(*entity) &&
+                   (!combat.active ||
+                    (isPlayerCombatTurn() &&
+                     !entity->turn.standardActionUsed));
+        }
 
         case MENU_USE_ITEM:
             return character->inventory.itemCount > 0 &&

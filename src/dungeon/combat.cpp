@@ -523,6 +523,17 @@ static DefeatResult finalizeDefeat(Entity& defeated)
     return result;
 }
 
+void applyEnvironmentalDamage(Entity& target, int damage)
+{
+    if (!target.active || target.character.state != STATE_ALIVE || damage <= 0)
+        return;
+
+    damageCharacter(target.character, damage);
+    if (target.character.health.currentHP <= 0)
+        finalizeDefeat(target);
+    markEntityFootprintDirty(target);
+}
+
 CombatDamageResult applyCombatDamage(Entity& target, int damage)
 {
     CombatDamageResult result;
@@ -670,7 +681,12 @@ void presentGroundAbilityResolution(
     const char* abilityName = getAbilityName(abilityID);
     char message[96];
 
-    if (resolution.targetsAffected > 0 &&
+    if (abilityID == ABILITY_WEB && resolution.targetsAffected > 0)
+    {
+        snprintf(message, sizeof(message), "Caught in the web!");
+    }
+
+    else if (resolution.targetsAffected > 0 &&
         resolution.targetsResisted > 0)
     {
         snprintf(message, sizeof(message),
@@ -1486,7 +1502,9 @@ void resetActions(Entity* entity)
 void announceTurn(Entity* entity)
 {
     entity->turn.movementRemaining =
-    entity->character.speed;
+        hasCondition(entity->character, CONDITION_WEBBED)
+            ? 0
+            : entity->character.speed;
 
     entity->turn.standardActionUsed = false;
     entity->turn.monsterState = MONSTER_START;

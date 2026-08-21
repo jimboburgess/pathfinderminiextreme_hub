@@ -13,5 +13,6 @@ uint8_t getEffectiveHitDice(const Entity& entity);
 // One shared visual-perception query for naturally sightless monsters and
 // temporary blindness. Map line of sight remains a separate geometry rule.
 bool canSee(const Entity& entity);
+bool isImmuneToWeb(const Entity& entity);
 
 #endif // PATHFINDERMINIEXTREME_025_ENTITY_TRAITS_H

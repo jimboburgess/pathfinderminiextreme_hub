@@ -11,6 +11,7 @@
 #include "dungeon.h"
 #include "monsters.h"
 #include "map/movement.h"
+#include "map/mapeffects.h"
 #include "graphics/messagelog.h"
 #include "combat.h"
 #include "data/entityspawn.h"
@@ -464,7 +465,9 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
         sizeof(message),
         enteredCondition == CONDITION_PRONE
             ? "%s falls prone!"
-            : "%s moves.",
+            : enteredCondition == CONDITION_WEBBED
+                ? "%s is caught in the web!"
+                : "%s moves.",
         getEntityName(monster));
     setGameMessage(message);
 
@@ -744,6 +747,25 @@ void runMonsterScript(Entity* monster)
 
 void runMeleeScript(Entity* monster)
 {
+    Entity* target = chooseTarget(monster);
+    const Ability* web = getAbility(ABILITY_WEB);
+
+    if (monster != nullptr && target != nullptr &&
+        isImmuneToWeb(*monster) && web != nullptr &&
+        monster->character.magic.currentMP >= web->mpCost &&
+        !hasMapEffectAt(MAP_EFFECT_WEB, target->x, target->y) &&
+        validateAbilityAt(*monster, target->x, target->y, web->id) ==
+            ABILITY_RESULT_SUCCESS)
+    {
+        AbilityResolution resolution = resolveAbilityAt(
+            *monster, target->x, target->y, web->id);
+        if (resolution.result == ABILITY_RESULT_SUCCESS)
+        {
+            presentGroundAbilityResolution(*monster, web->id, resolution);
+            return;
+        }
+    }
+
     performStandardAction(monster);
 }
 
@@ -1031,6 +1053,16 @@ bool isMonsterReadyForAction(Entity* monster)
 
     if (monster == nullptr || monster->monster == nullptr || target == nullptr)
         return true;
+
+    const Ability* web = getAbility(ABILITY_WEB);
+    if (isImmuneToWeb(*monster) && web != nullptr &&
+        monster->character.magic.currentMP >= web->mpCost &&
+        !hasMapEffectAt(MAP_EFFECT_WEB, target->x, target->y) &&
+        validateAbilityAt(*monster, target->x, target->y, web->id) ==
+            ABILITY_RESULT_SUCCESS)
+    {
+        return true;
+    }
 
     if (getMonsterScript(monster) == SCRIPT_RANGED)
     {

@@ -6,6 +6,7 @@
 #include "map/activemap.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
+#include "data/entitytraits.h"
 #include "data/game.h"
 #include "graphics/display.h"
 
@@ -26,6 +27,9 @@ bool isDifficultMapEffect(MapEffectType type)
     {
         case MAP_EFFECT_GREASE:
             return true;
+
+        case MAP_EFFECT_WEB:
+            return false;
 
         case MAP_EFFECT_NONE:
             return false;
@@ -62,7 +66,7 @@ MapEffect* addMapEffect(const MapEffect& effect)
 {
     if (effect.type == MAP_EFFECT_NONE ||
         !isInsideActiveMap(effect.x, effect.y) ||
-        effect.roundsRemaining == 0)
+        (effect.roundsRemaining == 0 && !effect.expiresWithCombat))
     {
         return nullptr;
     }
@@ -100,6 +104,11 @@ void clearMapEffects()
 
         activeMapEffects[i] = MapEffect{};
     }
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+        removeCondition(entities[i].character, CONDITION_WEBBED);
 }
 
 void tickMapEffects()
@@ -108,7 +117,8 @@ void tickMapEffects()
     {
         MapEffect& effect = activeMapEffects[i];
 
-        if (!effect.active || effect.roundsRemaining == 0)
+        if (!effect.active || effect.expiresWithCombat ||
+            effect.roundsRemaining == 0)
             continue;
 
         effect.roundsRemaining--;
@@ -212,6 +222,9 @@ MapEffectTriggerResult applyMapEffectToEntity(
         return result;
     }
 
+    if (effect.type == MAP_EFFECT_WEB && isImmuneToWeb(entity))
+        return result;
+
     if (effect.saveType != SAVE_NONE)
     {
         AbilitySavingThrow savingThrow = resolveSavingThrow(
@@ -233,9 +246,41 @@ MapEffectTriggerResult applyMapEffectToEntity(
     {
         result.conditionsApplied = 1;
         result.conditionApplied = effect.conditionType;
+        if (effect.type == MAP_EFFECT_WEB)
+            entity.turn.movementRemaining = 0;
     }
 
     return result;
+}
+
+const MapEffect* getWebEffectAffectingEntity(const Entity& entity)
+{
+    for (uint8_t i = 0; i < MAX_MAP_EFFECTS; i++)
+    {
+        if (activeMapEffects[i].type == MAP_EFFECT_WEB &&
+            mapEffectAffectsEntityAt(
+                activeMapEffects[i], entity, entity.x, entity.y))
+        {
+            return &activeMapEffects[i];
+        }
+    }
+    return nullptr;
+}
+
+bool removeWebEffect(MapEffect& effect)
+{
+    if (!effect.active || effect.type != MAP_EFFECT_WEB)
+        return false;
+
+    removeMapEffect(effect);
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        if (getWebEffectAffectingEntity(entities[i]) == nullptr)
+            removeCondition(entities[i].character, CONDITION_WEBBED);
+    }
+    return true;
 }
 
 MapEffectTriggerResult handleEnteredMapEffects(

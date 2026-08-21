@@ -35,6 +35,7 @@ Adafruit_ST7789 tft(
 namespace
 {
 constexpr uint16_t COLOR_GREASE = 0xB5A6;
+constexpr uint16_t COLOR_WEB = 0xCE79;
 constexpr uint16_t COLOR_AREA_TARGET = 0xC81F;
 
 void drawMapEffectOverlayAt(int tileX, int tileY)
@@ -63,6 +64,17 @@ void drawMapEffectOverlayAt(int tileX, int tileY)
                              screenX + 13, screenY + 7, COLOR_GREASE);
                 tft.drawPixel(screenX + 4, screenY + 4, COLOR_GREASE);
                 tft.drawPixel(screenX + 11, screenY + 3, COLOR_GREASE);
+                break;
+
+            case MAP_EFFECT_WEB:
+                tft.drawLine(screenX + 1, screenY + 1,
+                             screenX + 14, screenY + 14, COLOR_WEB);
+                tft.drawLine(screenX + 14, screenY + 1,
+                             screenX + 1, screenY + 14, COLOR_WEB);
+                tft.drawLine(screenX + 1, screenY + 8,
+                             screenX + 14, screenY + 8, COLOR_WEB);
+                tft.drawLine(screenX + 8, screenY + 1,
+                             screenX + 8, screenY + 14, COLOR_WEB);
                 break;
 
             case MAP_EFFECT_NONE:

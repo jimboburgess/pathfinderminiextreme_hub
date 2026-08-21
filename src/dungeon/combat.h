@@ -294,6 +294,7 @@ void presentGroundAbilityResolution(
     Entity& caster,
     AbilityID abilityID,
     const AbilityResolution& resolution);
+void applyEnvironmentalDamage(Entity& target, int damage);
 void presentDirectionalAbilityResolution(
     Entity& caster,
     AbilityID abilityID,

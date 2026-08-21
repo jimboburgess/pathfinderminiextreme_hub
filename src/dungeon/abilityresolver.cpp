@@ -57,11 +57,13 @@ bool hasSupportedMapEffect(const Ability& ability)
 {
     if (ability.target != TARGET_AREA ||
         ability.delivery != DELIVERY_AREA ||
-        ability.duration != DURATION_ROUNDS ||
+        (ability.duration != DURATION_ROUNDS &&
+         ability.duration != DURATION_COMBAT) ||
         ability.rangeTiles == 0 ||
         ability.areaRadiusTiles == 0 ||
         ability.mapEffectType == MAP_EFFECT_NONE ||
-        ability.mapEffectDurationRounds == 0 ||
+        (ability.mapEffectDurationRounds == 0 &&
+         ability.duration != DURATION_COMBAT) ||
         ability.effectCount != 1)
     {
         return false;
@@ -706,6 +708,7 @@ AbilityResolution resolveAbilityAt(
     mapEffect.y = static_cast<int8_t>(targetY);
     mapEffect.radius = ability->areaRadiusTiles;
     mapEffect.roundsRemaining = ability->mapEffectDurationRounds;
+    mapEffect.expiresWithCombat = ability->duration == DURATION_COMBAT;
     mapEffect.saveType = ability->saveType;
     mapEffect.saveDC = getAbilitySaveDC(caster, *ability);
     mapEffect.conditionType = effect.conditionType;

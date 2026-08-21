@@ -4,6 +4,10 @@
 #include "data/entities.h"
 
 bool useSkill(Skill skill);
+bool canCutFreeFromWeb(const Entity& entity);
+bool cutFreeFromWeb();
+bool canIgniteWeb(const Entity& entity);
+bool igniteWeb();
 
 int getIntimidateDC(const Entity& target);
 

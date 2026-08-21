@@ -364,11 +364,12 @@ void test_wizard_supported_spell_filter_exposes_current_spells()
     }
 
     TEST_ASSERT_EQUAL_UINT8(13, wizard.magic.knownAbilityCount);
-    TEST_ASSERT_EQUAL_UINT8(4, supportedCount);
+    TEST_ASSERT_EQUAL_UINT8(5, supportedCount);
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_MAGIC_MISSILE));
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_SLEEP));
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_GREASE));
     TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_COLOR_SPRAY));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_WEB));
     TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_FIREBALL));
     TEST_ASSERT_FALSE(isAbilitySupported(ABILITY_ICE_STORM));
 }
@@ -931,6 +932,81 @@ void test_entering_grease_saves_once_and_prone_stands_without_moving()
     TEST_ASSERT_EQUAL_UINT8(oldY, monster.y);
 }
 
+void test_web_is_combat_duration_and_traps_non_spiders_on_failed_reflex()
+{
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(activeTestEntities[0], ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& wizard = activeTestEntities[0];
+    Entity& monster = activeTestEntities[1];
+    wizard.x = 0;
+    wizard.y = 0;
+    monster.x = 3;
+    monster.y = 3;
+    monster.turn.movementRemaining = 6;
+    controlledSaveRoll = 1;
+
+    const Ability* web = getAbility(ABILITY_WEB);
+    TEST_ASSERT_NOT_NULL(web);
+    TEST_ASSERT_EQUAL_UINT8(2, web->level);
+    TEST_ASSERT_EQUAL(MAP_EFFECT_WEB, web->mapEffectType);
+    TEST_ASSERT_EQUAL_UINT8(1, web->areaRadiusTiles);
+    TEST_ASSERT_EQUAL(CONDITION_WEBBED, web->effects[0].conditionType);
+
+    AbilityResolution result = resolveAbilityAt(
+        wizard, 3, 3, ABILITY_WEB);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WEB, 2, 2));
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WEB, 4, 4));
+    TEST_ASSERT_TRUE(hasCondition(monster.character, CONDITION_WEBBED));
+    TEST_ASSERT_EQUAL_UINT8(0, monster.turn.movementRemaining);
+    TEST_ASSERT_EQUAL_UINT8(0, getMovementCost(monster, 3, 3));
+
+    tickMapEffects();
+    tickMapEffects();
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WEB, 3, 3));
+    clearMapEffects();
+    TEST_ASSERT_FALSE(hasMapEffectAt(MAP_EFFECT_WEB, 3, 3));
+    TEST_ASSERT_FALSE(hasCondition(monster.character, CONDITION_WEBBED));
+}
+
+void test_spider_ignores_web_and_successful_entry_save_allows_movement()
+{
+    resetResolverControls();
+    MapEffect effect;
+    effect.active = true;
+    effect.type = MAP_EFFECT_WEB;
+    effect.sourceAbility = ABILITY_WEB;
+    effect.x = 5;
+    effect.y = 5;
+    effect.radius = 1;
+    effect.expiresWithCombat = true;
+    effect.saveType = SAVE_REFLEX;
+    effect.saveDC = 20;
+    effect.conditionType = CONDITION_WEBBED;
+    TEST_ASSERT_NOT_NULL(addMapEffect(effect));
+
+    Entity spider;
+    initializeEntity(spider, ENTITY_MONSTER, TEAM_MONSTER);
+    spider.monsterID = MONSTER_GIANT_SPIDER;
+    spider.x = 5;
+    spider.y = 5;
+    TEST_ASSERT_EQUAL(CONDITION_NONE, handleEnteredTile(spider, 5, 5));
+    TEST_ASSERT_FALSE(hasCondition(spider.character, CONDITION_WEBBED));
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+
+    Entity creature;
+    initializeEntity(creature, ENTITY_MONSTER, TEAM_MONSTER);
+    creature.x = 5;
+    creature.y = 5;
+    controlledSaveRoll = 20;
+    TEST_ASSERT_EQUAL(CONDITION_NONE, handleEnteredTile(creature, 5, 5));
+    TEST_ASSERT_FALSE(hasCondition(creature.character, CONDITION_WEBBED));
+    TEST_ASSERT_EQUAL_UINT8(1, saveRollCount);
+    TEST_ASSERT_EQUAL_UINT8(1, getMovementCost(creature, 5, 5));
+}
+
 void test_color_spray_metadata_and_shared_cone_geometry()
 {
     resetResolverControls();
@@ -1380,6 +1456,8 @@ void setup()
     RUN_TEST(test_invalid_grease_casts_are_transactional);
     RUN_TEST(test_movement_cost_and_grease_expiration_are_shared);
     RUN_TEST(test_entering_grease_saves_once_and_prone_stands_without_moving);
+    RUN_TEST(test_web_is_combat_duration_and_traps_non_spiders_on_failed_reflex);
+    RUN_TEST(test_spider_ignores_web_and_successful_entry_save_allows_movement);
     RUN_TEST(test_color_spray_metadata_and_shared_cone_geometry);
     RUN_TEST(test_color_spray_failed_saves_use_effective_hd_tiers);
     RUN_TEST(test_color_spray_save_wall_team_and_area_filters_are_shared);

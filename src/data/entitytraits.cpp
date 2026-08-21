@@ -24,3 +24,9 @@ bool canSee(const Entity& entity)
 
     return !hasCondition(entity.character, CONDITION_BLINDED);
 }
+
+bool isImmuneToWeb(const Entity& entity)
+{
+    return entity.type == ENTITY_MONSTER &&
+           entity.monsterID == MONSTER_GIANT_SPIDER;
+}

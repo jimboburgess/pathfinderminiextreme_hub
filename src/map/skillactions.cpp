@@ -13,6 +13,7 @@
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
 #include "map/awareness.h"
+#include "map/mapeffects.h"
 
 namespace
 {
@@ -175,12 +176,93 @@ bool useSkill(Skill skill)
         case SKILL_STEALTH: return useStealth(*player);
         case SKILL_INTIMIDATE: return useIntimidate(*player);
         case SKILL_ACROBATICS:
-            setGameMessage("No Acrobatics action available.");
-            return false;
+        {
+            const MapEffect* web = getWebEffectAffectingEntity(*player);
+            if (!hasCondition(player->character, CONDITION_WEBBED) ||
+                web == nullptr)
+            {
+                setGameMessage("No Acrobatics action available.");
+                return false;
+            }
+
+            if (!canUseStandardSkillAction(*player))
+                return false;
+
+            const int total = rollDie(20) +
+                getSkillBonus(player->character, SKILL_ACROBATICS);
+            if (total >= web->saveDC)
+            {
+                removeCondition(player->character, CONDITION_WEBBED);
+                setGameMessage("You escape the web.");
+            }
+            else
+            {
+                setGameMessage("Escape failed.");
+            }
+            spendStandardSkillAction(*player);
+            return true;
+        }
         default:
             setGameMessage("That skill is unavailable.");
             return false;
     }
+}
+
+bool canCutFreeFromWeb(const Entity& entity)
+{
+    return hasCondition(entity.character, CONDITION_WEBBED) &&
+        (getEquippedMeleeWeapon(entity.character) != nullptr ||
+         getEquippedRangedWeapon(entity.character) != nullptr);
+}
+
+bool cutFreeFromWeb()
+{
+    Entity* player = getActiveMapPlayer();
+    if (player == nullptr || !canCutFreeFromWeb(*player) ||
+        !canUseStandardSkillAction(*player))
+        return false;
+
+    removeCondition(player->character, CONDITION_WEBBED);
+    setGameMessage("You cut yourself free.");
+    spendStandardSkillAction(*player);
+    return true;
+}
+
+bool canIgniteWeb(const Entity& entity)
+{
+    const ItemInstance& melee =
+        entity.character.equipment.equipped[SLOT_MELEE_WEAPON];
+    const ItemInstance& ranged =
+        entity.character.equipment.equipped[SLOT_RANGED_WEAPON];
+    return getWebEffectAffectingEntity(entity) != nullptr &&
+        (melee.weaponEnhancement == WEAPON_ENHANCEMENT_FLAMING ||
+         ranged.weaponEnhancement == WEAPON_ENHANCEMENT_FLAMING);
+}
+
+bool igniteWeb()
+{
+    Entity* player = getActiveMapPlayer();
+    if (player == nullptr || !canIgniteWeb(*player) ||
+        !canUseStandardSkillAction(*player))
+        return false;
+
+    MapEffect* web = const_cast<MapEffect*>(getWebEffectAffectingEntity(*player));
+    if (web == nullptr)
+        return false;
+
+    uint8_t count = 0;
+    Entity* entities = getActiveMapEntities(count);
+    for (uint8_t i = 0; entities != nullptr && i < count; i++)
+    {
+        if (mapEffectAffectsEntityAt(
+                *web, entities[i], entities[i].x, entities[i].y))
+            applyEnvironmentalDamage(entities[i], rollDice(2, 4));
+    }
+
+    removeWebEffect(*web);
+    setGameMessage("The webs burn away!");
+    spendStandardSkillAction(*player);
+    return true;
 }
 
 SocialCheckResult resolveAutomaticSocialCheck(
