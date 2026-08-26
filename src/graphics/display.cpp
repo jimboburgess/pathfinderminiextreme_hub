@@ -544,10 +544,8 @@ void redrawDungeonTile(int x, int y)
     // Draw the map tile.
     //--------------------------------------------------
 
-    drawTile(
-        x,
-        y,
-        dungeon.rooms[dungeon.currentRoom].map.tiles[y][x]);
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    drawRoomTile(room, x, y);
     drawMapEffectOverlayAt(x, y);
 
     //--------------------------------------------------
@@ -564,6 +562,8 @@ void redrawDungeonTile(int x, int y)
     {
         drawEntity(*entity);
     }
+
+    drawTrapDiscoveryMarker(room, x, y);
 
     if (isInspectingEntities())
     {
@@ -596,6 +596,32 @@ void redrawDungeonTile(int x, int y)
         Entity* target = getSelectedAbilityTarget();
 
         if (target != nullptr && entityOccupiesTile(*target, x, y))
+        {
+            tft.drawRect(target->x * TILE_SIZE, target->y * TILE_SIZE,
+                         target->spriteWidth, target->spriteHeight,
+                         ST77XX_YELLOW);
+        }
+
+        return;
+    }
+
+    if (isPlayerTargetingAttack())
+    {
+        Entity* target = getSelectedAttackTarget();
+
+        if (combat.attackType == COMBAT_ATTACK_MELEE)
+        {
+            Entity* player = getActiveMapPlayer();
+
+            if (player != nullptr &&
+                player->x + directionOffsets[moveDirection].dx == x &&
+                player->y + directionOffsets[moveDirection].dy == y)
+            {
+                tft.drawRect(x * TILE_SIZE, y * TILE_SIZE,
+                             TILE_SIZE, TILE_SIZE, ST77XX_YELLOW);
+            }
+        }
+        else if (target != nullptr && entityOccupiesTile(*target, x, y))
         {
             tft.drawRect(target->x * TILE_SIZE, target->y * TILE_SIZE,
                          target->spriteWidth, target->spriteHeight,
@@ -647,6 +673,12 @@ void drawDungeonScreen()
     }
 
     drawMapEntities();
+
+    for (int y = 0; y < ROOM_SIZE; y++)
+        for (int x = 0; x < ROOM_SIZE; x++)
+            drawTrapDiscoveryMarker(
+                dungeon.rooms[dungeon.currentRoom], x, y);
+
     drawMapCursor();
     redrawMapMessage();
 }

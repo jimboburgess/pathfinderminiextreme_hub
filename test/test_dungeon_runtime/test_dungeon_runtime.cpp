@@ -98,6 +98,10 @@ void generateRoom(DungeonRoom& room)
     }
 }
 
+void populateDungeonRoomFeatures(DungeonRoom&, uint8_t, bool)
+{
+}
+
 bool placeGiantSpiderEncounter(DungeonRoom&)
 {
     return true;
@@ -210,6 +214,7 @@ Entity* getEntityAt(
 }
 
 #include "../../src/dungeon/combatabort.cpp"
+#include "../../src/dungeon/traps.cpp"
 #include "../../src/dungeon/dungeon.cpp"
 
 static void configureLoadedRoom(uint8_t roomIndex)
@@ -347,6 +352,88 @@ void test_living_monster_hp_and_conditions_survive_room_reload()
         runtime.entities[0].character.conditions.conditions[0].roundsRemaining);
     TEST_ASSERT_TRUE(runtime.entities[0].awareOfPlayer);
     TEST_ASSERT_TRUE(runtime.entities[0].revealedToPlayer);
+}
+
+void test_trap_state_persists_across_room_reload()
+{
+    configureLoadedRoom(2);
+    DungeonRoom& room = dungeon.rooms[2];
+
+    TEST_ASSERT_TRUE(addTrap(
+        room, TRAP_SPIKE_PLATE, 4, 5, 7,
+        SUSPICION_BONES, 9));
+    TEST_ASSERT_TRUE(addTrap(
+        room, TRAP_SPIKE_PLATE, 6, 5, 4,
+        SUSPICION_FLOOR_GROOVES));
+    TEST_ASSERT_TRUE(addTrap(
+        room, TRAP_SPIKE_PLATE, 8, 5, 2,
+        SUSPICION_BLOODSTAIN));
+
+    TrapInstance* disabledTrap = getTrapAt(room, 4, 5);
+    TrapInstance* triggeredTrap = getTrapAt(room, 6, 5);
+    TrapInstance* destroyedTrap = getTrapAt(room, 8, 5);
+    TEST_ASSERT_NOT_NULL(disabledTrap);
+    TEST_ASSERT_NOT_NULL(triggeredTrap);
+    TEST_ASSERT_NOT_NULL(destroyedTrap);
+
+    disabledTrap->discovered = true;
+    disabledTrap->disabled = true;
+    disabledTrap->manualPerceptionAttempted = true;
+    disabledTrap->rogueDiscoveryAttempted = true;
+    disabledTrap->hp--;
+
+    TEST_ASSERT_TRUE(resolveTrapTrigger(
+        *triggeredTrap, false, 4).triggered);
+    destroyedTrap->discovered = true;
+    TEST_ASSERT_TRUE(damageTrap(
+        *destroyedTrap, 100, DAMAGE_PIERCING).destroyed);
+
+    const int16_t persistedHP = disabledTrap->hp;
+
+    suspendDungeonRun(dungeon);
+    dungeon.currentRoom = 2;
+    loadRoom(dungeon, ENTRY_START);
+
+    disabledTrap = getTrapAt(dungeon.rooms[2], 4, 5);
+    triggeredTrap = getTrapAt(dungeon.rooms[2], 6, 5);
+    destroyedTrap = getTrapAt(dungeon.rooms[2], 8, 5);
+
+    TEST_ASSERT_NOT_NULL(disabledTrap);
+    TEST_ASSERT_TRUE(disabledTrap->discovered);
+    TEST_ASSERT_TRUE(disabledTrap->disabled);
+    TEST_ASSERT_FALSE(disabledTrap->triggered);
+    TEST_ASSERT_FALSE(disabledTrap->destroyed);
+    TEST_ASSERT_TRUE(disabledTrap->manualPerceptionAttempted);
+    TEST_ASSERT_TRUE(disabledTrap->rogueDiscoveryAttempted);
+    TEST_ASSERT_EQUAL_INT(persistedHP, disabledTrap->hp);
+    TEST_ASSERT_EQUAL_UINT8(9, disabledTrap->controlGroup);
+    TEST_ASSERT_EQUAL(SUSPICION_BONES,
+                      getSuspicionAt(dungeon.rooms[2], 4, 5));
+
+    TEST_ASSERT_NOT_NULL(triggeredTrap);
+    TEST_ASSERT_TRUE(triggeredTrap->triggered);
+    TEST_ASSERT_FALSE(triggeredTrap->destroyed);
+    TEST_ASSERT_FALSE(triggeredTrap->disabled);
+
+    TEST_ASSERT_NOT_NULL(destroyedTrap);
+    TEST_ASSERT_TRUE(destroyedTrap->destroyed);
+    TEST_ASSERT_FALSE(destroyedTrap->triggered);
+    TEST_ASSERT_FALSE(destroyedTrap->disabled);
+    TEST_ASSERT_EQUAL_INT(0, destroyedTrap->hp);
+}
+
+void test_trap_uses_level_scaled_statistics()
+{
+    DungeonRoom room = {};
+    TEST_ASSERT_TRUE(addTrap(
+        room, TRAP_SPIKE_PLATE, 3, 4, 7));
+
+    const TrapInstance* trap = getTrapAt(room, 3, 4);
+    TEST_ASSERT_NOT_NULL(trap);
+    TEST_ASSERT_EQUAL_UINT8(19, getTrapPerceptionDC(*trap));
+    TEST_ASSERT_EQUAL_UINT8(21, getTrapDisableDC(*trap));
+    TEST_ASSERT_EQUAL_UINT16(20, getTrapMaxHP(*trap));
+    TEST_ASSERT_EQUAL_UINT16(getTrapMaxHP(*trap), trap->hp);
 }
 
 void test_resume_uses_existing_layout_and_does_not_regenerate()
@@ -629,6 +716,8 @@ void setup()
     RUN_TEST(test_suspend_keeps_character_and_room_runtime_state);
     RUN_TEST(test_dead_unlooted_and_looted_state_survive_room_reload);
     RUN_TEST(test_living_monster_hp_and_conditions_survive_room_reload);
+    RUN_TEST(test_trap_state_persists_across_room_reload);
+    RUN_TEST(test_trap_uses_level_scaled_statistics);
     RUN_TEST(test_resume_uses_existing_layout_and_does_not_regenerate);
     RUN_TEST(test_only_unfinished_runs_are_resumable);
     RUN_TEST(test_new_run_generates_only_when_no_run_is_active);

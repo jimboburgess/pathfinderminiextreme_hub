@@ -40,6 +40,10 @@ StandForMovementResult tryStandForMovement(
 
 // Shared post-commit terrain hook. It runs exactly once for each successful
 // movement step, never once per display/update frame.
-ConditionType handleEnteredTile(Entity& mover, int targetX, int targetY);
+ConditionType handleEnteredTile(
+    Entity& mover,
+    int targetX,
+    int targetY,
+    bool* trapTriggered = nullptr);
 
 #endif // PATHFINDERMINIEXTREME_025_MOVEMENT_H

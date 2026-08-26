@@ -30,3 +30,17 @@ bool isImmuneToWeb(const Entity& entity)
     return entity.type == ENTITY_MONSTER &&
            entity.monsterID == MONSTER_GIANT_SPIDER;
 }
+
+bool isUndeadCreature(const Entity& entity)
+{
+    switch (entity.character.creatureType)
+    {
+        case CREATURE_SKELETON:
+        case CREATURE_ZOMBIE:
+        case CREATURE_UNDEAD:
+            return true;
+
+        default:
+            return false;
+    }
+}

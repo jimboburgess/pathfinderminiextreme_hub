@@ -36,6 +36,7 @@ extern const uint16_t grassTile[16 * 16];
 extern const uint16_t treeTile[16 * 16];
 extern const uint16_t dungeonWallTiles[3][16 * 16];
 extern const uint16_t dungeonFloorTiles[3][16 * 16];
+extern const uint16_t dungeonDoor16x16[16 * 16];
 
 extern const uint16_t chestclosed[16 * 16];
 extern const uint16_t chestopenwith[16 * 16];

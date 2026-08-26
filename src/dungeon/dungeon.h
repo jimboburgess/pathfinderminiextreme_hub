@@ -10,6 +10,7 @@
 #include "../data/game.h"
 #include "graphics/tiles.h"
 #include "../data/entities.h"
+#include "traps.h"
 
 constexpr uint8_t ROOM_SIZE = 15;
 constexpr uint8_t TILE_SIZE = 16;
@@ -95,6 +96,10 @@ struct DungeonRoom {
     uint8_t connectionCount = 0;
 
     RoomMap map;
+    // Physical mechanisms and environmental clues are deliberately separate:
+    // a clue can be a warning for a trap or harmless dungeon dressing.
+    TrapInstance traps[MAX_TRAPS_PER_ROOM] = {};
+    SuspicionInstance suspicions[MAX_SUSPICIONS_PER_ROOM] = {};
 };
 
 

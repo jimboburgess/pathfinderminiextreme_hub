@@ -472,6 +472,16 @@ void generateDungeon(Dungeon& dungeon)
         dungeon.rooms[i].shape =
             randomProductionRoomShape(dungeon.rooms[i]);
         generateRoom(dungeon.rooms[i]);
+
+        // Keep the first pass sparse: only the three middle rooms may receive
+        // a random spike plate. The feature helper also consumes any authored
+        // TILE_TRAP marker and may add harmless visual-clue dressing.
+        const bool allowRandomTrap =
+            i > 0 && i < BOSS_ROOM_INDEX;
+        populateDungeonRoomFeatures(
+            dungeon.rooms[i],
+            player.level > 0 ? player.level : 1,
+            allowRandomTrap);
     }
 
     dungeon.runActive = true;
@@ -573,6 +583,13 @@ void resetDungeonRun(Dungeon& dungeon)
 
         dungeon.rooms[roomIndex].discovered = false;
         dungeon.rooms[roomIndex].completed = false;
+        for (TrapInstance& trap : dungeon.rooms[roomIndex].traps)
+            trap = TrapInstance{};
+        for (SuspicionInstance& suspicion :
+             dungeon.rooms[roomIndex].suspicions)
+        {
+            suspicion = SuspicionInstance{};
+        }
     }
 }
 

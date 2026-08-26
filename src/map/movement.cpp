@@ -5,6 +5,7 @@
 #include "characters/conditions.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
+#include "dungeon/traps.h"
 
 uint8_t getMovementCost(
     const Entity& mover,
@@ -84,8 +85,20 @@ StandForMovementResult tryStandForMovement(
     return STAND_COMPLETED;
 }
 
-ConditionType handleEnteredTile(Entity& mover, int targetX, int targetY)
+ConditionType handleEnteredTile(
+    Entity& mover,
+    int targetX,
+    int targetY,
+    bool* trapTriggered)
 {
-    return handleEnteredMapEffects(
-               mover, targetX, targetY).conditionApplied;
+    const ConditionType conditionApplied = handleEnteredMapEffects(
+        mover, targetX, targetY).conditionApplied;
+
+    // Persistent room features share the same post-commit movement seam as
+    // Grease and Web. This runs once per successful step, never per frame.
+    const bool triggered = triggerTrapForEntityAt(mover, targetX, targetY);
+    if (trapTriggered != nullptr)
+        *trapTriggered = triggered;
+
+    return conditionApplied;
 }

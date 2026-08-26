@@ -271,3 +271,18 @@ int getConditionArmorClassModifier(const Character& character)
     return modifier;
 }
 
+const char* getActionAffectingConditionMessage(const Character& character)
+{
+    const bool prone = hasCondition(character, CONDITION_PRONE);
+    const bool webbed = hasCondition(character, CONDITION_WEBBED);
+
+    if (prone && webbed)
+        return "You are prone and stuck in the web.";
+    if (prone)
+        return "You are prone.";
+    if (webbed)
+        return "You are stuck in the web.";
+
+    return nullptr;
+}
+

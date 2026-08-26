@@ -10,6 +10,8 @@
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "dungeon/combat.h"
+#include "dungeon/dungeon.h"
+#include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
 #include "map/awareness.h"
@@ -17,6 +19,8 @@
 
 namespace
 {
+constexpr int TRAP_SEARCH_RANGE = 3;
+
 bool canUseStandardSkillAction(Entity& player)
 {
     return !combat.active ||
@@ -64,6 +68,54 @@ Entity* getClosestVisibleHostile(Entity& player)
     return best;
 }
 
+bool canInspectTrapFrom(const Entity& player, const TrapInstance& trap)
+{
+    return getEntityGridDistanceToTile(player, trap.x, trap.y) <=
+               TRAP_SEARCH_RANGE &&
+           hasLineOfSightFromFootprintAt(
+               player, player.x, player.y, trap.x, trap.y);
+}
+
+TrapInstance* searchNearbyTraps(Entity& player)
+{
+    if (gameState != GAME_DUNGEON ||
+        dungeon.currentRoom >= MAX_ROOMS)
+    {
+        return nullptr;
+    }
+
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    TrapInstance* discoveredTrap = nullptr;
+    bool rolled = false;
+    int perceptionTotal = 0;
+
+    for (TrapInstance& trap : room.traps)
+    {
+        if (trap.id == TRAP_NONE || trap.discovered ||
+            trap.manualPerceptionAttempted ||
+            !canInspectTrapFrom(player, trap))
+        {
+            continue;
+        }
+
+        if (!rolled)
+        {
+            perceptionTotal = rollDie(20) +
+                getSkillBonus(player.character, SKILL_PERCEPTION);
+            rolled = true;
+        }
+
+        if (attemptManualTrapDiscovery(trap, perceptionTotal) ==
+            TRAP_DISCOVERY_SUCCESS)
+        {
+            discoveredTrap = &trap;
+            markTileDirty(trap.x, trap.y);
+        }
+    }
+
+    return discoveredTrap;
+}
+
 bool usePerception(Entity& player)
 {
     if (!canUseStandardSkillAction(player))
@@ -75,11 +127,95 @@ bool usePerception(Entity& player)
     for (uint8_t i = 0; entities != nullptr && i < count; i++)
         found = tryPlayerDetectMonster(player, entities[i]) || found;
 
+    TrapInstance* foundTrap = searchNearbyTraps(player);
+
     // Secret-door room search belongs here when that persistent geometry
     // system is added. This single entry point prevents menu-driven rerolls
     // from bypassing its eventual per-character/per-door attempt state.
-    setGameMessage(found ? "You notice a hidden creature!"
-                         : "You find nothing unusual.");
+    if (foundTrap != nullptr)
+    {
+        const TrapDefinition* definition =
+            getTrapDefinition(foundTrap->id);
+        char message[64];
+        snprintf(message, sizeof(message), "You discover a %s!",
+                 definition != nullptr ? definition->name : "trap");
+        setGameMessage(message);
+    }
+    else if (found)
+    {
+        setGameMessage("You notice a hidden creature!");
+    }
+    else
+    {
+        // A failed or exhausted search never certifies that a square is safe.
+        setGameMessage(getTrapSearchFailureMessage(random(5)));
+    }
+
+    spendStandardSkillAction(player);
+    return true;
+}
+
+TrapInstance* getAdjacentDiscoveredTrap(Entity& player)
+{
+    if (gameState != GAME_DUNGEON ||
+        dungeon.currentRoom >= MAX_ROOMS)
+    {
+        return nullptr;
+    }
+
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+
+    // Prefer the square the player is facing, then check every adjacent tile.
+    const int facingX =
+        player.x + directionOffsets[moveDirection].dx;
+    const int facingY =
+        player.y + directionOffsets[moveDirection].dy;
+    TrapInstance* trap = getTrapAt(room, facingX, facingY);
+    if (trap != nullptr && trap->discovered && isTrapActive(*trap))
+        return trap;
+
+    for (uint8_t direction = 0; direction < 8; direction++)
+    {
+        if (direction == static_cast<uint8_t>(moveDirection))
+            continue;
+
+        const int x = player.x + directionOffsets[direction].dx;
+        const int y = player.y + directionOffsets[direction].dy;
+        trap = getTrapAt(room, x, y);
+        if (trap != nullptr && trap->discovered && isTrapActive(*trap))
+            return trap;
+    }
+
+    return nullptr;
+}
+
+bool useDisableDevice(Entity& player)
+{
+    if (!canUseStandardSkillAction(player))
+        return false;
+
+    TrapInstance* trap = getAdjacentDiscoveredTrap(player);
+    if (trap == nullptr)
+    {
+        setGameMessage("No active trap is within reach.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    const int total = rollDie(20) +
+        getSkillBonus(player.character, SKILL_DISABLE_DEVICE);
+    const TrapDisableResult result = attemptDisableTrap(*trap, total);
+
+    if (result == TRAP_DISABLE_SUCCESS)
+    {
+        setGameMessage("Pressure plate disabled.");
+        markTileDirty(trap->x, trap->y);
+    }
+    else
+    {
+        setGameMessage("You fail to disable it.");
+    }
+
     spendStandardSkillAction(player);
     return true;
 }
@@ -173,6 +309,7 @@ bool useSkill(Skill skill)
     switch (skill)
     {
         case SKILL_PERCEPTION: return usePerception(*player);
+        case SKILL_DISABLE_DEVICE: return useDisableDevice(*player);
         case SKILL_STEALTH: return useStealth(*player);
         case SKILL_INTIMIDATE: return useIntimidate(*player);
         case SKILL_ACROBATICS:

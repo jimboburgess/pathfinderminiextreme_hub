@@ -8,6 +8,7 @@
 #include "data/entityspawn.h"
 #include "data/entitytraits.h"
 #include "dungeon/combat.h"
+#include "dungeon/traps.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
@@ -156,6 +157,14 @@ void updateMonsterVisibility()
 
 void updateAwareness()
 {
+    // Rogue trapfinding is event-gated by persistent per-trap attempt state.
+    // Calling this from the normal awareness update makes newly loaded or
+    // newly observed room geometry eligible immediately without tying the
+    // roll to the six-second monster-awareness cadence.
+    Entity* activePlayer = getActiveMapPlayer();
+    if (activePlayer != nullptr)
+        updateRogueTrapAwareness(*activePlayer);
+
     if (combat.active || millis() - lastAwarenessCheck < AWARENESS_INTERVAL_MS)
         return;
     lastAwarenessCheck = millis();

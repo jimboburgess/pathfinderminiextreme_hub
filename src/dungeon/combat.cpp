@@ -173,13 +173,6 @@ static bool isPlayerSideCharacter(const Entity& entity)
            entity.character.team == TEAM_PLAYER;
 }
 
-static bool isUndead(const Entity& entity)
-{
-    return entity.character.creatureType == CREATURE_UNDEAD ||
-           entity.character.creatureType == CREATURE_SKELETON ||
-           entity.character.creatureType == CREATURE_ZOMBIE;
-}
-
 static bool areHostile(const Entity& attacker, const Entity& target)
 {
     return attacker.character.team != TEAM_NEUTRAL &&
@@ -1450,6 +1443,18 @@ static void beginTurnStartConditionMessages(
         return;
     }
 
+    const char* actionStatus = entity->type == ENTITY_PLAYER
+        ? getActionAffectingConditionMessage(entity->character)
+        : nullptr;
+    if (actionStatus != nullptr)
+    {
+        setGameMessage(actionStatus);
+        combat.turnStartConditionPhase =
+            TURN_START_CONDITION_ACTION_STATUS_MESSAGE;
+        needsRedraw = true;
+        return;
+    }
+
     finishTurnStart(entity);
 }
 
@@ -1469,6 +1474,23 @@ static bool updateTurnStartConditionMessages(Entity* entity)
         combat.turnStartConditionPhase =
             TURN_START_CONDITION_EXPIRY_MESSAGE;
         return true;
+    }
+
+    if (combat.turnStartConditionPhase !=
+        TURN_START_CONDITION_ACTION_STATUS_MESSAGE)
+    {
+        const char* actionStatus = entity != nullptr &&
+            entity->type == ENTITY_PLAYER
+                ? getActionAffectingConditionMessage(entity->character)
+                : nullptr;
+        if (actionStatus != nullptr)
+        {
+            setGameMessage(actionStatus);
+            combat.turnStartConditionPhase =
+                TURN_START_CONDITION_ACTION_STATUS_MESSAGE;
+            needsRedraw = true;
+            return true;
+        }
     }
 
     finishTurnStart(entity);
@@ -2467,27 +2489,90 @@ static void executePlayerAbility(
         resolution);
 }
 
+static bool isEligibleTurnUndeadTarget(
+    const Entity& cleric,
+    const Entity& target,
+    const Ability& ability)
+{
+    return target.active && target.type == ENTITY_MONSTER &&
+           target.character.state == STATE_ALIVE &&
+           areHostile(cleric, target) && isUndeadCreature(target) &&
+           getEntityGridDistance(cleric, target) <= ability.rangeTiles &&
+           hasLineOfSightBetweenFootprintsAt(
+               cleric, cleric.x, cleric.y, target);
+}
+
+static void appendTurnedName(
+    char* names,
+    size_t namesSize,
+    const char* name,
+    uint8_t count)
+{
+    if (names[0] != '\0')
+        strncat(names, ", ", namesSize - strlen(names) - 1);
+
+    strncat(names, name, namesSize - strlen(names) - 1);
+
+    if (count > 1)
+    {
+        char suffix[8];
+        snprintf(suffix, sizeof(suffix), " x%u",
+                 static_cast<unsigned int>(count));
+        strncat(names, suffix, namesSize - strlen(names) - 1);
+    }
+}
+
 static void executeTurnUndead(Entity& cleric)
 {
     const Ability* ability = getAbility(ABILITY_TURN_UNDEAD);
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
     int turned = 0;
-    char names[80] = {};
+    const char* turnedNames[MAX_ENTITIES] = {};
+    uint8_t turnedCounts[MAX_ENTITIES] = {};
+    uint8_t turnedKinds = 0;
 
-    if (ability == nullptr || entities == nullptr)
+    if (ability == nullptr || !combat.active ||
+        getCurrentCombatant() != &cleric ||
+        !combat.waitingForPlayer ||
+        !knowsAbility(cleric.character, ABILITY_TURN_UNDEAD) ||
+        !canCharacterAct(cleric.character) || cleric.turn.standardActionUsed)
+    {
+        setGameMessage("Turn Undead unavailable.");
+        playSound(SoundEffect::SPELL_FAIL);
         return;
+    }
 
-    const int dc = getAbilitySaveDC(cleric, *ability);
+    if (cleric.character.magic.currentMP < ability->mpCost ||
+        entities == nullptr)
+    {
+        setGameMessage(entities == nullptr ? "No undead were turned" :
+                       "Not enough MP.");
+        playSound(SoundEffect::SPELL_FAIL);
+        return;
+    }
+
+    bool hasEligibleTarget = false;
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        if (isEligibleTurnUndeadTarget(cleric, entities[i], *ability))
+        {
+            hasEligibleTarget = true;
+            break;
+        }
+    }
+
+    if (!hasEligibleTarget)
+    {
+        setGameMessage("No undead were turned");
+        playSound(SoundEffect::SPELL_FAIL);
+        return;
+    }
 
     for (uint8_t i = 0; i < entityCount; i++)
     {
         Entity& target = entities[i];
-        if (!target.active || target.type != ENTITY_MONSTER ||
-            target.character.team != TEAM_MONSTER ||
-            target.character.state != STATE_ALIVE || !isUndead(target) ||
-            getEntityGridDistance(cleric, target) > ability->rangeTiles ||
-            !hasLineOfSightBetweenFootprintsAt(cleric, cleric.x, cleric.y, target))
+        if (!isEligibleTurnUndeadTarget(cleric, target, *ability))
             continue;
 
         AbilitySavingThrow save = resolveAbilitySavingThrow(
@@ -2499,9 +2584,13 @@ static void executeTurnUndead(Entity& cleric)
             target.turn.standardActionUsed = true;
             markEntityFootprintDirty(target);
             const char* name = getEntityName(&target);
-            if (turned > 0)
-                strncat(names, ", ", sizeof(names) - strlen(names) - 1);
-            strncat(names, name, sizeof(names) - strlen(names) - 1);
+            uint8_t kind = 0;
+            for (; kind < turnedKinds; kind++)
+                if (strcmp(turnedNames[kind], name) == 0)
+                    break;
+            if (kind == turnedKinds && turnedKinds < MAX_ENTITIES)
+                turnedNames[turnedKinds++] = name;
+            turnedCounts[kind]++;
             turned++;
         }
     }
@@ -2512,11 +2601,19 @@ static void executeTurnUndead(Entity& cleric)
         setGameMessage("No undead were turned");
     else
     {
+        char names[72] = {};
+        for (uint8_t i = 0; i < turnedKinds; i++)
+            appendTurnedName(names, sizeof(names), turnedNames[i],
+                             turnedCounts[i]);
         char message[112];
         snprintf(message, sizeof(message), "Turned %d undead: %s", turned, names);
         setGameMessage(message);
     }
     playSound(SoundEffect::SPELL_CAST);
+    combat.abilityResolutionPending = true;
+    combat.abilityCaster = &cleric;
+    combat.abilityEndedCombat = areAllCombatMonstersDefeated();
+    combat.abilityResultTime = millis();
     combat.waitingForPlayer = false;
     requestCombatTileRedraw();
 }

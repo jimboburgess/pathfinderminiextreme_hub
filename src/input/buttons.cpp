@@ -797,6 +797,15 @@ void handleCharacterSheetButtons() {
         needsRedraw = true;
         playSound(SoundEffect::MENU_SELECT);
     }
+
+    if (encoderPressed() || buttonAPressed())
+    {
+        if (activateCharacterSheetSelection())
+        {
+            playSound(SoundEffect::MENU_SELECT);
+            return;
+        }
+    }
     //--------------------------------------------------
     // Exit
     //--------------------------------------------------
@@ -804,6 +813,8 @@ void handleCharacterSheetButtons() {
     if (buttonBPressed())
     {
         playSound(SoundEffect::MENU_BACK);
+        if (backCharacterSheetSelection())
+            return;
         closeCharacterSheet();
         return;
     }

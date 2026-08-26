@@ -113,4 +113,8 @@ bool canCharacterAct(const Character& character);
 int getConditionAttackModifier(const Character& character);
 int getConditionArmorClassModifier(const Character& character);
 
+// Returns player-facing start-of-turn feedback for persistent conditions that
+// materially change available actions. Add future condition summaries here.
+const char* getActionAffectingConditionMessage(const Character& character);
+
 #endif //PATHFINDERMINIEXTREME_025_CONDITIONS_H

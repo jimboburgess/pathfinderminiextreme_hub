@@ -21,6 +21,8 @@ void enterCharacterSheet(Character* character);
 
 void scrollCharacterSheetUp();
 void scrollCharacterSheetDown();
+bool activateCharacterSheetSelection();
+bool backCharacterSheetSelection();
 
 void updateCharacterSheet();
 void drawCharacterSheet();

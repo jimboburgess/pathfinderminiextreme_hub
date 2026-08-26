@@ -345,6 +345,14 @@ const MenuItem clericSpecialMenuItems[] =
         MENU_CLASS_CLERIC
     },
     {
+        "Turn Undead",
+        "Turn nearby undead with divine power.",
+        MENU_TURN_UNDEAD,
+        nullptr,
+        MENU_CLASS_CLERIC,
+        ABILITY_TURN_UNDEAD
+    },
+    {
         "Domain Powers",
         "Use one of your domain abilities.",
         MENU_NONE,
@@ -485,6 +493,8 @@ const MenuItem useSkillMenuItems[] =
 {
     { "Acrobatics", "Use Acrobatics when the situation permits.",
       MENU_SKILL_ACROBATICS, nullptr, MENU_CLASS_ALL },
+    { "Disable Device", "Disarm a discovered adjacent trap.",
+      MENU_SKILL_DISABLE_DEVICE, nullptr, MENU_CLASS_ALL },
     { "Intimidate", "Frighten one visible enemy.",
       MENU_SKILL_INTIMIDATE, nullptr, MENU_CLASS_ALL },
     { "Perception", "Actively search the current area.",
@@ -941,13 +951,21 @@ void menuActivate()
             break;
         }
 
+        case MENU_TURN_UNDEAD:
+            closeMenu();
+            beginPlayerAbility(ABILITY_TURN_UNDEAD);
+            break;
+
         case MENU_SKILL_ACROBATICS:
+        case MENU_SKILL_DISABLE_DEVICE:
         case MENU_SKILL_INTIMIDATE:
         case MENU_SKILL_PERCEPTION:
         case MENU_SKILL_STEALTH:
         {
             Skill skill = SKILL_ACROBATICS;
-            if (item->action == MENU_SKILL_INTIMIDATE)
+            if (item->action == MENU_SKILL_DISABLE_DEVICE)
+                skill = SKILL_DISABLE_DEVICE;
+            else if (item->action == MENU_SKILL_INTIMIDATE)
                 skill = SKILL_INTIMIDATE;
             else if (item->action == MENU_SKILL_PERCEPTION)
                 skill = SKILL_PERCEPTION;
@@ -1547,6 +1565,20 @@ bool isMenuItemVisible(MenuAction action)
                    canCharacterAct(*character) &&
                    !combatant->turn.standardActionUsed;
             }
+
+        case MENU_TURN_UNDEAD:
+        {
+            Entity* cleric = getActiveMapPlayer();
+
+            return cleric != nullptr &&
+                   &cleric->character == character &&
+                   knowsAbility(*character, ABILITY_TURN_UNDEAD) &&
+                   combat.active &&
+                   isPlayerCombatTurn() &&
+                   getCurrentCombatant() == cleric &&
+                   canCharacterAct(*character) &&
+                   !cleric->turn.standardActionUsed;
+        }
 
         case MENU_USE_SKILL:
             return (gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&

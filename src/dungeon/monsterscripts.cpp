@@ -454,22 +454,26 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
     monster->y = newY;
 
     spendMovementCost(*monster, newX, newY);
+    bool trapTriggered = false;
     ConditionType enteredCondition = handleEnteredTile(
-        *monster, newX, newY);
+        *monster, newX, newY, &trapTriggered);
 
     markEntityFootprintDirty(*monster);
 
-    char message[32];
-    snprintf(
-        message,
-        sizeof(message),
-        enteredCondition == CONDITION_PRONE
-            ? "%s falls prone!"
-            : enteredCondition == CONDITION_WEBBED
-                ? "%s is caught in the web!"
-                : "%s moves.",
-        getEntityName(monster));
-    setGameMessage(message);
+    if (!trapTriggered)
+    {
+        char message[32];
+        snprintf(
+            message,
+            sizeof(message),
+            enteredCondition == CONDITION_PRONE
+                ? "%s falls prone!"
+                : enteredCondition == CONDITION_WEBBED
+                    ? "%s is caught in the web!"
+                    : "%s moves.",
+            getEntityName(monster));
+        setGameMessage(message);
+    }
 
     return true;
 }

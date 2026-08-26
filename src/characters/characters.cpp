@@ -178,8 +178,10 @@ int getArmorClass(const Character& character, int dodgeBonus)
 {
     const Armor* armor = getEquippedArmor(character);
     const Shield* shield = getEquippedShield(character);
-    int armorBonus = armor ? armor->armorBonus : 0;
-    int shieldBonus = shield ? shield->shieldBonus : 0;
+    int armorBonus = armor ? armor->armorBonus +
+        character.equipment.equipped[SLOT_ARMOR].enhancementBonus : 0;
+    int shieldBonus = shield ? shield->shieldBonus +
+        character.equipment.equipped[SLOT_SHIELD].enhancementBonus : 0;
     int naturalArmor = 0;
     int deflectionBonus = 0;
     int sizeModifier = 0;
@@ -198,7 +200,10 @@ int getArmorClass(const Character& character, int dodgeBonus)
 
 int getMeleeAttackBonus(const Character& character)
 {
-    int weaponEnhancement = 0;
+    const ItemInstance& weapon =
+        character.equipment.equipped[SLOT_MELEE_WEAPON];
+    int weaponEnhancement = getWeapon(weapon.itemID) != nullptr
+        ? weapon.enhancementBonus : 0;
 
     return getBaseAttackBonus(
                character.characterClass,
@@ -212,7 +217,10 @@ int getMeleeAttackBonus(const Character& character)
 
 int getRangedAttackBonus(const Character& character)
 {
-    int weaponEnhancement = 0;
+    const ItemInstance& weapon =
+        character.equipment.equipped[SLOT_RANGED_WEAPON];
+    int weaponEnhancement = getWeapon(weapon.itemID) != nullptr
+        ? weapon.enhancementBonus : 0;
 
     return getBaseAttackBonus(
                character.characterClass,
@@ -569,29 +577,87 @@ EquipmentSlot getEquipmentSlot(ItemID item)
     }
 }
 
-bool equipItem(Character& character, const ItemInstance& item)
+bool isSupportedEquipmentSlot(EquipmentSlot slot)
 {
-    if (!hasItem(character, item))
-        return false;
+    return slot == SLOT_MELEE_WEAPON || slot == SLOT_RANGED_WEAPON ||
+           slot == SLOT_ARMOR || slot == SLOT_SHIELD;
+}
 
+bool isItemCompatibleWithEquipmentSlot(const ItemInstance& item,
+                                       EquipmentSlot slot)
+{
+    return isSupportedEquipmentSlot(slot) &&
+           getEquipmentSlot(item.itemID) == slot;
+}
+
+EquipResult getEquipmentCompatibility(const Character& character,
+                                      const ItemInstance& item)
+{
     EquipmentSlot slot = getEquipmentSlot(item.itemID);
 
-    if (slot == NUM_EQUIPMENT_SLOTS)
-        return false;
+    if (!isSupportedEquipmentSlot(slot))
+        return EQUIP_INVALID_ITEM;
 
-    ItemInstance oldItem = character.equipment.equipped[slot];
+    if (slot == SLOT_MELEE_WEAPON)
+    {
+        const Weapon* weapon = getWeapon(item.itemID);
+        if (weapon != nullptr &&
+            (weapon->properties & WEAPON_PROP_TWO_HANDED) != 0 &&
+            character.equipment.equipped[SLOT_SHIELD].itemID != ITEM_NONE)
+        {
+            return EQUIP_TWO_HANDED_CONFLICT;
+        }
+    }
+    else if (slot == SLOT_SHIELD)
+    {
+        const ItemInstance& melee =
+            character.equipment.equipped[SLOT_MELEE_WEAPON];
+        const Weapon* weapon = getWeapon(melee.itemID);
+        if (weapon != nullptr &&
+            (weapon->properties & WEAPON_PROP_TWO_HANDED) != 0)
+        {
+            return EQUIP_TWO_HANDED_CONFLICT;
+        }
+    }
+
+    return EQUIP_SUCCESS;
+}
+
+EquipResult equipItemWithResult(Character& character,
+                               const ItemInstance& item)
+{
+    if (!hasItem(character, item))
+        return EQUIP_NOT_OWNED;
+
+    EquipResult compatibility = getEquipmentCompatibility(character, item);
+    if (compatibility != EQUIP_SUCCESS)
+        return compatibility;
+
+    EquipmentSlot slot = getEquipmentSlot(item.itemID);
+    const InventoryData originalInventory = character.inventory;
+    const ItemInstance oldItem = character.equipment.equipped[slot];
+
+    // Remove the incoming instance first. This creates room for the outgoing
+    // instance and permits a valid one-for-one swap in a full inventory.
+    if (!removeItem(character, item))
+        return EQUIP_NOT_OWNED;
 
     if (oldItem.itemID != ITEM_NONE)
     {
         if (!addItem(character, oldItem))
-            return false;
+        {
+            character.inventory = originalInventory;
+            return EQUIP_INVENTORY_ERROR;
+        }
     }
 
     character.equipment.equipped[slot] = item;
+    return EQUIP_SUCCESS;
+}
 
-    removeItem(character, item);
-
-    return true;
+bool equipItem(Character& character, const ItemInstance& item)
+{
+    return equipItemWithResult(character, item) == EQUIP_SUCCESS;
 }
 
 bool equipItem(Character& character, ItemID item)
@@ -609,6 +675,9 @@ bool equipItem(Character& character, ItemID item)
 
 bool unequipItem(Character& character, EquipmentSlot slot)
 {
+    if (!isSupportedEquipmentSlot(slot))
+        return false;
+
     ItemInstance item = character.equipment.equipped[slot];
 
     if (item.itemID == ITEM_NONE)

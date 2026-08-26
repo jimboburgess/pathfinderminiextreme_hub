@@ -55,8 +55,9 @@ bool handlePlayerStandAttempt(Entity& player, bool& handled)
 
 void finishPlayerMovement(Entity& player, int targetX, int targetY)
 {
+    bool trapTriggered = false;
     ConditionType enteredCondition = handleEnteredTile(
-        player, targetX, targetY);
+        player, targetX, targetY, &trapTriggered);
 
     if (combat.active)
     {
@@ -68,6 +69,9 @@ void finishPlayerMovement(Entity& player, int targetX, int targetY)
             checkEndPlayerTurn();
         }
     }
+
+    if (trapTriggered)
+        return;
 
     if (enteredCondition == CONDITION_PRONE)
         setGameMessage("You fall prone!");
@@ -162,7 +166,8 @@ bool tryPlayerAcrobaticsTraversal(
     player.x = beyondX;
     player.y = beyondY;
     player.turn.movementRemaining -= 4;
-    handleEnteredTile(player, beyondX, beyondY);
+    bool trapTriggered = false;
+    handleEnteredTile(player, beyondX, beyondY, &trapTriggered);
 
     if (player.turn.movementRemaining == 0)
     {
@@ -177,7 +182,8 @@ bool tryPlayerAcrobaticsTraversal(
                   oldY + directionOffsets[oldDirection].dy);
     markTileDirty(player.x + directionOffsets[moveDirection].dx,
                   player.y + directionOffsets[moveDirection].dy);
-    setGameMessage("Acrobatics successful!");
+    if (!trapTriggered)
+        setGameMessage("Acrobatics successful!");
     checkForCombat();
     return true;
 }

@@ -3,11 +3,13 @@
 //
 
 #include "sheet.h"
+#include "characters/conditions.h"
 #include "graphics/display.h"
 #include "graphics/sprites.h"
 #include "data/game.h"
 #include "data/entityspawn.h"
 #include "dungeon/dungeon.h"
+#include "dungeon/combat.h"
 #include "forest/forest.h"
 #include "input/buttons.h"
 #include <cstdio>
@@ -17,6 +19,30 @@
 static Character* currentCharacter = nullptr;
 static int scrollOffset = 0;
 static CharacterView characterView = CHARACTER_VIEW_SHEET;
+enum EquipmentEditState { EQUIPMENT_SELECT_SLOT, EQUIPMENT_SELECT_ITEM };
+static EquipmentEditState equipmentEditState = EQUIPMENT_SELECT_SLOT;
+static uint8_t equipmentSlotCursor = 0;
+static uint8_t equipmentItemCursor = 0;
+static char equipmentStatus[48] = {};
+static const EquipmentSlot editableEquipmentSlots[] =
+{
+    SLOT_MELEE_WEAPON, SLOT_RANGED_WEAPON, SLOT_ARMOR, SLOT_SHIELD
+};
+
+static void resetEquipmentEditing()
+{
+    equipmentEditState = EQUIPMENT_SELECT_SLOT;
+    equipmentSlotCursor = 0;
+    equipmentItemCursor = 0;
+    equipmentStatus[0] = '\0';
+}
+
+static void setEquipmentStatus(const char* message)
+{
+    snprintf(equipmentStatus, sizeof(equipmentStatus), "%s", message);
+}
+
+static uint8_t getCompatibleInventoryCount(EquipmentSlot slot);
 
 static void drawText(int x, int y, const char* text)
 {
@@ -62,6 +88,16 @@ static void drawLabelValue(int labelX,
 
 void scrollCharacterSheetUp()
 {
+    if (characterView == CHARACTER_VIEW_EQUIPMENT)
+    {
+        uint8_t& cursor = equipmentEditState == EQUIPMENT_SELECT_SLOT
+            ? equipmentSlotCursor : equipmentItemCursor;
+        if (cursor > 0)
+            cursor--;
+        needsRedraw = true;
+        return;
+    }
+
     if (scrollOffset >= 10)
         scrollOffset -= 10;
     needsRedraw = true;
@@ -69,6 +105,24 @@ void scrollCharacterSheetUp()
 
 void scrollCharacterSheetDown()
 {
+    if (characterView == CHARACTER_VIEW_EQUIPMENT)
+    {
+        uint8_t maximum = 3;
+        if (equipmentEditState == EQUIPMENT_SELECT_ITEM)
+        {
+            EquipmentSlot slot = editableEquipmentSlots[equipmentSlotCursor];
+            maximum = getCompatibleInventoryCount(slot);
+            if (currentCharacter->equipment.equipped[slot].itemID != ITEM_NONE)
+                maximum++;
+        }
+        uint8_t& cursor = equipmentEditState == EQUIPMENT_SELECT_SLOT
+            ? equipmentSlotCursor : equipmentItemCursor;
+        if (cursor < maximum)
+            cursor++;
+        needsRedraw = true;
+        return;
+    }
+
     scrollOffset += 10;
     Serial.println(scrollOffset);
     needsRedraw = true;
@@ -135,29 +189,208 @@ static const char* getEquipmentSlotName(EquipmentSlot slot)
     return names[slot];
 }
 
+static uint8_t getCompatibleInventoryCount(EquipmentSlot slot)
+{
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < currentCharacter->inventory.itemCount; i++)
+        if (isItemCompatibleWithEquipmentSlot(
+                currentCharacter->inventory.slots[i].item, slot))
+            count++;
+    return count;
+}
+
+static const ItemInstance* getCompatibleInventoryItem(EquipmentSlot slot,
+                                                       uint8_t index)
+{
+    for (uint8_t i = 0; i < currentCharacter->inventory.itemCount; i++)
+    {
+        const ItemInstance& item = currentCharacter->inventory.slots[i].item;
+        if (!isItemCompatibleWithEquipmentSlot(item, slot))
+            continue;
+        if (index-- == 0)
+            return &item;
+    }
+    return nullptr;
+}
+
+static void formatEquipmentItem(const ItemInstance& item,
+                                char* buffer, size_t size)
+{
+    const Item* definition = getItem(item.itemID);
+    if (definition == nullptr)
+        snprintf(buffer, size, "None");
+    else if (item.enhancementBonus != 0)
+        snprintf(buffer, size, "%+d %s", item.enhancementBonus,
+                 definition->name);
+    else
+        snprintf(buffer, size, "%s", definition->name);
+}
+
 static void drawEquipmentView()
 {
     drawViewHeader("Equipment");
 
-    int y = 32;
-    bool hasEquipment = false;
-
-    for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
+    if (equipmentEditState == EQUIPMENT_SELECT_SLOT)
     {
-        EquipmentSlot slot = static_cast<EquipmentSlot>(i);
-        const ItemInstance& item = currentCharacter->equipment.equipped[slot];
-
-        if (item.itemID == ITEM_NONE)
-            continue;
-
-        hasEquipment = true;
-        drawText(5, y, getEquipmentSlotName(slot));
-        drawText(105, y, getEquippedItemName(*currentCharacter, slot));
-        y += 12;
+        int y = 32;
+        for (uint8_t i = 0; i < 4; i++)
+        {
+            EquipmentSlot slot = editableEquipmentSlots[i];
+            drawText(5, y, equipmentSlotCursor == i ? ">" : " ");
+            drawText(15, y, getEquipmentSlotName(slot));
+            drawText(75, y, getEquippedItemName(*currentCharacter, slot));
+            y += 18;
+        }
+        char stats[48];
+        snprintf(stats, sizeof(stats), "AC %d  Melee %+d  Ranged %+d",
+                 getArmorClass(*currentCharacter),
+                 getMeleeAttackBonus(*currentCharacter),
+                 getRangedAttackBonus(*currentCharacter));
+        drawText(5, 112, stats);
+        drawText(5, 130, equipmentStatus);
+        drawText(5, 220, "A/click: change   B: close");
+        return;
     }
 
-    if (!hasEquipment)
-        drawText(5, y, "Empty");
+    EquipmentSlot slot = editableEquipmentSlots[equipmentSlotCursor];
+    char title[32];
+    snprintf(title, sizeof(title), "Change %s", getEquipmentSlotName(slot));
+    drawViewHeader(title);
+    uint8_t compatibleCount = getCompatibleInventoryCount(slot);
+    bool occupied = currentCharacter->equipment.equipped[slot].itemID != ITEM_NONE;
+    uint8_t optionCount = compatibleCount + (occupied ? 1 : 0) + 1;
+    uint8_t first = equipmentItemCursor > 12 ? equipmentItemCursor - 12 : 0;
+    int y = 32;
+
+    for (uint8_t option = first; option < optionCount && y <= 200; option++)
+    {
+        drawText(5, y, equipmentItemCursor == option ? ">" : " ");
+        if (option < compatibleCount)
+        {
+            const ItemInstance* item = getCompatibleInventoryItem(slot, option);
+            char name[40];
+            formatEquipmentItem(*item, name, sizeof(name));
+            drawText(15, y, name);
+        }
+        else if (occupied && option == compatibleCount)
+            drawText(15, y, "Unequip");
+        else
+            drawText(15, y, "Back");
+        y += 13;
+    }
+    drawText(5, 220, equipmentStatus);
+}
+
+static Entity* getSheetCombatPlayer()
+{
+    Entity* entity = getCurrentCombatant();
+    return entity != nullptr && entity->type == ENTITY_PLAYER &&
+           &entity->character == currentCharacter ? entity : nullptr;
+}
+
+static bool canChangeEquipmentNow(EquipmentSlot slot, Entity*& combatPlayer)
+{
+    combatPlayer = nullptr;
+    if (!combat.active)
+        return true;
+    if (slot == SLOT_ARMOR)
+    {
+        setEquipmentStatus("Cannot change armor during combat.");
+        return false;
+    }
+
+    combatPlayer = getSheetCombatPlayer();
+    if (!isPlayerTurn() || !combat.waitingForPlayer || combatPlayer == nullptr ||
+        !canCharacterAct(combatPlayer->character) ||
+        combatPlayer->turn.standardActionUsed)
+    {
+        setEquipmentStatus("No standard action available.");
+        return false;
+    }
+    return true;
+}
+
+bool activateCharacterSheetSelection()
+{
+    if (characterView != CHARACTER_VIEW_EQUIPMENT || currentCharacter == nullptr)
+        return false;
+
+    if (equipmentEditState == EQUIPMENT_SELECT_SLOT)
+    {
+        equipmentEditState = EQUIPMENT_SELECT_ITEM;
+        equipmentItemCursor = 0;
+        equipmentStatus[0] = '\0';
+        needsRedraw = true;
+        return true;
+    }
+
+    EquipmentSlot slot = editableEquipmentSlots[equipmentSlotCursor];
+    uint8_t compatibleCount = getCompatibleInventoryCount(slot);
+    bool occupied = currentCharacter->equipment.equipped[slot].itemID != ITEM_NONE;
+
+    if (equipmentItemCursor >= compatibleCount + (occupied ? 1 : 0))
+    {
+        equipmentEditState = EQUIPMENT_SELECT_SLOT;
+        equipmentStatus[0] = '\0';
+        needsRedraw = true;
+        return true;
+    }
+
+    Entity* combatPlayer = nullptr;
+    if (!canChangeEquipmentNow(slot, combatPlayer))
+    {
+        needsRedraw = true;
+        return true;
+    }
+
+    bool success = false;
+    if (equipmentItemCursor < compatibleCount)
+    {
+        const ItemInstance selected =
+            *getCompatibleInventoryItem(slot, equipmentItemCursor);
+        EquipResult result = equipItemWithResult(*currentCharacter, selected);
+        success = result == EQUIP_SUCCESS;
+        if (result == EQUIP_TWO_HANDED_CONFLICT)
+            setEquipmentStatus(slot == SLOT_SHIELD
+                ? "Cannot use with two-handed weapon."
+                : "Cannot use with shield.");
+        else if (!success)
+            setEquipmentStatus("Equipment change failed.");
+    }
+    else
+    {
+        success = unequipItem(*currentCharacter, slot);
+        if (!success)
+            setEquipmentStatus("Inventory is full.");
+    }
+
+    if (success)
+    {
+        setEquipmentStatus("Equipment changed.");
+        equipmentEditState = EQUIPMENT_SELECT_SLOT;
+        equipmentItemCursor = 0;
+        if (combatPlayer != nullptr)
+        {
+            combatPlayer->turn.standardActionUsed = true;
+            combat.waitingForPlayer = true;
+            checkEndPlayerTurn();
+        }
+    }
+    needsRedraw = true;
+    return true;
+}
+
+bool backCharacterSheetSelection()
+{
+    if (characterView != CHARACTER_VIEW_EQUIPMENT ||
+        equipmentEditState != EQUIPMENT_SELECT_ITEM)
+        return false;
+
+    equipmentEditState = EQUIPMENT_SELECT_SLOT;
+    equipmentItemCursor = 0;
+    equipmentStatus[0] = '\0';
+    needsRedraw = true;
+    return true;
 }
 
 static void drawSkillsView()
@@ -384,6 +617,7 @@ void openCharacterView(CharacterView view)
     Serial.println("Character sheet opened");
     isCharacterSheetOpen = true;
     characterView = view;
+    resetEquipmentEditing();
     currentCharacter = &player;
 
     // Combat changes the character embedded in the map's player entity.
@@ -413,6 +647,7 @@ void openCharacterView(CharacterView view)
 }
 
 void closeCharacterSheet(){
+    resetEquipmentEditing();
     isCharacterSheetOpen = false;
     suppressMenuInputUntilRelease();
     backgroundNeedsRedraw = true;

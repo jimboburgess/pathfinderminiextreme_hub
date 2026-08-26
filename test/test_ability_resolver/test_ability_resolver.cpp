@@ -21,6 +21,11 @@ static bool controlledBaseTerrainDifficult = false;
 static Entity activeTestEntities[4];
 static uint8_t activeTestEntityCount = 0;
 
+bool triggerTrapForEntityAt(Entity&, int, int)
+{
+    return false;
+}
+
 extern const DirectionOffset directionOffsets[] =
 {
     {  0, -1 },

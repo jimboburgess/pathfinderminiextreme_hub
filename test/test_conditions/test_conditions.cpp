@@ -222,6 +222,27 @@ void test_webbed_blocks_movement_without_blocking_standard_actions()
     TEST_ASSERT_TRUE(hasCondition(character, CONDITION_WEBBED));
 }
 
+void test_action_affecting_turn_message_is_centralized()
+{
+    Character character = {};
+    TEST_ASSERT_NULL(getActionAffectingConditionMessage(character));
+
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_PRONE, 0, 0));
+    TEST_ASSERT_EQUAL_STRING(
+        "You are prone.",
+        getActionAffectingConditionMessage(character));
+
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_WEBBED, 0, 0));
+    TEST_ASSERT_EQUAL_STRING(
+        "You are prone and stuck in the web.",
+        getActionAffectingConditionMessage(character));
+
+    removeCondition(character, CONDITION_PRONE);
+    TEST_ASSERT_EQUAL_STRING(
+        "You are stuck in the web.",
+        getActionAffectingConditionMessage(character));
+}
+
 void test_condition_capacity_failure_is_safe()
 {
     Character character = {};
@@ -291,6 +312,7 @@ void setup()
     RUN_TEST(test_sleep_duration_prevents_each_intended_turn);
     RUN_TEST(test_frightened_for_one_round_prevents_exactly_one_turn);
     RUN_TEST(test_webbed_blocks_movement_without_blocking_standard_actions);
+    RUN_TEST(test_action_affecting_turn_message_is_centralized);
     RUN_TEST(test_condition_capacity_failure_is_safe);
     RUN_TEST(test_poison_ticks_at_turn_start_and_expires);
     UNITY_END();

@@ -148,8 +148,9 @@ enum CharacterState
     STATE_ALIVE,
     STATE_UNCONSCIOUS,
     STATE_DEAD,
-    STATE_LOOTED
-    ,STATE_TURNED
+    STATE_LOOTED,
+    // Turned creatures have left the encounter without being killed.
+    STATE_TURNED
 };
 //==================================================
 // Character
@@ -372,6 +373,23 @@ const char* getCharacterClassName(CharacterClass characterClass);
 bool canEquip(ItemID item);
 
 EquipmentSlot getEquipmentSlot(ItemID item);
+
+enum EquipResult
+{
+    EQUIP_SUCCESS,
+    EQUIP_INVALID_ITEM,
+    EQUIP_NOT_OWNED,
+    EQUIP_INVENTORY_ERROR,
+    EQUIP_TWO_HANDED_CONFLICT
+};
+
+bool isSupportedEquipmentSlot(EquipmentSlot slot);
+bool isItemCompatibleWithEquipmentSlot(const ItemInstance& item,
+                                       EquipmentSlot slot);
+EquipResult getEquipmentCompatibility(const Character& character,
+                                      const ItemInstance& item);
+EquipResult equipItemWithResult(Character& character,
+                               const ItemInstance& item);
 
 bool equipItem(Character& character, const ItemInstance& item);
 
