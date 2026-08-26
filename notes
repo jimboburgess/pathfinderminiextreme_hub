@@ -1,3 +1,8 @@
+based about the 
+esp32-s3-n8r8
+https://www.mouser.com/en/ProductDetail/Espressif-Systems/ESP32-S3FH4R2?qs=tlsG%2FOw5FFjPrwkmZSBQNA%3D%3D&srsltid=AfmBOop6CUsG5nadLJWQQ0IuhVJnXoTrtdo3cFx_MQD0QpGp9imXlW62
+
+
 Development environment constraints
 
 Do not modify platformio.ini, board configuration, upload settings, USB settings, serial-port settings, monitor settings, build flags, PlatformIO environments, CLion configuration, or device flashing/debugging behavior.
