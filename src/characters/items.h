@@ -196,6 +196,9 @@ enum ItemID : uint8_t
     // Appended so every previously persisted ItemID keeps its numeric value.
     ITEM_SCYTHE,
 
+    // Appended so every previously persisted ItemID keeps its numeric value.
+    ITEM_MASTERWORK_THIEVES_TOOLS,
+
     ITEM_COUNT
 };
 
@@ -564,6 +567,20 @@ enum ManaPotionUseResult : uint8_t
     MANA_POTION_USE_INVENTORY_ERROR
 };
 
+struct RationRecoveryResult
+{
+    int hpRestored = 0;
+    int mpRestored = 0;
+};
+
+enum RationUseResult : uint8_t
+{
+    RATION_USE_SUCCESS,
+    RATION_USE_NOT_AVAILABLE,
+    RATION_USE_RESOURCES_FULL,
+    RATION_USE_INVENTORY_ERROR
+};
+
 struct Wand
 {
     AbilityID ability;
@@ -615,5 +632,12 @@ ManaPotionUseResult useManaPotion(
     Character& character,
     const ItemInstance& potionItem,
     int& amountRestored);
+
+// Restores one quarter of each missing resource (minimum one point), then
+// consumes exactly one carried ration. Conditions and class resources are not
+// part of this item-use rule.
+RationUseResult useRation(
+    Character& character,
+    RationRecoveryResult& result);
 
 #endif // PATHFINDERMINIEXTREME_025_ITEMS_H

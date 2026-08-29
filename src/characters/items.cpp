@@ -158,7 +158,7 @@ const Item itemDatabase[] =
 	{ "Crowbar",           ITEMTYPE_ADVENTURING_GEAR, 5,   2,    5, ICON_MISC, false, false, RARITY_COMMON,   THEME_ANY, "Helps pry open objects." },
 	{ "Flint & Steel",     ITEMTYPE_ADVENTURING_GEAR, 6,   1,    0, ICON_MISC, false, false, RARITY_COMMON,   THEME_ANY, "Starts fires." },
 	{ "Grappling Hook",    ITEMTYPE_ADVENTURING_GEAR, 7,   1,    4, ICON_MISC, false, false, RARITY_UNCOMMON, THEME_ANY, "Useful with rope." },
-	{ "Thieves' Tools",    ITEMTYPE_ADVENTURING_GEAR, 8, 100,    1, ICON_MISC, false, false, RARITY_UNCOMMON, THEME_ANY, "Required for picking locks." },
+	{ "Thieves' Tools",    ITEMTYPE_ADVENTURING_GEAR, 8, 100,    1, ICON_TOOLS, false, false, RARITY_UNCOMMON, THEME_ANY, "Tools for Disable Device checks." },
 	{ "Shovel",            ITEMTYPE_ADVENTURING_GEAR, 9,   2,    8, ICON_MISC, false, false, RARITY_COMMON,   THEME_ANY, "Useful for digging." },
 	{ "Hammer",            ITEMTYPE_ADVENTURING_GEAR,10,   5,    2, ICON_MISC, false, false, RARITY_COMMON,   THEME_ANY, "General-purpose hammer." },
 	{ "Iron Spikes (10)",  ITEMTYPE_ADVENTURING_GEAR,11,   1,    5, ICON_MISC, true,  false, RARITY_COMMON,   THEME_ANY, "Secure doors or climb." },
@@ -200,6 +200,7 @@ const Item itemDatabase[] =
 	// Appended with ItemID so older inventory saves keep their item identities.
 	{ "Mana Potion", ITEMTYPE_POTION, MANA_POTION_EFFECT_INDEX, 30, 1, ICON_POTION, true, true, RARITY_COMMON, THEME_ANY, "Restores 4 MP." },
 	{ "Scythe", ITEMTYPE_WEAPON, SCYTHE_WEAPON_EFFECT_INDEX, 18, 12, ICON_SWORD, false, false, RARITY_UNCOMMON, THEME_ANY, "A two-handed harvesting blade." },
+	{ "Masterwork Thieves' Tools", ITEMTYPE_ADVENTURING_GEAR, 8, 500, 1, ICON_TOOLS, false, false, RARITY_RARE, THEME_ANY, "Fine tools that aid Disable Device checks." },
 
 };
 
@@ -534,4 +535,58 @@ ManaPotionUseResult useManaPotion(
 	}
 
 	return MANA_POTION_USE_SUCCESS;
+}
+
+RationUseResult useRation(
+    Character& character,
+    RationRecoveryResult& result)
+{
+    result = RationRecoveryResult{};
+
+    if (!hasItem(character, ITEM_RATIONS))
+        return RATION_USE_NOT_AVAILABLE;
+
+    const bool needsHP =
+        character.health.currentHP < character.health.maxHP;
+    const bool needsMP = character.magic.maxMP > 0 &&
+        character.magic.currentMP < character.magic.maxMP;
+
+    if (!needsHP && !needsMP)
+        return RATION_USE_RESOURCES_FULL;
+
+    const int previousHP = character.health.currentHP;
+    const int previousMP = character.magic.currentMP;
+
+    if (needsHP)
+    {
+        int amount = character.health.maxHP / 4;
+        if (amount < 1)
+            amount = 1;
+        result.hpRestored = healCharacter(character, amount);
+    }
+
+    if (needsMP)
+    {
+        int amount = character.magic.maxMP / 4;
+        if (amount < 1)
+            amount = 1;
+        result.mpRestored = restoreMana(character, amount);
+    }
+
+    if (result.hpRestored <= 0 && result.mpRestored <= 0)
+    {
+        character.health.currentHP = previousHP;
+        character.magic.currentMP = previousMP;
+        return RATION_USE_RESOURCES_FULL;
+    }
+
+    if (!removeItem(character, ITEM_RATIONS, 1))
+    {
+        character.health.currentHP = previousHP;
+        character.magic.currentMP = previousMP;
+        result = RationRecoveryResult{};
+        return RATION_USE_INVENTORY_ERROR;
+    }
+
+    return RATION_USE_SUCCESS;
 }

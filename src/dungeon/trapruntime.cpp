@@ -18,7 +18,12 @@
 namespace
 {
 constexpr uint8_t RANDOM_TRAP_PERCENT = 25;
-constexpr uint8_t RED_HERRING_PERCENT = 18;
+// Atmospheric clues deliberately outnumber real hazards. This preserves the
+// uncertainty of dungeon dressing: cracks, blood, bones, and dust are often
+// just remnants of an old expedition, not proof of a live trap.
+constexpr uint8_t RED_HERRING_PERCENT = 78;
+constexpr uint8_t EXTRA_RED_HERRING_PERCENT = 58;
+constexpr uint8_t THIRD_RED_HERRING_PERCENT = 24;
 constexpr int ROGUE_TRAPFINDING_RANGE = 3;
 constexpr int ENTRY_CLEARANCE = 2;
 constexpr int CONTENT_CLEARANCE = 1;
@@ -28,6 +33,14 @@ constexpr SuspicionType SPIKE_CLUES[] =
     SUSPICION_RAISED_TILE,
     SUSPICION_CRACKED_FLOOR,
     SUSPICION_FLOOR_GROOVES,
+    SUSPICION_BLOODSTAIN,
+    SUSPICION_BONES,
+    SUSPICION_DISTURBED_DUST
+};
+
+constexpr SuspicionType DRESSING_CLUES[] =
+{
+    SUSPICION_CRACKED_FLOOR,
     SUSPICION_BLOODSTAIN,
     SUSPICION_BONES,
     SUSPICION_DISTURBED_DUST
@@ -44,6 +57,13 @@ SuspicionType randomSpikeClue()
     constexpr uint8_t clueCount =
         sizeof(SPIKE_CLUES) / sizeof(SPIKE_CLUES[0]);
     return SPIKE_CLUES[static_cast<uint8_t>(random(clueCount))];
+}
+
+SuspicionType randomDressingClue()
+{
+    constexpr uint8_t clueCount =
+        sizeof(DRESSING_CLUES) / sizeof(DRESSING_CLUES[0]);
+    return DRESSING_CLUES[static_cast<uint8_t>(random(clueCount))];
 }
 
 int coordinateDistance(int first, int second)
@@ -321,14 +341,24 @@ void populateDungeonRoomFeatures(
         }
     }
 
-    // Harmless clues are independent dressing. A clue may share a room with
-    // a real trap, but never shares its square or implies discovery.
+    // Harmless clues are common independent dressing. A clue may share a
+    // room with a real trap, but never shares its square or implies discovery.
     if (random(100) < RED_HERRING_PERCENT)
     {
-        uint8_t x = 0;
-        uint8_t y = 0;
-        if (chooseFeatureCandidate(room, x, y))
-            addSuspicion(room, randomSpikeClue(), x, y);
+        uint8_t clueCount = 1;
+        if (random(100) < EXTRA_RED_HERRING_PERCENT)
+            clueCount++;
+        if (random(100) < THIRD_RED_HERRING_PERCENT)
+            clueCount++;
+
+        for (uint8_t clueIndex = 0; clueIndex < clueCount; clueIndex++)
+        {
+            uint8_t x = 0;
+            uint8_t y = 0;
+            if (!chooseFeatureCandidate(room, x, y))
+                break;
+            addSuspicion(room, randomDressingClue(), x, y);
+        }
     }
 }
 

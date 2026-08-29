@@ -516,6 +516,7 @@ struct AudioPlaybackState
 AudioPlaybackState playback;
 uint16_t hardwareFrequency = 0;
 AudioDuty hardwareDuty = AudioDuty::DUTY_50;
+bool audioMuted = false;
 
 uint16_t getDutyValue(AudioDuty duty)
 {
@@ -835,11 +836,15 @@ void playSoundAt(SoundEffect sound, uint32_t now)
 void initAudio()
 {
     playback = AudioPlaybackState{};
+    audioMuted = false;
     audioHardwareInit();
 }
 
 void playSound(SoundEffect sound)
 {
+    if (audioMuted)
+        return;
+
     playSoundAt(sound, millis());
 }
 
@@ -856,4 +861,22 @@ void stopSound()
 bool isSoundPlaying()
 {
     return playback.active;
+}
+
+void setAudioMuted(bool muted)
+{
+    audioMuted = muted;
+
+    if (audioMuted)
+        stopSound();
+}
+
+bool isAudioMuted()
+{
+    return audioMuted;
+}
+
+void toggleAudioMuted()
+{
+    setAudioMuted(!audioMuted);
 }

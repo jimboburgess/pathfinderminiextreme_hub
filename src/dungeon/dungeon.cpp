@@ -60,14 +60,12 @@ RoomType selectMiddleRoomType()
 {
     const uint8_t roll = random(100);
 
-    if (roll < 40)
+    if (roll < 30)
         return ROOM_COMBAT;
-    if (roll < 70)
+    if (roll < 60)
         return ROOM_AMBUSH;
-    if (roll < 85)
+    if (roll < 90)
         return ROOM_PUZZLE;
-    if (roll < 95)
-        return ROOM_TREASURE;
 
     return ROOM_EMPTY;
 }
@@ -231,7 +229,11 @@ void initializeRoomEntities(
                         x,
                         y);
                     if (chest != nullptr)
+                    {
+                        chest->locked = true;
+                        chest->opened = false;
                         chest->sprite = chestclosed;
+                    }
                     room.map.tiles[y][x] = TILE_FLOOR;
                     break;
                 }
@@ -472,6 +474,9 @@ void generateDungeon(Dungeon& dungeon)
         dungeon.rooms[i].shape =
             randomProductionRoomShape(dungeon.rooms[i]);
         generateRoom(dungeon.rooms[i]);
+
+        if (i == 0)
+            placeHealingFountain(dungeon.rooms[i]);
 
         // Keep the first pass sparse: only the three middle rooms may receive
         // a random spike plate. The feature helper also consumes any authored

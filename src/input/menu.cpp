@@ -10,6 +10,7 @@
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
 #include "map/activemap.h"
+#include "map/interaction.h"
 #include "map/skillactions.h"
 #include "dungeon/abilityresolver.h"
 #include "dungeon/dungeon.h"
@@ -456,6 +457,13 @@ const MenuItem gameMenuItems[] =
         "Return to Town",
         "Leave the current adventure.",
         MENU_RETURN_TO_TOWN,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Toggle Audio",
+        "Mute or enable game audio.",
+        MENU_TOGGLE_AUDIO,
         nullptr,
         MENU_CLASS_ALL
     },
@@ -991,6 +999,26 @@ void menuActivate()
             igniteWeb();
             break;
 
+        case MENU_CHEST_PICK_LOCK:
+            pickLockedChest();
+            break;
+
+        case MENU_CHEST_FORCE_OPEN:
+            forceOpenLockedChest();
+            break;
+
+        case MENU_CHEST_BACK:
+            menuCancel();
+            break;
+
+        case MENU_FOUNTAIN_DRINK:
+            drinkFromFountain();
+            break;
+
+        case MENU_FOUNTAIN_BACK:
+            menuCancel();
+            break;
+
         case MENU_USE_ITEM:
         case MENU_INVENTORY:
 
@@ -1067,6 +1095,11 @@ void menuActivate()
             redrawType = REDRAW_FULL;
             needsRedraw = true;
 
+            break;
+
+        case MENU_TOGGLE_AUDIO:
+            setAudioMuted(!isAudioMuted());
+            setGameMessage(isAudioMuted() ? "Audio muted." : "Audio enabled.");
             break;
 
         case MENU_DUNGEON_RESUME:

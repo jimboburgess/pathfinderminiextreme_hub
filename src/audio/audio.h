@@ -196,4 +196,10 @@ void updateAudio();
 void stopSound();
 bool isSoundPlaying();
 
+// Runtime-wide audio setting. Muting immediately stops any active sound and
+// suppresses later effects until audio is enabled again.
+void setAudioMuted(bool muted);
+bool isAudioMuted();
+void toggleAudioMuted();
+
 #endif // PATHFINDERMINIEXTREME_025_AUDIO_H

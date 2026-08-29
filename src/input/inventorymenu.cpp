@@ -304,6 +304,59 @@ bool useSelectedManaPotion(
     return true;
 }
 
+bool useSelectedRation(Character& character)
+{
+    if (combat.active)
+    {
+        setInventoryStatus("Cannot eat during combat.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    RationRecoveryResult result;
+    const RationUseResult useResult = useRation(character, result);
+
+    if (useResult != RATION_USE_SUCCESS)
+    {
+        switch (useResult)
+        {
+            case RATION_USE_RESOURCES_FULL:
+                setInventoryStatus("You don't need to eat yet.");
+                break;
+
+            case RATION_USE_NOT_AVAILABLE:
+            case RATION_USE_INVENTORY_ERROR:
+            default:
+                setInventoryStatus("Rations are no longer available.");
+                break;
+        }
+
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+
+    char message[48];
+    if (result.hpRestored > 0 && result.mpRestored > 0)
+    {
+        snprintf(message, sizeof(message), "Recovered %d HP, %d MP.",
+                 result.hpRestored, result.mpRestored);
+    }
+    else if (result.hpRestored > 0)
+    {
+        snprintf(message, sizeof(message), "Recovered %d HP.",
+                 result.hpRestored);
+    }
+    else
+    {
+        snprintf(message, sizeof(message), "Recovered %d MP.",
+                 result.mpRestored);
+    }
+
+    playSound(SoundEffect::POTION);
+    setInventoryStatus(message);
+    return true;
+}
+
 void useSelectedPlayerItem()
 {
     if (inventoryMenu.character == nullptr)
@@ -339,6 +392,14 @@ void useSelectedPlayerItem()
         {
             closeInventoryMenu();
         }
+
+        return;
+    }
+
+    if (slot->item.itemID == ITEM_RATIONS)
+    {
+        if (useSelectedRation(*inventoryMenu.character))
+            closeInventoryMenu();
 
         return;
     }

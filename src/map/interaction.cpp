@@ -7,14 +7,177 @@
 #include <cstdio>
 
 #include "data/entityspawn.h"
+#include "data/dice.h"
 #include "data/game.h"
+#include "map/dungeontools.h"
 #include "map/activemap.h"
 #include "dungeon/combat.h"
 #include "dungeon/loot.h"
+#include "dungeon/dungeon.h"
+#include "dungeon/fountain.h"
+#include "audio/audio.h"
 #include "graphics/messagelog.h"
 #include "graphics/display.h"
 #include "graphics/tiles.h"
 #include "input/inventorymenu.h"
+#include "input/menu.h"
+
+namespace
+{
+Entity* lockedChest = nullptr;
+HealingFountain* selectedFountain = nullptr;
+
+const MenuItem lockedChestMenuItems[] =
+{
+    { "Pick Lock", "Use Disable Device to pick the lock.",
+      MENU_CHEST_PICK_LOCK, nullptr, MENU_CLASS_ALL },
+    { "Force Open", "Use Strength to force the chest open.",
+      MENU_CHEST_FORCE_OPEN, nullptr, MENU_CLASS_ALL },
+    { "Back", "Leave the chest locked.",
+      MENU_CHEST_BACK, nullptr, MENU_CLASS_ALL }
+};
+
+const Menu lockedChestMenu =
+{
+    "Locked Chest",
+    lockedChestMenuItems,
+    sizeof(lockedChestMenuItems) / sizeof(lockedChestMenuItems[0])
+};
+
+const MenuItem fountainMenuItems[] =
+{
+    { "Drink from Fountain", "Restore all HP and MP once.",
+      MENU_FOUNTAIN_DRINK, nullptr, MENU_CLASS_ALL },
+    { "Back", "Leave the fountain alone.",
+      MENU_FOUNTAIN_BACK, nullptr, MENU_CLASS_ALL }
+};
+
+const Menu fountainMenu =
+{
+    "Healing Fountain",
+    fountainMenuItems,
+    sizeof(fountainMenuItems) / sizeof(fountainMenuItems[0])
+};
+
+Entity* getLockedChest()
+{
+    return lockedChest != nullptr && lockedChest->active &&
+           lockedChest->type == ENTITY_CHEST && lockedChest->locked
+        ? lockedChest
+        : nullptr;
+}
+
+void drinkFromSelectedFountain()
+{
+    Entity* playerEntity = getActiveMapPlayer();
+    if (selectedFountain == nullptr || playerEntity == nullptr)
+    {
+        closeMenu();
+        return;
+    }
+
+    if (!drinkFromHealingFountain(*selectedFountain, playerEntity->character))
+    {
+        closeMenu();
+        setGameMessage("The fountain's magic is spent.");
+        return;
+    }
+
+    const int originX = selectedFountain->x;
+    const int originY = selectedFountain->y;
+    selectedFountain = nullptr;
+    closeMenu();
+    for (uint8_t y = 0; y < HEALING_FOUNTAIN_HEIGHT; y++)
+    {
+        for (uint8_t x = 0; x < HEALING_FOUNTAIN_WIDTH; x++)
+            markTileDirty(originX + x, originY + y);
+    }
+    playSound(SoundEffect::SPELL_HEAL);
+    setGameMessage("The magical water restores you!");
+}
+
+void unlockChest(Entity& chest, const char* message)
+{
+    chest.locked = false;
+    lockedChest = nullptr;
+    closeMenu();
+    setGameMessage(message);
+}
+}
+
+void drinkFromFountain()
+{
+    drinkFromSelectedFountain();
+}
+
+void pickLockedChest()
+{
+    Entity* chest = getLockedChest();
+    Entity* playerEntity = getActiveMapPlayer();
+
+    if (chest == nullptr || playerEntity == nullptr)
+    {
+        closeMenu();
+        return;
+    }
+
+    const DisableDeviceToolType tool =
+        getDisableDeviceTool(playerEntity->character);
+    const int naturalRoll = rollDie(20);
+
+    if (isDisableDeviceAutomaticFailure(naturalRoll))
+    {
+        handleDisableDeviceToolBreak(playerEntity->character, tool, naturalRoll);
+        lockedChest = nullptr;
+        closeMenu();
+
+        if (tool == DISABLE_TOOL_MASTERWORK)
+            setGameMessage("Your masterwork tools broke!");
+        else if (tool == DISABLE_TOOL_STANDARD)
+            setGameMessage("Your thieves' tools broke!");
+        else
+            setGameMessage("Failed to pick lock.");
+        return;
+    }
+
+    const int total = naturalRoll +
+        getSkillBonus(playerEntity->character, SKILL_DISABLE_DEVICE) +
+        getLockDisableDeviceModifier(playerEntity->character);
+
+    if (total >= CHEST_LOCK_DC)
+        unlockChest(*chest, "Lock picked.");
+    else
+    {
+        lockedChest = nullptr;
+        closeMenu();
+        setGameMessage("Failed to pick lock.");
+    }
+}
+
+void forceOpenLockedChest()
+{
+    Entity* chest = getLockedChest();
+    Entity* playerEntity = getActiveMapPlayer();
+
+    if (chest == nullptr || playerEntity == nullptr)
+    {
+        closeMenu();
+        return;
+    }
+
+    const int total = rollDie(20) +
+        getAbilityModifier(playerEntity->character, ABILITY_STRENGTH) +
+        getForceOpenToolModifier(playerEntity->character);
+
+    if (total >= CHEST_FORCE_OPEN_DC)
+        unlockChest(*chest, "Chest forced open.");
+    else
+    {
+        lockedChest = nullptr;
+        closeMenu();
+        setGameMessage("Failed to force chest.");
+    }
+}
 
 bool tryInteractWithFacingEntity()
 {
@@ -33,6 +196,25 @@ bool tryInteractWithFacingEntity()
 
     if (!isInsideActiveMap(targetX, targetY))
         return false;
+
+    if (gameState == GAME_DUNGEON)
+    {
+        HealingFountain* fountain = getHealingFountainAt(
+            dungeon.rooms[dungeon.currentRoom], targetX, targetY);
+        if (fountain != nullptr)
+        {
+            if (fountain->used)
+            {
+                setGameMessage("The fountain's magic is spent.");
+            }
+            else
+            {
+                selectedFountain = fountain;
+                openMenu(&fountainMenu);
+            }
+            return true;
+        }
+    }
 
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
@@ -53,8 +235,16 @@ bool tryInteractWithFacingEntity()
 
     if (target->type == ENTITY_CHEST)
     {
+        if (target->locked)
+        {
+            lockedChest = target;
+            openMenu(&lockedChestMenu);
+            return true;
+        }
+
         if (!target->loot.generated)
         {
+            target->opened = true;
             generateChestLoot(*target, LOOT_CHEST_LARGE);
             target->sprite = chestopenwith;
             markEntityFootprintDirty(*target);

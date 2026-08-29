@@ -14,6 +14,7 @@
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
+#include "map/dungeontools.h"
 #include "map/awareness.h"
 #include "map/mapeffects.h"
 
@@ -202,8 +203,28 @@ bool useDisableDevice(Entity& player)
         return false;
     }
 
-    const int total = rollDie(20) +
-        getSkillBonus(player.character, SKILL_DISABLE_DEVICE);
+    const DisableDeviceToolType tool =
+        getDisableDeviceTool(player.character);
+    const int naturalRoll = rollDie(20);
+
+    if (isDisableDeviceAutomaticFailure(naturalRoll))
+    {
+        handleDisableDeviceToolBreak(player.character, tool, naturalRoll);
+
+        if (tool == DISABLE_TOOL_MASTERWORK)
+            setGameMessage("Your masterwork tools broke!");
+        else if (tool == DISABLE_TOOL_STANDARD)
+            setGameMessage("Your thieves' tools broke!");
+        else
+            setGameMessage("You fail to disable it.");
+
+        spendStandardSkillAction(player);
+        return true;
+    }
+
+    const int total = naturalRoll +
+        getSkillBonus(player.character, SKILL_DISABLE_DEVICE) +
+        getDisableDeviceToolModifier(tool);
     const TrapDisableResult result = attemptDisableTrap(*trap, total);
 
     if (result == TRAP_DISABLE_SUCCESS)

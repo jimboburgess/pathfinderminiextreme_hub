@@ -54,6 +54,11 @@ struct Entity
 
     LootData loot;
 
+    // Chest state is independent of generated loot and sprite selection so a
+    // locked, unlocked, and opened chest can persist as distinct states.
+    bool locked = false;
+    bool opened = false;
+
     const uint16_t* sprite = nullptr;
 
     uint8_t spriteWidth = SPRITE_W;

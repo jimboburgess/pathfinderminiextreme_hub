@@ -79,6 +79,13 @@ enum MenuAction
     MENU_CUT_FREE,
     MENU_IGNITE_WEB,
 
+    // Locked chest interaction
+    MENU_CHEST_PICK_LOCK,
+    MENU_CHEST_FORCE_OPEN,
+    MENU_CHEST_BACK,
+    MENU_FOUNTAIN_DRINK,
+    MENU_FOUNTAIN_BACK,
+
     // Character
     MENU_CHARACTER_SHEET,
     MENU_INVENTORY,
@@ -91,6 +98,7 @@ enum MenuAction
     // Game
     MENU_GAME,
     MENU_RETURN_TO_TOWN,
+    MENU_TOGGLE_AUDIO,
     MENU_SAVE_GAME,
     MENU_OPTIONS,
     MENU_EXIT_TITLE,

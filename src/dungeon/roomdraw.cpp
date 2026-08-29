@@ -7,6 +7,7 @@
 #include "config.h"
 #include "graphics/tiles.h"
 #include "traps.h"
+#include "fountain.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -29,6 +30,86 @@ constexpr uint16_t COLOR_TRAP_ACTIVE = 0xF800;
 constexpr uint16_t COLOR_TRAP_DISABLED = 0x07E0;
 constexpr uint16_t COLOR_TRAP_TRIGGERED = 0xFDC0;
 constexpr uint16_t COLOR_TRAP_DESTROYED = 0x7BEF;
+constexpr uint16_t COLOR_FOUNTAIN_STONE_DARK = 0x4A49;
+constexpr uint16_t COLOR_FOUNTAIN_STONE = 0x8C71;
+constexpr uint16_t COLOR_FOUNTAIN_STONE_LIGHT = 0xC618;
+constexpr uint16_t COLOR_FOUNTAIN_WATER = 0x041F;
+constexpr uint16_t COLOR_FOUNTAIN_WATER_LIGHT = 0x5DDF;
+constexpr uint16_t COLOR_FOUNTAIN_SPENT = 0x2945;
+
+// Draw one rectangle from the shared 32x48 fountain canvas, clipped to the
+// tile currently being repainted. Every tile therefore sees the same object
+// coordinates, which keeps seams from becoming six disconnected drawings.
+void drawFountainCanvasRect(
+    int tileX,
+    int tileY,
+    int localX,
+    int localY,
+    int width,
+    int height,
+    int rectX,
+    int rectY,
+    int rectWidth,
+    int rectHeight,
+    uint16_t color)
+{
+  const int left = rectX > localX ? rectX : localX;
+  const int top = rectY > localY ? rectY : localY;
+  const int right = (rectX + rectWidth) < (localX + width)
+      ? (rectX + rectWidth) : (localX + width);
+  const int bottom = (rectY + rectHeight) < (localY + height)
+      ? (rectY + rectHeight) : (localY + height);
+
+  if (left >= right || top >= bottom)
+    return;
+
+  tft.fillRect(tileX * TILE_SIZE + left - localX,
+               tileY * TILE_SIZE + top - localY,
+               right - left, bottom - top, color);
+}
+
+void drawHealingFountainTile(const DungeonRoom& room, int tileX, int tileY)
+{
+  const HealingFountain* fountain = getHealingFountainAt(room, tileX, tileY);
+  if (fountain == nullptr)
+    return;
+
+  const int localX = (tileX - fountain->x) * TILE_SIZE;
+  const int localY = (tileY - fountain->y) * TILE_SIZE;
+  const uint16_t water = fountain->used ? COLOR_FOUNTAIN_SPENT : COLOR_FOUNTAIN_WATER;
+  const uint16_t highlight = fountain->used ? COLOR_FOUNTAIN_STONE_DARK : COLOR_FOUNTAIN_WATER_LIGHT;
+
+  tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                    dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                    TILE_SIZE, TILE_SIZE);
+
+  const auto rect = [&](int x, int y, int w, int h, uint16_t color) {
+    drawFountainCanvasRect(tileX, tileY, localX, localY, TILE_SIZE,
+                           TILE_SIZE, x, y, w, h, color);
+  };
+
+  // One continuous silhouette: arched shrine, central falling water, a wide
+  // basin, then a heavy stone base and pool spanning both lower tiles.
+  rect(5, 2, 22, 20, COLOR_FOUNTAIN_STONE_DARK);
+  rect(7, 3, 18, 17, COLOR_FOUNTAIN_STONE);
+  rect(9, 5, 14, 12, COLOR_FOUNTAIN_STONE_LIGHT);
+  rect(11, 7, 10, 11, COLOR_FOUNTAIN_STONE_DARK);
+  rect(13, 8, 6, 15, water);
+  rect(14, 9, 2, 12, highlight);
+  rect(17, 11, 1, 8, COLOR_FOUNTAIN_STONE_LIGHT);
+
+  rect(2, 21, 28, 15, COLOR_FOUNTAIN_STONE_DARK);
+  rect(4, 23, 24, 11, COLOR_FOUNTAIN_STONE);
+  rect(6, 25, 20, 7, water);
+  rect(7, 26, 17, 2, highlight);
+  rect(5, 33, 22, 2, COLOR_FOUNTAIN_STONE_LIGHT);
+
+  rect(0, 36, 32, 10, COLOR_FOUNTAIN_STONE_DARK);
+  rect(2, 38, 28, 7, COLOR_FOUNTAIN_STONE);
+  rect(4, 39, 24, 5, water);
+  rect(6, 40, 18, 1, highlight);
+  rect(3, 46, 26, 2, COLOR_FOUNTAIN_STONE_DARK);
+}
 
 void drawSuspicionClue(
     int tileX,
@@ -145,6 +226,10 @@ void drawTile(int tileX, int tileY, TileType tile) {
                         TILE_SIZE, TILE_SIZE);
       return;
 
+    case TILE_FOUNTAIN:
+      // The room-aware painter supplies the proper multi-tile artwork.
+      return;
+
     default:
       color = COLOR_VOID;
       break;
@@ -166,7 +251,10 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
     return;
   }
 
-  drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);
+  if (isHealingFountainTile(room, tileX, tileY))
+    drawHealingFountainTile(room, tileX, tileY);
+  else
+    drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);
   drawSuspicionClue(tileX, tileY, getSuspicionAt(room, tileX, tileY));
 }
 

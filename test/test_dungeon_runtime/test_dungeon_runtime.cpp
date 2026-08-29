@@ -68,6 +68,22 @@ void setGameMessage(const char*)
 {
 }
 
+int healCharacter(Character& character, int healing)
+{
+    const int missing = character.health.maxHP - character.health.currentHP;
+    const int restored = healing < missing ? healing : missing;
+    character.health.currentHP += restored;
+    return restored;
+}
+
+int restoreMana(Character& character, int amount)
+{
+    const int missing = character.magic.maxMP - character.magic.currentMP;
+    const int restored = amount < missing ? amount : missing;
+    character.magic.currentMP += restored;
+    return restored;
+}
+
 const uint16_t* getPlayerSprite(CharacterClass)
 {
     return nullptr;
@@ -215,6 +231,7 @@ Entity* getEntityAt(
 
 #include "../../src/dungeon/combatabort.cpp"
 #include "../../src/dungeon/traps.cpp"
+#include "../../src/dungeon/fountain.cpp"
 #include "../../src/dungeon/dungeon.cpp"
 
 static void configureLoadedRoom(uint8_t roomIndex)
@@ -352,6 +369,29 @@ void test_living_monster_hp_and_conditions_survive_room_reload()
         runtime.entities[0].character.conditions.conditions[0].roundsRemaining);
     TEST_ASSERT_TRUE(runtime.entities[0].awareOfPlayer);
     TEST_ASSERT_TRUE(runtime.entities[0].revealedToPlayer);
+}
+
+void test_chest_lock_and_open_state_survive_room_reload()
+{
+    configureLoadedRoom(2);
+    DungeonRoomRuntime& runtime = dungeon.roomRuntime[2];
+    Entity& chest = runtime.entities[0];
+    chest.type = ENTITY_CHEST;
+    chest.locked = false;
+    chest.opened = true;
+    chest.loot.generated = true;
+    chest.loot.gold = 7;
+
+    suspendDungeonRun(dungeon);
+    dungeon.currentRoom = 2;
+    loadRoom(dungeon, ENTRY_START);
+
+    TEST_ASSERT_TRUE(runtime.entities[0].active);
+    TEST_ASSERT_EQUAL(ENTITY_CHEST, runtime.entities[0].type);
+    TEST_ASSERT_FALSE(runtime.entities[0].locked);
+    TEST_ASSERT_TRUE(runtime.entities[0].opened);
+    TEST_ASSERT_TRUE(runtime.entities[0].loot.generated);
+    TEST_ASSERT_EQUAL_UINT16(7, runtime.entities[0].loot.gold);
 }
 
 void test_trap_state_persists_across_room_reload()
@@ -618,6 +658,47 @@ void test_starting_new_run_clears_old_runtime_before_generation()
     TEST_ASSERT_EQUAL_UINT8(MAX_ROOMS, generatedRoomCount);
 }
 
+void test_entrance_fountain_is_one_persistent_multi_tile_healing_object()
+{
+    generateDungeon(dungeon);
+    DungeonRoom& entrance = dungeon.rooms[0];
+    HealingFountain& fountain = entrance.fountain;
+
+    TEST_ASSERT_TRUE(fountain.active);
+    TEST_ASSERT_FALSE(fountain.used);
+    for (uint8_t y = 0; y < HEALING_FOUNTAIN_HEIGHT; y++)
+    {
+        for (uint8_t x = 0; x < HEALING_FOUNTAIN_WIDTH; x++)
+        {
+            TEST_ASSERT_EQUAL(TILE_FOUNTAIN,
+                entrance.map.tiles[fountain.y + y][fountain.x + x]);
+            TEST_ASSERT_EQUAL_PTR(&fountain, getHealingFountainAt(
+                entrance, fountain.x + x, fountain.y + y));
+        }
+    }
+
+    Character character = {};
+    character.health.currentHP = 2;
+    character.health.maxHP = 12;
+    character.magic.currentMP = 1;
+    character.magic.maxMP = 7;
+    TEST_ASSERT_TRUE(drinkFromHealingFountain(fountain, character));
+    TEST_ASSERT_EQUAL_INT(12, character.health.currentHP);
+    TEST_ASSERT_EQUAL_INT(7, character.magic.currentMP);
+    TEST_ASSERT_TRUE(fountain.used);
+    TEST_ASSERT_FALSE(drinkFromHealingFountain(fountain, character));
+
+    dungeon.currentRoom = 1;
+    loadRoom(dungeon, ENTRY_WEST);
+    dungeon.currentRoom = 0;
+    loadRoom(dungeon, ENTRY_START);
+    TEST_ASSERT_TRUE(dungeon.rooms[0].fountain.used);
+
+    generateDungeon(dungeon);
+    TEST_ASSERT_TRUE(dungeon.rooms[0].fountain.active);
+    TEST_ASSERT_FALSE(dungeon.rooms[0].fountain.used);
+}
+
 void test_abort_clears_combat_only_state_and_preserves_characters()
 {
     Entity entities[3] = {};
@@ -716,6 +797,7 @@ void setup()
     RUN_TEST(test_suspend_keeps_character_and_room_runtime_state);
     RUN_TEST(test_dead_unlooted_and_looted_state_survive_room_reload);
     RUN_TEST(test_living_monster_hp_and_conditions_survive_room_reload);
+    RUN_TEST(test_chest_lock_and_open_state_survive_room_reload);
     RUN_TEST(test_trap_state_persists_across_room_reload);
     RUN_TEST(test_trap_uses_level_scaled_statistics);
     RUN_TEST(test_resume_uses_existing_layout_and_does_not_regenerate);
@@ -725,6 +807,7 @@ void setup()
     RUN_TEST(test_final_encounter_must_be_fully_defeated_before_completion);
     RUN_TEST(test_reset_discards_runtime_run_without_touching_player);
     RUN_TEST(test_starting_new_run_clears_old_runtime_before_generation);
+    RUN_TEST(test_entrance_fountain_is_one_persistent_multi_tile_healing_object);
     RUN_TEST(test_abort_clears_combat_only_state_and_preserves_characters);
     UNITY_END();
 }

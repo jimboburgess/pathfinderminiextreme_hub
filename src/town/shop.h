@@ -5,7 +5,7 @@
 
 #include "characters/items.h"
 
-constexpr uint8_t MAX_SHOP_ITEMS = 10;
+constexpr uint8_t MAX_SHOP_ITEMS = 12;
 
 struct Shop
 {

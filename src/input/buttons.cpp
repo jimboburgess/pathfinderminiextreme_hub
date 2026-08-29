@@ -332,7 +332,8 @@ void handleCharacterCreationButtons()
 
             case CCS_MENU:
 
-                menuSelect();
+                // Menu options are confirmed with the A button so the
+                // encoder remains navigation-only during character creation.
                 break;
         }
     }
@@ -359,7 +360,8 @@ void handleCharacterCreationButtons()
 
             case CCS_MENU:
 
-                // Reserved for future submenus.
+                menuSelect();
+                playSound(SoundEffect::MENU_SELECT);
                 break;
         }
     }
@@ -681,7 +683,7 @@ void handleMapButtons()
 
         if (buttonBPressed())
         {
-            playSound(SoundEffect::MENU_SELECT);
+            playSound(SoundEffect::MENU_BACK);
             menuCancel();
         }
 
