@@ -20,6 +20,14 @@ inline int getIterativeBAB(int bab, uint8_t attackIndex)
     return bab - static_cast<int>(attackIndex) * 5;
 }
 
+inline int getSequenceAttackBAB(int bab, uint8_t attackIndex,
+                                uint8_t bonusAttackCount)
+{
+    return attackIndex < bonusAttackCount
+        ? bab
+        : getIterativeBAB(bab, attackIndex - bonusAttackCount);
+}
+
 inline bool isNaturalWeaponItem(ItemID itemID)
 {
     return itemID >= ITEM_BITE && itemID <= ITEM_PSEUDOPOD;
@@ -29,7 +37,7 @@ inline bool canMakeFullAttack(const Entity& attacker)
 {
     return !attacker.turn.moveActionUsed &&
            (attacker.turn.fiveFootStepUsed ||
-            attacker.turn.movementRemaining >= attacker.character.speed);
+            attacker.turn.movementRemaining >= getEffectiveSpeed(attacker.character));
 }
 
 inline bool shouldContinueIterativeAttack(

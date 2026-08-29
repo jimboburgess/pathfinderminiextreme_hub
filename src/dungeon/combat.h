@@ -93,6 +93,8 @@ struct Combat
     //--------------------------------------------------
 
     AbilityID selectedAbility = ABILITY_NONE;
+    bool selectedAbilityFromScroll = false;
+    ItemInstance selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
     int8_t selectedAbilityX = -1;
     int8_t selectedAbilityY = -1;
     Direction selectedAbilityDirection = DIR_NORTH;
@@ -235,6 +237,7 @@ void cancelPlayerAttack();
 //==================================================
 
 void beginPlayerAbility(AbilityID abilityID);
+void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll);
 bool isPlayerTargetingAbility();
 bool isPlayerTargetingGroundAbility();
 bool isPlayerTargetingDirectionalAbility();
@@ -279,7 +282,8 @@ bool canUseChannelEnergy(const Entity& cleric);
 bool useChannelEnergy(Entity& cleric);
 
 // Applies damage through the existing one-time combat defeat/XP/loot path.
-CombatDamageResult applyCombatDamage(Entity& target, int damage);
+CombatDamageResult applyCombatDamage(Entity& target, int damage,
+                                     DamageType damageType = DAMAGE_NONE);
 
 // Shared player/monster feedback and combat pacing after a successful
 // resolveAbility() call.

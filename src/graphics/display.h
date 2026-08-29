@@ -5,6 +5,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 #include "data/entities.h"
+#include "characters/abilities.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -39,6 +40,12 @@ struct DirtyTile
 extern DirtyTile dirtyTiles[MAX_DIRTY_TILES];
 extern uint8_t dirtyTileCount;
 extern bool backgroundNeedsRedraw;
+
+struct AreaFlashTile { int8_t x; int8_t y; };
+void playAreaDamageFlash(
+    DamageType damageType,
+    const AreaFlashTile* tiles,
+    uint8_t tileCount);
 
 
 

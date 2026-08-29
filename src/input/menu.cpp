@@ -18,6 +18,7 @@
 #include "graphics/messagelog.h"
 #include "input/inventorymenu.h"
 #include "town/shop.h"
+#include "data/progression.h"
 
 MenuState menuState =
 {
@@ -93,6 +94,20 @@ static bool isSpellMenuAbility(const Ability& ability)
 
 static bool hasSupportedKnownSpell(const Character& character)
 {
+    if (character.characterClass == CLASS_CLERIC)
+    {
+        const uint8_t accessLevel = getClericSpellAccessLevel(character);
+        for (uint16_t id = ABILITY_NONE + 1; id < ABILITY_MAX; id++)
+        {
+            const Ability* ability = getAbility(static_cast<AbilityID>(id));
+            if (ability != nullptr && ability->type == ABILITY_DIVINE &&
+                isSpellMenuAbility(*ability) && ability->level <= accessLevel &&
+                isAbilitySupported(ability->id))
+                return true;
+        }
+        return false;
+    }
+
     uint8_t abilityCount = character.magic.knownAbilityCount;
 
     if (abilityCount > MAX_KNOWN_ABILITIES)
@@ -228,6 +243,26 @@ Menu spellMenu =
 static void rebuildSpellMenu(const Character& character)
 {
     spellMenu.itemCount = 0;
+
+    if (character.characterClass == CLASS_CLERIC)
+    {
+        const uint8_t accessLevel = getClericSpellAccessLevel(character);
+        for (uint16_t id = ABILITY_NONE + 1;
+             id < ABILITY_MAX && spellMenu.itemCount < MAX_KNOWN_ABILITIES;
+             id++)
+        {
+            AbilityID abilityID = static_cast<AbilityID>(id);
+            const Ability* ability = getAbility(abilityID);
+            if (ability == nullptr || ability->type != ABILITY_DIVINE ||
+                !isSpellMenuAbility(*ability) || ability->level > accessLevel ||
+                !isAbilitySupported(abilityID))
+                continue;
+            spellMenuItems[spellMenu.itemCount++] =
+            { ability->name, "Cast this Divine spell.", MENU_CAST_ABILITY,
+              nullptr, MENU_CLASS_CLERIC, abilityID };
+        }
+        return;
+    }
     uint8_t abilityCount = character.magic.knownAbilityCount;
 
     if (abilityCount > MAX_KNOWN_ABILITIES)

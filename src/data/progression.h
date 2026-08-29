@@ -44,6 +44,10 @@ int clampCurrentMPForCharacter(
 // spent MP are preserved.
 void refreshCharacterMagicProgression(Character& character);
 
+// Clerics draw spells directly from the Divine ability database.  This is the
+// highest spell level unlocked by the existing Cleric progression table.
+uint8_t getClericSpellAccessLevel(const Character& character);
+
 // Adds XP and applies every newly crossed class level in order. The return
 // value is the number of levels gained, which lets gameplay code present
 // one-shot feedback without coupling character progression to the UI.

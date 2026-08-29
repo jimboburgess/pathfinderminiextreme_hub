@@ -108,7 +108,9 @@ const WeightedLootEntry humanoidLoot[] =
     { ITEM_RATIONS, 20 },
     { ITEM_TORCH, 15 },
     { ITEM_ROPE, 10 },
-    { ITEM_SILVER_RING, 15 }
+    { ITEM_SILVER_RING, 15 },
+    { ITEM_SCROLL_MAGIC_MISSILE, 5 },
+    { ITEM_SCROLL_CURE_LIGHT_WOUNDS, 5 }
 };
 
 const WeightedLootEntry beastLoot[] =
@@ -141,7 +143,9 @@ const WeightedLootEntry monsterLoot[] =
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 20 },
     { ITEM_MANA_POTION, 10 },
     { ITEM_RATIONS, 25 },
-    { ITEM_PEARL, 20 }
+    { ITEM_PEARL, 15 },
+    { ITEM_SCROLL_MAGIC_MISSILE, 5 },
+    { ITEM_SCROLL_CURE_LIGHT_WOUNDS, 5 }
 };
 
 const WeightedLootEntry aberrationLoot[] =
@@ -167,7 +171,9 @@ const WeightedLootEntry chestMediumLoot[] =
     { ITEM_POTION_CURE_LIGHT_WOUNDS, 25 },
     { ITEM_GOLD_RING, 25 },
     { ITEM_PEARL, 25 },
-    { ITEM_RUBY, 25 }
+    { ITEM_RUBY, 20 },
+    { ITEM_SCROLL_SLEEP, 10 },
+    { ITEM_SCROLL_CURE_LIGHT_WOUNDS, 10 }
 };
 
 const WeightedLootEntry chestLargeLoot[] =
@@ -176,7 +182,10 @@ const WeightedLootEntry chestLargeLoot[] =
     { ITEM_GOLD_RING, 25 },
     { ITEM_RUBY, 20 },
     { ITEM_EMERALD, 20 },
-    { ITEM_GOLDEN_IDOL, 15 }
+    { ITEM_GOLDEN_IDOL, 10 },
+    { ITEM_SCROLL_GREASE, 10 },
+    { ITEM_SCROLL_MAGIC_MISSILE, 10 },
+    { ITEM_SCROLL_CURE_LIGHT_WOUNDS, 10 }
 };
 
 bool isNaturalWeapon(ItemID item)

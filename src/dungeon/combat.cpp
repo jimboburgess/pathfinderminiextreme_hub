@@ -527,13 +527,25 @@ void applyEnvironmentalDamage(Entity& target, int damage)
     markEntityFootprintDirty(target);
 }
 
-CombatDamageResult applyCombatDamage(Entity& target, int damage)
+CombatDamageResult applyCombatDamage(Entity& target, int damage,
+                                     DamageType damageType)
 {
     CombatDamageResult result;
 
     if (damage <= 0 || !target.active ||
         target.character.state != STATE_ALIVE)
     {
+        return result;
+    }
+
+    const int resistance = getEnergyResistance(
+        target.character, static_cast<uint8_t>(damageType));
+    damage -= resistance;
+    if (damage < 0)
+        damage = 0;
+    if (damage == 0)
+    {
+        result.applied = true;
         return result;
     }
 
@@ -1394,10 +1406,28 @@ static void finishTurnStart(Entity* entity)
 
 static void beginTurnStartConditionMessages(
     Entity* entity,
-    const ConditionTurnResult& result)
+    ConditionTurnResult& result)
 {
     combat.turnStartPoisonExpired = result.poisonExpired;
     combat.turnStartConditionDefeated = false;
+
+    for (uint8_t i = 0; i < result.timedDamageCount &&
+                        entity->character.state == STATE_ALIVE; i++)
+    {
+        const TimedDamageEffect& effect = result.timedDamage[i];
+        const int damage = rollDice(effect.diceCount, effect.diceSides);
+        const AreaFlashTile flashTile = {
+            static_cast<int8_t>(entity->x), static_cast<int8_t>(entity->y)};
+        playAreaDamageFlash(static_cast<DamageType>(effect.damageType),
+                            &flashTile, 1);
+        CombatDamageResult damageResult = applyCombatDamage(
+            *entity, damage, static_cast<DamageType>(effect.damageType));
+        if (damageResult.applied)
+        {
+            result.damage += damage;
+            result.damageType = effect.damageType;
+        }
+    }
 
     if (result.damage > 0)
     {
@@ -1409,7 +1439,7 @@ static void beginTurnStartConditionMessages(
             combat.turnStartConditionDefeated = true;
 
             snprintf(message, sizeof(message),
-                     "%s takes %d poison damage and dies!",
+                     "%s takes %d damage and dies!",
                      getEntityName(entity), result.damage);
             appendLevelUpFeedback(
                 message, sizeof(message), defeatResult);
@@ -1417,12 +1447,12 @@ static void beginTurnStartConditionMessages(
         else if (entity->type == ENTITY_PLAYER)
         {
             snprintf(message, sizeof(message),
-                     "You take %d poison damage.", result.damage);
+                     "You take %d damage.", result.damage);
         }
         else
         {
             snprintf(message, sizeof(message),
-                     "%s takes %d poison damage.",
+                     "%s takes %d damage.",
                      getEntityName(entity), result.damage);
         }
 
@@ -1526,7 +1556,9 @@ void announceTurn(Entity* entity)
     entity->turn.movementRemaining =
         hasCondition(entity->character, CONDITION_WEBBED)
             ? 0
-            : entity->character.speed;
+            : getEffectiveSpeed(entity->character);
+    entity->turn.bonusAttacksRemaining =
+        getActiveConditionModifiers(entity->character).bonusAttacks;
 
     entity->turn.standardActionUsed = false;
     entity->turn.monsterState = MONSTER_START;
@@ -2267,11 +2299,15 @@ void confirmPlayerAttack()
 
         combat.iterativeAttackActive = true;
         combat.iterativeAttackIndex = 0;
-        combat.iterativeAttackCount =
+        const bool fullAttack =
             !combat.openingAttackInProgress &&
-            !isNaturalWeaponItem(weaponID) && canMakeFullAttack(*player)
-                ? getIterativeAttackCount(bab)
-                : 1;
+            !isNaturalWeaponItem(weaponID) && canMakeFullAttack(*player);
+        const uint8_t bonusAttacks = fullAttack
+            ? player->turn.bonusAttacksRemaining : 0;
+        combat.iterativeAttackCount = fullAttack
+            ? getIterativeAttackCount(bab) + bonusAttacks : 1;
+        if (fullAttack)
+            player->turn.bonusAttacksRemaining = 0;
     }
 
     playSound(getAttackSound(player, weapon));
@@ -2314,8 +2350,10 @@ void confirmPlayerAttack()
             : getRangedAttackBonus(player->character);
     const int bab = getBaseAttackBonus(
         player->character.characterClass, player->character.level);
-    const int iterativeBAB = getIterativeBAB(
-        bab, combat.iterativeAttackIndex);
+    const int iterativeBAB = getSequenceAttackBAB(
+        bab, combat.iterativeAttackIndex,
+        combat.iterativeAttackCount > getIterativeAttackCount(bab)
+            ? combat.iterativeAttackCount - getIterativeAttackCount(bab) : 0);
     const int iterativePenalty = iterativeBAB - bab;
     int attackBonus = normalAttackBonus + powerAttackPenalty +
         iterativePenalty;
@@ -2370,6 +2408,9 @@ void confirmPlayerAttack()
                 }
             }
         }
+
+        combat.pendingDamage += getActiveConditionModifiers(
+            player->character).damageBonus;
 
         combat.pendingDamage = std::max(1, combat.pendingDamage);
 
@@ -2466,13 +2507,18 @@ static void markAbilityCursorDirty()
         markEntityFootprintDirty(*target);
 }
 
+static bool consumeSelectedAbilityScroll(Entity& player);
+static void clearSelectedAbilityScroll();
+
 static void executePlayerAbility(
     Entity& player,
     Entity* target,
     AbilityID abilityID)
 {
     AbilityResolution resolution = resolveAbility(
-        player, target, abilityID);
+        player, target, abilityID,
+        combat.selectedAbilityFromScroll
+            ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
     {
@@ -2481,6 +2527,13 @@ static void executePlayerAbility(
         requestCombatTileRedraw();
         return;
     }
+
+    if (!consumeSelectedAbilityScroll(player))
+    {
+        setGameMessage("Scroll is no longer available.");
+        return;
+    }
+    clearSelectedAbilityScroll();
 
     presentAbilityResolution(
         player,
@@ -2663,7 +2716,11 @@ void beginPlayerAbility(AbilityID abilityID)
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
         !combat.waitingForPlayer ||
-        !knowsAbility(player->character, abilityID) ||
+        (!combat.selectedAbilityFromScroll && !knowsAbility(player->character, abilityID) &&
+         !(player->character.characterClass == CLASS_CLERIC &&
+           ability != nullptr && ability->type == ABILITY_DIVINE &&
+           ability->category == ABILITY_CATEGORY_SPELL &&
+           ability->level <= getClericSpellAccessLevel(player->character))) ||
         !isAbilitySupported(abilityID) ||
         ability == nullptr)
     {
@@ -2690,7 +2747,9 @@ void beginPlayerAbility(AbilityID abilityID)
     if (isDirectionalAbility(abilityID))
     {
         AbilityResult validation = validateDirectionalAbility(
-            *player, abilityID);
+            *player, abilityID,
+            combat.selectedAbilityFromScroll
+                ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL);
 
         if (validation != ABILITY_RESULT_SUCCESS)
         {
@@ -2742,6 +2801,31 @@ void beginPlayerAbility(AbilityID abilityID)
     markAbilityCursorDirty();
     setGameMessage("Choose target: A cast B back");
     requestCombatTileRedraw();
+}
+
+void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll)
+{
+    Entity* player = getCurrentCombatant();
+    const Ability* ability = getAbility(abilityID);
+    if (player == nullptr || ability == nullptr || !hasItem(player->character, scroll) ||
+        (player->character.characterClass == CLASS_WIZARD && ability->type != ABILITY_ARCANE) ||
+        (player->character.characterClass == CLASS_CLERIC && ability->type != ABILITY_DIVINE) ||
+        (player->character.characterClass != CLASS_WIZARD &&
+         player->character.characterClass != CLASS_CLERIC))
+    {
+        setGameMessage("Cannot cast that scroll.");
+        playSound(SoundEffect::SPELL_FAIL);
+        return;
+    }
+
+    combat.selectedAbilityFromScroll = true;
+    combat.selectedAbilityScroll = scroll;
+    beginPlayerAbility(abilityID);
+    if (combat.selectedAbility == ABILITY_NONE && !combat.abilityResolutionPending)
+    {
+        combat.selectedAbilityFromScroll = false;
+        combat.selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    }
 }
 
 bool isPlayerTargetingAbility()
@@ -2859,6 +2943,18 @@ bool moveGroundAbilityTarget()
     return true;
 }
 
+static bool consumeSelectedAbilityScroll(Entity& player)
+{
+    return !combat.selectedAbilityFromScroll ||
+           removeItem(player.character, combat.selectedAbilityScroll, 1);
+}
+
+static void clearSelectedAbilityScroll()
+{
+    combat.selectedAbilityFromScroll = false;
+    combat.selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+}
+
 void confirmPlayerAbility()
 {
     Entity* player = getCurrentCombatant();
@@ -2867,13 +2963,20 @@ void confirmPlayerAbility()
     {
         AbilityID abilityID = combat.selectedAbility;
         AbilityResolution resolution = resolveAbilityInDirection(
-            *player, combat.selectedAbilityDirection, abilityID);
+            *player, combat.selectedAbilityDirection, abilityID,
+            combat.selectedAbilityFromScroll
+                ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL);
 
         if (resolution.result != ABILITY_RESULT_SUCCESS)
         {
             setGameMessage(getAbilityResultMessage(resolution.result));
             playSound(SoundEffect::SPELL_FAIL);
             requestCombatTileRedraw();
+            return;
+        }
+        if (!consumeSelectedAbilityScroll(*player))
+        {
+            setGameMessage("Scroll is no longer available.");
             return;
         }
 
@@ -2883,6 +2986,7 @@ void confirmPlayerAbility()
         combat.selectedAbilityY = -1;
         combat.selectedAbilityDirection = moveDirection;
         combat.selectedTargetIndex = -1;
+        clearSelectedAbilityScroll();
         markPlayerFacingCursorDirty();
         presentDirectionalAbilityResolution(
             *player, abilityID, resolution);
@@ -2904,13 +3008,20 @@ void confirmPlayerAbility()
 
         AbilityID abilityID = combat.selectedAbility;
         AbilityResolution resolution = resolveAbilityAt(
-            *player, targetX, targetY, abilityID);
+            *player, targetX, targetY, abilityID,
+            combat.selectedAbilityFromScroll
+                ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL);
 
         if (resolution.result != ABILITY_RESULT_SUCCESS)
         {
             setGameMessage(getAbilityResultMessage(resolution.result));
             playSound(SoundEffect::SPELL_FAIL);
             requestCombatTileRedraw();
+            return;
+        }
+        if (!consumeSelectedAbilityScroll(*player))
+        {
+            setGameMessage("Scroll is no longer available.");
             return;
         }
 
@@ -2920,6 +3031,7 @@ void confirmPlayerAbility()
         combat.selectedAbilityY = -1;
         combat.selectedAbilityDirection = moveDirection;
         combat.selectedTargetIndex = -1;
+        clearSelectedAbilityScroll();
         markPlayerFacingCursorDirty();
         presentGroundAbilityResolution(*player, abilityID, resolution);
         return;
@@ -2937,13 +3049,20 @@ void confirmPlayerAbility()
 
     AbilityID abilityID = combat.selectedAbility;
     AbilityResolution resolution = resolveAbility(
-        *player, target, abilityID);
+        *player, target, abilityID,
+        combat.selectedAbilityFromScroll
+            ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
     {
         setGameMessage(getAbilityResultMessage(resolution.result));
         playSound(SoundEffect::SPELL_FAIL);
         requestCombatTileRedraw();
+        return;
+    }
+    if (!consumeSelectedAbilityScroll(*player))
+    {
+        setGameMessage("Scroll is no longer available.");
         return;
     }
 
@@ -2953,6 +3072,7 @@ void confirmPlayerAbility()
     combat.selectedAbilityY = -1;
     combat.selectedAbilityDirection = moveDirection;
     combat.selectedTargetIndex = -1;
+    clearSelectedAbilityScroll();
     markPlayerFacingCursorDirty();
 
     presentAbilityResolution(
@@ -2972,6 +3092,7 @@ void cancelPlayerAbility()
     combat.selectedAbilityY = -1;
     combat.selectedAbilityDirection = moveDirection;
     combat.selectedTargetIndex = -1;
+    clearSelectedAbilityScroll();
     markPlayerFacingCursorDirty();
     requestCombatTileRedraw();
 
@@ -3089,14 +3210,14 @@ void beginDoubleMove()
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
         !combat.waitingForPlayer || player->turn.standardActionUsed ||
-        player->turn.movementRemaining != player->character.speed ||
+        player->turn.movementRemaining != getEffectiveSpeed(player->character) ||
         !canCharacterAct(player->character))
     {
         setGameMessage("Double Move unavailable.");
         return;
     }
 
-    player->turn.movementRemaining = player->character.speed * 2;
+    player->turn.movementRemaining = getEffectiveSpeed(player->character) * 2;
     player->turn.standardActionUsed = true;
     setGameMessage("Double Move: use encoder to move.");
     requestCombatTileRedraw();
@@ -3341,10 +3462,15 @@ void beginMonsterAttack(
     {
         combat.monsterIterativeAttackActive = true;
         combat.monsterIterativeAttackIndex = 0;
-        combat.monsterIterativeAttackCount =
-            !isNaturalWeaponItem(weaponID) && canMakeFullAttack(*monster)
-                ? getIterativeAttackCount(monster->monster->baseAttack)
-                : 1;
+        const bool fullAttack = !isNaturalWeaponItem(weaponID) &&
+            canMakeFullAttack(*monster);
+        const uint8_t bonusAttacks = fullAttack
+            ? monster->turn.bonusAttacksRemaining : 0;
+        combat.monsterIterativeAttackCount = fullAttack
+            ? getIterativeAttackCount(monster->monster->baseAttack) + bonusAttacks
+            : 1;
+        if (fullAttack)
+            monster->turn.bonusAttacksRemaining = 0;
     }
 
     playSound(getAttackSound(monster, weapon));
@@ -3367,9 +3493,11 @@ void beginMonsterAttack(
     }
 
     int dieRoll = rollDie(20);
-    const int iterativeBAB = getIterativeBAB(
-        monster->monster->baseAttack,
-        combat.monsterIterativeAttackIndex);
+    const int baseIteratives = getIterativeAttackCount(monster->monster->baseAttack);
+    const int iterativeBAB = getSequenceAttackBAB(
+        monster->monster->baseAttack, combat.monsterIterativeAttackIndex,
+        combat.monsterIterativeAttackCount > baseIteratives
+            ? combat.monsterIterativeAttackCount - baseIteratives : 0);
     int total = dieRoll + iterativeBAB + abilityModifier +
                 getConditionAttackModifier(monster->character) +
                 rangePenalty;
@@ -3390,6 +3518,9 @@ void beginMonsterAttack(
 
         if (weapon->type == WEAPON_MELEE)
             combat.monsterPendingDamage += abilityModifier;
+
+        combat.monsterPendingDamage += getActiveConditionModifiers(
+            monster->character).damageBonus;
 
         combat.monsterPendingDamage = std::max(
             1, combat.monsterPendingDamage);

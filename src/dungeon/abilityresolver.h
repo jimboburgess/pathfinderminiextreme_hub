@@ -32,6 +32,12 @@ enum SaveResult : uint8_t
     SAVE_RESULT_FAILURE
 };
 
+enum class AbilityCastSource : uint8_t
+{
+    NORMAL,
+    SCROLL
+};
+
 struct AbilitySavingThrow
 {
     SaveResult result = SAVE_RESULT_NOT_REQUIRED;
@@ -90,17 +96,28 @@ AbilitySavingThrow resolveSavingThrow(
     SaveType saveType,
     int dc);
 
+bool canPayAbilityCost(
+    const Character& caster,
+    const Ability& ability,
+    AbilityCastSource source);
+void payAbilityCost(
+    Character& caster,
+    const Ability& ability,
+    AbilityCastSource source);
+
 // Performs every legality check without changing either entity.
 AbilityResult validateAbility(
     const Entity& caster,
     const Entity* target,
-    AbilityID abilityID);
+    AbilityID abilityID,
+    AbilityCastSource source = AbilityCastSource::NORMAL);
 
 // Authoritative execution path shared by player and monster spellcasting.
 AbilityResolution resolveAbility(
     Entity& caster,
     Entity* target,
-    AbilityID abilityID);
+    AbilityID abilityID,
+    AbilityCastSource source = AbilityCastSource::NORMAL);
 
 // Coordinate-target counterpart used only by supported ground/area
 // abilities. Existing entity-target calls continue using resolveAbility().
@@ -108,22 +125,26 @@ AbilityResult validateAbilityAt(
     const Entity& caster,
     int targetX,
     int targetY,
-    AbilityID abilityID);
+    AbilityID abilityID,
+    AbilityCastSource source = AbilityCastSource::NORMAL);
 AbilityResolution resolveAbilityAt(
     Entity& caster,
     int targetX,
     int targetY,
-    AbilityID abilityID);
+    AbilityID abilityID,
+    AbilityCastSource source = AbilityCastSource::NORMAL);
 
 // Directional counterpart used by cone abilities. Current support is Color
 // Spray; the geometry and target enumeration are reusable by future cones.
 AbilityResult validateDirectionalAbility(
     const Entity& caster,
-    AbilityID abilityID);
+    AbilityID abilityID,
+    AbilityCastSource source = AbilityCastSource::NORMAL);
 AbilityResolution resolveAbilityInDirection(
     Entity& caster,
     Direction direction,
-    AbilityID abilityID);
+    AbilityID abilityID,
+    AbilityCastSource source = AbilityCastSource::NORMAL);
 
 const char* getAbilityResultMessage(AbilityResult result);
 

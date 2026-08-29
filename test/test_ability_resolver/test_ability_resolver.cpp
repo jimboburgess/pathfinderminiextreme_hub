@@ -44,6 +44,13 @@ bool backgroundNeedsRedraw = false;
 RedrawType redrawType = REDRAW_NONE;
 bool needsRedraw = false;
 
+void playAreaDamageFlash(
+    DamageType,
+    const AreaFlashTile*,
+    uint8_t)
+{
+}
+
 int getAbilityModifier(int score)
 {
     return score >= 10 ? (score - 10) / 2 : (score - 11) / 2;

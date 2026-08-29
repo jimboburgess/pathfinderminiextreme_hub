@@ -7,7 +7,8 @@
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 6;
+constexpr uint8_t SAVE_VERSION = 7;
+constexpr uint8_t PREVIOUS_MAGIC_SAVE_VERSION = 6;
 constexpr uint8_t CURRENT_MP_SAVE_VERSION = 5;
 constexpr uint8_t PREVIOUS_SAVE_VERSION = 4;
 constexpr uint8_t ITEM_INSTANCE_SAVE_VERSION = 3;
@@ -28,6 +29,25 @@ struct SavedCharacter
     int16_t currentMP;
     uint8_t knownAbilityCount;
     AbilityID knownAbilities[MAX_KNOWN_ABILITIES];
+    SpellLearningData learning;
+};
+
+// Version 6 used the former 16-entry spellbook and predates persistent study.
+// Keep its exact layout so existing saves remain loadable after the expansion.
+struct PreviousMagicSavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    EquipmentData equipment;
+    InventoryData inventory;
+    int16_t currentMP;
+    uint8_t knownAbilityCount;
+    AbilityID knownAbilities[16];
 };
 
 // Version 5 added current MP but still reconstructed every known spell from
@@ -400,7 +420,8 @@ bool restoreCharacter(Character& character,
                        bool hasSavedCurrentMP = false,
                        int savedCurrentMP = 0,
                        const AbilityID* savedKnownAbilities = nullptr,
-                       uint8_t savedKnownAbilityCount = 0)
+                       uint8_t savedKnownAbilityCount = 0,
+                       const SpellLearningData* savedLearning = nullptr)
 {
     if (!isValidCharacterData(characterClass, level, health) ||
         !isValidEquipment(equipment) ||
@@ -451,6 +472,16 @@ bool restoreCharacter(Character& character,
     // uninitialized feature.
     restoreClassAbilityUses(loaded);
 
+    if (savedLearning != nullptr && loaded.characterClass == CLASS_WIZARD &&
+        savedLearning->active && isValidAbility(savedLearning->ability) &&
+        getAbility(savedLearning->ability)->type == ABILITY_ARCANE &&
+        !knowsAbility(loaded, savedLearning->ability))
+    {
+        loaded.magic.learning = *savedLearning;
+        if (loaded.magic.learning.restsRemaining == 0)
+            loaded.magic.learning.restsRemaining = 1;
+    }
+
     character = loaded;
     return true;
 }
@@ -472,6 +503,7 @@ bool saveGame(const Character& character)
         character, character.magic.currentMP));
     saved.knownAbilityCount = copyKnownAbilitiesForSave(
         character, saved.knownAbilities);
+    saved.learning = character.magic.learning;
 
     Preferences preferences;
 
@@ -520,6 +552,21 @@ bool loadGame(Character& character)
             true,
             saved.currentMP,
             saved.knownAbilities,
+            saved.knownAbilityCount,
+            &saved.learning);
+    }
+
+    if (savedSize == sizeof(PreviousMagicSavedCharacter))
+    {
+        PreviousMagicSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes("player", &saved, sizeof(saved));
+        preferences.end();
+        if (bytesRead != sizeof(saved) || saved.magic != SAVE_MAGIC ||
+            saved.version != PREVIOUS_MAGIC_SAVE_VERSION)
+            return false;
+        return restoreCharacter(character, saved.characterClass, saved.level,
+            saved.xp, saved.abilities, saved.health, saved.equipment,
+            saved.inventory, true, saved.currentMP, saved.knownAbilities,
             saved.knownAbilityCount);
     }
 

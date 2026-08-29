@@ -35,7 +35,7 @@ int getAbilityModifier(int score)
   return (score - 11) / 2;
 }
 
-int getAbilityModifier(const Character& character, AbilityScore ability) {
+int getEffectiveAbilityScore(const Character& character, AbilityScore ability) {
   int score = 10;
 
   switch (ability) {
@@ -63,7 +63,26 @@ int getAbilityModifier(const Character& character, AbilityScore ability) {
       score = character.abilities.charisma;
       break;
   }
-  return getAbilityModifier(score);
+  const ConditionModifiers modifiers = getActiveConditionModifiers(character);
+  switch (ability) {
+    case ABILITY_STRENGTH: score += modifiers.strBonus; break;
+    case ABILITY_DEXTERITY: score += modifiers.dexBonus; break;
+    case ABILITY_CONSTITUTION: score += modifiers.conBonus; break;
+    case ABILITY_INTELLIGENCE: score += modifiers.intBonus; break;
+    case ABILITY_WISDOM: score += modifiers.wisBonus; break;
+    case ABILITY_CHARISMA: score += modifiers.chaBonus; break;
+  }
+  return score;
+}
+
+int getAbilityModifier(const Character& character, AbilityScore ability) {
+  return getAbilityModifier(getEffectiveAbilityScore(character, ability));
+}
+
+int getEffectiveSpeed(const Character& character)
+{
+  int speed = character.speed + getActiveConditionModifiers(character).speedBonus;
+  return speed < 0 ? 0 : speed;
 }
 
 int getMaxHP(const Character& character)

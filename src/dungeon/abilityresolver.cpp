@@ -10,6 +10,7 @@
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "data/entitytraits.h"
+#include "graphics/display.h"
 
 namespace
 {
@@ -39,9 +40,16 @@ bool hasSupportedDelivery(const Ability& ability)
 {
     if (ability.target == TARGET_ENEMY)
     {
-        return ability.delivery == DELIVERY_TARGET &&
+        return (ability.delivery == DELIVERY_TARGET ||
+                ability.delivery == DELIVERY_RANGED_TOUCH ||
+                ability.delivery == DELIVERY_TOUCH) &&
                ability.rangeTiles > 0;
     }
+
+    if (ability.target == TARGET_ALLY)
+        return ability.delivery == DELIVERY_TOUCH ||
+               ability.delivery == DELIVERY_TARGET ||
+               ability.delivery == DELIVERY_AREA;
 
     if (ability.target == TARGET_SELF)
     {
@@ -51,6 +59,101 @@ bool hasSupportedDelivery(const Ability& ability)
     }
 
     return false;
+}
+
+int getEffectAmount(const AbilityEffectData& effect, const Entity& caster);
+
+ConditionType getGenericBuffCondition(const AbilityEffectData& effect)
+{
+    if (effect.conditionType != CONDITION_NONE)
+        return effect.conditionType;
+    switch (effect.effect)
+    {
+        case EFFECT_BUFF_AC: return CONDITION_BUFF_AC;
+        case EFFECT_BUFF_ATTACK: return CONDITION_BUFF_ATTACK;
+        case EFFECT_BUFF_SAVE: return CONDITION_BUFF_SAVE;
+        default: return CONDITION_NONE;
+    }
+}
+
+bool isModifierEffect(AbilityEffect effect)
+{
+    return effect == EFFECT_BUFF_AC || effect == EFFECT_BUFF_ATTACK ||
+           effect == EFFECT_BUFF_DAMAGE || effect == EFFECT_BUFF_SPEED ||
+           effect == EFFECT_BUFF_STR || effect == EFFECT_BUFF_DEX ||
+           effect == EFFECT_BUFF_CON || effect == EFFECT_BUFF_INT ||
+           effect == EFFECT_BUFF_WIS || effect == EFFECT_BUFF_CHA ||
+           effect == EFFECT_BUFF_SAVE || effect == EFFECT_BUFF_BONUS_ATTACK ||
+           effect == EFFECT_DEBUFF_ATTACK || effect == EFFECT_DEBUFF_DAMAGE ||
+           effect == EFFECT_DEBUFF_SPEED || effect == EFFECT_DEBUFF_AC ||
+           effect == EFFECT_DEBUFF_STR || effect == EFFECT_DEBUFF_DEX ||
+           effect == EFFECT_DEBUFF_SAVE;
+}
+
+bool isTimedDamageEffect(AbilityEffect effect)
+{
+    return effect == EFFECT_DAMAGE_OVER_TIME;
+}
+
+bool hasTargetedTimedDamageProfile(const Ability& ability)
+{
+    if (ability.effectCount < 2 || ability.target != TARGET_ENEMY ||
+        ability.duration != DURATION_COMBAT)
+        return false;
+
+    bool immediate = false;
+    bool timed = false;
+    for (uint8_t i = 0; i < ability.effectCount; i++)
+    {
+        const AbilityEffectData& effect = ability.effects[i];
+        immediate |= effect.effect == EFFECT_DAMAGE && effect.duration == 0;
+        timed |= isTimedDamageEffect(effect.effect) && effect.duration > 0;
+    }
+    return immediate && timed;
+}
+
+void addModifierEffect(ConditionModifiers& modifiers,
+                       const AbilityEffectData& effect,
+                       const Entity& caster)
+{
+    const int amount = getEffectAmount(effect, caster);
+    switch (effect.effect)
+    {
+        case EFFECT_BUFF_AC: modifiers.acBonus += amount; break;
+        case EFFECT_BUFF_ATTACK: modifiers.attackBonus += amount; break;
+        case EFFECT_BUFF_DAMAGE: modifiers.damageBonus += amount; break;
+        case EFFECT_BUFF_SPEED: modifiers.speedBonus += amount; break;
+        case EFFECT_BUFF_STR: modifiers.strBonus += amount; break;
+        case EFFECT_BUFF_DEX: modifiers.dexBonus += amount; break;
+        case EFFECT_BUFF_CON: modifiers.conBonus += amount; break;
+        case EFFECT_BUFF_INT: modifiers.intBonus += amount; break;
+        case EFFECT_BUFF_WIS: modifiers.wisBonus += amount; break;
+        case EFFECT_BUFF_CHA: modifiers.chaBonus += amount; break;
+        case EFFECT_BUFF_SAVE: modifiers.saveBonus += amount; break;
+        case EFFECT_BUFF_BONUS_ATTACK: modifiers.bonusAttacks += amount; break;
+        case EFFECT_DEBUFF_ATTACK: modifiers.attackBonus -= amount; break;
+        case EFFECT_DEBUFF_DAMAGE: modifiers.damageBonus -= amount; break;
+        case EFFECT_DEBUFF_SPEED: modifiers.speedBonus -= amount; break;
+        case EFFECT_DEBUFF_AC: modifiers.acBonus -= amount; break;
+        case EFFECT_DEBUFF_STR: modifiers.strBonus -= amount; break;
+        case EFFECT_DEBUFF_DEX: modifiers.dexBonus -= amount; break;
+        case EFFECT_DEBUFF_SAVE: modifiers.saveBonus -= amount; break;
+        default: break;
+    }
+}
+
+ConditionType getModifierCondition(const Ability& ability)
+{
+    for (uint8_t i = 0; i < ability.effectCount; i++)
+    {
+        if (isModifierEffect(ability.effects[i].effect))
+        {
+            const ConditionType type = getGenericBuffCondition(ability.effects[i]);
+            if (type != CONDITION_NONE)
+                return type;
+        }
+    }
+    return CONDITION_NONE;
 }
 
 bool hasSupportedMapEffect(const Ability& ability)
@@ -98,6 +201,66 @@ bool hasSupportedColorSprayProfile(const Ability& ability)
            ability.effects[1].duration > 0;
 }
 
+bool hasInstantAreaDamageProfile(const Ability& ability)
+{
+    if (ability.target != TARGET_AREA ||
+        ability.duration != DURATION_INSTANT ||
+        (ability.delivery != DELIVERY_CONE &&
+         ability.delivery != DELIVERY_LINE &&
+         ability.delivery != DELIVERY_AREA) ||
+        ability.rangeTiles == 0 ||
+        ability.effectCount == 0 || ability.effectCount > 2 ||
+        ability.effects[0].effect != EFFECT_DAMAGE ||
+        ability.effects[0].duration != 0 ||
+        ability.effects[0].damageType == DAMAGE_NONE)
+    {
+        return false;
+    }
+
+    if (ability.effectCount == 1)
+        return true;
+
+    const AbilityEffectData& secondary = ability.effects[1];
+    return secondary.effect != EFFECT_NONE &&
+           secondary.effect != EFFECT_DAMAGE &&
+           secondary.effect != EFFECT_HEAL &&
+           secondary.damageType == DAMAGE_NONE &&
+           secondary.duration > 0 &&
+           isValidConditionType(secondary.conditionType);
+}
+
+const AbilityEffectData* getAreaSecondaryCondition(
+    const Ability& ability)
+{
+    return ability.effectCount == 2 &&
+           hasInstantAreaDamageProfile(ability)
+        ? &ability.effects[1]
+        : nullptr;
+}
+
+void applyAreaSecondaryCondition(
+    const Ability& ability,
+    Entity& caster,
+    Entity& target,
+    const AbilitySavingThrow& save,
+    AbilityResolution& resolution)
+{
+    const AbilityEffectData* secondary = getAreaSecondaryCondition(ability);
+    if (secondary == nullptr || save.result == SAVE_RESULT_SUCCESS ||
+        target.character.state != STATE_ALIVE ||
+        !canReceiveCondition(target.character, secondary->conditionType))
+    {
+        return;
+    }
+
+    if (addCondition(target.character, secondary->conditionType,
+                     getEffectAmount(*secondary, caster), secondary->duration))
+    {
+        resolution.conditionApplied = secondary->conditionType;
+        resolution.conditionDuration = secondary->duration;
+    }
+}
+
 bool isValidSaveType(SaveType saveType)
 {
     return saveType >= SAVE_NONE && saveType <= SAVE_WILL;
@@ -122,9 +285,10 @@ SupportedEffectKind getSupportedEffectKind(const Ability& ability)
         if (effect.baseValue < 0 || effect.valuePerLevel < 0)
             return SUPPORTED_EFFECT_NONE;
 
-        if (effect.conditionType != CONDITION_NONE)
+        if (isModifierEffect(effect.effect) &&
+            getGenericBuffCondition(effect) != CONDITION_NONE)
         {
-            if (!isValidConditionType(effect.conditionType) ||
+            if (!isValidConditionType(getGenericBuffCondition(effect)) ||
                 effect.effect == EFFECT_NONE ||
                 effect.effect == EFFECT_DAMAGE ||
                 effect.effect == EFFECT_HEAL ||
@@ -161,15 +325,6 @@ SupportedEffectKind getSupportedEffectKind(const Ability& ability)
             hasPositiveValue = true;
     }
 
-    // Keep the first condition pass transactional by accepting one condition
-    // effect at a time. Damage and healing may still aggregate multiple rows.
-    if (kind == SUPPORTED_EFFECT_CONDITION)
-    {
-        return ability.effectCount == 1
-            ? kind
-            : SUPPORTED_EFFECT_NONE;
-    }
-
     return hasPositiveValue ? kind : SUPPORTED_EFFECT_NONE;
 }
 
@@ -198,6 +353,13 @@ int getEffectAmount(
            effect.valuePerLevel * getCasterLevel(caster);
 }
 
+int getEffectDamage(const AbilityEffectData& effect, const Entity& caster)
+{
+    return getEffectAmount(effect, caster) +
+        (effect.diceCount > 0 && effect.diceSides > 0
+            ? rollDice(effect.diceCount, effect.diceSides) : 0);
+}
+
 const AbilityEffectData* getConditionEffect(const Ability& ability)
 {
     if (getSupportedEffectKind(ability) != SUPPORTED_EFFECT_CONDITION)
@@ -211,10 +373,13 @@ bool isEntityAbilitySupported(const Ability& ability)
     if (!hasSupportedDelivery(ability))
         return false;
 
+    if (hasTargetedTimedDamageProfile(ability))
+        return true;
+
     SupportedEffectKind effectKind = getSupportedEffectKind(ability);
 
     if (effectKind == SUPPORTED_EFFECT_CONDITION)
-        return ability.duration == DURATION_ROUNDS;
+        return ability.duration == DURATION_ROUNDS || ability.duration == DURATION_COMBAT;
 
     return effectKind != SUPPORTED_EFFECT_NONE &&
            ability.duration == DURATION_INSTANT;
@@ -315,6 +480,32 @@ bool entityIsInDirectionalArea(
 
     return false;
 }
+
+uint8_t collectDirectionalAreaTiles(
+    const Entity& caster, const Ability& ability, Direction direction,
+    AreaFlashTile tiles[], uint8_t capacity)
+{
+    uint8_t count = 0;
+    for (int y = 0; y < getActiveMapHeight(); y++)
+        for (int x = 0; x < getActiveMapWidth(); x++)
+            if (count < capacity && isTileInDirectionalAbilityArea(
+                    caster, ability.id, direction, x, y))
+                tiles[count++] = { static_cast<int8_t>(x), static_cast<int8_t>(y) };
+    return count;
+}
+
+uint8_t collectRadiusAreaTiles(
+    const Entity& caster, const Ability& ability, int centerX, int centerY,
+    AreaFlashTile tiles[], uint8_t capacity)
+{
+    uint8_t count = 0;
+    for (int y = centerY - ability.areaRadiusTiles; y <= centerY + ability.areaRadiusTiles; y++)
+        for (int x = centerX - ability.areaRadiusTiles; x <= centerX + ability.areaRadiusTiles; x++)
+            if (count < capacity && isInsideActiveMap(x, y) &&
+                hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, x, y))
+                tiles[count++] = { static_cast<int8_t>(x), static_cast<int8_t>(y) };
+    return count;
+}
 }
 
 bool isAbilitySupported(AbilityID abilityID)
@@ -333,7 +524,8 @@ bool isAbilitySupported(AbilityID abilityID)
 
     return isEntityAbilitySupported(*ability) ||
            hasSupportedMapEffect(*ability) ||
-           hasSupportedColorSprayProfile(*ability);
+           hasSupportedColorSprayProfile(*ability) ||
+             hasInstantAreaDamageProfile(*ability);
 }
 
 bool isGroundTargetAbility(AbilityID abilityID)
@@ -343,7 +535,8 @@ bool isGroundTargetAbility(AbilityID abilityID)
     return ability != nullptr &&
            ability->target == TARGET_AREA &&
            ability->delivery == DELIVERY_AREA &&
-           ability->mapEffectType != MAP_EFFECT_NONE;
+            (ability->mapEffectType != MAP_EFFECT_NONE ||
+             hasInstantAreaDamageProfile(*ability));
 }
 
 bool isDirectionalAbility(AbilityID abilityID)
@@ -352,7 +545,7 @@ bool isDirectionalAbility(AbilityID abilityID)
 
     return ability != nullptr && isAbilitySupported(abilityID) &&
            ability->target == TARGET_AREA &&
-           ability->delivery == DELIVERY_CONE;
+            (ability->delivery == DELIVERY_CONE || ability->delivery == DELIVERY_LINE);
 }
 
 bool isTileInDirectionalAbilityArea(
@@ -364,7 +557,8 @@ bool isTileInDirectionalAbilityArea(
 {
     const Ability* ability = getAbility(abilityID);
 
-    if (ability == nullptr || ability->delivery != DELIVERY_CONE ||
+    if (ability == nullptr ||
+        (ability->delivery != DELIVERY_CONE && ability->delivery != DELIVERY_LINE) ||
         !isValidDirection(direction) ||
         ability->rangeTiles == 0 || !isInsideActiveMap(tileX, tileY) ||
         entityOccupiesTile(caster, tileX, tileY))
@@ -390,11 +584,14 @@ bool isTileInDirectionalAbilityArea(
              originX < getEntityTileWidth(caster);
              originX++)
         {
-            if (isConeOffset(
-                    tileX - (caster.x + originX),
-                    tileY - (caster.y + originY),
-                    offset,
-                    ability->rangeTiles))
+            const int relativeX = tileX - (caster.x + originX);
+            const int relativeY = tileY - (caster.y + originY);
+            if ((ability->delivery == DELIVERY_CONE && isConeOffset(
+                    relativeX, relativeY, offset, ability->rangeTiles)) ||
+                (ability->delivery == DELIVERY_LINE &&
+                 relativeX * offset.dy == relativeY * offset.dx &&
+                 relativeX * offset.dx + relativeY * offset.dy > 0 &&
+                 relativeX * offset.dx + relativeY * offset.dy <= ability->rangeTiles))
             {
                 return true;
             }
@@ -437,13 +634,13 @@ int getAbilitySaveBonus(const Character& target, SaveType saveType)
     switch (saveType)
     {
         case SAVE_FORTITUDE:
-            return getFortitudeSave(target);
+            return getFortitudeSave(target) + getConditionSaveModifier(target);
 
         case SAVE_REFLEX:
-            return getReflexSave(target);
+            return getReflexSave(target) + getConditionSaveModifier(target);
 
         case SAVE_WILL:
-            return getWillSave(target);
+            return getWillSave(target) + getConditionSaveModifier(target);
 
         case SAVE_NONE:
             return 0;
@@ -484,10 +681,29 @@ AbilitySavingThrow resolveSavingThrow(
     return savingThrow;
 }
 
+bool canPayAbilityCost(
+    const Character& caster,
+    const Ability& ability,
+    AbilityCastSource source)
+{
+    return source == AbilityCastSource::SCROLL ||
+           caster.magic.currentMP >= ability.mpCost;
+}
+
+void payAbilityCost(
+    Character& caster,
+    const Ability& ability,
+    AbilityCastSource source)
+{
+    if (source == AbilityCastSource::NORMAL)
+        caster.magic.currentMP -= ability.mpCost;
+}
+
 AbilityResult validateAbility(
     const Entity& caster,
     const Entity* target,
-    AbilityID abilityID)
+    AbilityID abilityID,
+    AbilityCastSource source)
 {
     const Ability* ability = getAbility(abilityID);
 
@@ -552,7 +768,7 @@ AbilityResult validateAbility(
         return ABILITY_RESULT_TARGET_IMMUNE;
     }
 
-    if (caster.character.magic.currentMP < ability->mpCost)
+    if (!canPayAbilityCost(caster.character, *ability, source))
         return ABILITY_RESULT_NOT_ENOUGH_MP;
 
     return ABILITY_RESULT_SUCCESS;
@@ -561,10 +777,11 @@ AbilityResult validateAbility(
 AbilityResolution resolveAbility(
     Entity& caster,
     Entity* target,
-    AbilityID abilityID)
+    AbilityID abilityID,
+    AbilityCastSource source)
 {
     AbilityResolution resolution;
-    resolution.result = validateAbility(caster, target, abilityID);
+    resolution.result = validateAbility(caster, target, abilityID, source);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
         return resolution;
@@ -577,6 +794,45 @@ AbilityResolution resolveAbility(
     resolution.savingThrow = resolveAbilitySavingThrow(
         caster, *resolvedTarget, *ability);
 
+    if (hasTargetedTimedDamageProfile(*ability))
+    {
+        for (uint8_t i = 0; i < ability->effectCount; i++)
+        {
+            const AbilityEffectData& effect = ability->effects[i];
+            if (effect.effect == EFFECT_DAMAGE)
+            {
+                const int damage = getEffectDamage(effect, caster);
+                CombatDamageResult damageResult = applyCombatDamage(
+                    *resolvedTarget, damage, effect.damageType);
+                if (!damageResult.applied)
+                {
+                    resolution.result = ABILITY_RESULT_INVALID_TARGET;
+                    return resolution;
+                }
+                resolution.damage += damage;
+                resolution.targetDefeated = damageResult.defeated;
+                resolution.levelReached = damageResult.levelReached;
+            }
+            else if (isTimedDamageEffect(effect.effect))
+            {
+                TimedDamageEffect timed;
+                timed.damageType = static_cast<uint8_t>(effect.damageType);
+                timed.diceCount = effect.diceCount;
+                timed.diceSides = effect.diceSides;
+                timed.roundsRemaining = static_cast<uint8_t>(effect.duration);
+                timed.sourceAbility = static_cast<uint16_t>(ability->id);
+                if (!addTimedDamageEffect(resolvedTarget->character, timed))
+                {
+                    resolution.result = ABILITY_RESULT_CONDITION_LIMIT;
+                    return resolution;
+                }
+            }
+        }
+        payAbilityCost(caster.character, *ability, source);
+        caster.turn.standardActionUsed = true;
+        return resolution;
+    }
+
     // A successful save is still a successfully resolved cast. It applies no
     // effect in this pass, but spends MP and the standard action below.
     if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
@@ -588,7 +844,8 @@ AbilityResolution resolveAbility(
             damage += getEffectAmount(ability->effects[i], caster);
 
         CombatDamageResult damageResult =
-            applyCombatDamage(*resolvedTarget, damage);
+            applyCombatDamage(*resolvedTarget, damage,
+                              ability->effects[0].damageType);
 
         if (!damageResult.applied)
         {
@@ -614,25 +871,35 @@ AbilityResolution resolveAbility(
     else if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
              effectKind == SUPPORTED_EFFECT_CONDITION)
     {
-        const AbilityEffectData& effect = ability->effects[0];
+        const ConditionType conditionType = getModifierCondition(*ability);
+        ConditionModifiers modifiers;
+        int duration = 0;
+
+        for (uint8_t i = 0; i < ability->effectCount; i++)
+        {
+            const AbilityEffectData& modifierEffect = ability->effects[i];
+            addModifierEffect(modifiers, modifierEffect, caster);
+            if (modifierEffect.duration > duration)
+                duration = modifierEffect.duration;
+        }
 
         if (!addCondition(
                 resolvedTarget->character,
-                effect.conditionType,
-                getEffectAmount(effect, caster),
-                effect.duration))
+                conditionType,
+                modifiers,
+                duration))
         {
             resolution.result = ABILITY_RESULT_CONDITION_LIMIT;
             return resolution;
         }
 
-        resolution.conditionApplied = effect.conditionType;
-        resolution.conditionDuration = effect.duration;
+        resolution.conditionApplied = conditionType;
+        resolution.conditionDuration = duration;
     }
 
     // Resource and action costs occur only after all validation and effect
     // application have succeeded.
-    caster.character.magic.currentMP -= ability->mpCost;
+    payAbilityCost(caster.character, *ability, source);
     caster.turn.standardActionUsed = true;
 
     return resolution;
@@ -642,7 +909,8 @@ AbilityResult validateAbilityAt(
     const Entity& caster,
     int targetX,
     int targetY,
-    AbilityID abilityID)
+    AbilityID abilityID,
+    AbilityCastSource source)
 {
     const Ability* ability = getAbility(abilityID);
 
@@ -650,7 +918,7 @@ AbilityResult validateAbilityAt(
         return ABILITY_RESULT_INVALID_ABILITY;
 
     if (!isAbilitySupported(abilityID) ||
-        !hasSupportedMapEffect(*ability))
+        (!hasSupportedMapEffect(*ability) && !hasInstantAreaDamageProfile(*ability)))
     {
         return ABILITY_RESULT_UNSUPPORTED;
     }
@@ -676,10 +944,10 @@ AbilityResult validateAbilityAt(
         return ABILITY_RESULT_NO_LINE_OF_SIGHT;
     }
 
-    if (!hasMapEffectCapacity())
+    if (hasSupportedMapEffect(*ability) && !hasMapEffectCapacity())
         return ABILITY_RESULT_MAP_EFFECT_LIMIT;
 
-    if (caster.character.magic.currentMP < ability->mpCost)
+    if (!canPayAbilityCost(caster.character, *ability, source))
         return ABILITY_RESULT_NOT_ENOUGH_MP;
 
     return ABILITY_RESULT_SUCCESS;
@@ -689,16 +957,58 @@ AbilityResolution resolveAbilityAt(
     Entity& caster,
     int targetX,
     int targetY,
-    AbilityID abilityID)
+    AbilityID abilityID,
+    AbilityCastSource source)
 {
     AbilityResolution resolution;
     resolution.result = validateAbilityAt(
-        caster, targetX, targetY, abilityID);
+        caster, targetX, targetY, abilityID, source);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
         return resolution;
 
     const Ability* ability = getAbility(abilityID);
+    if (hasInstantAreaDamageProfile(*ability))
+    {
+        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        const uint8_t flashTileCount = collectRadiusAreaTiles(
+            caster, *ability, targetX, targetY, flashTiles,
+            sizeof(flashTiles) / sizeof(flashTiles[0]));
+        playAreaDamageFlash(ability->effects[0].damageType,
+                            flashTiles, flashTileCount);
+        uint8_t entityCount = 0;
+        Entity* entities = getActiveMapEntities(entityCount);
+        const int fullDamage = getEffectAmount(ability->effects[0], caster);
+        for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+        {
+            Entity& target = entities[i];
+            if (!target.active || !isCombatEntityType(target.type) ||
+                target.character.state != STATE_ALIVE ||
+                getEntityGridDistanceToTile(target, targetX, targetY) > ability->areaRadiusTiles ||
+                !hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, target.x, target.y))
+                continue;
+            AbilitySavingThrow save = resolveAbilitySavingThrow(caster, target, *ability);
+            resolution.savingThrow = save;
+            int damage = fullDamage;
+            if (save.result == SAVE_RESULT_SUCCESS)
+            {
+                resolution.targetsResisted++;
+                if (ability->saveEffect == SAVE_EFFECT_NEGATES) continue;
+                if (ability->saveEffect == SAVE_EFFECT_HALF) damage /= 2;
+            }
+            CombatDamageResult result = applyCombatDamage(
+                target, damage, ability->effects[0].damageType);
+            if (result.applied)
+            {
+                resolution.damage += damage;
+                resolution.targetsAffected++;
+            }
+            applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
+        }
+        payAbilityCost(caster.character, *ability, source);
+        caster.turn.standardActionUsed = true;
+        return resolution;
+    }
     const AbilityEffectData& effect = ability->effects[0];
     MapEffect mapEffect;
     mapEffect.active = true;
@@ -739,14 +1049,15 @@ AbilityResolution resolveAbilityAt(
         }
     }
 
-    caster.character.magic.currentMP -= ability->mpCost;
+    payAbilityCost(caster.character, *ability, source);
     caster.turn.standardActionUsed = true;
     return resolution;
 }
 
 AbilityResult validateDirectionalAbility(
     const Entity& caster,
-    AbilityID abilityID)
+    AbilityID abilityID,
+    AbilityCastSource source)
 {
     const Ability* ability = getAbility(abilityID);
 
@@ -754,7 +1065,8 @@ AbilityResult validateDirectionalAbility(
         return ABILITY_RESULT_INVALID_ABILITY;
 
     if (!isDirectionalAbility(abilityID) ||
-        !hasSupportedColorSprayProfile(*ability))
+        (!hasSupportedColorSprayProfile(*ability) &&
+         !hasInstantAreaDamageProfile(*ability)))
     {
         return ABILITY_RESULT_UNSUPPORTED;
     }
@@ -768,7 +1080,7 @@ AbilityResult validateDirectionalAbility(
     if (caster.turn.standardActionUsed)
         return ABILITY_RESULT_NO_STANDARD_ACTION;
 
-    if (caster.character.magic.currentMP < ability->mpCost)
+    if (!canPayAbilityCost(caster.character, *ability, source))
         return ABILITY_RESULT_NOT_ENOUGH_MP;
 
     return ABILITY_RESULT_SUCCESS;
@@ -777,7 +1089,8 @@ AbilityResult validateDirectionalAbility(
 AbilityResolution resolveAbilityInDirection(
     Entity& caster,
     Direction direction,
-    AbilityID abilityID)
+    AbilityID abilityID,
+    AbilityCastSource source)
 {
     AbilityResolution resolution;
 
@@ -787,7 +1100,7 @@ AbilityResolution resolveAbilityInDirection(
         return resolution;
     }
 
-    resolution.result = validateDirectionalAbility(caster, abilityID);
+    resolution.result = validateDirectionalAbility(caster, abilityID, source);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
         return resolution;
@@ -795,6 +1108,48 @@ AbilityResolution resolveAbilityInDirection(
     const Ability* ability = getAbility(abilityID);
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
+
+    if (hasInstantAreaDamageProfile(*ability))
+    {
+        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        const uint8_t flashTileCount = collectDirectionalAreaTiles(
+            caster, *ability, direction, flashTiles,
+            sizeof(flashTiles) / sizeof(flashTiles[0]));
+        playAreaDamageFlash(ability->effects[0].damageType,
+                            flashTiles, flashTileCount);
+        const int fullDamage = getEffectAmount(ability->effects[0], caster);
+        for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+        {
+            Entity& target = entities[i];
+            if (!target.active || !isCombatEntityType(target.type) ||
+                target.character.state != STATE_ALIVE ||
+                !entityIsInDirectionalArea(caster, target, *ability, direction))
+                continue;
+
+            AbilitySavingThrow save = resolveAbilitySavingThrow(caster, target, *ability);
+            resolution.savingThrow = save;
+            int damage = fullDamage;
+            if (save.result == SAVE_RESULT_SUCCESS)
+            {
+                resolution.targetsResisted++;
+                if (ability->saveEffect == SAVE_EFFECT_NEGATES)
+                    continue;
+                if (ability->saveEffect == SAVE_EFFECT_HALF)
+                    damage /= 2;
+            }
+            CombatDamageResult result = applyCombatDamage(
+                target, damage, ability->effects[0].damageType);
+            if (result.applied)
+            {
+                resolution.damage += damage;
+                resolution.targetsAffected++;
+            }
+            applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
+        }
+        payAbilityCost(caster.character, *ability, source);
+        caster.turn.standardActionUsed = true;
+        return resolution;
+    }
 
     for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
     {
@@ -859,7 +1214,7 @@ AbilityResolution resolveAbilityInDirection(
             resolution.targetsAffected++;
     }
 
-    caster.character.magic.currentMP -= ability->mpCost;
+    payAbilityCost(caster.character, *ability, source);
     caster.turn.standardActionUsed = true;
     return resolution;
 }

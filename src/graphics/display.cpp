@@ -38,6 +38,21 @@ constexpr uint16_t COLOR_GREASE = 0xB5A6;
 constexpr uint16_t COLOR_WEB = 0xCE79;
 constexpr uint16_t COLOR_AREA_TARGET = 0xC81F;
 
+void getDamageFlashColors(DamageType type, uint16_t& primary, uint16_t& highlight)
+{
+    primary = ST77XX_WHITE;
+    highlight = 0x7BEF;
+    switch (type)
+    {
+        case DAMAGE_FIRE: primary = ST77XX_RED; highlight = ST77XX_YELLOW; break;
+        case DAMAGE_COLD: primary = ST77XX_BLUE; highlight = ST77XX_WHITE; break;
+        case DAMAGE_ELECTRIC: primary = ST77XX_YELLOW; highlight = ST77XX_WHITE; break;
+        case DAMAGE_ACID: primary = ST77XX_GREEN; highlight = 0xAFE5; break;
+        case DAMAGE_SONIC: primary = 0xC81F; highlight = ST77XX_WHITE; break;
+        default: break;
+    }
+}
+
 void drawMapEffectOverlayAt(int tileX, int tileY)
 {
     int screenX = tileX * TILE_SIZE;
@@ -906,6 +921,30 @@ void redrawDirtyTiles()
     dirtyTileCount = 0;
 
     redrawMapMessage();
+}
+
+void playAreaDamageFlash(
+    DamageType damageType,
+    const AreaFlashTile* tiles,
+    uint8_t tileCount)
+{
+    if (tiles == nullptr || tileCount == 0)
+        return;
+
+    uint16_t primary = ST77XX_WHITE;
+    uint16_t highlight = ST77XX_WHITE;
+    getDamageFlashColors(damageType, primary, highlight);
+    const uint16_t colors[] = { primary, highlight, primary };
+    for (uint8_t phase = 0; phase < 3; phase++)
+    {
+        for (uint8_t i = 0; i < tileCount; i++)
+            tft.fillRect(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE,
+                         TILE_SIZE, TILE_SIZE, colors[phase]);
+        delay(18);
+    }
+    for (uint8_t i = 0; i < tileCount; i++)
+        markTileDirty(tiles[i].x, tiles[i].y);
+    redrawDirtyTiles();
 }
 
 DirtyTile dirtyTiles[MAX_DIRTY_TILES];

@@ -163,6 +163,13 @@ struct HealthData
     int maxHP;
 };
 
+struct SpellLearningData
+{
+    bool active = false;
+    AbilityID ability = ABILITY_NONE;
+    uint8_t restsRemaining = 0;
+};
+
 struct MagicData
 {
     int currentMP;
@@ -173,6 +180,7 @@ struct MagicData
 
     bool arcaneCaster;
     bool divineCaster;
+    SpellLearningData learning;
 };
 
 struct ClassAbilityData
@@ -278,6 +286,8 @@ struct Character
 
 int getAbilityModifier(int score);
 int getAbilityModifier(const Character& character, AbilityScore ability);
+int getEffectiveAbilityScore(const Character& character, AbilityScore ability);
+int getEffectiveSpeed(const Character& character);
 
 int getMaxHP(const Character& character);
 

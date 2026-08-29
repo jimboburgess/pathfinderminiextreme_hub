@@ -199,6 +199,9 @@ enum ItemID : uint8_t
     // Appended so every previously persisted ItemID keeps its numeric value.
     ITEM_MASTERWORK_THIEVES_TOOLS,
 
+    // Appended so every previously persisted ItemID keeps its numeric value.
+    ITEM_SCROLL_CURE_LIGHT_WOUNDS,
+
     ITEM_COUNT
 };
 
@@ -545,6 +548,7 @@ enum ScrollID : uint8_t
     SCROLL_MAGIC_MISSILE,
     SCROLL_SLEEP,
     SCROLL_GREASE,
+    SCROLL_CURE_LIGHT_WOUNDS,
     SCROLL_COUNT
 };
 
@@ -620,6 +624,14 @@ ScrollLearnResult learnSpellFromScroll(
 ScrollLearnResult useSpellScroll(
     Character& character,
     const ItemInstance& scrollItem);
+
+// Completes one town-rest unit of an active Wizard study project.  Returns
+// false when no study was active.  Completion permanently adds the spell.
+bool advanceSpellLearning(Character& character, bool& completed);
+
+// Clears the one active Wizard study project and adds its spell if it was not
+// already known.  Used both by rest completion and level-up completion.
+bool completeSpellLearning(Character& character, AbilityID& completedAbility);
 
 // Restores HP with the normal Cure Light Wounds potion effect and consumes one
 // potion only on success.  This is shared by player inventory use and any

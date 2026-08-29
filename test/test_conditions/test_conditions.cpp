@@ -133,6 +133,106 @@ void test_condition_queries()
     TEST_ASSERT_FALSE(canCharacterAct(character));
 }
 
+void test_modifier_bundle_aggregates_and_expires_together()
+{
+    Character character = {};
+    character.state = STATE_ALIVE;
+    character.abilities.strength = 14;
+
+    ConditionModifiers modifiers;
+    modifiers.attackBonus = 1;
+    modifiers.damageBonus = 2;
+    modifiers.strBonus = 4;
+    modifiers.speedBonus = 6;
+    modifiers.bonusAttacks = 1;
+
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_HASTED, modifiers, 2));
+    const ConditionModifiers active = getActiveConditionModifiers(character);
+    TEST_ASSERT_EQUAL_INT(1, active.attackBonus);
+    TEST_ASSERT_EQUAL_INT(2, active.damageBonus);
+    TEST_ASSERT_EQUAL_INT(4, active.strBonus);
+    TEST_ASSERT_EQUAL_INT(6, active.speedBonus);
+    TEST_ASSERT_EQUAL_UINT8(1, active.bonusAttacks);
+    TEST_ASSERT_EQUAL_INT(14, character.abilities.strength);
+
+    tickConditions(character);
+    TEST_ASSERT_TRUE(hasCondition(character, CONDITION_HASTED));
+    tickConditions(character);
+    TEST_ASSERT_FALSE(hasCondition(character, CONDITION_HASTED));
+    TEST_ASSERT_EQUAL_INT(0, getActiveConditionModifiers(character).attackBonus);
+}
+
+void test_timed_damage_ticks_once_per_remaining_round()
+{
+    Character character = {};
+    character.state = STATE_ALIVE;
+    TimedDamageEffect acid = { 4, 2, 4, 1, 42 };
+
+    TEST_ASSERT_TRUE(addTimedDamageEffect(character, acid));
+    TEST_ASSERT_EQUAL_UINT8(1, character.conditions.timedDamageCount);
+    ConditionTurnResult first = processConditionsAtTurnStart(character);
+    TEST_ASSERT_EQUAL_UINT8(1, first.timedDamageCount);
+    TEST_ASSERT_EQUAL_UINT8(4, first.timedDamage[0].damageType);
+    TEST_ASSERT_EQUAL_UINT8(0, character.conditions.timedDamageCount);
+
+    ConditionTurnResult second = processConditionsAtTurnStart(character);
+    TEST_ASSERT_EQUAL_UINT8(0, second.timedDamageCount);
+}
+
+void test_same_timed_damage_source_refreshes_instead_of_stacking()
+{
+    Character character = {};
+    TimedDamageEffect acid = { 4, 2, 4, 1, 42 };
+    TimedDamageEffect refreshed = { 4, 2, 4, 2, 42 };
+    TimedDamageEffect fire = { 2, 1, 6, 1, 77 };
+
+    TEST_ASSERT_TRUE(addTimedDamageEffect(character, acid));
+    TEST_ASSERT_TRUE(addTimedDamageEffect(character, refreshed));
+    TEST_ASSERT_EQUAL_UINT8(1, character.conditions.timedDamageCount);
+    TEST_ASSERT_EQUAL_UINT8(2, character.conditions.timedDamage[0].roundsRemaining);
+    TEST_ASSERT_TRUE(addTimedDamageEffect(character, fire));
+    TEST_ASSERT_EQUAL_UINT8(2, character.conditions.timedDamageCount);
+}
+
+void test_energy_resistance_uses_highest_same_type_and_expires()
+{
+    Character character = {};
+    TEST_ASSERT_TRUE(addEnergyResistance(character, 2, 10, 1));
+    TEST_ASSERT_TRUE(addEnergyResistance(character, 2, 20, 2));
+    TEST_ASSERT_TRUE(addEnergyResistance(character, 3, 10, 2));
+    TEST_ASSERT_EQUAL_INT(20, getEnergyResistance(character, 2));
+    TEST_ASSERT_EQUAL_INT(10, getEnergyResistance(character, 3));
+
+    tickConditions(character);
+    TEST_ASSERT_EQUAL_INT(20, getEnergyResistance(character, 2));
+    tickConditions(character);
+    TEST_ASSERT_EQUAL_INT(0, getEnergyResistance(character, 2));
+    TEST_ASSERT_EQUAL_INT(0, getEnergyResistance(character, 3));
+}
+
+void test_negative_modifier_bundle_and_slow_bonus_attack_suppression()
+{
+    Character character = {};
+    ConditionModifiers haste;
+    haste.attackBonus = 1;
+    haste.speedBonus = 6;
+    haste.bonusAttacks = 1;
+    ConditionModifiers slow;
+    slow.attackBonus = -1;
+    slow.acBonus = -1;
+    slow.saveBonus = -1;
+    slow.speedBonus = -6;
+
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_HASTED, haste, 3));
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_SLOWED, slow, 3));
+    ConditionModifiers active = getActiveConditionModifiers(character);
+    TEST_ASSERT_EQUAL_INT(0, active.attackBonus);
+    TEST_ASSERT_EQUAL_INT(-1, active.acBonus);
+    TEST_ASSERT_EQUAL_INT(-1, active.saveBonus);
+    TEST_ASSERT_EQUAL_INT(0, active.speedBonus);
+    TEST_ASSERT_EQUAL_UINT8(0, active.bonusAttacks);
+}
+
 void test_sleep_immunity_and_damage_waking_are_generic()
 {
     Character living = {};
@@ -308,6 +408,11 @@ void setup()
     RUN_TEST(test_add_get_and_refresh_condition);
     RUN_TEST(test_tick_removes_timed_conditions_only);
     RUN_TEST(test_condition_queries);
+    RUN_TEST(test_modifier_bundle_aggregates_and_expires_together);
+    RUN_TEST(test_timed_damage_ticks_once_per_remaining_round);
+    RUN_TEST(test_same_timed_damage_source_refreshes_instead_of_stacking);
+    RUN_TEST(test_energy_resistance_uses_highest_same_type_and_expires);
+    RUN_TEST(test_negative_modifier_bundle_and_slow_bonus_attack_suppression);
     RUN_TEST(test_sleep_immunity_and_damage_waking_are_generic);
     RUN_TEST(test_sleep_duration_prevents_each_intended_turn);
     RUN_TEST(test_frightened_for_one_round_prevents_exactly_one_turn);

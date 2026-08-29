@@ -154,6 +154,11 @@ enum AbilityID
     ABILITY_TRUE_SEEING,
     ABILITY_WALL_OF_STONE,
 
+    // Appended so existing persisted AbilityID values remain stable.
+    ABILITY_SOUND_BURST,
+    ABILITY_DIVINE_FAVOR,
+    ABILITY_SHIELD_OF_FAITH,
+
     ABILITY_MAX
 };
 
@@ -268,6 +273,7 @@ enum AbilityEffect
 {
     EFFECT_NONE,
     EFFECT_DAMAGE,
+    EFFECT_DAMAGE_OVER_TIME,
     EFFECT_HEAL,
 
     EFFECT_BUFF_AC,
@@ -278,6 +284,10 @@ enum AbilityEffect
     EFFECT_BUFF_DEX,
     EFFECT_BUFF_CON,
     EFFECT_BUFF_SAVE,
+    EFFECT_BUFF_INT,
+    EFFECT_BUFF_WIS,
+    EFFECT_BUFF_CHA,
+    EFFECT_BUFF_BONUS_ATTACK,
     EFFECT_BUFF_MISS_CHANCE,
     EFFECT_DAMAGE_RESISTANCE,
 
@@ -287,6 +297,7 @@ enum AbilityEffect
     EFFECT_DEBUFF_AC,
     EFFECT_DEBUFF_STR,
     EFFECT_DEBUFF_DEX,
+    EFFECT_DEBUFF_SAVE,
 
     EFFECT_SLEEP,
     EFFECT_BLIND,
@@ -361,8 +372,10 @@ enum AbilityAnimation
 // Ability Definition
 //--------------------------------------------------
 
-constexpr uint8_t MAX_KNOWN_ABILITIES = 16;
-constexpr uint8_t MAX_ABILITY_EFFECTS = 3;
+// Wizards retain learned spells permanently.  Keep this fixed and compact for
+// entity storage while leaving room for scroll study beyond the starter book.
+constexpr uint8_t MAX_KNOWN_ABILITIES = 32;
+constexpr uint8_t MAX_ABILITY_EFFECTS = 4;
 
 
 struct AbilityEffectData
@@ -379,7 +392,12 @@ struct AbilityEffectData
     // this explicit lets the resolver apply any supported ConditionType
     // without branching on an AbilityID.
     ConditionType conditionType;
+
+    uint8_t diceCount;
+    uint8_t diceSides;
 };
+
+enum SaveEffect : uint8_t { SAVE_EFFECT_NONE, SAVE_EFFECT_NEGATES, SAVE_EFFECT_HALF };
 
 struct Ability
 {
@@ -417,6 +435,7 @@ struct Ability
     uint8_t areaRadiusTiles;
     MapEffectType mapEffectType;
     uint8_t mapEffectDurationRounds;
+    SaveEffect saveEffect;
 };
 
 extern const Ability abilityDatabase[];

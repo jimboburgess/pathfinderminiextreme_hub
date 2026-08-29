@@ -3,6 +3,7 @@
 //
 
 #include "progression.h"
+#include "characters/items.h"
 
 namespace
 {
@@ -30,27 +31,30 @@ struct LearnedAbilityAtLevel
     AbilityID ability;
 };
 
-// This is the single Wizard known-spell progression. It deliberately includes
-// spells whose effects are not executable yet; the Cast Spell menu continues
-// to filter those through isAbilitySupported().
-const LearnedAbilityAtLevel wizardSpellProgression[] =
+// New Wizards receive a deterministic starter book. Further Arcane spells
+// come from scroll study, not automatic level-up grants.
+const AbilityID wizardStarterSpellPool[] =
 {
-    { 1, ABILITY_MAGIC_MISSILE },
-    { 1, ABILITY_SLEEP },
-    { 1, ABILITY_GREASE },
-    { 1, ABILITY_COLOR_SPRAY },
+    ABILITY_MAGIC_MISSILE,
+    ABILITY_BURNING_HANDS,
+    ABILITY_MAGE_ARMOR,
+    ABILITY_SHIELD,
+    ABILITY_SLEEP,
+    ABILITY_COLOR_SPRAY,
+    ABILITY_GREASE
+};
 
-    { 3, ABILITY_ACID_ARROW },
-    { 3, ABILITY_SCORCHING_RAY },
-    { 3, ABILITY_WEB },
-
-    { 5, ABILITY_FIREBALL },
-    { 5, ABILITY_LIGHTNING_BOLT },
-    { 5, ABILITY_HASTE },
-
-    { 7, ABILITY_ICE_STORM },
-    { 7, ABILITY_GREATER_INVISIBILITY },
-    { 7, ABILITY_STONESKIN }
+const LearnedAbilityAtLevel clericSpellProgression[] =
+{
+    { 1, ABILITY_CURE_LIGHT_WOUNDS },
+    { 1, ABILITY_BLESS },
+    { 1, ABILITY_CAUSE_FEAR },
+    { 3, ABILITY_CURE_MODERATE_WOUNDS },
+    { 3, ABILITY_HOLD_PERSON },
+    { 3, ABILITY_SOUND_BURST },
+    { 5, ABILITY_CURE_SERIOUS_WOUNDS },
+    { 5, ABILITY_SEARING_LIGHT },
+    { 9, ABILITY_FLAME_STRIKE }
 };
 
 static_assert(
@@ -64,9 +68,9 @@ static_assert(
     "Cleric MP progression must cover every character level.");
 
 static_assert(
-    sizeof(wizardSpellProgression) /
-        sizeof(wizardSpellProgression[0]) <= MAX_KNOWN_ABILITIES,
-    "Wizard spell progression exceeds fixed known-ability capacity.");
+    sizeof(clericSpellProgression) /
+        sizeof(clericSpellProgression[0]) <= MAX_KNOWN_ABILITIES,
+    "Cleric spell progression exceeds fixed known-ability capacity.");
 
 uint8_t getBoundedCharacterLevel(uint8_t level)
 {
@@ -148,11 +152,11 @@ int getMaxMPForCharacter(const Character& character)
     {
         case CLASS_WIZARD:
             return wizardMPProgression[level - 1] +
-                   getAbilityModifier(character.abilities.intelligence);
+                   getAbilityModifier(character, ABILITY_INTELLIGENCE);
 
         case CLASS_CLERIC:
             return clericMPProgression[level - 1] +
-                   getAbilityModifier(character.abilities.wisdom);
+                   getAbilityModifier(character, ABILITY_WISDOM);
 
         case CLASS_FIGHTER:
         case CLASS_ROGUE:
@@ -180,19 +184,51 @@ void refreshCharacterMagicProgression(Character& character)
     character.magic.currentMP = clampCurrentMPForCharacter(
         character, currentMP);
 
-    if (character.characterClass != CLASS_WIZARD)
+    if (character.characterClass == CLASS_WIZARD)
+    {
+        const int intelligence = character.abilities.intelligence;
+        int starterCount = ((intelligence - 10) / 2) + 1;
+        if (starterCount < 1)
+            starterCount = 1;
+        const uint8_t poolCount = sizeof(wizardStarterSpellPool) /
+            sizeof(wizardStarterSpellPool[0]);
+        if (starterCount > poolCount)
+            starterCount = poolCount;
+        if (starterCount > MAX_KNOWN_ABILITIES)
+            starterCount = MAX_KNOWN_ABILITIES;
+
+        for (uint8_t i = 0; i < starterCount; i++)
+            learnAbility(character, wizardStarterSpellPool[i]);
+        return;
+    }
+    // Clerics intentionally do not copy Divine spells into knownAbilities.
+    // Their spell menu derives access from ability type and this progression.
+    else
         return;
 
-    uint8_t level = getBoundedCharacterLevel(character.level);
+}
+
+uint8_t getClericSpellAccessLevel(const Character& character)
+{
+    if (character.characterClass != CLASS_CLERIC)
+        return 0;
+
+    const uint8_t level = getBoundedCharacterLevel(character.level);
+    uint8_t highestSpellLevel = 0;
 
     for (uint8_t i = 0;
-         i < sizeof(wizardSpellProgression) /
-                 sizeof(wizardSpellProgression[0]);
+         i < sizeof(clericSpellProgression) / sizeof(clericSpellProgression[0]);
          i++)
     {
-        if (wizardSpellProgression[i].characterLevel <= level)
-            learnAbility(character, wizardSpellProgression[i].ability);
+        if (clericSpellProgression[i].characterLevel > level)
+            continue;
+
+        const Ability* ability = getAbility(clericSpellProgression[i].ability);
+        if (ability != nullptr && ability->level > highestSpellLevel)
+            highestSpellLevel = ability->level;
     }
+
+    return highestSpellLevel;
 }
 
 static void increasePrimaryClassAbility(Character& character)
@@ -236,6 +272,11 @@ static void applyLevelAdvancement(Character& character, uint8_t newLevel)
     // The class HP arrays are cumulative. Recompute the maximum for the new
     // level but leave currentHP untouched so existing damage is preserved.
     character.health.maxHP = getMaxHP(character);
+
+    // Advancement represents enough dedicated study to finish the one active
+    // Wizard project immediately, without consuming another scroll.
+    AbilityID completedStudy = ABILITY_NONE;
+    completeSpellLearning(character, completedStudy);
 
     // Like HP damage, spent MP is preserved. Only the derived maximum and
     // newly unlocked known spells change at this level boundary.

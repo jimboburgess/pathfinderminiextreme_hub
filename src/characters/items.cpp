@@ -201,6 +201,7 @@ const Item itemDatabase[] =
 	{ "Mana Potion", ITEMTYPE_POTION, MANA_POTION_EFFECT_INDEX, 30, 1, ICON_POTION, true, true, RARITY_COMMON, THEME_ANY, "Restores 4 MP." },
 	{ "Scythe", ITEMTYPE_WEAPON, SCYTHE_WEAPON_EFFECT_INDEX, 18, 12, ICON_SWORD, false, false, RARITY_UNCOMMON, THEME_ANY, "A two-handed harvesting blade." },
 	{ "Masterwork Thieves' Tools", ITEMTYPE_ADVENTURING_GEAR, 8, 500, 1, ICON_TOOLS, false, false, RARITY_RARE, THEME_ANY, "Fine tools that aid Disable Device checks." },
+	{ "Scroll of Cure Light Wounds", ITEMTYPE_SCROLL, SCROLL_CURE_LIGHT_WOUNDS, 100, 0, ICON_SCROLL, true, true, RARITY_COMMON, THEME_ANY, "A Divine scroll of Cure Light Wounds." },
 
 };
 
@@ -214,6 +215,7 @@ const Scroll scrollDatabase[] =
 	{ ABILITY_MAGIC_MISSILE, 1 },
 	{ ABILITY_SLEEP, 1 },
 	{ ABILITY_GREASE, 1 }
+	,{ ABILITY_CURE_LIGHT_WOUNDS, 1 }
 };
 
 static_assert(
@@ -457,12 +459,13 @@ ScrollLearnResult learnSpellFromScroll(
 	if (knowsAbility(character, abilityID))
 		return SCROLL_LEARN_ALREADY_KNOWN;
 
+	if (character.magic.learning.active)
+		return SCROLL_LEARN_CANNOT_LEARN;
+
 	if (character.magic.knownAbilityCount >= MAX_KNOWN_ABILITIES)
 		return SCROLL_LEARN_SPELLBOOK_FULL;
 
-	return learnAbility(character, abilityID)
-		? SCROLL_LEARN_SUCCESS
-		: SCROLL_LEARN_CANNOT_LEARN;
+	return SCROLL_LEARN_SUCCESS;
 }
 
 ScrollLearnResult useSpellScroll(
@@ -480,16 +483,50 @@ ScrollLearnResult useSpellScroll(
 	if (result != SCROLL_LEARN_SUCCESS)
 		return result;
 
-	// Learning and consumption are one transaction. The exact selected
-	// ItemInstance is removed; if inventory mutation unexpectedly fails, undo
-	// the just-learned ability so neither half of the operation remains.
+	// Study and consumption are one transaction.  The spell is deliberately
+	// not known until the required town rests have completed.
 	if (!removeItem(character, scrollItem, 1))
-	{
-		forgetAbility(character, scroll->taughtAbility);
 		return SCROLL_LEARN_INVALID_SCROLL;
-	}
+
+	const Ability* ability = getAbility(scroll->taughtAbility);
+	character.magic.learning.active = true;
+	character.magic.learning.ability = scroll->taughtAbility;
+	character.magic.learning.restsRemaining = ability != nullptr && ability->level > 0
+		? ability->level : 1;
 
 	return SCROLL_LEARN_SUCCESS;
+}
+
+bool advanceSpellLearning(Character& character, bool& completed)
+{
+	completed = false;
+	SpellLearningData& learning = character.magic.learning;
+	if (!learning.active || !isValidAbility(learning.ability))
+		return false;
+
+	if (learning.restsRemaining > 0)
+		learning.restsRemaining--;
+
+	if (learning.restsRemaining > 0)
+		return true;
+
+    AbilityID completedAbility = ABILITY_NONE;
+    completed = completeSpellLearning(character, completedAbility);
+    return true;
+}
+
+bool completeSpellLearning(Character& character, AbilityID& completedAbility)
+{
+	completedAbility = ABILITY_NONE;
+	SpellLearningData& learning = character.magic.learning;
+	if (character.characterClass != CLASS_WIZARD || !learning.active ||
+		!isValidAbility(learning.ability))
+		return false;
+
+	const AbilityID ability = learning.ability;
+	learning = {};
+	completedAbility = ability;
+	return knowsAbility(character, ability) || learnAbility(character, ability);
 }
 
 ManaPotionUseResult useManaPotion(

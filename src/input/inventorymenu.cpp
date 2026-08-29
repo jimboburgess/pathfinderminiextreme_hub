@@ -40,6 +40,9 @@ struct InventoryMenuState
     uint8_t cursorIndex = 0;
     uint8_t firstVisibleIndex = 0;
     char status[64] = "";
+    bool choosingScrollAction = false;
+    ItemInstance scrollItem = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    uint8_t scrollAction = 0;
 };
 
 InventoryMenuState inventoryMenu;
@@ -357,6 +360,64 @@ bool useSelectedRation(Character& character)
     return true;
 }
 
+bool canCastScroll(const Character& character, const Scroll& scroll)
+{
+    const Ability* ability = getAbility(scroll.taughtAbility);
+    return ability != nullptr &&
+           ((character.characterClass == CLASS_WIZARD && ability->type == ABILITY_ARCANE) ||
+            (character.characterClass == CLASS_CLERIC && ability->type == ABILITY_DIVINE));
+}
+
+void beginScrollAction(const ItemInstance& item)
+{
+    const Scroll* scroll = getScroll(item.itemID);
+    if (inventoryMenu.character == nullptr || scroll == nullptr ||
+        !canCastScroll(*inventoryMenu.character, *scroll))
+    {
+        setInventoryStatus("Cannot cast that scroll.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    inventoryMenu.choosingScrollAction = true;
+    inventoryMenu.scrollItem = item;
+    inventoryMenu.scrollAction = 0;
+    needsRedraw = true;
+}
+
+void confirmScrollAction()
+{
+    const Scroll* scroll = getScroll(inventoryMenu.scrollItem.itemID);
+    Character* character = inventoryMenu.character;
+    if (scroll == nullptr || character == nullptr)
+        return;
+
+    const Ability* ability = getAbility(scroll->taughtAbility);
+    const bool canLearn = character->characterClass == CLASS_WIZARD &&
+                          ability != nullptr && ability->type == ABILITY_ARCANE &&
+                          !knowsAbility(*character, scroll->taughtAbility);
+    if (inventoryMenu.scrollAction == 1 && canLearn)
+    {
+        ScrollLearnResult result = useSpellScroll(*character, inventoryMenu.scrollItem);
+        if (result == SCROLL_LEARN_SUCCESS)
+        {
+            char message[64];
+            snprintf(message, sizeof(message), "Studying %s.", ability->name);
+            setInventoryStatus(message);
+            inventoryMenu.choosingScrollAction = false;
+            return;
+        }
+        setInventoryStatus(character->magic.learning.active ? "Already studying a spell." : "Cannot study that spell.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    const ItemInstance scrollItem = inventoryMenu.scrollItem;
+    inventoryMenu.choosingScrollAction = false;
+    closeInventoryMenu();
+    beginPlayerScrollAbility(scroll->taughtAbility, scrollItem);
+}
+
 void useSelectedPlayerItem()
 {
     if (inventoryMenu.character == nullptr)
@@ -406,47 +467,7 @@ void useSelectedPlayerItem()
 
     if (item != nullptr && item->type == ITEMTYPE_SCROLL)
     {
-        const Scroll* scroll = getScroll(slot->item.itemID);
-        const AbilityID taughtAbility = scroll != nullptr
-            ? scroll->taughtAbility
-            : ABILITY_NONE;
-        const char* spellName = getAbilityName(taughtAbility);
-        ScrollLearnResult result = useSpellScroll(
-            *inventoryMenu.character, slot->item);
-        char message[64];
-
-        switch (result)
-        {
-            case SCROLL_LEARN_SUCCESS:
-                snprintf(message, sizeof(message), "Learned %s!", spellName);
-                playSound(SoundEffect::ITEM_PICKUP);
-                setInventoryStatus(message);
-                closeInventoryMenu();
-                return;
-
-            case SCROLL_LEARN_ALREADY_KNOWN:
-                snprintf(message, sizeof(message),
-                         "You already know %s.", spellName);
-                break;
-
-            case SCROLL_LEARN_NOT_ARCANE_CASTER:
-                snprintf(message, sizeof(message),
-                         "Only Wizards can learn this spell.");
-                break;
-
-            case SCROLL_LEARN_SPELLBOOK_FULL:
-                snprintf(message, sizeof(message), "Spellbook full.");
-                break;
-
-            case SCROLL_LEARN_INVALID_SCROLL:
-            case SCROLL_LEARN_CANNOT_LEARN:
-                snprintf(message, sizeof(message),
-                         "That scroll cannot be learned.");
-                break;
-        }
-
-        playSound(SoundEffect::ERROR);
-        setInventoryStatus(message);
+        beginScrollAction(slot->item);
         return;
     }
 
@@ -697,6 +718,8 @@ void closeInventoryMenu()
     inventoryMenu.corpse = nullptr;
     inventoryMenu.cursorIndex = 0;
     inventoryMenu.firstVisibleIndex = 0;
+    inventoryMenu.choosingScrollAction = false;
+    inventoryMenu.scrollItem = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
     clearInventoryStatus();
 
     suppressMenuInputUntilRelease();
@@ -713,6 +736,38 @@ void handleInventoryMenuButtons()
 {
     if (!inventoryMenu.open)
         return;
+
+    if (inventoryMenu.choosingScrollAction)
+    {
+        const Scroll* scroll = getScroll(inventoryMenu.scrollItem.itemID);
+        const bool canLearn = scroll != nullptr && inventoryMenu.character != nullptr &&
+            inventoryMenu.character->characterClass == CLASS_WIZARD &&
+            !knowsAbility(*inventoryMenu.character, scroll->taughtAbility);
+        EncoderDirection actionDirection = readEncoder();
+        if (actionDirection != ENCODER_NONE)
+        {
+            const uint8_t count = canLearn ? 3 : 2;
+            inventoryMenu.scrollAction = (inventoryMenu.scrollAction +
+                (actionDirection == ENCODER_CLOCKWISE ? 1 : count - 1)) % count;
+            needsRedraw = true;
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        if (buttonAPressed())
+        {
+            if (inventoryMenu.scrollAction == (canLearn ? 2 : 1))
+                inventoryMenu.choosingScrollAction = false;
+            else
+                confirmScrollAction();
+            needsRedraw = true;
+        }
+        if (buttonBPressed())
+        {
+            inventoryMenu.choosingScrollAction = false;
+            needsRedraw = true;
+            playSound(SoundEffect::MENU_BACK);
+        }
+        return;
+    }
 
     if (inventoryMenu.mode == INVENTORY_MENU_LOOT &&
         (!isValidLootCorpse(inventoryMenu.corpse) ||
@@ -827,4 +882,24 @@ void drawInventoryMenu()
     tft.print(inventoryMenu.mode == INVENTORY_MENU_PLAYER ? "A Use" : "A Take");
     tft.setCursor(MENU_X + 140, footerY + 5);
     tft.print("B Back");
+
+    if (inventoryMenu.choosingScrollAction)
+    {
+        const Scroll* scroll = getScroll(inventoryMenu.scrollItem.itemID);
+        const bool canLearn = scroll != nullptr && inventoryMenu.character != nullptr &&
+            inventoryMenu.character->characterClass == CLASS_WIZARD &&
+            !knowsAbility(*inventoryMenu.character, scroll->taughtAbility);
+        const char* choices[3] = { "Cast Scroll", "Learn Spell", "Cancel" };
+        const uint8_t count = canLearn ? 3 : 2;
+        tft.fillRect(MENU_X + 25, MENU_Y + 48, MENU_WIDTH - 50, 72, MENU_HEADER_BG);
+        tft.drawRect(MENU_X + 25, MENU_Y + 48, MENU_WIDTH - 50, 72, MENU_BORDER);
+        tft.setTextSize(1);
+        for (uint8_t i = 0; i < count; i++)
+        {
+            tft.setTextColor(i == inventoryMenu.scrollAction ? MENU_CURSOR : MENU_TEXT);
+            tft.setCursor(MENU_X + 40, MENU_Y + 56 + i * 18);
+            tft.print(i == inventoryMenu.scrollAction ? "> " : "  ");
+            tft.print(canLearn ? choices[i] : (i == 0 ? choices[0] : choices[2]));
+        }
+    }
 }

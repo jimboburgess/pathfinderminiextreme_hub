@@ -1,5 +1,7 @@
 #include "town.h"
 
+#include "characters/items.h"
+
 #include "characters/characters.h"
 #include "data/game.h"
 #include "graphics/messagelog.h"
@@ -89,8 +91,22 @@ void updateTownRest()
         restoreClassAbilityUses(player);
 
         char message[48];
-        snprintf(message, sizeof(message),
-                 "Rest regained %d HP.", regained);
+        const AbilityID studyAbility = player.magic.learning.ability;
+        bool learningCompleted = false;
+        if (advanceSpellLearning(player, learningCompleted))
+        {
+            const char* spellName = learningCompleted
+                ? getAbilityName(studyAbility)
+                : getAbilityName(player.magic.learning.ability);
+            if (learningCompleted)
+                snprintf(message, sizeof(message), "Learned %s!", spellName);
+            else
+                snprintf(message, sizeof(message), "Studying %s: %u left",
+                         spellName,
+                         static_cast<unsigned>(player.magic.learning.restsRemaining));
+        }
+        else
+            snprintf(message, sizeof(message), "Rest regained %d HP.", regained);
         setGameMessage(message);
 
         restResultShown = true;

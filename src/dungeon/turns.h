@@ -20,6 +20,7 @@ struct TurnState
 {
     MonsterTurnState monsterState = MONSTER_START;
     uint8_t movementRemaining;
+    uint8_t bonusAttacksRemaining = 0;
     bool standardActionUsed;
     bool turnActive;
     bool fullDefense;
