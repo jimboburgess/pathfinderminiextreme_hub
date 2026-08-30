@@ -55,11 +55,33 @@ bool canPlaceHealingFountainAt(const DungeonRoom& room, int x, int y)
 
     return true;
 }
+
+void activateHealingFountainAt(DungeonRoom& room, int x, int y)
+{
+    room.fountain.x = static_cast<int8_t>(x);
+    room.fountain.y = static_cast<int8_t>(y);
+    room.fountain.active = true;
+    room.fountain.used = false;
+    for (uint8_t offsetY = 0; offsetY < HEALING_FOUNTAIN_HEIGHT; offsetY++)
+    {
+        for (uint8_t offsetX = 0; offsetX < HEALING_FOUNTAIN_WIDTH; offsetX++)
+            room.map.tiles[y + offsetY][x + offsetX] = TILE_FOUNTAIN;
+    }
+}
 }
 
 bool placeHealingFountain(DungeonRoom& room)
 {
     room.fountain = HealingFountain{};
+
+    if (room.type == ROOM_ENTRANCE &&
+        canPlaceHealingFountainAt(
+            room, ENTRANCE_FOUNTAIN_X, ENTRANCE_FOUNTAIN_Y))
+    {
+        activateHealingFountainAt(
+            room, ENTRANCE_FOUNTAIN_X, ENTRANCE_FOUNTAIN_Y);
+        return true;
+    }
 
     // Search from the rear of the room first, retaining the centered entrance
     // and its eastward exit as open circulation space when possible.
@@ -70,17 +92,7 @@ bool placeHealingFountain(DungeonRoom& room)
             if (!canPlaceHealingFountainAt(room, x, y))
                 continue;
 
-            room.fountain.x = static_cast<int8_t>(x);
-            room.fountain.y = static_cast<int8_t>(y);
-            room.fountain.active = true;
-            room.fountain.used = false;
-            for (uint8_t offsetY = 0; offsetY < HEALING_FOUNTAIN_HEIGHT; offsetY++)
-            {
-                for (uint8_t offsetX = 0; offsetX < HEALING_FOUNTAIN_WIDTH; offsetX++)
-                {
-                    room.map.tiles[y + offsetY][x + offsetX] = TILE_FOUNTAIN;
-                }
-            }
+            activateHealingFountainAt(room, x, y);
             return true;
         }
     }

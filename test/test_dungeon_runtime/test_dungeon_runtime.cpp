@@ -666,6 +666,8 @@ void test_entrance_fountain_is_one_persistent_multi_tile_healing_object()
 
     TEST_ASSERT_TRUE(fountain.active);
     TEST_ASSERT_FALSE(fountain.used);
+    TEST_ASSERT_EQUAL_INT8(ENTRANCE_FOUNTAIN_X, fountain.x);
+    TEST_ASSERT_EQUAL_INT8(ENTRANCE_FOUNTAIN_Y, fountain.y);
     for (uint8_t y = 0; y < HEALING_FOUNTAIN_HEIGHT; y++)
     {
         for (uint8_t x = 0; x < HEALING_FOUNTAIN_WIDTH; x++)

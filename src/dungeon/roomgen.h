@@ -7,6 +7,23 @@
 
 #include "dungeon.h"
 
+// Fixed ROOM_ENTRANCE geometry. The main passage is four tiles high, while
+// the paired alcoves remain off the critical left-to-right route.
+constexpr uint8_t ENTRANCE_HALL_X = 1;
+constexpr uint8_t ENTRANCE_HALL_Y = 5;
+constexpr uint8_t ENTRANCE_HALL_WIDTH = 13;
+constexpr uint8_t ENTRANCE_HALL_HEIGHT = 4;
+constexpr uint8_t ENTRANCE_ALCOVE_X = 8;
+constexpr uint8_t ENTRANCE_ALCOVE_WIDTH = 4;
+constexpr uint8_t ENTRANCE_ALCOVE_HEIGHT = 4;
+constexpr uint8_t ENTRANCE_FOUNTAIN_ALCOVE_Y = 1;
+constexpr uint8_t ENTRANCE_SERVICE_ALCOVE_Y = 9;
+constexpr uint8_t ENTRANCE_FOUNTAIN_X = 9;
+constexpr uint8_t ENTRANCE_FOUNTAIN_Y = 1;
+constexpr uint8_t ENTRANCE_PLAYER_START_X = 2;
+constexpr uint8_t ENTRANCE_PLAYER_START_Y = 6;
+constexpr uint8_t ENTRANCE_EAST_CONNECTION_Y = 6;
+
 void clearRoomConnections(DungeonRoom& room);
 bool addRoomConnection(
     DungeonRoom& room,

@@ -45,7 +45,8 @@ enum RoomShape : uint8_t {
     SHAPE_SMALL_RECTANGLE,
     SHAPE_L,
     SHAPE_WINDING_CORRIDOR,
-    SHAPE_CAVE
+    SHAPE_CAVE,
+    SHAPE_ENTRANCE
   };
 
 enum RoomEntry {

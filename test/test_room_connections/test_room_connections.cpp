@@ -948,36 +948,71 @@ void test_invalid_cave_request_uses_existing_full_room_fallback()
         countTiles(room, TILE_FLOOR));
 }
 
-void test_cave_entrance_uses_connected_floor_and_stays_clear()
+void test_entrance_uses_fixed_hallway_and_paired_alcoves()
 {
-    for (uint8_t sample = 0; sample < 16; sample++)
+    DungeonRoom room{};
+    room.type = ROOM_ENTRANCE;
+    room.shape = SHAPE_CAVE; // Entrance generation must ignore random shapes.
+    room.east = 1;
+
+    populateRoomConnections(room);
+    generateRoom(room);
+
+    TEST_ASSERT_EQUAL(SHAPE_ENTRANCE, room.shape);
+    TEST_ASSERT_EQUAL_UINT8(1, room.connectionCount);
+    const RoomConnection* east = getRoomConnection(room, DIR_EAST);
+    TEST_ASSERT_NOT_NULL(east);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 1, east->x);
+    TEST_ASSERT_EQUAL_UINT8(ENTRANCE_EAST_CONNECTION_Y, east->y);
+    TEST_ASSERT_EQUAL(
+        TILE_DOOR,
+        room.map.tiles[ENTRANCE_EAST_CONNECTION_Y][ROOM_SIZE - 1]);
+
+    for (uint8_t y = ENTRANCE_HALL_Y;
+         y < ENTRANCE_HALL_Y + ENTRANCE_HALL_HEIGHT;
+         y++)
     {
-        DungeonRoom room{};
-        room.type = ROOM_ENTRANCE;
-        room.shape = SHAPE_CAVE;
-        TEST_ASSERT_TRUE(addRoomConnection(
-            room,
-            DIR_EAST,
-            ROOM_SIZE - 1,
-            static_cast<uint8_t>(
-                ROOM_CONNECTION_MIN + sample %
-                (ROOM_CONNECTION_MAX - ROOM_CONNECTION_MIN + 1))));
-
-        generateRoom(room);
-
-        TEST_ASSERT_EQUAL(SHAPE_CAVE, room.shape);
-        TEST_ASSERT_TRUE(validateRoomConnectivity(room));
-        TEST_ASSERT_EQUAL_UINT16(
-            0,
-            countTiles(room, TILE_GIANT_SPIDER_START));
-
-        uint8_t startX = 0;
-        uint8_t startY = 0;
-        TEST_ASSERT_TRUE(getRoomEntryPosition(
-            room, ENTRY_START, startX, startY));
-        TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[startY][startX]);
-        TEST_ASSERT_TRUE(isReservedContentTile(room, startX, startY));
+        for (uint8_t x = ENTRANCE_HALL_X;
+             x < ENTRANCE_HALL_X + ENTRANCE_HALL_WIDTH;
+             x++)
+            TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[y][x]);
     }
+
+    for (uint8_t y = 0; y < ENTRANCE_ALCOVE_HEIGHT; y++)
+    {
+        for (uint8_t x = 0; x < ENTRANCE_ALCOVE_WIDTH; x++)
+        {
+            TEST_ASSERT_EQUAL(
+                TILE_FLOOR,
+                room.map.tiles[ENTRANCE_FOUNTAIN_ALCOVE_Y + y]
+                              [ENTRANCE_ALCOVE_X + x]);
+            TEST_ASSERT_EQUAL(
+                TILE_FLOOR,
+                room.map.tiles[ENTRANCE_SERVICE_ALCOVE_Y + y]
+                              [ENTRANCE_ALCOVE_X + x]);
+        }
+    }
+
+    uint8_t startX = 0;
+    uint8_t startY = 0;
+    TEST_ASSERT_TRUE(getRoomEntryPosition(
+        room, ENTRY_START, startX, startY));
+    TEST_ASSERT_EQUAL_UINT8(ENTRANCE_PLAYER_START_X, startX);
+    TEST_ASSERT_EQUAL_UINT8(ENTRANCE_PLAYER_START_Y, startY);
+    TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[startY][startX]);
+    TEST_ASSERT_TRUE(isReservedContentTile(room, startX, startY));
+
+    uint8_t exitX = 0;
+    uint8_t exitY = 0;
+    TEST_ASSERT_TRUE(getRoomEntryPosition(
+        room, ENTRY_EAST, exitX, exitY));
+    TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[exitY][exitX]);
+    TEST_ASSERT_TRUE(validateRoomConnectivity(room));
+
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(room, TILE_ENEMY_START));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(room, TILE_CHEST_SPAWN));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(room, TILE_LOOT_SPAWN));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(room, TILE_TRAP));
 }
 
 void test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint()
@@ -1065,7 +1100,7 @@ void setup()
     RUN_TEST(test_caves_support_one_through_four_connected_entries);
     RUN_TEST(test_cave_choke_validator_allows_a_short_neck_only);
     RUN_TEST(test_invalid_cave_request_uses_existing_full_room_fallback);
-    RUN_TEST(test_cave_entrance_uses_connected_floor_and_stays_clear);
+    RUN_TEST(test_entrance_uses_fixed_hallway_and_paired_alcoves);
     RUN_TEST(test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint);
     UNITY_END();
 }

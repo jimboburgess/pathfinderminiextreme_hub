@@ -88,7 +88,7 @@ static bool placeContentMarkerNear(
     int preferredY,
     uint8_t width = 1,
     uint8_t height = 1);
-static void generateEntrance(DungeonRoom &room);
+static bool generateEntrance(DungeonRoom &room);
 static void generateCombat(DungeonRoom &room);
 static void generatePuzzle(DungeonRoom &room);
 static void generateAmbush(DungeonRoom &room);
@@ -244,6 +244,19 @@ RoomShape randomProductionRoomShape(const DungeonRoom &room) {
 void populateRoomConnections(DungeonRoom &room) {
   clearRoomConnections(room);
 
+  if (room.type == ROOM_ENTRANCE) {
+    // The fixed entrance is deliberately oriented west-to-east. Its stored
+    // RoomConnection remains the authoritative transition point.
+    if (room.east != NO_ROOM) {
+      addRoomConnection(
+          room,
+          DIR_EAST,
+          ROOM_SIZE - 1,
+          ENTRANCE_EAST_CONNECTION_Y);
+    }
+    return;
+  }
+
   if (room.north != NO_ROOM)
     addRoomConnection(
         room, DIR_NORTH, randomRoomConnectionOffset(), 0);
@@ -312,6 +325,14 @@ bool getRoomEntryPosition(
     uint8_t &x,
     uint8_t &y) {
   if (entry == ENTRY_START) {
+    if (room.type == ROOM_ENTRANCE &&
+        room.map.tiles[ENTRANCE_PLAYER_START_Y]
+                      [ENTRANCE_PLAYER_START_X] == TILE_FLOOR) {
+      x = ENTRANCE_PLAYER_START_X;
+      y = ENTRANCE_PLAYER_START_Y;
+      return true;
+    }
+
     const uint8_t center = ROOM_SIZE / 2;
 
     if (room.map.tiles[center][center] == TILE_FLOOR) {
@@ -1776,10 +1797,47 @@ static bool placeContentMarkerNear(
   return true;
 }
 
-static void generateEntrance(DungeonRoom &room) {
-  // The entrance remains clear. The temporary Giant Spider encounter is
-  // placed in a deeper room after all room content has been generated.
-  (void)room;
+static bool generateEntrance(DungeonRoom &room) {
+  fillRoom(room, TILE_WALL);
+
+  if (!carveRectangle(
+          room,
+          ENTRANCE_HALL_X,
+          ENTRANCE_HALL_Y,
+          ENTRANCE_HALL_WIDTH,
+          ENTRANCE_HALL_HEIGHT) ||
+      !carveRectangle(
+          room,
+          ENTRANCE_ALCOVE_X,
+          ENTRANCE_FOUNTAIN_ALCOVE_Y,
+          ENTRANCE_ALCOVE_WIDTH,
+          ENTRANCE_ALCOVE_HEIGHT) ||
+      !carveRectangle(
+          room,
+          ENTRANCE_ALCOVE_X,
+          ENTRANCE_SERVICE_ALCOVE_Y,
+          ENTRANCE_ALCOVE_WIDTH,
+          ENTRANCE_ALCOVE_HEIGHT)) {
+    return false;
+  }
+
+  uint8_t count = room.connectionCount;
+  if (count > MAX_ROOM_CONNECTIONS)
+    count = MAX_ROOM_CONNECTIONS;
+
+  for (uint8_t i = 0; i < count; i++) {
+    const RoomConnection &connection = room.connections[i];
+    if (!connectRoomConnectionToFloor(
+            room,
+            connection,
+            ROOM_SIZE - 2,
+            ENTRANCE_EAST_CONNECTION_Y)) {
+      return false;
+    }
+  }
+
+  addDoors(room);
+  return validateRoomConnectivity(room);
 }
 
 bool placeGiantSpiderEncounter(DungeonRoom &room) {
@@ -1842,6 +1900,12 @@ static void generateTreasure(DungeonRoom &room) {
 
 
 void generateRoom(DungeonRoom &room) {
+  if (room.type == ROOM_ENTRANCE) {
+    room.shape = SHAPE_ENTRANCE;
+    generateEntrance(room);
+    return;
+  }
+
   if (!buildRoomGeometry(room, room.shape)) {
     // Keep the already-generated connection coordinates, but replace any
     // unusable geometry with the always-traversable full room.
@@ -1852,10 +1916,6 @@ void generateRoom(DungeonRoom &room) {
   }
 
   switch (room.type) {
-    case ROOM_ENTRANCE:
-      generateEntrance(room);
-      break;
-
     case ROOM_COMBAT:
       generateCombat(room);
       break;

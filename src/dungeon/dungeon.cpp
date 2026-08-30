@@ -394,6 +394,7 @@ void enterDungeon()
         previousPlayerPosition.y = player->y;
     }
 
+    moveDirection = DIR_EAST;
     previousMoveDirection = moveDirection;
 
     backgroundNeedsRedraw = true;
@@ -471,8 +472,9 @@ void generateDungeon(Dungeon& dungeon)
     for (int i = 0; i < MAX_ROOMS; i++)
     {
         populateRoomConnections(dungeon.rooms[i]);
-        dungeon.rooms[i].shape =
-            randomProductionRoomShape(dungeon.rooms[i]);
+        dungeon.rooms[i].shape = dungeon.rooms[i].type == ROOM_ENTRANCE
+            ? SHAPE_ENTRANCE
+            : randomProductionRoomShape(dungeon.rooms[i]);
         generateRoom(dungeon.rooms[i]);
 
         if (i == 0)
@@ -483,10 +485,13 @@ void generateDungeon(Dungeon& dungeon)
         // TILE_TRAP marker and may add harmless visual-clue dressing.
         const bool allowRandomTrap =
             i > 0 && i < BOSS_ROOM_INDEX;
-        populateDungeonRoomFeatures(
-            dungeon.rooms[i],
-            player.level > 0 ? player.level : 1,
-            allowRandomTrap);
+        if (i > 0)
+        {
+            populateDungeonRoomFeatures(
+                dungeon.rooms[i],
+                player.level > 0 ? player.level : 1,
+                allowRandomTrap);
+        }
     }
 
     dungeon.runActive = true;
