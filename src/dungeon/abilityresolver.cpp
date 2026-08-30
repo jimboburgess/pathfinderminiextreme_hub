@@ -19,8 +19,15 @@ enum SupportedEffectKind : uint8_t
     SUPPORTED_EFFECT_NONE,
     SUPPORTED_EFFECT_DAMAGE,
     SUPPORTED_EFFECT_HEALING,
-    SUPPORTED_EFFECT_CONDITION
+    SUPPORTED_EFFECT_CONDITION,
+    SUPPORTED_EFFECT_ENERGY_RESISTANCE
 };
+
+bool isSelectableResistanceType(DamageType type)
+{
+    return type == DAMAGE_FIRE || type == DAMAGE_COLD ||
+           type == DAMAGE_ELECTRIC || type == DAMAGE_ACID;
+}
 
 bool isCombatEntityType(EntityType type)
 {
@@ -34,6 +41,15 @@ bool areOpposingTeams(const Entity& caster, const Entity& target)
     return caster.character.team != TEAM_NEUTRAL &&
            target.character.team != TEAM_NEUTRAL &&
            caster.character.team != target.character.team;
+}
+
+static const AbilityEffectData* getCreatureTypeEnergyEffect(
+    const Ability& ability)
+{
+    for (uint8_t i = 0; i < ability.effectCount; i++)
+        if (ability.effects[i].creatureTypeEnergy)
+            return &ability.effects[i];
+    return nullptr;
 }
 
 bool hasSupportedDelivery(const Ability& ability)
@@ -285,7 +301,13 @@ SupportedEffectKind getSupportedEffectKind(const Ability& ability)
         if (effect.baseValue < 0 || effect.valuePerLevel < 0)
             return SUPPORTED_EFFECT_NONE;
 
-        if (isModifierEffect(effect.effect) &&
+        if (effect.effect == EFFECT_DAMAGE_RESISTANCE)
+        {
+            if (effect.damageType != DAMAGE_NONE || effect.duration <= 0)
+                return SUPPORTED_EFFECT_NONE;
+            effectKind = SUPPORTED_EFFECT_ENERGY_RESISTANCE;
+        }
+        else if (isModifierEffect(effect.effect) &&
             getGenericBuffCondition(effect) != CONDITION_NONE)
         {
             if (!isValidConditionType(getGenericBuffCondition(effect)) ||
@@ -508,6 +530,30 @@ uint8_t collectRadiusAreaTiles(
 }
 }
 
+EnergyInteraction getEnergyInteraction(
+    DamageType energyType,
+    CreatureType creatureType)
+{
+    const bool undead = isUndeadCreatureType(creatureType);
+    if (energyType == DAMAGE_POSITIVE)
+        return undead ? EnergyInteraction::DAMAGE : EnergyInteraction::HEAL;
+    if (energyType == DAMAGE_NEGATIVE)
+        return undead ? EnergyInteraction::HEAL : EnergyInteraction::DAMAGE;
+    return EnergyInteraction::NONE;
+}
+
+bool isAbilityEffectHostileToTarget(
+    const Ability& ability,
+    const Character& target)
+{
+    const AbilityEffectData* energy = getCreatureTypeEnergyEffect(ability);
+    if (energy != nullptr)
+        return getEnergyInteraction(
+                   energy->damageType, target.creatureType) ==
+               EnergyInteraction::DAMAGE;
+    return ability.target == TARGET_ENEMY;
+}
+
 bool isAbilitySupported(AbilityID abilityID)
 {
     const Ability* ability = getAbility(abilityID);
@@ -521,6 +567,17 @@ bool isAbilitySupported(AbilityID abilityID)
 
     if (abilityID == ABILITY_TURN_UNDEAD)
         return true;
+
+    // Protection from Energy and physical damage reduction remain deferred;
+    // only the two tradition rows for Resist Energy currently request the
+    // runtime elemental selection supported by this pass.
+    if (getSupportedEffectKind(*ability) ==
+            SUPPORTED_EFFECT_ENERGY_RESISTANCE &&
+        abilityID != ABILITY_RESIST_ENERGY &&
+        abilityID != ABILITY_RESIST_ENERGY_ARCANE)
+    {
+        return false;
+    }
 
     return isEntityAbilitySupported(*ability) ||
            hasSupportedMapEffect(*ability) ||
@@ -703,7 +760,8 @@ AbilityResult validateAbility(
     const Entity& caster,
     const Entity* target,
     AbilityID abilityID,
-    AbilityCastSource source)
+    AbilityCastSource source,
+    DamageType selectedDamageType)
 {
     const Ability* ability = getAbility(abilityID);
 
@@ -714,32 +772,49 @@ AbilityResult validateAbility(
         !isEntityAbilitySupported(*ability))
         return ABILITY_RESULT_UNSUPPORTED;
 
+    if (getSupportedEffectKind(*ability) ==
+            SUPPORTED_EFFECT_ENERGY_RESISTANCE &&
+        !isSelectableResistanceType(selectedDamageType))
+    {
+        return ABILITY_RESULT_INVALID_TARGET;
+    }
+
     if (!isValidCaster(caster))
     {
         return ABILITY_RESULT_INVALID_CASTER;
     }
 
-    if (caster.turn.standardActionUsed)
+    if (combat.active && caster.turn.standardActionUsed)
         return ABILITY_RESULT_NO_STANDARD_ACTION;
 
     const Entity* resolvedTarget = getResolvedTarget(
         caster, target, *ability);
 
+    const bool canRecoverUnconsciousTarget =
+        resolvedTarget != nullptr &&
+        resolvedTarget->character.state == STATE_UNCONSCIOUS &&
+        getSupportedEffectKind(*ability) == SUPPORTED_EFFECT_HEALING;
+
     if (resolvedTarget == nullptr || !resolvedTarget->active ||
         !isCombatEntityType(resolvedTarget->type) ||
-        resolvedTarget->character.state != STATE_ALIVE)
+        (resolvedTarget->character.state != STATE_ALIVE &&
+         !canRecoverUnconsciousTarget))
     {
         return ABILITY_RESULT_INVALID_TARGET;
     }
 
-    if (ability->target == TARGET_ENEMY &&
-        (resolvedTarget == &caster ||
-         !areOpposingTeams(caster, *resolvedTarget)))
+    const bool hostileToTarget =
+        isAbilityEffectHostileToTarget(*ability, resolvedTarget->character);
+    if ((hostileToTarget &&
+         (resolvedTarget == &caster ||
+          !areOpposingTeams(caster, *resolvedTarget))) ||
+        (!hostileToTarget &&
+         resolvedTarget->character.team != caster.character.team))
     {
         return ABILITY_RESULT_INVALID_TARGET;
     }
 
-    if (ability->target == TARGET_ENEMY)
+    if (hostileToTarget)
     {
         if (!canSee(caster))
             return ABILITY_RESULT_NO_LINE_OF_SIGHT;
@@ -755,6 +830,16 @@ AbilityResult validateAbility(
         {
             return ABILITY_RESULT_NO_LINE_OF_SIGHT;
         }
+    }
+
+    if (ability->delivery == DELIVERY_TOUCH &&
+        resolvedTarget != &caster)
+    {
+        if (getEntityGridDistance(caster, *resolvedTarget) > 1)
+            return ABILITY_RESULT_OUT_OF_RANGE;
+        if (!hasLineOfSightBetweenFootprintsAt(
+                caster, caster.x, caster.y, *resolvedTarget))
+            return ABILITY_RESULT_NO_LINE_OF_SIGHT;
     }
 
     const AbilityEffectData* conditionEffect =
@@ -778,10 +863,12 @@ AbilityResolution resolveAbility(
     Entity& caster,
     Entity* target,
     AbilityID abilityID,
-    AbilityCastSource source)
+    AbilityCastSource source,
+    DamageType selectedDamageType)
 {
     AbilityResolution resolution;
-    resolution.result = validateAbility(caster, target, abilityID, source);
+    resolution.result = validateAbility(
+        caster, target, abilityID, source, selectedDamageType);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
         return resolution;
@@ -791,8 +878,100 @@ AbilityResolution resolveAbility(
         ? &caster
         : target;
     SupportedEffectKind effectKind = getSupportedEffectKind(*ability);
-    resolution.savingThrow = resolveAbilitySavingThrow(
-        caster, *resolvedTarget, *ability);
+    const AbilityEffectData* creatureEnergy =
+        getCreatureTypeEnergyEffect(*ability);
+    const EnergyInteraction energyInteraction = creatureEnergy != nullptr
+        ? getEnergyInteraction(creatureEnergy->damageType,
+                               resolvedTarget->character.creatureType)
+        : EnergyInteraction::NONE;
+    const bool hostileToTarget =
+        isAbilityEffectHostileToTarget(*ability, resolvedTarget->character);
+
+    const bool requiresRangedTouchAttack =
+        ability->delivery == DELIVERY_RANGED_TOUCH;
+    const bool requiresMeleeTouchAttack =
+        ability->delivery == DELIVERY_TOUCH &&
+        hostileToTarget;
+
+    if (requiresRangedTouchAttack || requiresMeleeTouchAttack)
+    {
+        resolution.attackRoll.required = true;
+        resolution.attackRoll.roll = rollDie(20);
+        resolution.attackRoll.bonus = requiresRangedTouchAttack
+            ? getRangedTouchAttackBonus(caster.character)
+            : getMeleeTouchAttackBonus(caster.character);
+        resolution.attackRoll.total = resolution.attackRoll.roll +
+                                      resolution.attackRoll.bonus;
+        resolution.attackRoll.targetAC =
+            getTouchArmorClass(resolvedTarget->character);
+        resolution.attackRoll.hit = resolution.attackRoll.roll == 20 ||
+            (resolution.attackRoll.roll != 1 &&
+             resolution.attackRoll.total >= resolution.attackRoll.targetAC);
+
+        if (!resolution.attackRoll.hit)
+        {
+            // Confirmation has committed the spell even though the attack
+            // missed. Pay its resource/action cost, but return before saves,
+            // damage, conditions, or recurring effects can be applied.
+            payAbilityCost(caster.character, *ability, source);
+            if (combat.active)
+                caster.turn.standardActionUsed = true;
+            return resolution;
+        }
+    }
+
+    if (hostileToTarget)
+        resolution.savingThrow = resolveAbilitySavingThrow(
+            caster, *resolvedTarget, *ability);
+
+    if (energyInteraction != EnergyInteraction::NONE)
+    {
+        int amount = 0;
+        for (uint8_t i = 0; i < ability->effectCount; i++)
+            amount += getEffectDamage(ability->effects[i], caster);
+
+        if (energyInteraction == EnergyInteraction::DAMAGE)
+        {
+            if (resolution.savingThrow.result == SAVE_RESULT_SUCCESS)
+            {
+                if (ability->saveEffect == SAVE_EFFECT_NEGATES)
+                    amount = 0;
+                else if (ability->saveEffect == SAVE_EFFECT_HALF)
+                    amount /= 2;
+            }
+
+            if (amount > 0)
+            {
+                CombatDamageResult damageResult = applyCombatDamage(
+                    *resolvedTarget, amount, creatureEnergy->damageType);
+                if (!damageResult.applied)
+                {
+                    resolution.result = ABILITY_RESULT_INVALID_TARGET;
+                    return resolution;
+                }
+                resolution.damage = amount;
+                resolution.targetDefeated = damageResult.defeated;
+                resolution.levelReached = damageResult.levelReached;
+                playAbilityImpactFlash(
+                    IMPACT_DAMAGE, creatureEnergy->damageType,
+                    resolvedTarget->x, resolvedTarget->y);
+            }
+        }
+        else
+        {
+            resolution.healing = healCharacter(
+                resolvedTarget->character, amount);
+            if (resolution.healing > 0)
+                playAbilityImpactFlash(
+                    IMPACT_HEAL, creatureEnergy->damageType,
+                    resolvedTarget->x, resolvedTarget->y);
+        }
+
+        payAbilityCost(caster.character, *ability, source);
+        if (combat.active)
+            caster.turn.standardActionUsed = true;
+        return resolution;
+    }
 
     if (hasTargetedTimedDamageProfile(*ability))
     {
@@ -812,6 +991,8 @@ AbilityResolution resolveAbility(
                 resolution.damage += damage;
                 resolution.targetDefeated = damageResult.defeated;
                 resolution.levelReached = damageResult.levelReached;
+                playAbilityImpactFlash(IMPACT_DAMAGE, effect.damageType,
+                                       resolvedTarget->x, resolvedTarget->y);
             }
             else if (isTimedDamageEffect(effect.effect))
             {
@@ -829,7 +1010,8 @@ AbilityResolution resolveAbility(
             }
         }
         payAbilityCost(caster.character, *ability, source);
-        caster.turn.standardActionUsed = true;
+        if (combat.active)
+            caster.turn.standardActionUsed = true;
         return resolution;
     }
 
@@ -841,7 +1023,7 @@ AbilityResolution resolveAbility(
         int damage = 0;
 
         for (uint8_t i = 0; i < ability->effectCount; i++)
-            damage += getEffectAmount(ability->effects[i], caster);
+            damage += getEffectDamage(ability->effects[i], caster);
 
         CombatDamageResult damageResult =
             applyCombatDamage(*resolvedTarget, damage,
@@ -856,6 +1038,8 @@ AbilityResolution resolveAbility(
         resolution.damage = damage;
         resolution.targetDefeated = damageResult.defeated;
         resolution.levelReached = damageResult.levelReached;
+        playAbilityImpactFlash(IMPACT_DAMAGE, ability->effects[0].damageType,
+                               resolvedTarget->x, resolvedTarget->y);
     }
     else if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
              effectKind == SUPPORTED_EFFECT_HEALING)
@@ -867,6 +1051,9 @@ AbilityResolution resolveAbility(
 
         resolution.healing = healCharacter(
             resolvedTarget->character, healing);
+        if (resolution.healing > 0)
+            playAbilityImpactFlash(IMPACT_HEAL, DAMAGE_NONE,
+                                   resolvedTarget->x, resolvedTarget->y);
     }
     else if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
              effectKind == SUPPORTED_EFFECT_CONDITION)
@@ -895,14 +1082,48 @@ AbilityResolution resolveAbility(
 
         resolution.conditionApplied = conditionType;
         resolution.conditionDuration = duration;
+        playAbilityImpactFlash(IMPACT_BUFF, DAMAGE_NONE,
+                               resolvedTarget->x, resolvedTarget->y);
+    }
+    else if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
+             effectKind == SUPPORTED_EFFECT_ENERGY_RESISTANCE)
+    {
+        const AbilityEffectData& effect = ability->effects[0];
+        const int amount = getEnergyResistanceAmountForCasterLevel(
+            caster.character.level);
+        if (!addEnergyResistance(
+                resolvedTarget->character,
+                static_cast<uint8_t>(selectedDamageType),
+                amount,
+                effect.duration))
+        {
+            resolution.result = ABILITY_RESULT_CONDITION_LIMIT;
+            return resolution;
+        }
+
+        resolution.resistanceType = selectedDamageType;
+        resolution.resistanceAmount = amount;
+        resolution.conditionDuration = effect.duration;
+        playAbilityImpactFlash(IMPACT_BUFF, DAMAGE_NONE,
+                               resolvedTarget->x, resolvedTarget->y);
     }
 
     // Resource and action costs occur only after all validation and effect
     // application have succeeded.
     payAbilityCost(caster.character, *ability, source);
-    caster.turn.standardActionUsed = true;
+    if (combat.active)
+        caster.turn.standardActionUsed = true;
 
     return resolution;
+}
+
+int getEnergyResistanceAmountForCasterLevel(int casterLevel)
+{
+    if (casterLevel >= 11)
+        return 30;
+    if (casterLevel >= 7)
+        return 20;
+    return 10;
 }
 
 AbilityResult validateAbilityAt(
@@ -1006,7 +1227,8 @@ AbilityResolution resolveAbilityAt(
             applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
         }
         payAbilityCost(caster.character, *ability, source);
-        caster.turn.standardActionUsed = true;
+        if (combat.active)
+            caster.turn.standardActionUsed = true;
         return resolution;
     }
     const AbilityEffectData& effect = ability->effects[0];
@@ -1033,6 +1255,8 @@ AbilityResolution resolveAbilityAt(
         return resolution;
     }
 
+    playAbilityImpactFlash(IMPACT_CONDITION, DAMAGE_NONE, targetX, targetY);
+
     resolution.mapEffectCreated = true;
 
     uint8_t entityCount = 0;
@@ -1050,7 +1274,8 @@ AbilityResolution resolveAbilityAt(
     }
 
     payAbilityCost(caster.character, *ability, source);
-    caster.turn.standardActionUsed = true;
+    if (combat.active)
+        caster.turn.standardActionUsed = true;
     return resolution;
 }
 
@@ -1147,7 +1372,8 @@ AbilityResolution resolveAbilityInDirection(
             applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
         }
         payAbilityCost(caster.character, *ability, source);
-        caster.turn.standardActionUsed = true;
+        if (combat.active)
+            caster.turn.standardActionUsed = true;
         return resolution;
     }
 
@@ -1215,7 +1441,8 @@ AbilityResolution resolveAbilityInDirection(
     }
 
     payAbilityCost(caster.character, *ability, source);
-    caster.turn.standardActionUsed = true;
+    if (combat.active)
+        caster.turn.standardActionUsed = true;
     return resolution;
 }
 

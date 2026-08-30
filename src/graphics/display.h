@@ -42,10 +42,20 @@ extern uint8_t dirtyTileCount;
 extern bool backgroundNeedsRedraw;
 
 struct AreaFlashTile { int8_t x; int8_t y; };
+enum AbilityImpactVisual : uint8_t
+{
+    IMPACT_DAMAGE,
+    IMPACT_HEAL,
+    IMPACT_BUFF,
+    IMPACT_CONDITION
+};
 void playAreaDamageFlash(
     DamageType damageType,
     const AreaFlashTile* tiles,
-    uint8_t tileCount);
+      uint8_t tileCount);
+void playAbilityImpactFlash(AbilityImpactVisual visual,
+                            DamageType damageType,
+                            int tileX, int tileY);
 
 
 

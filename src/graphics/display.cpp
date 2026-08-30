@@ -14,6 +14,7 @@
 #include "graphics/sprites.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
+#include "data/entitytraits.h"
 #include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
 #include "map/activemap.h"
@@ -49,6 +50,8 @@ void getDamageFlashColors(DamageType type, uint16_t& primary, uint16_t& highligh
         case DAMAGE_ELECTRIC: primary = ST77XX_YELLOW; highlight = ST77XX_WHITE; break;
         case DAMAGE_ACID: primary = ST77XX_GREEN; highlight = 0xAFE5; break;
         case DAMAGE_SONIC: primary = 0xC81F; highlight = ST77XX_WHITE; break;
+        case DAMAGE_POSITIVE: primary = ST77XX_WHITE; highlight = ST77XX_YELLOW; break;
+        case DAMAGE_NEGATIVE: primary = 0x8010; highlight = 0xC81F; break;
         default: break;
     }
 }
@@ -376,30 +379,8 @@ void drawMapEntities()
     if (entities == nullptr)
         return;
 
-    Entity* player = getActiveMapPlayer();
-    const bool playerBlinded = player != nullptr &&
-        hasCondition(player->character, CONDITION_BLINDED);
-
     for (uint8_t i = 0; i < entityCount; i++)
         drawEntity(entities[i]);
-
-    if (!playerBlinded)
-        return;
-
-    for (uint8_t i = 0; i < entityCount; i++)
-    {
-        const Entity& monster = entities[i];
-        if (!monster.active || monster.type != ENTITY_MONSTER ||
-            monster.character.state != STATE_ALIVE ||
-            !monster.hasLastKnownPosition || monster.sprite == nullptr ||
-            monster.lastKnownX >= getActiveMapWidth() ||
-            monster.lastKnownY >= getActiveMapHeight())
-            continue;
-
-        drawSpriteGrayscaleTransparent(monster.lastKnownX * TILE_SIZE,
-            monster.lastKnownY * TILE_SIZE, monster.sprite,
-            monster.spriteWidth, monster.spriteHeight);
-    }
 }
 
 static void drawMoveCursor()
@@ -863,10 +844,23 @@ void drawEntity(const Entity& entity)
 
     if (entity.type == ENTITY_MONSTER && entity.character.state == STATE_ALIVE)
     {
-        Entity* player = getActiveMapPlayer();
-        if (!entity.visibleToPlayer || (player != nullptr &&
-            hasCondition(player->character, CONDITION_BLINDED)))
+        if (entity.sprite == nullptr)
             return;
+
+        Entity* player = getActiveMapPlayer();
+        const bool hasCurrentLineOfSight = player != nullptr &&
+            canSee(*player) && hasLineOfSightBetweenFootprintsAt(
+                *player, player->x, player->y, entity);
+        if (!hasCurrentLineOfSight)
+        {
+            drawSpriteGrayscaleTransparent(
+                entity.x * TILE_SIZE,
+                entity.y * TILE_SIZE,
+                entity.sprite,
+                entity.spriteWidth,
+                entity.spriteHeight);
+            return;
+        }
     }
 
     if (entity.sprite == nullptr)
@@ -880,7 +874,9 @@ void drawEntity(const Entity& entity)
         entity.spriteHeight);
 
     if (entity.character.state == STATE_DEAD ||
-        entity.character.state == STATE_TURNED)
+        entity.character.state == STATE_TURNED ||
+        (entity.type == ENTITY_PLAYER &&
+         entity.character.state == STATE_UNCONSCIOUS))
     {
         int x = entity.x * TILE_SIZE;
         int y = entity.y * TILE_SIZE;
@@ -923,7 +919,7 @@ void redrawDirtyTiles()
     redrawMapMessage();
 }
 
-void playAreaDamageFlash(
+  void playAreaDamageFlash(
     DamageType damageType,
     const AreaFlashTile* tiles,
     uint8_t tileCount)
@@ -940,12 +936,43 @@ void playAreaDamageFlash(
         for (uint8_t i = 0; i < tileCount; i++)
             tft.fillRect(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE,
                          TILE_SIZE, TILE_SIZE, colors[phase]);
-        delay(18);
+        delay(40);
     }
     for (uint8_t i = 0; i < tileCount; i++)
         markTileDirty(tiles[i].x, tiles[i].y);
-    redrawDirtyTiles();
-}
+      redrawDirtyTiles();
+  }
+
+  void playAbilityImpactFlash(AbilityImpactVisual visual,
+                              DamageType damageType,
+                              int tileX, int tileY)
+  {
+      uint16_t primary = 0xC81F;
+      uint16_t highlight = ST77XX_WHITE;
+      if (visual == IMPACT_DAMAGE)
+          getDamageFlashColors(damageType, primary, highlight);
+      else if (visual == IMPACT_HEAL)
+      {
+          primary = damageType == DAMAGE_NEGATIVE ? 0x8010 : ST77XX_GREEN;
+          highlight = ST77XX_WHITE;
+      }
+      else if (visual == IMPACT_BUFF)
+      {
+          primary = ST77XX_BLUE;
+          highlight = ST77XX_WHITE;
+      }
+      const AreaFlashTile tile = { static_cast<int8_t>(tileX),
+                                   static_cast<int8_t>(tileY) };
+      const uint16_t colors[] = { primary, highlight, primary };
+      for (uint8_t phase = 0; phase < 3; phase++)
+      {
+          tft.fillRect(tile.x * TILE_SIZE, tile.y * TILE_SIZE,
+                       TILE_SIZE, TILE_SIZE, colors[phase]);
+          delay(40);
+      }
+      markTileDirty(tile.x, tile.y);
+      redrawDirtyTiles();
+  }
 
 DirtyTile dirtyTiles[MAX_DIRTY_TILES];
 uint8_t dirtyTileCount = 0;
@@ -1178,12 +1205,17 @@ void drawSpriteGrayscaleTransparent(
             if (color == 0xF81F)
                 continue;
 
-            const uint8_t red = (color >> 11) & 0x1F;
-            const uint8_t green = (color >> 5) & 0x3F;
-            const uint8_t blue = color & 0x1F;
-            const uint8_t gray = (red * 30 + green * 59 + blue * 11) / 100;
+            const uint8_t red = ((color >> 11) & 0x1F) * 255 / 31;
+            const uint8_t green = ((color >> 5) & 0x3F) * 255 / 63;
+            const uint8_t blue = (color & 0x1F) * 255 / 31;
+            const uint8_t gray =
+                (static_cast<uint16_t>(red) * 30 +
+                 static_cast<uint16_t>(green) * 59 +
+                 static_cast<uint16_t>(blue) * 11) / 100;
             tft.writePixel(x + col, y + row,
-                (gray << 11) | (gray << 6) | gray);
+                ((gray >> 3) << 11) |
+                ((gray >> 2) << 5) |
+                (gray >> 3));
         }
     }
     tft.endWrite();

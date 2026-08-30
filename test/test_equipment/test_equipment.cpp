@@ -12,13 +12,22 @@ const uint16_t wizard16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t cleric16x16[SPRITE_W * SPRITE_H] = {};
 
 int rollDice(int, int) { return 1; }
-int getBaseAttackBonus(CharacterClass, uint8_t) { return 0; }
+static int controlledBaseAttackBonus = 0;
+static int controlledAttackModifier = 0;
+static int controlledArmorClassModifier = 0;
+int getBaseAttackBonus(CharacterClass, uint8_t) {
+    return controlledBaseAttackBonus;
+}
 int getBaseHitPoints(CharacterClass, uint8_t) { return 1; }
 int getBaseSave(CharacterClass, SaveType, uint8_t) { return 0; }
 uint32_t getExperienceForLevel(uint8_t level) { return level * 1000UL; }
 void updateConditionsAfterDamage(Character&, int) {}
-int getConditionAttackModifier(const Character&) { return 0; }
-int getConditionArmorClassModifier(const Character&) { return 0; }
+int getConditionAttackModifier(const Character&) {
+    return controlledAttackModifier;
+}
+int getConditionArmorClassModifier(const Character&) {
+    return controlledArmorClassModifier;
+}
 
 #include "../../src/characters/items.cpp"
 #include "../../src/characters/characters.cpp"
@@ -158,6 +167,62 @@ void test_slot_filtering_and_enhancement_stats()
     TEST_ASSERT_EQUAL(expectedAC, getArmorClass(character));
 }
 
+void test_ranged_touch_bonus_uses_bab_dex_and_generic_modifier_only()
+{
+    Character character = makeTestCharacter();
+    character.abilities.dexterity = 16;
+    character.equipment.equipped[SLOT_RANGED_WEAPON] =
+        enhanced(ITEM_SHORTBOW, 4, WEAPON_ENHANCEMENT_NONE);
+    controlledBaseAttackBonus = 5;
+    controlledAttackModifier = 2;
+
+    TEST_ASSERT_EQUAL(10, getRangedTouchAttackBonus(character));
+    TEST_ASSERT_EQUAL(14, getRangedAttackBonus(character));
+
+    controlledBaseAttackBonus = 0;
+    controlledAttackModifier = 0;
+}
+
+void test_melee_touch_bonus_uses_bab_str_and_generic_modifier_only()
+{
+    Character character = makeTestCharacter();
+    character.abilities.strength = 18;
+    character.equipment.equipped[SLOT_MELEE_WEAPON] =
+        enhanced(ITEM_LONGSWORD, 5, WEAPON_ENHANCEMENT_NONE);
+    controlledBaseAttackBonus = 4;
+    controlledAttackModifier = -1;
+
+    TEST_ASSERT_EQUAL(7, getMeleeTouchAttackBonus(character));
+    TEST_ASSERT_EQUAL(12, getMeleeAttackBonus(character));
+
+    controlledBaseAttackBonus = 0;
+    controlledAttackModifier = 0;
+}
+
+void test_touch_ac_ignores_armor_shield_and_untyped_ac_buffs()
+{
+    Character character = makeTestCharacter();
+    character.abilities.dexterity = 14;
+    controlledArmorClassModifier = 3;
+    character.equipment.equipped[SLOT_ARMOR] =
+        enhanced(ITEM_CHAINMAIL, 2, WEAPON_ENHANCEMENT_NONE);
+    character.equipment.equipped[SLOT_SHIELD] =
+        enhanced(ITEM_HEAVY_STEEL_SHIELD, 2,
+                 WEAPON_ENHANCEMENT_NONE);
+
+    TEST_ASSERT_EQUAL(12, getTouchArmorClass(character));
+    TEST_ASSERT_TRUE(getArmorClass(character) >
+                     getTouchArmorClass(character));
+
+    character.equipment.equipped[SLOT_ARMOR] =
+        makeItemInstance(ITEM_NONE);
+    character.equipment.equipped[SLOT_SHIELD] =
+        makeItemInstance(ITEM_NONE);
+    TEST_ASSERT_EQUAL(12, getTouchArmorClass(character));
+    TEST_ASSERT_EQUAL(14, getTouchArmorClass(character, 2));
+    controlledArmorClassModifier = 0;
+}
+
 void setup()
 {
     delay(2000);
@@ -167,6 +232,9 @@ void setup()
     RUN_TEST(test_two_handed_and_shield_conflicts_are_atomic);
     RUN_TEST(test_unequip_fails_safely_when_inventory_is_full);
     RUN_TEST(test_slot_filtering_and_enhancement_stats);
+    RUN_TEST(test_ranged_touch_bonus_uses_bab_dex_and_generic_modifier_only);
+    RUN_TEST(test_melee_touch_bonus_uses_bab_str_and_generic_modifier_only);
+    RUN_TEST(test_touch_ac_ignores_armor_shield_and_untyped_ac_buffs);
     UNITY_END();
 }
 

@@ -33,7 +33,17 @@ bool isImmuneToWeb(const Entity& entity)
 
 bool isUndeadCreature(const Entity& entity)
 {
-    switch (entity.character.creatureType)
+    return isUndead(entity.character);
+}
+
+bool isUndead(const Character& character)
+{
+    return isUndeadCreatureType(character.creatureType);
+}
+
+bool isUndeadCreatureType(CreatureType creatureType)
+{
+    switch (creatureType)
     {
         case CREATURE_SKELETON:
         case CREATURE_ZOMBIE:

@@ -147,10 +147,16 @@ void updateMonsterVisibility()
         }
 
         const bool liveVisible = playerCanSee && visible;
-        if (monster.visibleToPlayer == liveVisible)
+        const bool renderLos = playerCanSee && hasCurrentLineOfSight;
+        const bool renderChanged =
+            monster.playerHasLineOfSight != renderLos;
+        const bool visibilityChanged =
+            monster.visibleToPlayer != liveVisible;
+        if (!renderChanged && !visibilityChanged)
             continue;
 
         monster.visibleToPlayer = liveVisible;
+        monster.playerHasLineOfSight = renderLos;
         markEntityFootprintDirty(monster);
     }
 }

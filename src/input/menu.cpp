@@ -240,6 +240,22 @@ Menu spellMenu =
     0
 };
 
+const MenuItem resistEnergyMenuItems[] =
+{
+    { "Fire", "Resist fire damage.", MENU_RESIST_FIRE, nullptr, MENU_CLASS_ALL },
+    { "Cold", "Resist cold damage.", MENU_RESIST_COLD, nullptr, MENU_CLASS_ALL },
+    { "Electricity", "Resist electricity damage.", MENU_RESIST_ELECTRICITY, nullptr, MENU_CLASS_ALL },
+    { "Acid", "Resist acid damage.", MENU_RESIST_ACID, nullptr, MENU_CLASS_ALL },
+    { "Cancel", "Cancel without casting.", MENU_RESIST_CANCEL, nullptr, MENU_CLASS_ALL }
+};
+
+const Menu resistEnergyMenu =
+{
+    "Resist Energy",
+    resistEnergyMenuItems,
+    sizeof(resistEnergyMenuItems) / sizeof(MenuItem)
+};
+
 static void rebuildSpellMenu(const Character& character)
 {
     spellMenu.itemCount = 0;
@@ -532,6 +548,24 @@ const Menu gameMenu =
     sizeof(gameMenuItems) / sizeof(MenuItem)
 };
 
+const MenuItem defeatedMenuItems[] =
+{
+    {
+        "Return to Town",
+        "Return to town at 1 HP.",
+        MENU_RETURN_TO_TOWN,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
+const Menu defeatedMenu =
+{
+    "Defeated",
+    defeatedMenuItems,
+    sizeof(defeatedMenuItems) / sizeof(MenuItem)
+};
+
 const MenuItem useSkillMenuItems[] =
 {
     { "Acrobatics", "Use Acrobatics when the situation permits.",
@@ -762,6 +796,14 @@ void openMenu(const Menu* menu)
     if (menu == nullptr)
         return;
 
+    Character* character = getMenuCharacter();
+    if (menu == &mainMenu && character != nullptr &&
+        (character->health.currentHP <= 0 ||
+         character->state == STATE_UNCONSCIOUS))
+    {
+        menu = &defeatedMenu;
+    }
+
     menuState.menuStack[0] = menu;
     menuState.depth = 1;
     menuState.cursorIndex = 0;
@@ -772,6 +814,11 @@ void openMenu(const Menu* menu)
 
     suppressMenuInputUntilRelease();
     needsRedraw = true;     // <-- add this
+}
+
+void openResistEnergyMenu()
+{
+    openMenu(&resistEnergyMenu);
 }
 
 bool pushMenu(const Menu* menu)
@@ -950,6 +997,29 @@ void menuActivate()
             beginPlayerAbility(item->abilityID);
             break;
 
+        case MENU_RESIST_FIRE:
+        case MENU_RESIST_COLD:
+        case MENU_RESIST_ELECTRICITY:
+        case MENU_RESIST_ACID:
+        {
+            DamageType type = DAMAGE_FIRE;
+            if (item->action == MENU_RESIST_COLD)
+                type = DAMAGE_COLD;
+            else if (item->action == MENU_RESIST_ELECTRICITY)
+                type = DAMAGE_ELECTRIC;
+            else if (item->action == MENU_RESIST_ACID)
+                type = DAMAGE_ACID;
+
+            closeMenu();
+            continuePlayerAbilityWithDamageType(type);
+            break;
+        }
+
+        case MENU_RESIST_CANCEL:
+            cancelPlayerAbility();
+            closeMenu();
+            break;
+
         case MENU_INSPECT:
 
             closeMenu();
@@ -1106,7 +1176,18 @@ void menuActivate()
             {
                 Character* currentCharacter = getMenuCharacter();
 
-                if (currentCharacter != &player)
+                // Returning home after a defeat revives the character just
+                // enough to use the existing town healing/rest flow. Keep
+                // conditions and every other persistent character field.
+                if (currentCharacter != nullptr &&
+                    (currentCharacter->health.currentHP <= 0 ||
+                     currentCharacter->state == STATE_UNCONSCIOUS))
+                {
+                    currentCharacter->health.currentHP = 1;
+                    updateCharacterStateFromHP(*currentCharacter);
+                }
+
+                if (currentCharacter != nullptr && currentCharacter != &player)
                     player = *currentCharacter;
             }
 
@@ -1192,6 +1273,13 @@ void menuActivate()
 }
 void menuCancel()
 {
+    if (getCurrentMenu() == &resistEnergyMenu)
+    {
+        cancelPlayerAbility();
+        closeMenu();
+        return;
+    }
+
     if (menuState.depth > 1)
     {
         menuState.depth--;

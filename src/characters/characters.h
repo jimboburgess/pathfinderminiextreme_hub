@@ -295,9 +295,14 @@ int getMaxHP(const Character& character);
 // condition system. Defeat/XP/loot state remains with combat.
 int damageCharacter(Character& character, int damage);
 
-// Applies positive healing without exceeding max HP and returns the amount
-// actually restored. Eligibility (alive, friendly, and so on) stays with the
-// calling gameplay system.
+// Synchronizes recoverable HP state. An unconscious character becomes alive
+// after healing raises HP above zero; genuinely dead/removed states are never
+// revived. Entity-specific zero-HP defeat policy remains with combat.
+void updateCharacterStateFromHP(Character& character);
+
+// Applies positive healing to a living or unconscious character without
+// exceeding max HP and returns the amount actually restored. Dead, looted,
+// and turned entities cannot be revived through ordinary healing.
 int healCharacter(Character& character, int healing);
 
 // Restores a positive amount without exceeding max MP and returns the amount
@@ -320,9 +325,22 @@ const Shield* getEquippedShield(const Character& character);
 
 int getArmorClass(const Character& character, int dodgeBonus = 0);
 
+// Touch AC deliberately ignores equipped armor, shields, natural armor, and
+// untyped temporary AC. Dodge may be supplied explicitly; distinct
+// deflection/size storage does not exist yet.
+int getTouchArmorClass(const Character& character, int dodgeBonus = 0);
+
 int getMeleeAttackBonus(const Character& character);
 
 int getRangedAttackBonus(const Character& character);
+
+// Spell ranged-touch attacks use BAB, effective Dexterity, and generic timed
+// attack modifiers. Equipped-weapon enhancement bonuses never apply.
+int getRangedTouchAttackBonus(const Character& character);
+
+// Hostile spell touch attacks use BAB, effective Strength, and generic timed
+// attack modifiers without applying equipped-weapon enhancement bonuses.
+int getMeleeTouchAttackBonus(const Character& character);
 
 // Rogue class feature progression. Returns zero for non-Rogues or an
 // uninitialized level, otherwise 1d6 at level 1 and one additional d6 every

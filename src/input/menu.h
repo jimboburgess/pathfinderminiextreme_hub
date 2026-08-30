@@ -115,7 +115,13 @@ enum MenuAction
     MENU_SHOP_SELL,
     MENU_SHOP_LEAVE,
     MENU_SHOP_BUY_ITEM,
-    MENU_SHOP_SELL_ITEM
+    MENU_SHOP_SELL_ITEM,
+
+    MENU_RESIST_FIRE,
+    MENU_RESIST_COLD,
+    MENU_RESIST_ELECTRICITY,
+    MENU_RESIST_ACID,
+    MENU_RESIST_CANCEL
 };
 
 enum MenuClassMask : uint16_t
@@ -195,6 +201,7 @@ bool isMenuItemEnabled(MenuAction action);
 //--------------------------------------------------
 
 void openMenu(const Menu* menu);
+void openResistEnergyMenu();
 bool pushMenu(const Menu* menu);
 void closeMenu();
 void openDungeonEntryMenu();

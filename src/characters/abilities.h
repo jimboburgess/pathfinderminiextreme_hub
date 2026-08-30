@@ -158,6 +158,13 @@ enum AbilityID
     ABILITY_SOUND_BURST,
     ABILITY_DIVINE_FAVOR,
     ABILITY_SHIELD_OF_FAITH,
+    // Separate tradition row keeps scroll compatibility data-driven while
+    // both versions share the same generic resistance resolver.
+    ABILITY_RESIST_ENERGY_ARCANE,
+    // Appended so existing persisted AbilityID values remain stable.
+    ABILITY_INFLICT_LIGHT_WOUNDS,
+    ABILITY_INFLICT_MODERATE_WOUNDS,
+    ABILITY_INFLICT_SERIOUS_WOUNDS,
 
     ABILITY_MAX
 };
@@ -395,6 +402,11 @@ struct AbilityEffectData
 
     uint8_t diceCount;
     uint8_t diceSides;
+
+    // Positive/negative energy reverses between damage and healing according
+    // to creature type only when this flag is set. This keeps ordinary
+    // positive-damage spells such as Searing Light unchanged.
+    bool creatureTypeEnergy;
 };
 
 enum SaveEffect : uint8_t { SAVE_EFFECT_NONE, SAVE_EFFECT_NEGATES, SAVE_EFFECT_HALF };

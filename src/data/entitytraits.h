@@ -2,6 +2,7 @@
 #define PATHFINDERMINIEXTREME_025_ENTITY_TRAITS_H
 
 #include <stdint.h>
+#include "characters/characters.h"
 
 struct Entity;
 
@@ -15,5 +16,7 @@ uint8_t getEffectiveHitDice(const Entity& entity);
 bool canSee(const Entity& entity);
 bool isImmuneToWeb(const Entity& entity);
 bool isUndeadCreature(const Entity& entity);
+bool isUndead(const Character& character);
+bool isUndeadCreatureType(CreatureType creatureType);
 
 #endif // PATHFINDERMINIEXTREME_025_ENTITY_TRAITS_H

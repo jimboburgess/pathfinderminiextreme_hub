@@ -759,6 +759,16 @@ void handleMapButtons()
     //--------------------------------------------------
     if (buttonAPressed())
     {
+            Entity* activePlayer = getActiveMapPlayer();
+            if (activePlayer != nullptr &&
+                (activePlayer->character.health.currentHP <= 0 ||
+                 activePlayer->character.state == STATE_UNCONSCIOUS))
+            {
+                openMenu(&mainMenu);
+                menuState.redrawType = MENU_REDRAW_FULL;
+                return;
+            }
+
             // A dead monster at the normal facing cursor is a context
             // interaction, not a reason to open the general menu.
             if (tryInteractWithFacingEntity())

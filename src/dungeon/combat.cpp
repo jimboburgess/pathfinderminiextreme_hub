@@ -23,6 +23,18 @@
 
 Combat combat;
 
+static const char* getEnergyTypeName(DamageType type)
+{
+    switch (type)
+    {
+        case DAMAGE_FIRE: return "Fire";
+        case DAMAGE_COLD: return "Cold";
+        case DAMAGE_ELECTRIC: return "Electricity";
+        case DAMAGE_ACID: return "Acid";
+        default: return "Energy";
+    }
+}
+
 static Entity* getPlayerCombatant()
 {
     return getActiveMapPlayer();
@@ -78,7 +90,8 @@ static bool isValidChannelEnergyTarget(
     return target.active &&
            isChannelEnergyCreature(target) &&
            target.character.team == cleric.character.team &&
-           target.character.state == STATE_ALIVE &&
+           (target.character.state == STATE_ALIVE ||
+            target.character.state == STATE_UNCONSCIOUS) &&
            target.character.health.currentHP <
                target.character.health.maxHP &&
            getEntityGridDistance(cleric, target) <= 6;
@@ -184,13 +197,45 @@ static bool isValidAbilitySelectionTarget(
     const Entity* caster,
     const Entity* target)
 {
-    return caster != nullptr && target != nullptr && target != caster &&
-           target->active &&
-           (target->type == ENTITY_PLAYER ||
-            target->type == ENTITY_MONSTER ||
-            target->type == ENTITY_NPC) &&
-           target->character.state == STATE_ALIVE &&
-           areHostile(*caster, *target);
+    if (caster == nullptr || target == nullptr ||
+        !target->active ||
+        (target->type != ENTITY_PLAYER &&
+         target->type != ENTITY_MONSTER &&
+         target->type != ENTITY_NPC) ||
+        target->character.state != STATE_ALIVE)
+    {
+        return false;
+    }
+
+    const Ability* ability = getAbility(combat.selectedAbility);
+    if (ability == nullptr)
+        return false;
+
+    const bool hostile =
+        isAbilityEffectHostileToTarget(*ability, target->character);
+    if ((hostile &&
+         (target == caster || !areHostile(*caster, *target))) ||
+        (!hostile && target->character.team != caster->character.team))
+    {
+        return false;
+    }
+
+    if (ability->delivery == DELIVERY_TOUCH && target != caster)
+    {
+        return getEntityGridDistance(*caster, *target) <= 1 &&
+               hasLineOfSightBetweenFootprintsAt(
+                   *caster, caster->x, caster->y, *target);
+    }
+
+    if (hostile)
+    {
+        return getEntityGridDistance(*caster, *target) <=
+                   ability->rangeTiles &&
+               hasLineOfSightBetweenFootprintsAt(
+                   *caster, caster->x, caster->y, *target);
+    }
+
+    return true;
 }
 
 static bool isValidGroundAbilitySelection(
@@ -454,6 +499,18 @@ static DefeatResult finalizeDefeat(Entity& defeated)
         return result;
 
     defeated.character.health.currentHP = 0;
+
+    // Player defeat is recoverable. End the encounter immediately without
+    // running victory/reward handling or converting the player into a corpse.
+    // Monsters continue through the normal permanent-death path below.
+    if (defeated.type == ENTITY_PLAYER)
+    {
+        defeated.character.state = STATE_UNCONSCIOUS;
+        markEntityFootprintDirty(defeated);
+        abortCombat();
+        return result;
+    }
+
     defeated.character.state = STATE_DEAD;
     generateCorpseLoot(defeated);
 
@@ -598,7 +655,15 @@ void presentAbilityResolution(
     const char* abilityName = getAbilityName(abilityID);
     char message[128];
 
-    if (resolution.savingThrow.result == SAVE_RESULT_SUCCESS)
+    if (resolution.attackRoll.required && !resolution.attackRoll.hit)
+    {
+        snprintf(message, sizeof(message),
+                 "%s misses %s!",
+                 abilityName,
+                 getEntityName(&target));
+    }
+    else if (resolution.savingThrow.result == SAVE_RESULT_SUCCESS &&
+             resolution.damage == 0)
     {
         snprintf(message, sizeof(message),
                  "%s resists %s!",
@@ -612,6 +677,12 @@ void presentAbilityResolution(
                  abilityName,
                  getEntityName(&target),
                  resolution.conditionDuration);
+    }
+    else if (resolution.resistanceAmount > 0)
+    {
+        snprintf(message, sizeof(message), "%s resistance %d",
+                 getEnergyTypeName(resolution.resistanceType),
+                 resolution.resistanceAmount);
     }
     else if (resolution.damage > 0)
     {
@@ -631,7 +702,9 @@ void presentAbilityResolution(
                  resolution.healing);
     }
 
-    if (resolution.levelReached > 0)
+    if (resolution.attackRoll.required && !resolution.attackRoll.hit)
+        playSound(SoundEffect::MISS);
+    else if (resolution.levelReached > 0)
     {
         DefeatResult defeatResult;
         defeatResult.levelReached = resolution.levelReached;
@@ -646,7 +719,8 @@ void presentAbilityResolution(
             playSound(SoundEffect::SPELL_HIT);
     }
     else if (resolution.savingThrow.result == SAVE_RESULT_SUCCESS ||
-             resolution.conditionApplied != CONDITION_NONE)
+             resolution.conditionApplied != CONDITION_NONE ||
+             resolution.resistanceAmount > 0)
     {
         playSound(SoundEffect::SPELL_CAST);
     }
@@ -1306,6 +1380,13 @@ bool isPlayerTurn()
 
 void startCombat()
 {
+    Entity* player = getActiveMapPlayer();
+    if (player == nullptr || player->character.health.currentHP <= 0 ||
+        player->character.state != STATE_ALIVE)
+    {
+        return;
+    }
+
     clearMapEffects();
     combat.active = true;
     playSound(SoundEffect::DUNGEON_THEME);
@@ -1328,6 +1409,7 @@ void startCombat()
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
     combat.selectedAbilityDirection = moveDirection;
+    combat.selectedAbilityDamageType = DAMAGE_NONE;
     combat.abilityResolutionPending = false;
     combat.abilityCaster = nullptr;
     combat.abilityEndedCombat = false;
@@ -2032,6 +2114,7 @@ void endCombat()
     combat.selectedAbilityX = -1;
     combat.selectedAbilityY = -1;
     combat.selectedAbilityDirection = moveDirection;
+    combat.selectedAbilityDamageType = DAMAGE_NONE;
     combat.abilityResolutionPending = false;
     combat.abilityCaster = nullptr;
     combat.abilityEndedCombat = false;
@@ -2518,7 +2601,8 @@ static void executePlayerAbility(
     AbilityResolution resolution = resolveAbility(
         player, target, abilityID,
         combat.selectedAbilityFromScroll
-            ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL);
+            ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL,
+        combat.selectedAbilityDamageType);
 
     if (resolution.result != ABILITY_RESULT_SUCCESS)
     {
@@ -2711,11 +2795,12 @@ void presentDirectionalAbilityResolution(
 
 void beginPlayerAbility(AbilityID abilityID)
 {
-    Entity* player = getCurrentCombatant();
+    Entity* player = combat.active
+        ? getCurrentCombatant() : getActiveMapPlayer();
     const Ability* ability = getAbility(abilityID);
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
-        !combat.waitingForPlayer ||
+        (combat.active && !combat.waitingForPlayer) ||
         (!combat.selectedAbilityFromScroll && !knowsAbility(player->character, abilityID) &&
          !(player->character.characterClass == CLASS_CLERIC &&
            ability != nullptr && ability->type == ABILITY_DIVINE &&
@@ -2726,6 +2811,15 @@ void beginPlayerAbility(AbilityID abilityID)
     {
         setGameMessage("Ability unavailable.");
         playSound(SoundEffect::SPELL_FAIL);
+        return;
+    }
+
+    if ((abilityID == ABILITY_RESIST_ENERGY ||
+         abilityID == ABILITY_RESIST_ENERGY_ARCANE) &&
+        combat.selectedAbilityDamageType == DAMAGE_NONE)
+    {
+        combat.selectedAbility = abilityID;
+        openResistEnergyMenu();
         return;
     }
 
@@ -2754,6 +2848,7 @@ void beginPlayerAbility(AbilityID abilityID)
         if (validation != ABILITY_RESULT_SUCCESS)
         {
             combat.selectedAbility = ABILITY_NONE;
+            combat.selectedAbilityDamageType = DAMAGE_NONE;
             setGameMessage(getAbilityResultMessage(validation));
             playSound(SoundEffect::SPELL_FAIL);
             requestCombatTileRedraw();
@@ -2775,6 +2870,7 @@ void beginPlayerAbility(AbilityID abilityID)
             combat.selectedAbility = ABILITY_NONE;
             combat.selectedAbilityX = -1;
             combat.selectedAbilityY = -1;
+            combat.selectedAbilityDamageType = DAMAGE_NONE;
             setGameMessage("No valid ground targets.");
             playSound(SoundEffect::SPELL_FAIL);
             requestCombatTileRedraw();
@@ -2792,6 +2888,7 @@ void beginPlayerAbility(AbilityID abilityID)
     if (!selectNextEntityTarget(player, true, true))
     {
         combat.selectedAbility = ABILITY_NONE;
+        combat.selectedAbilityDamageType = DAMAGE_NONE;
         setGameMessage("No valid targets.");
         playSound(SoundEffect::SPELL_FAIL);
         requestCombatTileRedraw();
@@ -2823,9 +2920,18 @@ void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll)
     beginPlayerAbility(abilityID);
     if (combat.selectedAbility == ABILITY_NONE && !combat.abilityResolutionPending)
     {
-        combat.selectedAbilityFromScroll = false;
-        combat.selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+        clearSelectedAbilityScroll();
     }
+}
+
+void continuePlayerAbilityWithDamageType(DamageType damageType)
+{
+    const AbilityID abilityID = combat.selectedAbility;
+    if (abilityID == ABILITY_NONE)
+        return;
+
+    combat.selectedAbilityDamageType = damageType;
+    beginPlayerAbility(abilityID);
 }
 
 bool isPlayerTargetingAbility()
@@ -2953,11 +3059,13 @@ static void clearSelectedAbilityScroll()
 {
     combat.selectedAbilityFromScroll = false;
     combat.selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    combat.selectedAbilityDamageType = DAMAGE_NONE;
 }
 
 void confirmPlayerAbility()
 {
-    Entity* player = getCurrentCombatant();
+    Entity* player = combat.active
+        ? getCurrentCombatant() : getActiveMapPlayer();
 
     if (player != nullptr && isPlayerTargetingDirectionalAbility())
     {

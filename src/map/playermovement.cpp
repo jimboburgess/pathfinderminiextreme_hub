@@ -215,6 +215,14 @@ bool tryMovePlayer(Dungeon &dungeon)
     if (player == nullptr)
         return false;
 
+    // A defeated player may open the recovery menu, but cannot move or
+    // interact with the dungeon until Return to Town restores them.
+    if (player->character.health.currentHP <= 0 ||
+        player->character.state != STATE_ALIVE)
+    {
+        return false;
+    }
+
     //--------------------------------------------------
     // Save current position.
     //--------------------------------------------------
@@ -462,6 +470,12 @@ static bool tryMoveForestPlayer()
 
     if (player == nullptr)
         return false;
+
+    if (player->character.health.currentHP <= 0 ||
+        player->character.state != STATE_ALIVE)
+    {
+        return false;
+    }
 
     //--------------------------------------------------
     // Redraw facing tiles.

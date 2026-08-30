@@ -14,6 +14,9 @@ static bool controlledLineOfSight = true;
 static int controlledBlockedLOSX = -1;
 static int controlledBlockedLOSY = -1;
 static int controlledSaveRoll = 10;
+static int controlledRangedTouchBonus = 0;
+static int controlledMeleeTouchBonus = 0;
+static int controlledTouchArmorClass = 10;
 static uint8_t damageApplicationCount = 0;
 static uint8_t saveRollCount = 0;
 static uint8_t dirtyTileMarkCount = 0;
@@ -85,6 +88,21 @@ int getAbilityModifier(const Character& character, AbilityScore ability)
     return getAbilityModifier(score);
 }
 
+int getRangedTouchAttackBonus(const Character&)
+{
+    return controlledRangedTouchBonus;
+}
+
+int getMeleeTouchAttackBonus(const Character&)
+{
+    return controlledMeleeTouchBonus;
+}
+
+int getTouchArmorClass(const Character&, int)
+{
+    return controlledTouchArmorClass;
+}
+
 bool isConscious(const Character& character)
 {
     return character.state == STATE_ALIVE;
@@ -99,6 +117,11 @@ int rollDie(int sides)
     }
 
     return 1;
+}
+
+int rollDice(int count, int)
+{
+    return count;
 }
 
 int healCharacter(Character& character, int healing)
@@ -301,6 +324,9 @@ static void resetResolverControls()
     controlledBlockedLOSX = -1;
     controlledBlockedLOSY = -1;
     controlledSaveRoll = 10;
+    controlledRangedTouchBonus = 0;
+    controlledMeleeTouchBonus = 0;
+    controlledTouchArmorClass = 10;
     damageApplicationCount = 0;
     saveRollCount = 0;
     dirtyTileMarkCount = 0;
@@ -1442,6 +1468,383 @@ void test_monster_caster_uses_the_same_directional_resolver()
     TEST_ASSERT_TRUE(caster.turn.standardActionUsed);
 }
 
+void test_resist_energy_selection_scaling_and_cast_source_are_generic()
+{
+    const DamageType types[] = {
+        DAMAGE_FIRE, DAMAGE_COLD, DAMAGE_ELECTRIC, DAMAGE_ACID
+    };
+
+    for (DamageType type : types)
+    {
+        resetResolverControls();
+        Entity cleric;
+        Entity ally;
+        initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+        initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+        cleric.character.level = 7;
+
+        AbilityResolution result = resolveAbility(
+            cleric, &ally, ABILITY_RESIST_ENERGY,
+            AbilityCastSource::NORMAL, type);
+
+        TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+        TEST_ASSERT_EQUAL(type, result.resistanceType);
+        TEST_ASSERT_EQUAL_INT(20, result.resistanceAmount);
+        TEST_ASSERT_EQUAL_INT(20, getEnergyResistance(
+            ally.character, static_cast<uint8_t>(type)));
+        TEST_ASSERT_EQUAL_INT(6, cleric.character.magic.currentMP);
+    }
+
+    TEST_ASSERT_EQUAL_INT(10, getEnergyResistanceAmountForCasterLevel(1));
+    TEST_ASSERT_EQUAL_INT(10, getEnergyResistanceAmountForCasterLevel(6));
+    TEST_ASSERT_EQUAL_INT(20, getEnergyResistanceAmountForCasterLevel(7));
+    TEST_ASSERT_EQUAL_INT(20, getEnergyResistanceAmountForCasterLevel(10));
+    TEST_ASSERT_EQUAL_INT(30, getEnergyResistanceAmountForCasterLevel(11));
+
+    resetResolverControls();
+    Entity wizard;
+    Entity ally;
+    initializeEntity(wizard, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+    wizard.character.level = 11;
+    wizard.character.magic.currentMP = 0;
+    AbilityResolution scrollResult = resolveAbility(
+        wizard, &ally, ABILITY_RESIST_ENERGY_ARCANE,
+        AbilityCastSource::SCROLL, DAMAGE_FIRE);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, scrollResult.result);
+    TEST_ASSERT_EQUAL_INT(30, scrollResult.resistanceAmount);
+    TEST_ASSERT_EQUAL_INT(0, wizard.character.magic.currentMP);
+
+    resetResolverControls();
+    initializeEntity(wizard, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+    AbilityResolution noSelection = resolveAbility(
+        wizard, &ally, ABILITY_RESIST_ENERGY_ARCANE,
+        AbilityCastSource::NORMAL, DAMAGE_NONE);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_INVALID_TARGET, noSelection.result);
+    TEST_ASSERT_EQUAL_INT(10, wizard.character.magic.currentMP);
+    TEST_ASSERT_FALSE(wizard.turn.standardActionUsed);
+}
+
+void test_ranged_touch_miss_spends_cast_but_applies_no_effects()
+{
+    resetResolverControls();
+    Entity caster;
+    Entity target;
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(target, ENTITY_MONSTER, TEAM_MONSTER);
+    controlledSaveRoll = 2;
+    controlledTouchArmorClass = 15;
+
+    AbilityResolution acid = resolveAbility(
+        caster, &target, ABILITY_ACID_ARROW);
+
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, acid.result);
+    TEST_ASSERT_TRUE(acid.attackRoll.required);
+    TEST_ASSERT_FALSE(acid.attackRoll.hit);
+    TEST_ASSERT_EQUAL_INT(0, acid.damage);
+    TEST_ASSERT_EQUAL_UINT8(0, damageApplicationCount);
+    TEST_ASSERT_EQUAL_UINT8(0,
+        target.character.conditions.timedDamageCount);
+    TEST_ASSERT_EQUAL_INT(6, caster.character.magic.currentMP);
+    TEST_ASSERT_TRUE(caster.turn.standardActionUsed);
+}
+
+void test_ranged_touch_hit_applies_acid_arrow_and_natural_rules()
+{
+    resetResolverControls();
+    Entity caster;
+    Entity target;
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(target, ENTITY_MONSTER, TEAM_MONSTER);
+    controlledSaveRoll = 15;
+    controlledTouchArmorClass = 15;
+
+    AbilityResolution acid = resolveAbility(
+        caster, &target, ABILITY_ACID_ARROW);
+    TEST_ASSERT_TRUE(acid.attackRoll.hit);
+    TEST_ASSERT_EQUAL_INT(2, acid.damage);
+    TEST_ASSERT_EQUAL_UINT8(1, damageApplicationCount);
+    TEST_ASSERT_EQUAL_UINT8(1,
+        target.character.conditions.timedDamageCount);
+    TEST_ASSERT_EQUAL_UINT8(2,
+        target.character.conditions.timedDamage[0].roundsRemaining);
+
+    resetResolverControls();
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(target, ENTITY_MONSTER, TEAM_MONSTER);
+    controlledSaveRoll = 1;
+    controlledRangedTouchBonus = 99;
+    controlledTouchArmorClass = 10;
+    TEST_ASSERT_FALSE(resolveAbility(
+        caster, &target, ABILITY_SCORCHING_RAY).attackRoll.hit);
+
+    resetResolverControls();
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(target, ENTITY_MONSTER, TEAM_MONSTER);
+    controlledSaveRoll = 20;
+    controlledRangedTouchBonus = -99;
+    controlledTouchArmorClass = 30;
+    AbilityResolution searing = resolveAbility(
+        caster, &target, ABILITY_SEARING_LIGHT);
+    TEST_ASSERT_TRUE(searing.attackRoll.required);
+    TEST_ASSERT_TRUE(searing.attackRoll.hit);
+}
+
+void test_friendly_touch_never_rolls_an_attack()
+{
+    resetResolverControls();
+    Entity cleric;
+    Entity ally;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+    ally.character.health.currentHP = 5;
+    controlledSaveRoll = 1;
+
+    AbilityResolution cure = resolveAbility(
+        cleric, &ally, ABILITY_CURE_LIGHT_WOUNDS);
+
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, cure.result);
+    TEST_ASSERT_FALSE(cure.attackRoll.required);
+    TEST_ASSERT_TRUE(cure.healing > 0);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+}
+
+void test_hostile_melee_touch_requires_adjacency_and_spends_on_miss()
+{
+    resetResolverControls();
+    Entity cleric;
+    Entity enemy;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(enemy, ENTITY_MONSTER, TEAM_MONSTER);
+    controlledDistance = 2;
+
+    AbilityResolution distant = resolveAbility(
+        cleric, &enemy, ABILITY_INFLICT_LIGHT_WOUNDS);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_OUT_OF_RANGE, distant.result);
+    TEST_ASSERT_EQUAL_INT(10, cleric.character.magic.currentMP);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+
+    controlledDistance = 1;
+    controlledSaveRoll = 1;
+    controlledMeleeTouchBonus = 99;
+    AbilityResolution miss = resolveAbility(
+        cleric, &enemy, ABILITY_INFLICT_LIGHT_WOUNDS);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, miss.result);
+    TEST_ASSERT_TRUE(miss.attackRoll.required);
+    TEST_ASSERT_FALSE(miss.attackRoll.hit);
+    TEST_ASSERT_EQUAL_INT(0, miss.damage);
+    TEST_ASSERT_EQUAL_UINT8(0, damageApplicationCount);
+    TEST_ASSERT_EQUAL_INT(8, cleric.character.magic.currentMP);
+}
+
+void test_inflict_wounds_batch_uses_generic_melee_touch_damage()
+{
+    const AbilityID spells[] = {
+        ABILITY_INFLICT_LIGHT_WOUNDS,
+        ABILITY_INFLICT_MODERATE_WOUNDS,
+        ABILITY_INFLICT_SERIOUS_WOUNDS
+    };
+    const int expectedDamage[] = {2, 4, 6};
+
+    for (uint8_t i = 0; i < 3; i++)
+    {
+        resetResolverControls();
+        Entity cleric;
+        Entity enemy;
+        initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+        initializeEntity(enemy, ENTITY_MONSTER, TEAM_MONSTER, 30);
+        cleric.character.level = static_cast<uint8_t>(i + 1);
+        controlledSaveRoll = 2;
+        controlledMeleeTouchBonus = 99;
+        controlledTouchArmorClass = 99;
+
+        const Ability* ability = getAbility(spells[i]);
+        TEST_ASSERT_NOT_NULL(ability);
+        TEST_ASSERT_EQUAL(ABILITY_DIVINE, ability->type);
+        TEST_ASSERT_EQUAL(DELIVERY_TOUCH, ability->delivery);
+        TEST_ASSERT_EQUAL(TARGET_ENEMY, ability->target);
+        TEST_ASSERT_TRUE(isAbilitySupported(spells[i]));
+
+        AbilityResolution result = resolveAbility(
+            cleric, &enemy, spells[i]);
+        TEST_ASSERT_TRUE(result.attackRoll.hit);
+        TEST_ASSERT_EQUAL_INT(expectedDamage[i], result.damage);
+        TEST_ASSERT_EQUAL_INT(30 - expectedDamage[i],
+                              enemy.character.health.currentHP);
+        TEST_ASSERT_EQUAL_UINT8(1, damageApplicationCount);
+    }
+}
+
+void test_positive_negative_energy_interactions_use_creature_type()
+{
+    TEST_ASSERT_EQUAL(
+        static_cast<int>(EnergyInteraction::HEAL),
+        static_cast<int>(getEnergyInteraction(
+            DAMAGE_POSITIVE, CREATURE_PLAYER)));
+    TEST_ASSERT_EQUAL(
+        static_cast<int>(EnergyInteraction::DAMAGE),
+        static_cast<int>(getEnergyInteraction(
+            DAMAGE_POSITIVE, CREATURE_UNDEAD)));
+    TEST_ASSERT_EQUAL(
+        static_cast<int>(EnergyInteraction::DAMAGE),
+        static_cast<int>(getEnergyInteraction(
+            DAMAGE_NEGATIVE, CREATURE_GOBLIN)));
+    TEST_ASSERT_EQUAL(
+        static_cast<int>(EnergyInteraction::HEAL),
+        static_cast<int>(getEnergyInteraction(
+            DAMAGE_NEGATIVE, CREATURE_ZOMBIE)));
+
+    Character genericUndead = {};
+    genericUndead.creatureType = CREATURE_UNDEAD;
+    TEST_ASSERT_TRUE(isUndead(genericUndead));
+}
+
+void test_cure_energy_heals_living_and_damages_undead_with_one_save()
+{
+    resetResolverControls();
+    Entity cleric;
+    Entity ally;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+    ally.character.health.currentHP = 1;
+    AbilityResolution healing = resolveAbility(
+        cleric, &ally, ABILITY_CURE_LIGHT_WOUNDS);
+    TEST_ASSERT_FALSE(healing.attackRoll.required);
+    TEST_ASSERT_EQUAL_INT(9, healing.healing);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+
+    resetResolverControls();
+    Entity skeleton;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(skeleton, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    skeleton.character.creatureType = CREATURE_UNDEAD;
+    controlledSaveRoll = 2;
+    controlledMeleeTouchBonus = 99;
+    controlledTouchArmorClass = 99;
+    AbilityResolution full = resolveAbility(
+        cleric, &skeleton, ABILITY_CURE_LIGHT_WOUNDS);
+    TEST_ASSERT_TRUE(full.attackRoll.hit);
+    TEST_ASSERT_EQUAL(SAVE_RESULT_FAILURE, full.savingThrow.result);
+    TEST_ASSERT_EQUAL_INT(9, full.damage);
+
+    resetResolverControls();
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(skeleton, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    skeleton.character.creatureType = CREATURE_SKELETON;
+    controlledSaveRoll = 20;
+    controlledMeleeTouchBonus = -99;
+    controlledTouchArmorClass = 99;
+    AbilityResolution half = resolveAbility(
+        cleric, &skeleton, ABILITY_CURE_LIGHT_WOUNDS);
+    TEST_ASSERT_TRUE(half.attackRoll.hit);
+    TEST_ASSERT_EQUAL(SAVE_RESULT_SUCCESS, half.savingThrow.result);
+    TEST_ASSERT_EQUAL_INT(4, half.damage);
+}
+
+void test_all_cure_levels_heal_living_without_touch_attacks()
+{
+    const AbilityID cures[] = {
+        ABILITY_CURE_LIGHT_WOUNDS,
+        ABILITY_CURE_MODERATE_WOUNDS,
+        ABILITY_CURE_SERIOUS_WOUNDS
+    };
+    const int expected[] = {9, 20, 33};
+    for (uint8_t i = 0; i < 3; i++)
+    {
+        resetResolverControls();
+        Entity cleric;
+        Entity ally;
+        initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER, 100);
+        initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER, 100);
+        cleric.character.level = static_cast<uint8_t>(i + 1);
+        ally.character.health.currentHP = 1;
+        AbilityResolution result = resolveAbility(cleric, &ally, cures[i]);
+        TEST_ASSERT_FALSE(result.attackRoll.required);
+        TEST_ASSERT_EQUAL_INT(expected[i], result.healing);
+        TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+    }
+}
+
+void test_cure_undead_miss_and_inflict_undead_healing_are_generic()
+{
+    resetResolverControls();
+    Entity cleric;
+    Entity skeleton;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(skeleton, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    skeleton.character.creatureType = CREATURE_SKELETON;
+    controlledSaveRoll = 1;
+    controlledMeleeTouchBonus = 99;
+    AbilityResolution miss = resolveAbility(
+        cleric, &skeleton, ABILITY_CURE_LIGHT_WOUNDS);
+    TEST_ASSERT_FALSE(miss.attackRoll.hit);
+    TEST_ASSERT_EQUAL_INT(0, miss.damage);
+    TEST_ASSERT_EQUAL_UINT8(0, damageApplicationCount);
+
+    resetResolverControls();
+    Entity undeadAlly;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(undeadAlly, ENTITY_NPC, TEAM_PLAYER, 20);
+    undeadAlly.character.creatureType = CREATURE_ZOMBIE;
+    undeadAlly.character.health.currentHP = 19;
+    AbilityResolution restored = resolveAbility(
+        cleric, &undeadAlly, ABILITY_INFLICT_LIGHT_WOUNDS);
+    TEST_ASSERT_FALSE(restored.attackRoll.required);
+    TEST_ASSERT_EQUAL_INT(1, restored.healing);
+    TEST_ASSERT_EQUAL_INT(20, undeadAlly.character.health.currentHP);
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+}
+
+void test_inflict_living_will_save_halves_after_touch_hit()
+{
+    resetResolverControls();
+    Entity cleric;
+    Entity living;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(living, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    controlledSaveRoll = 20;
+    controlledMeleeTouchBonus = -99;
+    controlledTouchArmorClass = 99;
+    AbilityResolution half = resolveAbility(
+        cleric, &living, ABILITY_INFLICT_LIGHT_WOUNDS);
+    TEST_ASSERT_TRUE(half.attackRoll.hit);
+    TEST_ASSERT_EQUAL(SAVE_RESULT_SUCCESS, half.savingThrow.result);
+    TEST_ASSERT_EQUAL_INT(1, half.damage);
+
+    resetResolverControls();
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(living, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    controlledSaveRoll = 2;
+    controlledMeleeTouchBonus = 99;
+    controlledTouchArmorClass = 99;
+    AbilityResolution full = resolveAbility(
+        cleric, &living, ABILITY_INFLICT_LIGHT_WOUNDS);
+    TEST_ASSERT_EQUAL(SAVE_RESULT_FAILURE, full.savingThrow.result);
+    TEST_ASSERT_EQUAL_INT(2, full.damage);
+}
+
+void test_energy_scroll_uses_identical_resolution_without_mp()
+{
+    resetResolverControls();
+    Entity cleric;
+    Entity undead;
+    initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(undead, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    undead.character.creatureType = CREATURE_UNDEAD;
+    cleric.character.magic.currentMP = 0;
+    controlledSaveRoll = 2;
+    controlledMeleeTouchBonus = 99;
+    controlledTouchArmorClass = 99;
+
+    AbilityResolution result = resolveAbility(
+        cleric, &undead, ABILITY_CURE_LIGHT_WOUNDS,
+        AbilityCastSource::SCROLL);
+    TEST_ASSERT_TRUE(result.attackRoll.hit);
+    TEST_ASSERT_EQUAL_INT(9, result.damage);
+    TEST_ASSERT_EQUAL_INT(0, cleric.character.magic.currentMP);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -1480,6 +1883,18 @@ void setup()
     RUN_TEST(
         test_directional_cast_validation_is_transactional_and_stun_blocks_casting);
     RUN_TEST(test_monster_caster_uses_the_same_directional_resolver);
+    RUN_TEST(test_resist_energy_selection_scaling_and_cast_source_are_generic);
+    RUN_TEST(test_ranged_touch_miss_spends_cast_but_applies_no_effects);
+    RUN_TEST(test_ranged_touch_hit_applies_acid_arrow_and_natural_rules);
+    RUN_TEST(test_friendly_touch_never_rolls_an_attack);
+    RUN_TEST(test_hostile_melee_touch_requires_adjacency_and_spends_on_miss);
+    RUN_TEST(test_inflict_wounds_batch_uses_generic_melee_touch_damage);
+    RUN_TEST(test_positive_negative_energy_interactions_use_creature_type);
+    RUN_TEST(test_cure_energy_heals_living_and_damages_undead_with_one_save);
+    RUN_TEST(test_all_cure_levels_heal_living_without_touch_attacks);
+    RUN_TEST(test_cure_undead_miss_and_inflict_undead_healing_are_generic);
+    RUN_TEST(test_inflict_living_will_save_halves_after_touch_hit);
+    RUN_TEST(test_energy_scroll_uses_identical_resolution_without_mp);
     UNITY_END();
 }
 

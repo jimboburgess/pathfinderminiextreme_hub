@@ -48,6 +48,9 @@ struct Entity
     bool awareOfPlayer = false;
     bool revealedToPlayer = false;
     bool visibleToPlayer = false;
+    // Rendering-only LOS cache. Targeting continues to use visibleToPlayer
+    // and the existing live LOS checks.
+    bool playerHasLineOfSight = false;
     uint8_t lastKnownX = 0;
     uint8_t lastKnownY = 0;
     bool hasLastKnownPosition = false;

@@ -38,6 +38,13 @@ enum class AbilityCastSource : uint8_t
     SCROLL
 };
 
+enum class EnergyInteraction : uint8_t
+{
+    NONE,
+    DAMAGE,
+    HEAL
+};
+
 struct AbilitySavingThrow
 {
     SaveResult result = SAVE_RESULT_NOT_REQUIRED;
@@ -45,6 +52,16 @@ struct AbilitySavingThrow
     int bonus = 0;
     int total = 0;
     int dc = 0;
+};
+
+struct AbilityAttackRoll
+{
+    bool required = false;
+    bool hit = false;
+    int roll = 0;
+    int bonus = 0;
+    int total = 0;
+    int targetAC = 0;
 };
 
 struct AbilityResolution
@@ -55,12 +72,15 @@ struct AbilityResolution
     ConditionType conditionApplied = CONDITION_NONE;
     int conditionDuration = 0;
     AbilitySavingThrow savingThrow;
+    AbilityAttackRoll attackRoll;
     bool targetDefeated = false;
     uint8_t levelReached = 0;
     bool mapEffectCreated = false;
     uint8_t targetsAffected = 0;
     uint8_t targetsResisted = 0;
     uint8_t targetsImmune = 0;
+    DamageType resistanceType = DAMAGE_NONE;
+    int resistanceAmount = 0;
 };
 
 // The resolver deliberately accepts only standard-action abilities handled
@@ -70,6 +90,12 @@ struct AbilityResolution
 bool isAbilitySupported(AbilityID abilityID);
 bool isGroundTargetAbility(AbilityID abilityID);
 bool isDirectionalAbility(AbilityID abilityID);
+EnergyInteraction getEnergyInteraction(
+    DamageType energyType,
+    CreatureType creatureType);
+bool isAbilityEffectHostileToTarget(
+    const Ability& ability,
+    const Character& target);
 
 // Shared cone geometry for both rendering and execution. The predicate
 // includes map bounds and line of effect, so previewed tiles are authoritative.
@@ -110,14 +136,20 @@ AbilityResult validateAbility(
     const Entity& caster,
     const Entity* target,
     AbilityID abilityID,
-    AbilityCastSource source = AbilityCastSource::NORMAL);
+    AbilityCastSource source = AbilityCastSource::NORMAL,
+    DamageType selectedDamageType = DAMAGE_NONE);
 
 // Authoritative execution path shared by player and monster spellcasting.
 AbilityResolution resolveAbility(
     Entity& caster,
     Entity* target,
     AbilityID abilityID,
-    AbilityCastSource source = AbilityCastSource::NORMAL);
+    AbilityCastSource source = AbilityCastSource::NORMAL,
+    DamageType selectedDamageType = DAMAGE_NONE);
+
+// Pathfinder-inspired strength shared by every spell/item that later applies
+// this generic resistance effect.
+int getEnergyResistanceAmountForCasterLevel(int casterLevel);
 
 // Coordinate-target counterpart used only by supported ground/area
 // abilities. Existing entity-target calls continue using resolveAbility().

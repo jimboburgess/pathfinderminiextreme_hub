@@ -98,6 +98,7 @@ struct Combat
     int8_t selectedAbilityX = -1;
     int8_t selectedAbilityY = -1;
     Direction selectedAbilityDirection = DIR_NORTH;
+    DamageType selectedAbilityDamageType = DAMAGE_NONE;
     bool abilityResolutionPending = false;
     Entity* abilityCaster = nullptr;
     bool abilityEndedCombat = false;
@@ -238,6 +239,7 @@ void cancelPlayerAttack();
 
 void beginPlayerAbility(AbilityID abilityID);
 void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll);
+void continuePlayerAbilityWithDamageType(DamageType damageType);
 bool isPlayerTargetingAbility();
 bool isPlayerTargetingGroundAbility();
 bool isPlayerTargetingDirectionalAbility();

@@ -103,9 +103,25 @@ int damageCharacter(Character& character, int damage)
     return damage;
 }
 
+void updateCharacterStateFromHP(Character& character)
+{
+    if (character.health.currentHP < 0)
+        character.health.currentHP = 0;
+    else if (character.health.currentHP > character.health.maxHP)
+        character.health.currentHP = character.health.maxHP;
+
+    if (character.state == STATE_UNCONSCIOUS &&
+        character.health.currentHP > 0)
+    {
+        character.state = STATE_ALIVE;
+    }
+}
+
 int healCharacter(Character& character, int healing)
 {
     if (healing <= 0 ||
+        (character.state != STATE_ALIVE &&
+         character.state != STATE_UNCONSCIOUS) ||
         character.health.currentHP >= character.health.maxHP)
     {
         return 0;
@@ -116,6 +132,7 @@ int healCharacter(Character& character, int healing)
     int restored = healing < missingHP ? healing : missingHP;
 
     character.health.currentHP += restored;
+    updateCharacterStateFromHP(character);
     return restored;
 }
 
@@ -213,6 +230,18 @@ int getArmorClass(const Character& character, int dodgeBonus)
          + naturalArmor
          + deflectionBonus
          + dodgeBonus
+         + sizeModifier;
+}
+
+int getTouchArmorClass(const Character& character, int dodgeBonus)
+{
+    const int deflectionBonus = 0;
+    const int sizeModifier = 0;
+
+    return 10
+         + getAbilityModifier(character, ABILITY_DEXTERITY)
+         + deflectionBonus
+         + dodgeBonus
          + sizeModifier
          + getConditionArmorClassModifier(character);
 }
@@ -248,6 +277,28 @@ int getRangedAttackBonus(const Character& character)
                character,
                ABILITY_DEXTERITY)
          + weaponEnhancement
+         + getConditionAttackModifier(character);
+}
+
+int getRangedTouchAttackBonus(const Character& character)
+{
+    return getBaseAttackBonus(
+               character.characterClass,
+               character.level)
+         + getAbilityModifier(
+               character,
+               ABILITY_DEXTERITY)
+         + getConditionAttackModifier(character);
+}
+
+int getMeleeTouchAttackBonus(const Character& character)
+{
+    return getBaseAttackBonus(
+               character.characterClass,
+               character.level)
+         + getAbilityModifier(
+               character,
+               ABILITY_STRENGTH)
          + getConditionAttackModifier(character);
 }
 
