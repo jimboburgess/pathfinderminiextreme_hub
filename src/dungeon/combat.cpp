@@ -2756,6 +2756,7 @@ static void executeTurnUndead(Entity& cleric)
         if (save.result == SAVE_RESULT_FAILURE)
         {
             target.character.state = STATE_TURNED;
+            generateCorpseLoot(target);
             target.turn.movementRemaining = 0;
             target.turn.standardActionUsed = true;
             markEntityFootprintDirty(target);

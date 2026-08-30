@@ -541,7 +541,8 @@ bool isAlive(const Character& character)
 
 bool isDead(const Character& character)
 {
-    return character.state == STATE_DEAD;
+    return character.state == STATE_DEAD ||
+           character.state == STATE_TURNED;
 }
 
 bool isConscious(const Character& character)

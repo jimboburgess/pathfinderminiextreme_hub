@@ -373,7 +373,8 @@ void addLootForTable(LootData& loot, LootTableID table)
 void generateCorpseLoot(Entity& corpse)
 {
     if (corpse.type != ENTITY_MONSTER ||
-        corpse.character.state != STATE_DEAD || corpse.loot.generated)
+        (corpse.character.state != STATE_DEAD &&
+         corpse.character.state != STATE_TURNED) || corpse.loot.generated)
         return;
 
     clearCorpseLoot(corpse.loot);
@@ -414,7 +415,8 @@ bool corpseHasLoot(const Entity& corpse)
 {
     return corpse.active &&
            ((corpse.type == ENTITY_MONSTER &&
-             corpse.character.state == STATE_DEAD) ||
+             (corpse.character.state == STATE_DEAD ||
+              corpse.character.state == STATE_TURNED)) ||
             corpse.type == ENTITY_CHEST) &&
            corpse.loot.generated &&
            (corpse.loot.itemCount > 0 || corpse.loot.gold > 0);
