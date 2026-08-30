@@ -63,7 +63,15 @@ inline bool isLivingHostileForCombat(const Entity& entity)
 
 inline bool shouldMonsterJoinCombatRoster(const Entity& entity)
 {
-    return isLivingHostileForCombat(entity);
+    return isLivingHostileForCombat(entity) && entity.awareOfPlayer;
+}
+
+inline bool reinforcementMayAct(
+    const Entity& entity,
+    uint8_t combatRound)
+{
+    return entity.reinforcementJoinedRound == 0 ||
+           combatRound > entity.reinforcementJoinedRound;
 }
 
 inline bool shouldMonsterRunCombatAI(const Entity& entity)

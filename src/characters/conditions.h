@@ -83,6 +83,7 @@ struct Condition
 constexpr uint8_t MAX_CONDITIONS_PER_CHARACTER = 12;
 constexpr uint8_t MAX_TIMED_DAMAGE_EFFECTS = 4;
 constexpr uint8_t MAX_ENERGY_RESISTANCES = 5;
+constexpr uint8_t MAX_ENERGY_PROTECTIONS = 4;
 
 // DamageType deliberately remains owned by abilities.h. Store its compact
 // numeric value here to keep the condition layer independent of spell data.
@@ -102,6 +103,13 @@ struct EnergyResistance
     uint8_t roundsRemaining = 0;
 };
 
+struct EnergyProtection
+{
+    uint8_t damageType = 0;
+    int16_t remainingAbsorption = 0;
+    uint8_t roundsRemaining = 0;
+};
+
 struct ConditionData
 {
     Condition conditions[MAX_CONDITIONS_PER_CHARACTER];
@@ -110,6 +118,8 @@ struct ConditionData
     uint8_t timedDamageCount = 0;
     EnergyResistance energyResistances[MAX_ENERGY_RESISTANCES];
     uint8_t energyResistanceCount = 0;
+    EnergyProtection energyProtections[MAX_ENERGY_PROTECTIONS];
+    uint8_t energyProtectionCount = 0;
 };
 
 // Generic information about effects resolved at the start of one creature's
@@ -158,6 +168,17 @@ bool addEnergyResistance(Character& character,
                          int amount,
                          int rounds);
 int getEnergyResistance(const Character& character, uint8_t damageType);
+bool addEnergyProtection(Character& character,
+                         uint8_t damageType,
+                         int amount,
+                         int rounds);
+int getEnergyProtection(const Character& character, uint8_t damageType);
+int absorbEnergyProtection(Character& character,
+                           uint8_t damageType,
+                           int incomingDamage);
+int applyEnergyMitigation(Character& character,
+                          uint8_t damageType,
+                          int incomingDamage);
 
 void clearConditions(Character& character);
 

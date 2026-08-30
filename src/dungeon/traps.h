@@ -81,6 +81,17 @@ struct TrapInstance
     uint8_t controlGroup = 0;
 };
 
+// Rendering derives directly from persistent trap state; no visual state is
+// stored separately in the dungeon runtime.
+enum TrapVisualState : uint8_t
+{
+    TRAP_VISUAL_HIDDEN,
+    TRAP_VISUAL_ARMED,
+    TRAP_VISUAL_TRIGGERED,
+    TRAP_VISUAL_DISABLED,
+    TRAP_VISUAL_DESTROYED
+};
+
 // Compatibility with the small authored-trap foundation that preceded the
 // reusable definition/instance split.
 using DungeonTrap = TrapInstance;
@@ -161,6 +172,7 @@ bool addSuspicion(
 
 bool isTrapDiscovered(const DungeonRoom& room, int x, int y);
 bool isTrapActive(const TrapInstance& trap);
+TrapVisualState getTrapVisualState(const TrapInstance& trap);
 
 TrapDiscoveryResult attemptManualTrapDiscovery(
     TrapInstance& trap,

@@ -8,6 +8,13 @@
 struct Entity;
 
 constexpr uint8_t MAX_MAP_EFFECTS = 8;
+constexpr uint8_t MAX_MAP_EFFECT_TILES = 25;
+
+struct MapEffectTile
+{
+    int8_t x = 0;
+    int8_t y = 0;
+};
 
 struct MapEffect
 {
@@ -26,6 +33,17 @@ struct MapEffect
     ConditionType conditionType = CONDITION_NONE;
     int16_t conditionValue = 0;
     uint8_t conditionDuration = 0;
+
+    // A fixed footprint lets persistent lines and ground bursts use the exact
+    // same tiles selected by the ability geometry without heap allocation.
+    uint8_t tileCount = 0;
+    MapEffectTile tiles[MAX_MAP_EFFECT_TILES];
+
+    DamageType damageType = DAMAGE_NONE;
+    uint8_t damageDiceCount = 0;
+    uint8_t damageDiceSides = 0;
+    int16_t flatDamage = 0;
+    SaveEffect damageSaveEffect = SAVE_EFFECT_NONE;
 };
 
 struct MapEffectTriggerResult
@@ -34,6 +52,9 @@ struct MapEffectTriggerResult
     uint8_t savesSucceeded = 0;
     uint8_t conditionsApplied = 0;
     ConditionType conditionApplied = CONDITION_NONE;
+    uint8_t damageTriggers = 0;
+    int16_t damageRolled = 0;
+    bool targetDefeated = false;
 };
 
 extern MapEffect activeMapEffects[MAX_MAP_EFFECTS];
@@ -62,6 +83,7 @@ MapEffectTriggerResult handleEnteredMapEffects(
     Entity& entity,
     int entityX,
     int entityY);
+MapEffectTriggerResult handleStartingTurnMapEffects(Entity& entity);
 
 void markMapEffectTilesDirty(const MapEffect& effect);
 const MapEffect* getWebEffectAffectingEntity(const Entity& entity);

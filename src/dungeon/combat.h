@@ -180,6 +180,7 @@ void checkForCombat();
 
 void findCombatants();
 bool isCombatParticipant(const Entity& entity);
+bool addCombatReinforcement(Entity& monster);
 
 //==================================================
 // Combat Startup

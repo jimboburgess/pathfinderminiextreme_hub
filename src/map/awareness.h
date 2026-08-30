@@ -6,6 +6,8 @@
 void updateAwareness();
 void updateMonsterVisibility();
 void resetAwarenessTimer();
+void checkReinforcementAwareness();
+constexpr int COMBAT_NOISE_PERCEPTION_BONUS = 10;
 int getStealthSituationModifier(const Entity& player, const Entity& observer);
 bool tryMonsterDetectPlayer(Entity& monster, const Entity& player);
 bool tryPlayerDetectMonster(Entity& player, Entity& monster);

@@ -24,6 +24,8 @@ static bool controlledBaseTerrainDifficult = false;
 static Entity activeTestEntities[4];
 static uint8_t activeTestEntityCount = 0;
 
+Combat combat;
+
 bool triggerTrapForEntityAt(Entity&, int, int)
 {
     return false;
@@ -51,6 +53,14 @@ void playAreaDamageFlash(
     DamageType,
     const AreaFlashTile*,
     uint8_t)
+{
+}
+
+void playAbilityImpactFlash(
+    AbilityImpactVisual,
+    DamageType,
+    int,
+    int)
 {
 }
 
@@ -228,7 +238,10 @@ void markTileDirty(int, int)
         dirtyTileCount++;
 }
 
-CombatDamageResult applyCombatDamage(Entity& target, int damage)
+CombatDamageResult applyCombatDamage(
+    Entity& target,
+    int damage,
+    DamageType)
 {
     CombatDamageResult result;
 
@@ -1526,6 +1539,66 @@ void test_resist_energy_selection_scaling_and_cast_source_are_generic()
     TEST_ASSERT_FALSE(wizard.turn.standardActionUsed);
 }
 
+void test_protection_from_energy_uses_selected_type_scaling_and_cast_source()
+{
+    const DamageType types[] = {
+        DAMAGE_FIRE, DAMAGE_COLD, DAMAGE_ELECTRIC, DAMAGE_ACID
+    };
+
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_PROTECTION_FROM_ENERGY));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_PROTECTION_FROM_ENERGY_ARCANE));
+    TEST_ASSERT_EQUAL_INT(12, getEnergyProtectionAmountForCasterLevel(1));
+    TEST_ASSERT_EQUAL_INT(60, getEnergyProtectionAmountForCasterLevel(5));
+    TEST_ASSERT_EQUAL_INT(120, getEnergyProtectionAmountForCasterLevel(10));
+    TEST_ASSERT_EQUAL_INT(120, getEnergyProtectionAmountForCasterLevel(20));
+
+    for (DamageType type : types)
+    {
+        resetResolverControls();
+        Entity cleric;
+        Entity ally;
+        initializeEntity(cleric, ENTITY_PLAYER, TEAM_PLAYER);
+        initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+        cleric.character.level = 5;
+
+        AbilityResolution result = resolveAbility(
+            cleric, &ally, ABILITY_PROTECTION_FROM_ENERGY,
+            AbilityCastSource::NORMAL, type);
+
+        TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+        TEST_ASSERT_EQUAL(type, result.protectionType);
+        TEST_ASSERT_EQUAL_INT(60, result.protectionAmount);
+        TEST_ASSERT_EQUAL_INT(60, getEnergyProtection(
+            ally.character, static_cast<uint8_t>(type)));
+        TEST_ASSERT_EQUAL_INT(4, cleric.character.magic.currentMP);
+        TEST_ASSERT_TRUE(cleric.turn.standardActionUsed);
+    }
+
+    resetResolverControls();
+    Entity wizard;
+    Entity ally;
+    initializeEntity(wizard, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+    wizard.character.level = 7;
+    wizard.character.magic.currentMP = 0;
+    AbilityResolution scrollResult = resolveAbility(
+        wizard, &ally, ABILITY_PROTECTION_FROM_ENERGY_ARCANE,
+        AbilityCastSource::SCROLL, DAMAGE_ACID);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, scrollResult.result);
+    TEST_ASSERT_EQUAL_INT(84, scrollResult.protectionAmount);
+    TEST_ASSERT_EQUAL_INT(0, wizard.character.magic.currentMP);
+
+    resetResolverControls();
+    initializeEntity(wizard, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(ally, ENTITY_PLAYER, TEAM_PLAYER);
+    AbilityResolution canceledSelection = resolveAbility(
+        wizard, &ally, ABILITY_PROTECTION_FROM_ENERGY_ARCANE,
+        AbilityCastSource::NORMAL, DAMAGE_NONE);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_INVALID_TARGET, canceledSelection.result);
+    TEST_ASSERT_EQUAL_INT(10, wizard.character.magic.currentMP);
+    TEST_ASSERT_FALSE(wizard.turn.standardActionUsed);
+}
+
 void test_ranged_touch_miss_spends_cast_but_applies_no_effects()
 {
     resetResolverControls();
@@ -1845,6 +1918,102 @@ void test_energy_scroll_uses_identical_resolution_without_mp()
     TEST_ASSERT_EQUAL_INT(0, cleric.character.magic.currentMP);
 }
 
+void test_persistent_damage_spell_metadata_and_geometry()
+{
+    resetResolverControls();
+    const Ability* wall = getAbility(ABILITY_WALL_OF_FIRE);
+    const Ability* fog = getAbility(ABILITY_ACID_FOG);
+    const Ability* blades = getAbility(ABILITY_BLADE_BARRIER);
+    TEST_ASSERT_NOT_NULL(wall);
+    TEST_ASSERT_NOT_NULL(fog);
+    TEST_ASSERT_NOT_NULL(blades);
+    TEST_ASSERT_EQUAL(MAP_EFFECT_WALL_OF_FIRE, wall->mapEffectType);
+    TEST_ASSERT_EQUAL(DELIVERY_LINE, wall->delivery);
+    TEST_ASSERT_EQUAL(MAP_EFFECT_ACID_FOG, fog->mapEffectType);
+    TEST_ASSERT_EQUAL(DELIVERY_AREA, fog->delivery);
+    TEST_ASSERT_EQUAL(MAP_EFFECT_BLADE_BARRIER, blades->mapEffectType);
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_WALL_OF_FIRE));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_ACID_FOG));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_BLADE_BARRIER));
+
+    Entity wizard;
+    initializeEntity(wizard, ENTITY_PLAYER, TEAM_PLAYER, 30);
+    wizard.x = 2;
+    wizard.y = 2;
+    wizard.character.magic.currentMP = 20;
+    AbilityResolution result = resolveAbilityInDirection(
+        wizard, DIR_EAST, ABILITY_WALL_OF_FIRE);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    TEST_ASSERT_TRUE(result.mapEffectCreated);
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WALL_OF_FIRE, 3, 2));
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WALL_OF_FIRE, 8, 2));
+    TEST_ASSERT_FALSE(hasMapEffectAt(MAP_EFFECT_WALL_OF_FIRE, 2, 2));
+}
+
+void test_persistent_damage_triggers_once_on_entry_and_start_turn()
+{
+    resetResolverControls();
+    MapEffect effect;
+    effect.active = true;
+    effect.type = MAP_EFFECT_ACID_FOG;
+    effect.x = 5;
+    effect.y = 5;
+    effect.radius = 1;
+    effect.roundsRemaining = 3;
+    effect.damageType = DAMAGE_ACID;
+    effect.damageDiceCount = 2;
+    effect.damageDiceSides = 6;
+    TEST_ASSERT_NOT_NULL(addMapEffect(effect));
+
+    Entity monster;
+    initializeEntity(monster, ENTITY_MONSTER, TEAM_MONSTER, 20);
+    monster.x = 5;
+    monster.y = 5;
+    MapEffectTriggerResult entered = handleEnteredMapEffects(monster, 5, 5);
+    TEST_ASSERT_EQUAL_UINT8(1, entered.damageTriggers);
+    TEST_ASSERT_EQUAL_INT(18, monster.character.health.currentHP);
+    TEST_ASSERT_EQUAL_UINT8(1, damageApplicationCount);
+
+    MapEffectTriggerResult started = handleStartingTurnMapEffects(monster);
+    TEST_ASSERT_EQUAL_UINT8(1, started.damageTriggers);
+    TEST_ASSERT_EQUAL_INT(16, monster.character.health.currentHP);
+    TEST_ASSERT_EQUAL_UINT8(2, damageApplicationCount);
+}
+
+void test_overlapping_persistent_damage_and_expiration_are_independent()
+{
+    resetResolverControls();
+    MapEffect fire;
+    fire.active = true;
+    fire.type = MAP_EFFECT_WALL_OF_FIRE;
+    fire.x = 4;
+    fire.y = 4;
+    fire.roundsRemaining = 1;
+    fire.damageType = DAMAGE_FIRE;
+    fire.flatDamage = 3;
+    TEST_ASSERT_NOT_NULL(addMapEffect(fire));
+    MapEffect blades = fire;
+    blades.type = MAP_EFFECT_BLADE_BARRIER;
+    blades.roundsRemaining = 2;
+    blades.damageType = DAMAGE_SLASHING;
+    blades.flatDamage = 4;
+    TEST_ASSERT_NOT_NULL(addMapEffect(blades));
+
+    Entity player;
+    initializeEntity(player, ENTITY_PLAYER, TEAM_PLAYER, 20);
+    player.x = 4;
+    player.y = 4;
+    MapEffectTriggerResult result = handleStartingTurnMapEffects(player);
+    TEST_ASSERT_EQUAL_UINT8(2, result.damageTriggers);
+    TEST_ASSERT_EQUAL_INT(13, player.character.health.currentHP);
+
+    const uint8_t dirtyBefore = dirtyTileMarkCount;
+    tickMapEffects();
+    TEST_ASSERT_FALSE(hasMapEffectAt(MAP_EFFECT_WALL_OF_FIRE, 4, 4));
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_BLADE_BARRIER, 4, 4));
+    TEST_ASSERT_GREATER_THAN_UINT8(dirtyBefore, dirtyTileMarkCount);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -1884,6 +2053,7 @@ void setup()
         test_directional_cast_validation_is_transactional_and_stun_blocks_casting);
     RUN_TEST(test_monster_caster_uses_the_same_directional_resolver);
     RUN_TEST(test_resist_energy_selection_scaling_and_cast_source_are_generic);
+    RUN_TEST(test_protection_from_energy_uses_selected_type_scaling_and_cast_source);
     RUN_TEST(test_ranged_touch_miss_spends_cast_but_applies_no_effects);
     RUN_TEST(test_ranged_touch_hit_applies_acid_arrow_and_natural_rules);
     RUN_TEST(test_friendly_touch_never_rolls_an_attack);
@@ -1895,6 +2065,9 @@ void setup()
     RUN_TEST(test_cure_undead_miss_and_inflict_undead_healing_are_generic);
     RUN_TEST(test_inflict_living_will_save_halves_after_touch_hit);
     RUN_TEST(test_energy_scroll_uses_identical_resolution_without_mp);
+    RUN_TEST(test_persistent_damage_spell_metadata_and_geometry);
+    RUN_TEST(test_persistent_damage_triggers_once_on_entry_and_start_turn);
+    RUN_TEST(test_overlapping_persistent_damage_and_expiration_are_independent);
     UNITY_END();
 }
 

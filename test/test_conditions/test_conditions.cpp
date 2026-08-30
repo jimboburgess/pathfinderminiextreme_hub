@@ -166,7 +166,12 @@ void test_timed_damage_ticks_once_per_remaining_round()
 {
     Character character = {};
     character.state = STATE_ALIVE;
-    TimedDamageEffect acid = { 4, 2, 4, 1, 42 };
+    TimedDamageEffect acid;
+    acid.damageType = 4;
+    acid.diceCount = 2;
+    acid.diceSides = 4;
+    acid.roundsRemaining = 1;
+    acid.sourceAbility = 42;
 
     TEST_ASSERT_TRUE(addTimedDamageEffect(character, acid));
     TEST_ASSERT_EQUAL_UINT8(1, character.conditions.timedDamageCount);
@@ -182,9 +187,20 @@ void test_timed_damage_ticks_once_per_remaining_round()
 void test_same_timed_damage_source_refreshes_instead_of_stacking()
 {
     Character character = {};
-    TimedDamageEffect acid = { 4, 2, 4, 1, 42 };
-    TimedDamageEffect refreshed = { 4, 2, 4, 2, 42 };
-    TimedDamageEffect fire = { 2, 1, 6, 1, 77 };
+    TimedDamageEffect acid;
+    acid.damageType = 4;
+    acid.diceCount = 2;
+    acid.diceSides = 4;
+    acid.roundsRemaining = 1;
+    acid.sourceAbility = 42;
+    TimedDamageEffect refreshed = acid;
+    refreshed.roundsRemaining = 2;
+    TimedDamageEffect fire;
+    fire.damageType = 2;
+    fire.diceCount = 1;
+    fire.diceSides = 6;
+    fire.roundsRemaining = 1;
+    fire.sourceAbility = 77;
 
     TEST_ASSERT_TRUE(addTimedDamageEffect(character, acid));
     TEST_ASSERT_TRUE(addTimedDamageEffect(character, refreshed));
@@ -208,6 +224,49 @@ void test_energy_resistance_uses_highest_same_type_and_expires()
     tickConditions(character);
     TEST_ASSERT_EQUAL_INT(0, getEnergyResistance(character, 2));
     TEST_ASSERT_EQUAL_INT(0, getEnergyResistance(character, 3));
+}
+
+void test_energy_protection_absorbs_before_resistance_and_expires()
+{
+    Character character = {};
+
+    TEST_ASSERT_TRUE(addEnergyProtection(character, 2, 20, 2));
+    TEST_ASSERT_TRUE(addEnergyResistance(character, 2, 10, 2));
+    TEST_ASSERT_EQUAL_INT(20, getEnergyProtection(character, 2));
+
+    // Protection absorbs 20 first; resistance then absorbs 10 of the 15 left.
+    TEST_ASSERT_EQUAL_INT(5, applyEnergyMitigation(character, 2, 35));
+    TEST_ASSERT_EQUAL_INT(0, getEnergyProtection(character, 2));
+    TEST_ASSERT_EQUAL_INT(10, getEnergyResistance(character, 2));
+
+    // A nonmatching type neither consumes protection nor receives resistance.
+    TEST_ASSERT_TRUE(addEnergyProtection(character, 3, 12, 1));
+    TEST_ASSERT_EQUAL_INT(7, applyEnergyMitigation(character, 4, 7));
+    TEST_ASSERT_EQUAL_INT(12, getEnergyProtection(character, 3));
+
+    tickConditions(character);
+    TEST_ASSERT_EQUAL_INT(0, getEnergyProtection(character, 3));
+}
+
+void test_energy_protection_refreshes_same_type_and_allows_different_types()
+{
+    Character character = {};
+
+    TEST_ASSERT_TRUE(addEnergyProtection(character, 2, 30, 2));
+    TEST_ASSERT_EQUAL_INT(10, absorbEnergyProtection(character, 2, 10));
+    TEST_ASSERT_EQUAL_INT(20, getEnergyProtection(character, 2));
+
+    // A weaker recast does not reduce or stack the current pool.
+    TEST_ASSERT_TRUE(addEnergyProtection(character, 2, 15, 4));
+    TEST_ASSERT_EQUAL_UINT8(1, character.conditions.energyProtectionCount);
+    TEST_ASSERT_EQUAL_INT(20, getEnergyProtection(character, 2));
+
+    // A stronger recast refreshes the pool; another energy coexists.
+    TEST_ASSERT_TRUE(addEnergyProtection(character, 2, 40, 3));
+    TEST_ASSERT_TRUE(addEnergyProtection(character, 3, 25, 3));
+    TEST_ASSERT_EQUAL_UINT8(2, character.conditions.energyProtectionCount);
+    TEST_ASSERT_EQUAL_INT(40, getEnergyProtection(character, 2));
+    TEST_ASSERT_EQUAL_INT(25, getEnergyProtection(character, 3));
 }
 
 void test_negative_modifier_bundle_and_slow_bonus_attack_suppression()
@@ -412,6 +471,8 @@ void setup()
     RUN_TEST(test_timed_damage_ticks_once_per_remaining_round);
     RUN_TEST(test_same_timed_damage_source_refreshes_instead_of_stacking);
     RUN_TEST(test_energy_resistance_uses_highest_same_type_and_expires);
+    RUN_TEST(test_energy_protection_absorbs_before_resistance_and_expires);
+    RUN_TEST(test_energy_protection_refreshes_same_type_and_allows_different_types);
     RUN_TEST(test_negative_modifier_bundle_and_slow_bonus_attack_suppression);
     RUN_TEST(test_sleep_immunity_and_damage_waking_are_generic);
     RUN_TEST(test_sleep_duration_prevents_each_intended_turn);

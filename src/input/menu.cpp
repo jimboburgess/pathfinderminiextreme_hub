@@ -242,16 +242,16 @@ Menu spellMenu =
 
 const MenuItem resistEnergyMenuItems[] =
 {
-    { "Fire", "Resist fire damage.", MENU_RESIST_FIRE, nullptr, MENU_CLASS_ALL },
-    { "Cold", "Resist cold damage.", MENU_RESIST_COLD, nullptr, MENU_CLASS_ALL },
-    { "Electricity", "Resist electricity damage.", MENU_RESIST_ELECTRICITY, nullptr, MENU_CLASS_ALL },
-    { "Acid", "Resist acid damage.", MENU_RESIST_ACID, nullptr, MENU_CLASS_ALL },
+    { "Fire", "Choose fire energy.", MENU_RESIST_FIRE, nullptr, MENU_CLASS_ALL },
+    { "Cold", "Choose cold energy.", MENU_RESIST_COLD, nullptr, MENU_CLASS_ALL },
+    { "Electricity", "Choose electricity.", MENU_RESIST_ELECTRICITY, nullptr, MENU_CLASS_ALL },
+    { "Acid", "Choose acid energy.", MENU_RESIST_ACID, nullptr, MENU_CLASS_ALL },
     { "Cancel", "Cancel without casting.", MENU_RESIST_CANCEL, nullptr, MENU_CLASS_ALL }
 };
 
 const Menu resistEnergyMenu =
 {
-    "Resist Energy",
+    "Energy Type",
     resistEnergyMenuItems,
     sizeof(resistEnergyMenuItems) / sizeof(MenuItem)
 };

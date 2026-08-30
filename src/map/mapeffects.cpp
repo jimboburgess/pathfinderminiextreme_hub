@@ -3,6 +3,8 @@
 #include <stdlib.h>
 
 #include "dungeon/abilityresolver.h"
+#include "dungeon/combat.h"
+#include "data/dice.h"
 #include "map/activemap.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
@@ -29,6 +31,9 @@ bool isDifficultMapEffect(MapEffectType type)
             return true;
 
         case MAP_EFFECT_WEB:
+        case MAP_EFFECT_WALL_OF_FIRE:
+        case MAP_EFFECT_ACID_FOG:
+        case MAP_EFFECT_BLADE_BARRIER:
             return false;
 
         case MAP_EFFECT_NONE:
@@ -45,6 +50,9 @@ void addTriggerResult(
     total.savesAttempted += addition.savesAttempted;
     total.savesSucceeded += addition.savesSucceeded;
     total.conditionsApplied += addition.conditionsApplied;
+    total.damageTriggers += addition.damageTriggers;
+    total.damageRolled += addition.damageRolled;
+    total.targetDefeated |= addition.targetDefeated;
 
     if (total.conditionApplied == CONDITION_NONE)
         total.conditionApplied = addition.conditionApplied;
@@ -133,6 +141,14 @@ bool mapEffectAffectsTile(const MapEffect& effect, int x, int y)
     if (!effect.active || !isInsideActiveMap(x, y))
         return false;
 
+    if (effect.tileCount > 0)
+    {
+        for (uint8_t i = 0; i < effect.tileCount; i++)
+            if (effect.tiles[i].x == x && effect.tiles[i].y == y)
+                return true;
+        return false;
+    }
+
     return abs(x - effect.x) <= effect.radius &&
            abs(y - effect.y) <= effect.radius;
 }
@@ -214,10 +230,7 @@ MapEffectTriggerResult applyMapEffectToEntity(
     if (!effect.active || !entity.active || !isCombatEntity(entity) ||
         entity.character.state != STATE_ALIVE ||
         !mapEffectAffectsEntityAt(
-            effect, entity, entity.x, entity.y) ||
-        effect.conditionType == CONDITION_NONE ||
-        !canReceiveCondition(
-            entity.character, effect.conditionType))
+            effect, entity, entity.x, entity.y))
     {
         return result;
     }
@@ -225,6 +238,7 @@ MapEffectTriggerResult applyMapEffectToEntity(
     if (effect.type == MAP_EFFECT_WEB && isImmuneToWeb(entity))
         return result;
 
+    bool saveSucceeded = false;
     if (effect.saveType != SAVE_NONE)
     {
         AbilitySavingThrow savingThrow = resolveSavingThrow(
@@ -234,11 +248,35 @@ MapEffectTriggerResult applyMapEffectToEntity(
         if (savingThrow.result == SAVE_RESULT_SUCCESS)
         {
             result.savesSucceeded = 1;
-            return result;
+            saveSucceeded = true;
         }
     }
 
-    if (addCondition(
+    if (effect.damageType != DAMAGE_NONE &&
+        !(saveSucceeded && effect.damageSaveEffect == SAVE_EFFECT_NEGATES))
+    {
+        int damage = effect.flatDamage;
+        if (effect.damageDiceCount > 0 && effect.damageDiceSides > 0)
+            damage += rollDice(effect.damageDiceCount, effect.damageDiceSides);
+        if (saveSucceeded && effect.damageSaveEffect == SAVE_EFFECT_HALF)
+            damage /= 2;
+
+        playAbilityImpactFlash(
+            IMPACT_DAMAGE, effect.damageType, entity.x, entity.y);
+        const CombatDamageResult damageResult = applyCombatDamage(
+            entity, damage, effect.damageType);
+        if (damageResult.applied)
+        {
+            result.damageTriggers = 1;
+            result.damageRolled = damage;
+            result.targetDefeated = damageResult.defeated ||
+                entity.character.state != STATE_ALIVE;
+        }
+    }
+
+    if (!saveSucceeded && effect.conditionType != CONDITION_NONE &&
+        canReceiveCondition(entity.character, effect.conditionType) &&
+        addCondition(
             entity.character,
             effect.conditionType,
             effect.conditionValue,
@@ -309,6 +347,25 @@ MapEffectTriggerResult handleEnteredMapEffects(
     return result;
 }
 
+MapEffectTriggerResult handleStartingTurnMapEffects(Entity& entity)
+{
+    MapEffectTriggerResult result;
+    if (!entity.active || entity.character.state != STATE_ALIVE)
+        return result;
+
+    for (uint8_t i = 0; i < MAX_MAP_EFFECTS; i++)
+    {
+        const MapEffect& effect = activeMapEffects[i];
+        if (!mapEffectAffectsEntityAt(effect, entity, entity.x, entity.y))
+            continue;
+
+        addTriggerResult(result, applyMapEffectToEntity(effect, entity));
+        if (entity.character.state != STATE_ALIVE)
+            break;
+    }
+    return result;
+}
+
 void markMapEffectTilesDirty(const MapEffect& effect)
 {
     if (!effect.active)
@@ -316,18 +373,12 @@ void markMapEffectTilesDirty(const MapEffect& effect)
 
     uint8_t validTileCount = 0;
 
-    for (int y = effect.y - effect.radius;
-         y <= effect.y + effect.radius;
-         y++)
-    {
-        for (int x = effect.x - effect.radius;
-             x <= effect.x + effect.radius;
-             x++)
-        {
-            if (isInsideActiveMap(x, y))
-                validTileCount++;
-        }
-    }
+    if (effect.tileCount > 0)
+        validTileCount = effect.tileCount;
+    else
+        for (int y = effect.y - effect.radius; y <= effect.y + effect.radius; y++)
+            for (int x = effect.x - effect.radius; x <= effect.x + effect.radius; x++)
+                if (isInsideActiveMap(x, y)) validTileCount++;
 
     // Multiple effects may expire on the same round boundary. If their
     // combined footprints cannot fit in the fixed dirty-tile queue, request
@@ -340,16 +391,14 @@ void markMapEffectTilesDirty(const MapEffect& effect)
         return;
     }
 
-    for (int y = effect.y - effect.radius;
-         y <= effect.y + effect.radius;
-         y++)
+    if (effect.tileCount > 0)
     {
-        for (int x = effect.x - effect.radius;
-             x <= effect.x + effect.radius;
-             x++)
-        {
-            if (isInsideActiveMap(x, y))
-                markTileDirty(x, y);
-        }
+        for (uint8_t i = 0; i < effect.tileCount; i++)
+            markTileDirty(effect.tiles[i].x, effect.tiles[i].y);
+        return;
     }
+
+    for (int y = effect.y - effect.radius; y <= effect.y + effect.radius; y++)
+        for (int x = effect.x - effect.radius; x <= effect.x + effect.radius; x++)
+            if (isInsideActiveMap(x, y)) markTileDirty(x, y);
 }

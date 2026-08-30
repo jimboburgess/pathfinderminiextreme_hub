@@ -16,6 +16,11 @@ bool hasCondition(const Character& character, ConditionType type)
     return false;
 }
 
+int getEffectiveSpeed(const Character& character)
+{
+    return character.speed;
+}
+
 static Entity makeEntity(
     EntityType type,
     Team team,
@@ -73,7 +78,7 @@ void test_detecting_monster_starts_a_full_active_map_roster()
     TEST_ASSERT_TRUE(entities[1].revealedToPlayer);
     Entity* roster[MAX_ENTITIES] = {};
 
-    TEST_ASSERT_EQUAL_UINT8(3, makeRoster(entities, 3, roster));
+    TEST_ASSERT_EQUAL_UINT8(2, makeRoster(entities, 3, roster));
 }
 
 void test_all_living_current_room_hostiles_join_dungeon_roster()
@@ -86,7 +91,7 @@ void test_all_living_current_room_hostiles_join_dungeon_roster()
     entities[0].awareOfPlayer = true;
     Entity* roster[MAX_ENTITIES] = {};
 
-    TEST_ASSERT_EQUAL_UINT8(4, makeRoster(entities, 4, roster));
+    TEST_ASSERT_EQUAL_UINT8(2, makeRoster(entities, 4, roster));
 }
 
 void test_detection_range_does_not_limit_dungeon_membership()
@@ -100,7 +105,7 @@ void test_detection_range_does_not_limit_dungeon_membership()
     entities[1].y = 14;
     Entity* roster[MAX_ENTITIES] = {};
 
-    TEST_ASSERT_EQUAL_UINT8(2, makeRoster(entities, 2, roster));
+    TEST_ASSERT_EQUAL_UINT8(1, makeRoster(entities, 2, roster));
 }
 
 void test_wall_hidden_combatant_is_not_visible()
@@ -135,6 +140,7 @@ void test_dead_looted_and_inactive_monsters_do_not_join()
         makeEntity(ENTITY_MONSTER, TEAM_MONSTER, STATE_LOOTED),
         makeEntity(ENTITY_MONSTER, TEAM_MONSTER, STATE_ALIVE)};
     entities[4].active = false;
+    entities[1].awareOfPlayer = true;
     Entity* roster[MAX_ENTITIES] = {};
 
     TEST_ASSERT_EQUAL_UINT8(2, makeRoster(entities, 5, roster));
@@ -146,6 +152,7 @@ void test_entities_from_another_room_are_not_in_active_room_roster()
         makeEntity(ENTITY_PLAYER, TEAM_PLAYER),
         makeEntity(ENTITY_MONSTER, TEAM_MONSTER)};
     Entity otherRoom = makeEntity(ENTITY_MONSTER, TEAM_MONSTER);
+    currentRoom[1].awareOfPlayer = true;
     Entity* roster[MAX_ENTITIES] = {};
     const uint8_t count = makeRoster(currentRoom, 2, roster);
 
@@ -160,7 +167,7 @@ void test_unaware_monster_joins_without_gaining_player_knowledge()
         makeEntity(ENTITY_MONSTER, TEAM_MONSTER)};
     Entity* roster[MAX_ENTITIES] = {};
 
-    TEST_ASSERT_EQUAL_UINT8(2, makeRoster(entities, 2, roster));
+    TEST_ASSERT_EQUAL_UINT8(1, makeRoster(entities, 2, roster));
     TEST_ASSERT_FALSE(entities[1].awareOfPlayer);
     TEST_ASSERT_FALSE(shouldMonsterRunCombatAI(entities[1]));
 }
@@ -222,11 +229,34 @@ void test_combat_start_enemy_count_matches_living_roster()
         makeEntity(ENTITY_MONSTER, TEAM_MONSTER),
         makeEntity(ENTITY_MONSTER, TEAM_MONSTER, STATE_DEAD)};
     Entity* roster[MAX_ENTITIES] = {};
+    entities[1].awareOfPlayer = true;
+    entities[2].awareOfPlayer = true;
     const uint8_t count = makeRoster(entities, 4, roster);
 
     TEST_ASSERT_EQUAL_UINT8(3, count);
     TEST_ASSERT_EQUAL_UINT8(
         2, countLivingHostilesInCombatRoster(roster, count));
+}
+
+void test_reinforcement_waits_until_following_round()
+{
+    Entity monster = makeEntity(ENTITY_MONSTER, TEAM_MONSTER);
+    monster.reinforcementJoinedRound = 2;
+    TEST_ASSERT_FALSE(reinforcementMayAct(monster, 2));
+    TEST_ASSERT_TRUE(reinforcementMayAct(monster, 3));
+    monster.reinforcementJoinedRound = 0;
+    TEST_ASSERT_TRUE(reinforcementMayAct(monster, 1));
+}
+
+void test_neutral_and_unaware_hostiles_are_not_initial_combatants()
+{
+    Entity entities[3] = {
+        makeEntity(ENTITY_PLAYER, TEAM_PLAYER),
+        makeEntity(ENTITY_MONSTER, TEAM_NEUTRAL),
+        makeEntity(ENTITY_MONSTER, TEAM_MONSTER)};
+    entities[1].awareOfPlayer = true;
+    Entity* roster[MAX_ENTITIES] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, makeRoster(entities, 3, roster));
 }
 
 void test_pathfinder_iterative_attack_progression()
@@ -316,6 +346,8 @@ void setup()
     RUN_TEST(test_second_monster_detection_establishes_combat_after_ambush_kill);
     RUN_TEST(test_flat_footed_condition_preserves_existing_sneak_attack_rule);
     RUN_TEST(test_combat_start_enemy_count_matches_living_roster);
+    RUN_TEST(test_reinforcement_waits_until_following_round);
+    RUN_TEST(test_neutral_and_unaware_hostiles_are_not_initial_combatants);
     RUN_TEST(test_pathfinder_iterative_attack_progression);
     RUN_TEST(test_full_attack_requires_unused_normal_movement);
     RUN_TEST(test_natural_weapons_do_not_gain_iteratives);

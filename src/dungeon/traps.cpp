@@ -293,6 +293,21 @@ bool isTrapActive(const TrapInstance& trap)
         !trap.disabled && !trap.triggered && !trap.destroyed;
 }
 
+TrapVisualState getTrapVisualState(const TrapInstance& trap)
+{
+    // Final states deliberately win if old runtime data contains more than
+    // one flag. A hidden trap stays represented only by its existing clue.
+    if (trap.destroyed)
+        return TRAP_VISUAL_DESTROYED;
+    if (trap.disabled)
+        return TRAP_VISUAL_DISABLED;
+    if (trap.triggered)
+        return TRAP_VISUAL_TRIGGERED;
+    if (trap.discovered)
+        return TRAP_VISUAL_ARMED;
+    return TRAP_VISUAL_HIDDEN;
+}
+
 TrapDiscoveryResult attemptManualTrapDiscovery(
     TrapInstance& trap,
     int perceptionTotal)

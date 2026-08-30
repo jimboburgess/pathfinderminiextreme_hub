@@ -95,6 +95,34 @@ void drawMapEffectOverlayAt(int tileX, int tileY)
                              screenX + 8, screenY + 14, COLOR_WEB);
                 break;
 
+            case MAP_EFFECT_WALL_OF_FIRE:
+                tft.drawLine(screenX + 2, screenY + 14,
+                             screenX + 5, screenY + 3, ST77XX_RED);
+                tft.drawLine(screenX + 6, screenY + 14,
+                             screenX + 9, screenY + 1, 0xFD20);
+                tft.drawLine(screenX + 10, screenY + 14,
+                             screenX + 13, screenY + 4, ST77XX_YELLOW);
+                tft.drawPixel(screenX + 4, screenY + 7, ST77XX_YELLOW);
+                tft.drawPixel(screenX + 11, screenY + 9, ST77XX_RED);
+                break;
+
+            case MAP_EFFECT_ACID_FOG:
+                tft.fillCircle(screenX + 4, screenY + 5, 2, ST77XX_GREEN);
+                tft.fillCircle(screenX + 10, screenY + 8, 3, 0xAFE5);
+                tft.drawLine(screenX + 2, screenY + 12,
+                             screenX + 13, screenY + 12, ST77XX_GREEN);
+                tft.drawPixel(screenX + 13, screenY + 4, 0xAFE5);
+                break;
+
+            case MAP_EFFECT_BLADE_BARRIER:
+                tft.drawLine(screenX + 2, screenY + 13,
+                             screenX + 13, screenY + 2, ST77XX_WHITE);
+                tft.drawLine(screenX + 2, screenY + 2,
+                             screenX + 13, screenY + 13, 0xC618);
+                tft.drawLine(screenX + 1, screenY + 8,
+                             screenX + 14, screenY + 8, ST77XX_WHITE);
+                break;
+
             case MAP_EFFECT_NONE:
                 break;
         }
@@ -559,8 +587,6 @@ void redrawDungeonTile(int x, int y)
         drawEntity(*entity);
     }
 
-    drawTrapDiscoveryMarker(room, x, y);
-
     if (isInspectingEntities())
     {
         Entity* inspected = getInspectedEntity();
@@ -669,11 +695,6 @@ void drawDungeonScreen()
     }
 
     drawMapEntities();
-
-    for (int y = 0; y < ROOM_SIZE; y++)
-        for (int x = 0; x < ROOM_SIZE; x++)
-            drawTrapDiscoveryMarker(
-                dungeon.rooms[dungeon.currentRoom], x, y);
 
     drawMapCursor();
     redrawMapMessage();

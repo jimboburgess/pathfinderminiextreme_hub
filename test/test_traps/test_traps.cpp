@@ -207,6 +207,24 @@ void test_disabled_and_destroyed_traps_do_not_trigger()
     TEST_ASSERT_FALSE(resolveTrapTrigger(destroyed, false, 8).triggered);
 }
 
+void test_trap_visual_state_uses_persistent_state_priority()
+{
+    TrapInstance trap = makeSpikeTrap();
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_HIDDEN, getTrapVisualState(trap));
+
+    trap.discovered = true;
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_ARMED, getTrapVisualState(trap));
+
+    trap.triggered = true;
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_TRIGGERED, getTrapVisualState(trap));
+
+    trap.disabled = true;
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_DISABLED, getTrapVisualState(trap));
+
+    trap.destroyed = true;
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_DESTROYED, getTrapVisualState(trap));
+}
+
 void test_hardness_never_creates_negative_damage()
 {
     TrapInstance trap = makeSpikeTrap();
@@ -314,6 +332,7 @@ void setup()
     RUN_TEST(test_active_spike_trap_triggers_once_and_failed_save_deals_damage);
     RUN_TEST(test_successful_reflex_save_negates_spike_damage);
     RUN_TEST(test_disabled_and_destroyed_traps_do_not_trigger);
+    RUN_TEST(test_trap_visual_state_uses_persistent_state_priority);
     RUN_TEST(test_hardness_never_creates_negative_damage);
     RUN_TEST(test_trap_damage_clamps_hp_to_zero_and_only_destroys);
     RUN_TEST(test_disable_requires_discovery_and_persists_on_success);

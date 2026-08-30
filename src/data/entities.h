@@ -54,6 +54,9 @@ struct Entity
     uint8_t lastKnownX = 0;
     uint8_t lastKnownY = 0;
     bool hasLastKnownPosition = false;
+    // Zero for initial combatants. Reinforcements skip turns until combat has
+    // advanced beyond the round in which they heard and joined the fight.
+    uint8_t reinforcementJoinedRound = 0;
 
     LootData loot;
 

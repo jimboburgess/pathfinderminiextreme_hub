@@ -31,6 +31,118 @@ void resetAwarenessTimer()
     lastAwarenessCheck = millis();
 }
 
+void checkReinforcementAwareness()
+{
+    if (!combat.active)
+        return;
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    Entity* player = getActiveMapPlayer();
+    if (entities == nullptr || player == nullptr ||
+        player->character.state != STATE_ALIVE)
+    {
+        return;
+    }
+
+    Serial.printf("Reinforcement awareness round %u\n",
+                  static_cast<unsigned int>(combat.combatRound));
+
+    // Recover already-aware hostiles first. They need no new opposed roll and
+    // are not range-limited because their awareness was established earlier.
+    uint8_t joinedCount = 0;
+    Entity* lastJoined = nullptr;
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        Entity& monster = entities[i];
+        if (!isHostileLivingMonster(monster) ||
+            isCombatParticipant(monster) || !monster.awareOfPlayer)
+        {
+            continue;
+        }
+
+        if (addCombatReinforcement(monster))
+        {
+            joinedCount++;
+            lastJoined = &monster;
+        }
+    }
+
+    bool hasUnawareCandidate = false;
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        Entity& monster = entities[i];
+        if (isHostileLivingMonster(monster) && monster.monster != nullptr &&
+            !isCombatParticipant(monster) && !monster.awareOfPlayer &&
+            getEntityGridDistance(*player, monster) <= COMBAT_DETECTION_RANGE)
+        {
+            hasUnawareCandidate = true;
+            break;
+        }
+    }
+
+    if (hasUnawareCandidate)
+    {
+        const int playerStealthRoll = rollDie(20);
+        const int playerStealth = playerStealthRoll +
+            getSkillBonus(player->character, SKILL_STEALTH);
+        Serial.printf("Player Stealth: %d (%d + %d)\n",
+                      playerStealth, playerStealthRoll,
+                      getSkillBonus(player->character, SKILL_STEALTH));
+
+        for (uint8_t i = 0; i < entityCount; i++)
+        {
+            Entity& monster = entities[i];
+            if (!isHostileLivingMonster(monster) || monster.monster == nullptr ||
+                isCombatParticipant(monster) || monster.awareOfPlayer ||
+                getEntityGridDistance(*player, monster) > COMBAT_DETECTION_RANGE)
+            {
+                continue;
+            }
+
+            const int perceptionRoll = rollDie(20);
+            const int perception = perceptionRoll +
+                monster.monster->perceptionBonus +
+                COMBAT_NOISE_PERCEPTION_BONUS;
+            const bool noticed = monsterPerceptionBeatsStealth(
+                perception, playerStealth);
+            Serial.printf(
+                "%s Perception: %d + %d + combat noise %d = %d; %s\n",
+                getEntityName(&monster), perceptionRoll,
+                monster.monster->perceptionBonus,
+                COMBAT_NOISE_PERCEPTION_BONUS, perception,
+                noticed ? "notices combat" : "does not notice");
+
+            if (!noticed)
+                continue;
+
+            monster.awareOfPlayer = true;
+            monster.revealedToPlayer = true;
+            markEntityFootprintDirty(monster);
+            if (addCombatReinforcement(monster))
+            {
+                joinedCount++;
+                lastJoined = &monster;
+            }
+        }
+    }
+
+    if (joinedCount == 1 && lastJoined != nullptr)
+    {
+        char message[64];
+        snprintf(message, sizeof(message), "%s joins the fight!",
+                 getEntityName(lastJoined));
+        setGameMessage(message);
+    }
+    else if (joinedCount > 1)
+    {
+        char message[64];
+        snprintf(message, sizeof(message), "%u enemies join the fight!",
+                 static_cast<unsigned int>(joinedCount));
+        setGameMessage(message);
+    }
+}
+
 int getStealthSituationModifier(const Entity& player, const Entity& observer)
 {
     // Future shadow/light modifiers belong here.

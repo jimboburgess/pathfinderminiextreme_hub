@@ -26,10 +26,12 @@ constexpr uint16_t COLOR_CLUE_BLOOD = 0x6002;
 constexpr uint16_t COLOR_CLUE_BONE = 0xBDF7;
 constexpr uint16_t COLOR_CLUE_DUST = 0x5269;
 
-constexpr uint16_t COLOR_TRAP_ACTIVE = 0xF800;
-constexpr uint16_t COLOR_TRAP_DISABLED = 0x07E0;
-constexpr uint16_t COLOR_TRAP_TRIGGERED = 0xFDC0;
-constexpr uint16_t COLOR_TRAP_DESTROYED = 0x7BEF;
+constexpr uint16_t COLOR_TRAP_METAL_DARK = 0x4208;
+constexpr uint16_t COLOR_TRAP_METAL = 0x8C71;
+constexpr uint16_t COLOR_TRAP_METAL_LIGHT = 0xD69A;
+constexpr uint16_t COLOR_TRAP_BRASS = 0xC5A0;
+constexpr uint16_t COLOR_TRAP_RUST = 0x7800;
+constexpr uint16_t COLOR_TRAP_DEBRIS = 0x5AEB;
 constexpr uint16_t COLOR_FOUNTAIN_STONE_DARK = 0x4A49;
 constexpr uint16_t COLOR_FOUNTAIN_STONE = 0x8C71;
 constexpr uint16_t COLOR_FOUNTAIN_STONE_LIGHT = 0xC618;
@@ -170,23 +172,62 @@ void drawSuspicionClue(
   }
 }
 
-void drawCornerMarker(int x, int y, uint16_t color)
+void drawTrapStateArt(int tileX, int tileY, TrapVisualState state)
 {
-  constexpr int edge = 4;
-  constexpr int inset = 1;
-  const int left = x + inset;
-  const int top = y + inset;
-  const int right = x + TILE_SIZE - 1 - inset;
-  const int bottom = y + TILE_SIZE - 1 - inset;
+  const int x = tileX * TILE_SIZE;
+  const int y = tileY * TILE_SIZE;
 
-  tft.drawLine(left, top, left + edge, top, color);
-  tft.drawLine(left, top, left, top + edge, color);
-  tft.drawLine(right - edge, top, right, top, color);
-  tft.drawLine(right, top, right, top + edge, color);
-  tft.drawLine(left, bottom, left + edge, bottom, color);
-  tft.drawLine(left, bottom - edge, left, bottom, color);
-  tft.drawLine(right - edge, bottom, right, bottom, color);
-  tft.drawLine(right, bottom - edge, right, bottom, color);
+  switch (state)
+  {
+    case TRAP_VISUAL_ARMED:
+      // Intact pressure plate and exposed seam: ready to fire.
+      tft.drawRect(x + 3, y + 5, 10, 7, COLOR_TRAP_METAL_DARK);
+      tft.drawRect(x + 4, y + 6, 8, 5, COLOR_TRAP_METAL);
+      tft.drawLine(x + 5, y + 7, x + 10, y + 7, COLOR_TRAP_METAL_LIGHT);
+      tft.drawLine(x + 4, y + 11, x + 11, y + 11, COLOR_TRAP_RUST);
+      tft.drawPixel(x + 7, y + 9, COLOR_TRAP_BRASS);
+      break;
+
+    case TRAP_VISUAL_TRIGGERED:
+      // The plate is depressed and the spike rack has sprung upward.
+      tft.drawRect(x + 3, y + 10, 10, 3, COLOR_TRAP_METAL_DARK);
+      tft.drawLine(x + 4, y + 11, x + 11, y + 11, COLOR_TRAP_METAL);
+      for (int spikeX = 5; spikeX <= 11; spikeX += 3)
+      {
+        tft.drawLine(x + spikeX, y + 10, x + spikeX, y + 4,
+                     COLOR_TRAP_METAL_LIGHT);
+        tft.drawPixel(x + spikeX, y + 3, ST77XX_WHITE);
+      }
+      tft.drawLine(x + 4, y + 13, x + 11, y + 13, COLOR_TRAP_RUST);
+      break;
+
+    case TRAP_VISUAL_DISABLED:
+      // Ordered loose spikes, plate pieces, and a tiny exposed gear read as
+      // a deliberately dismantled mechanism rather than a sprung one.
+      tft.drawLine(x + 3, y + 10, x + 8, y + 6, COLOR_TRAP_METAL_LIGHT);
+      tft.drawLine(x + 7, y + 12, x + 12, y + 8, COLOR_TRAP_METAL);
+      tft.drawRect(x + 4, y + 11, 4, 2, COLOR_TRAP_METAL_DARK);
+      tft.drawPixel(x + 11, y + 11, COLOR_TRAP_BRASS);
+      tft.drawPixel(x + 10, y + 12, COLOR_TRAP_BRASS);
+      tft.drawPixel(x + 12, y + 12, COLOR_TRAP_BRASS);
+      tft.drawPixel(x + 11, y + 13, COLOR_TRAP_BRASS);
+      tft.drawPixel(x + 11, y + 12, COLOR_TRAP_METAL_DARK);
+      break;
+
+    case TRAP_VISUAL_DESTROYED:
+      // Chaotic, smashed fragments distinguish destruction from careful work.
+      tft.drawLine(x + 3, y + 6, x + 7, y + 12, COLOR_TRAP_DEBRIS);
+      tft.drawLine(x + 6, y + 7, x + 12, y + 10, COLOR_TRAP_METAL_DARK);
+      tft.drawLine(x + 4, y + 12, x + 10, y + 13, COLOR_TRAP_DEBRIS);
+      tft.drawPixel(x + 11, y + 5, COLOR_TRAP_RUST);
+      tft.drawPixel(x + 12, y + 12, COLOR_TRAP_RUST);
+      tft.drawPixel(x + 5, y + 8, COLOR_TRAP_METAL_LIGHT);
+      break;
+
+    case TRAP_VISUAL_HIDDEN:
+    default:
+      break;
+  }
 }
 }
 
@@ -256,35 +297,8 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
   else
     drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);
   drawSuspicionClue(tileX, tileY, getSuspicionAt(room, tileX, tileY));
-}
-
-void drawTrapDiscoveryMarker(
-    const DungeonRoom& room,
-    int tileX,
-    int tileY)
-{
-  if (tileX < 0 || tileX >= ROOM_SIZE ||
-      tileY < 0 || tileY >= ROOM_SIZE)
-  {
-    return;
-  }
 
   const TrapInstance* trap = getTrapAt(room, tileX, tileY);
-
-  if (trap == nullptr || !trap->discovered)
-    return;
-
-  uint16_t color = COLOR_TRAP_ACTIVE;
-
-  if (trap->destroyed)
-    color = COLOR_TRAP_DESTROYED;
-  else if (trap->disabled)
-    color = COLOR_TRAP_DISABLED;
-  else if (trap->triggered)
-    color = COLOR_TRAP_TRIGGERED;
-
-  drawCornerMarker(
-      tileX * TILE_SIZE,
-      tileY * TILE_SIZE,
-      color);
+  if (trap != nullptr)
+    drawTrapStateArt(tileX, tileY, getTrapVisualState(*trap));
 }

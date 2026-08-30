@@ -81,6 +81,8 @@ struct AbilityResolution
     uint8_t targetsImmune = 0;
     DamageType resistanceType = DAMAGE_NONE;
     int resistanceAmount = 0;
+    DamageType protectionType = DAMAGE_NONE;
+    int protectionAmount = 0;
 };
 
 // The resolver deliberately accepts only standard-action abilities handled
@@ -150,6 +152,7 @@ AbilityResolution resolveAbility(
 // Pathfinder-inspired strength shared by every spell/item that later applies
 // this generic resistance effect.
 int getEnergyResistanceAmountForCasterLevel(int casterLevel);
+int getEnergyProtectionAmountForCasterLevel(int casterLevel);
 
 // Coordinate-target counterpart used only by supported ground/area
 // abilities. Existing entity-target calls continue using resolveAbility().

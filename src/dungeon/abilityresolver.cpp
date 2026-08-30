@@ -20,7 +20,8 @@ enum SupportedEffectKind : uint8_t
     SUPPORTED_EFFECT_DAMAGE,
     SUPPORTED_EFFECT_HEALING,
     SUPPORTED_EFFECT_CONDITION,
-    SUPPORTED_EFFECT_ENERGY_RESISTANCE
+    SUPPORTED_EFFECT_ENERGY_RESISTANCE,
+    SUPPORTED_EFFECT_ENERGY_PROTECTION
 };
 
 bool isSelectableResistanceType(DamageType type)
@@ -175,11 +176,12 @@ ConditionType getModifierCondition(const Ability& ability)
 bool hasSupportedMapEffect(const Ability& ability)
 {
     if (ability.target != TARGET_AREA ||
-        ability.delivery != DELIVERY_AREA ||
+        (ability.delivery != DELIVERY_AREA &&
+         ability.delivery != DELIVERY_LINE) ||
         (ability.duration != DURATION_ROUNDS &&
          ability.duration != DURATION_COMBAT) ||
         ability.rangeTiles == 0 ||
-        ability.areaRadiusTiles == 0 ||
+        (ability.delivery == DELIVERY_AREA && ability.areaRadiusTiles == 0) ||
         ability.mapEffectType == MAP_EFFECT_NONE ||
         (ability.mapEffectDurationRounds == 0 &&
          ability.duration != DURATION_COMBAT) ||
@@ -190,13 +192,14 @@ bool hasSupportedMapEffect(const Ability& ability)
 
     const AbilityEffectData& effect = ability.effects[0];
 
-    return effect.effect != EFFECT_NONE &&
-           effect.effect != EFFECT_DAMAGE &&
-           effect.effect != EFFECT_HEAL &&
-           effect.damageType == DAMAGE_NONE &&
-           effect.baseValue >= 0 &&
-           effect.valuePerLevel >= 0 &&
-           effect.duration == 0 &&
+    if (effect.effect == EFFECT_DAMAGE)
+        return effect.damageType != DAMAGE_NONE &&
+               effect.baseValue >= 0 && effect.valuePerLevel >= 0 &&
+               (effect.diceCount == 0 || effect.diceSides > 0);
+
+    return effect.effect != EFFECT_NONE && effect.effect != EFFECT_HEAL &&
+           effect.damageType == DAMAGE_NONE && effect.baseValue >= 0 &&
+           effect.valuePerLevel >= 0 && effect.duration == 0 &&
            isValidConditionType(effect.conditionType);
 }
 
@@ -307,6 +310,12 @@ SupportedEffectKind getSupportedEffectKind(const Ability& ability)
                 return SUPPORTED_EFFECT_NONE;
             effectKind = SUPPORTED_EFFECT_ENERGY_RESISTANCE;
         }
+        else if (effect.effect == EFFECT_ENERGY_PROTECTION)
+        {
+            if (effect.damageType != DAMAGE_NONE || effect.duration <= 0)
+                return SUPPORTED_EFFECT_NONE;
+            effectKind = SUPPORTED_EFFECT_ENERGY_PROTECTION;
+        }
         else if (isModifierEffect(effect.effect) &&
             getGenericBuffCondition(effect) != CONDITION_NONE)
         {
@@ -400,7 +409,9 @@ bool isEntityAbilitySupported(const Ability& ability)
 
     SupportedEffectKind effectKind = getSupportedEffectKind(ability);
 
-    if (effectKind == SUPPORTED_EFFECT_CONDITION)
+    if (effectKind == SUPPORTED_EFFECT_CONDITION ||
+        effectKind == SUPPORTED_EFFECT_ENERGY_RESISTANCE ||
+        effectKind == SUPPORTED_EFFECT_ENERGY_PROTECTION)
         return ability.duration == DURATION_ROUNDS || ability.duration == DURATION_COMBAT;
 
     return effectKind != SUPPORTED_EFFECT_NONE &&
@@ -568,13 +579,21 @@ bool isAbilitySupported(AbilityID abilityID)
     if (abilityID == ABILITY_TURN_UNDEAD)
         return true;
 
-    // Protection from Energy and physical damage reduction remain deferred;
-    // only the two tradition rows for Resist Energy currently request the
-    // runtime elemental selection supported by this pass.
+    // Physical damage reduction remains deferred. Resist Energy and
+    // Protection from Energy each have explicit Arcane/Divine rows so scroll
+    // compatibility remains data-driven.
     if (getSupportedEffectKind(*ability) ==
             SUPPORTED_EFFECT_ENERGY_RESISTANCE &&
         abilityID != ABILITY_RESIST_ENERGY &&
         abilityID != ABILITY_RESIST_ENERGY_ARCANE)
+    {
+        return false;
+    }
+
+    if (getSupportedEffectKind(*ability) ==
+            SUPPORTED_EFFECT_ENERGY_PROTECTION &&
+        abilityID != ABILITY_PROTECTION_FROM_ENERGY &&
+        abilityID != ABILITY_PROTECTION_FROM_ENERGY_ARCANE)
     {
         return false;
     }
@@ -601,7 +620,7 @@ bool isDirectionalAbility(AbilityID abilityID)
     const Ability* ability = getAbility(abilityID);
 
     return ability != nullptr && isAbilitySupported(abilityID) &&
-           ability->target == TARGET_AREA &&
+            ability->target == TARGET_AREA &&
             (ability->delivery == DELIVERY_CONE || ability->delivery == DELIVERY_LINE);
 }
 
@@ -772,8 +791,9 @@ AbilityResult validateAbility(
         !isEntityAbilitySupported(*ability))
         return ABILITY_RESULT_UNSUPPORTED;
 
-    if (getSupportedEffectKind(*ability) ==
-            SUPPORTED_EFFECT_ENERGY_RESISTANCE &&
+    const SupportedEffectKind effectKind = getSupportedEffectKind(*ability);
+    if ((effectKind == SUPPORTED_EFFECT_ENERGY_RESISTANCE ||
+         effectKind == SUPPORTED_EFFECT_ENERGY_PROTECTION) &&
         !isSelectableResistanceType(selectedDamageType))
     {
         return ABILITY_RESULT_INVALID_TARGET;
@@ -1107,6 +1127,28 @@ AbilityResolution resolveAbility(
         playAbilityImpactFlash(IMPACT_BUFF, DAMAGE_NONE,
                                resolvedTarget->x, resolvedTarget->y);
     }
+    else if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
+             effectKind == SUPPORTED_EFFECT_ENERGY_PROTECTION)
+    {
+        const AbilityEffectData& effect = ability->effects[0];
+        const int amount = getEnergyProtectionAmountForCasterLevel(
+            caster.character.level);
+        if (!addEnergyProtection(
+                resolvedTarget->character,
+                static_cast<uint8_t>(selectedDamageType),
+                amount,
+                effect.duration))
+        {
+            resolution.result = ABILITY_RESULT_CONDITION_LIMIT;
+            return resolution;
+        }
+
+        resolution.protectionType = selectedDamageType;
+        resolution.protectionAmount = amount;
+        resolution.conditionDuration = effect.duration;
+        playAbilityImpactFlash(IMPACT_BUFF, selectedDamageType,
+                               resolvedTarget->x, resolvedTarget->y);
+    }
 
     // Resource and action costs occur only after all validation and effect
     // application have succeeded.
@@ -1124,6 +1166,14 @@ int getEnergyResistanceAmountForCasterLevel(int casterLevel)
     if (casterLevel >= 7)
         return 20;
     return 10;
+}
+
+int getEnergyProtectionAmountForCasterLevel(int casterLevel)
+{
+    if (casterLevel < 1)
+        casterLevel = 1;
+    const int amount = casterLevel * 12;
+    return amount > 120 ? 120 : amount;
 }
 
 AbilityResult validateAbilityAt(
@@ -1246,6 +1296,22 @@ AbilityResolution resolveAbilityAt(
     mapEffect.conditionType = effect.conditionType;
     mapEffect.conditionValue = getEffectAmount(effect, caster);
     mapEffect.conditionDuration = static_cast<uint8_t>(effect.duration);
+    mapEffect.damageType = effect.effect == EFFECT_DAMAGE
+        ? effect.damageType : DAMAGE_NONE;
+    mapEffect.damageDiceCount = effect.diceCount;
+    mapEffect.damageDiceSides = effect.diceSides;
+    mapEffect.flatDamage = static_cast<int16_t>(getEffectAmount(effect, caster));
+    mapEffect.damageSaveEffect = ability->saveEffect;
+
+    AreaFlashTile effectTiles[MAX_MAP_EFFECT_TILES];
+    mapEffect.tileCount = collectRadiusAreaTiles(
+        caster, *ability, targetX, targetY, effectTiles,
+        MAX_MAP_EFFECT_TILES);
+    for (uint8_t i = 0; i < mapEffect.tileCount; i++)
+    {
+        mapEffect.tiles[i].x = effectTiles[i].x;
+        mapEffect.tiles[i].y = effectTiles[i].y;
+    }
 
     MapEffect* createdEffect = addMapEffect(mapEffect);
 
@@ -1255,14 +1321,16 @@ AbilityResolution resolveAbilityAt(
         return resolution;
     }
 
-    playAbilityImpactFlash(IMPACT_CONDITION, DAMAGE_NONE, targetX, targetY);
+    playAbilityImpactFlash(
+        effect.effect == EFFECT_DAMAGE ? IMPACT_DAMAGE : IMPACT_CONDITION,
+        mapEffect.damageType, targetX, targetY);
 
     resolution.mapEffectCreated = true;
 
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
 
-    if (entities != nullptr)
+    if (entities != nullptr && effect.effect != EFFECT_DAMAGE)
     {
         for (uint8_t i = 0; i < entityCount; i++)
         {
@@ -1290,8 +1358,9 @@ AbilityResult validateDirectionalAbility(
         return ABILITY_RESULT_INVALID_ABILITY;
 
     if (!isDirectionalAbility(abilityID) ||
-        (!hasSupportedColorSprayProfile(*ability) &&
-         !hasInstantAreaDamageProfile(*ability)))
+         (!hasSupportedColorSprayProfile(*ability) &&
+          !hasInstantAreaDamageProfile(*ability) &&
+          !hasSupportedMapEffect(*ability)))
     {
         return ABILITY_RESULT_UNSUPPORTED;
     }
@@ -1374,6 +1443,52 @@ AbilityResolution resolveAbilityInDirection(
         payAbilityCost(caster.character, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
+        return resolution;
+    }
+
+    if (hasSupportedMapEffect(*ability))
+    {
+        AreaFlashTile effectTiles[MAX_MAP_EFFECT_TILES];
+        const uint8_t tileCount = collectDirectionalAreaTiles(
+            caster, *ability, direction, effectTiles, MAX_MAP_EFFECT_TILES);
+        if (tileCount == 0)
+        {
+            resolution.result = ABILITY_RESULT_INVALID_TARGET;
+            return resolution;
+        }
+
+        const AbilityEffectData& effect = ability->effects[0];
+        MapEffect mapEffect;
+        mapEffect.active = true;
+        mapEffect.type = ability->mapEffectType;
+        mapEffect.sourceAbility = abilityID;
+        mapEffect.x = effectTiles[0].x;
+        mapEffect.y = effectTiles[0].y;
+        mapEffect.roundsRemaining = ability->mapEffectDurationRounds;
+        mapEffect.expiresWithCombat = ability->duration == DURATION_COMBAT;
+        mapEffect.saveType = ability->saveType;
+        mapEffect.saveDC = getAbilitySaveDC(caster, *ability);
+        mapEffect.damageType = effect.damageType;
+        mapEffect.damageDiceCount = effect.diceCount;
+        mapEffect.damageDiceSides = effect.diceSides;
+        mapEffect.flatDamage = static_cast<int16_t>(getEffectAmount(effect, caster));
+        mapEffect.damageSaveEffect = ability->saveEffect;
+        mapEffect.tileCount = tileCount;
+        for (uint8_t i = 0; i < tileCount; i++)
+        {
+            mapEffect.tiles[i].x = effectTiles[i].x;
+            mapEffect.tiles[i].y = effectTiles[i].y;
+        }
+
+        if (addMapEffect(mapEffect) == nullptr)
+        {
+            resolution.result = ABILITY_RESULT_MAP_EFFECT_LIMIT;
+            return resolution;
+        }
+        playAreaDamageFlash(effect.damageType, effectTiles, tileCount);
+        resolution.mapEffectCreated = true;
+        payAbilityCost(caster.character, *ability, source);
+        if (combat.active) caster.turn.standardActionUsed = true;
         return resolution;
     }
 

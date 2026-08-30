@@ -10,11 +10,4 @@ void drawTile(int tileX, int tileY, TileType tile);
 // deliberately independent of traps, so this renders harmless clues too.
 void drawRoomTile(const DungeonRoom& room, int tileX, int tileY);
 
-// Confirmed traps are drawn as a foreground marker after entities. The marker
-// reflects inactive states without changing the subtler clue underneath.
-void drawTrapDiscoveryMarker(
-    const DungeonRoom& room,
-    int tileX,
-    int tileY);
-
 #endif // PATHFINDERMINIEXTREME_025_ROOMDRAW_H

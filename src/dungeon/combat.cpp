@@ -70,6 +70,7 @@ static void markAttackCursorDirty();
 static void markInspectionCursorDirty();
 static uint8_t getLivingEnemyCombatantCount();
 static void showCombatStartMessage();
+static int rollCombatInitiative(Entity& entity);
 
 static int gridDistanceToTile(const Entity* entity, int tileX, int tileY)
 {
@@ -595,11 +596,8 @@ CombatDamageResult applyCombatDamage(Entity& target, int damage,
         return result;
     }
 
-    const int resistance = getEnergyResistance(
-        target.character, static_cast<uint8_t>(damageType));
-    damage -= resistance;
-    if (damage < 0)
-        damage = 0;
+    damage = applyEnergyMitigation(
+        target.character, static_cast<uint8_t>(damageType), damage);
     if (damage == 0)
     {
         result.applied = true;
@@ -684,6 +682,12 @@ void presentAbilityResolution(
                  getEnergyTypeName(resolution.resistanceType),
                  resolution.resistanceAmount);
     }
+    else if (resolution.protectionAmount > 0)
+    {
+        snprintf(message, sizeof(message), "%s protection %d",
+                 getEnergyTypeName(resolution.protectionType),
+                 resolution.protectionAmount);
+    }
     else if (resolution.damage > 0)
     {
         snprintf(message, sizeof(message),
@@ -720,7 +724,8 @@ void presentAbilityResolution(
     }
     else if (resolution.savingThrow.result == SAVE_RESULT_SUCCESS ||
              resolution.conditionApplied != CONDITION_NONE ||
-             resolution.resistanceAmount > 0)
+             resolution.resistanceAmount > 0 ||
+             resolution.protectionAmount > 0)
     {
         playSound(SoundEffect::SPELL_CAST);
     }
@@ -1269,6 +1274,9 @@ void findCombatants()
         combat.initiativeOrder,
         MAX_COMBATANTS);
 
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+        combat.initiativeOrder[i]->reinforcementJoinedRound = 0;
+
     //--------------------------------------------------
     // Debug
     //--------------------------------------------------
@@ -1305,6 +1313,21 @@ bool isCombatParticipant(const Entity& entity)
     return false;
 }
 
+bool addCombatReinforcement(Entity& monster)
+{
+    if (!combat.active || combat.combatantCount >= MAX_COMBATANTS ||
+        !isLivingHostileForCombat(monster) || isCombatParticipant(monster))
+    {
+        return false;
+    }
+
+    monster.character.initiative = rollCombatInitiative(monster);
+    monster.reinforcementJoinedRound = combat.combatRound;
+    combat.initiativeOrder[combat.combatantCount++] = &monster;
+    sortInitiative();
+    return true;
+}
+
 static uint8_t getLivingEnemyCombatantCount()
 {
     return countLivingHostilesInCombatRoster(
@@ -1334,9 +1357,7 @@ void rollInitiative()
     {
         Entity* entity = combat.initiativeOrder[i];
 
-        entity->character.initiative =
-            rollDie(20) +
-            getAbilityModifier(entity->character.abilities.dexterity);
+        entity->character.initiative = rollCombatInitiative(*entity);
     }
 }
 
@@ -1355,6 +1376,12 @@ void sortInitiative()
             }
         }
     }
+}
+
+static int rollCombatInitiative(Entity& entity)
+{
+    return rollDie(20) +
+        getAbilityModifier(entity.character.abilities.dexterity);
 }
 
 Entity* getCurrentCombatant()
@@ -1629,6 +1656,16 @@ void resetActions(Entity* entity)
 
     ConditionTurnResult result =
         processConditionsAtTurnStart(entity->character);
+    if (entity->character.state == STATE_ALIVE)
+    {
+        const MapEffectTriggerResult hazardResult =
+            handleStartingTurnMapEffects(*entity);
+        if (hazardResult.targetDefeated ||
+            entity->character.state != STATE_ALIVE)
+        {
+            result.actionPrevented = true;
+        }
+    }
     combat.turnStartActionPrevented = result.actionPrevented;
     beginTurnStartConditionMessages(entity, result);
 }
@@ -1766,15 +1803,17 @@ void nextTurn()
 
         if (combat.currentTurnIndex >= combat.combatantCount)
         {
-            combat.currentTurnIndex = 0;
             combat.combatRound++;
             tickMapEffects();
+            checkReinforcementAwareness();
+            combat.currentTurnIndex = 0;
         }
 
         Entity* next = combat.initiativeOrder[combat.currentTurnIndex];
 
         if (next != nullptr && next->active &&
-            next->character.state == STATE_ALIVE)
+            next->character.state == STATE_ALIVE &&
+            reinforcementMayAct(*next, combat.combatRound))
         {
             break;
         }
@@ -2815,7 +2854,9 @@ void beginPlayerAbility(AbilityID abilityID)
     }
 
     if ((abilityID == ABILITY_RESIST_ENERGY ||
-         abilityID == ABILITY_RESIST_ENERGY_ARCANE) &&
+         abilityID == ABILITY_RESIST_ENERGY_ARCANE ||
+         abilityID == ABILITY_PROTECTION_FROM_ENERGY ||
+         abilityID == ABILITY_PROTECTION_FROM_ENERGY_ARCANE) &&
         combat.selectedAbilityDamageType == DAMAGE_NONE)
     {
         combat.selectedAbility = abilityID;

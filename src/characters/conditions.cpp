@@ -264,6 +264,96 @@ int getEnergyResistance(const Character& character, uint8_t damageType)
     return highest;
 }
 
+bool addEnergyProtection(Character& character,
+                         uint8_t damageType,
+                         int amount,
+                         int rounds)
+{
+    if (damageType == 0 || amount <= 0 || rounds <= 0)
+        return false;
+
+    for (uint8_t i = 0; i < character.conditions.energyProtectionCount; i++)
+    {
+        EnergyProtection& existing = character.conditions.energyProtections[i];
+        if (existing.damageType == damageType)
+        {
+            if (amount > existing.remainingAbsorption)
+                existing.remainingAbsorption = amount;
+            if (rounds > existing.roundsRemaining)
+                existing.roundsRemaining = rounds;
+            return true;
+        }
+    }
+
+    if (character.conditions.energyProtectionCount >= MAX_ENERGY_PROTECTIONS)
+        return false;
+
+    EnergyProtection& protection = character.conditions.energyProtections[
+        character.conditions.energyProtectionCount++];
+    protection.damageType = damageType;
+    protection.remainingAbsorption = amount;
+    protection.roundsRemaining = rounds;
+    return true;
+}
+
+int getEnergyProtection(const Character& character, uint8_t damageType)
+{
+    for (uint8_t i = 0; i < character.conditions.energyProtectionCount; i++)
+    {
+        const EnergyProtection& protection =
+            character.conditions.energyProtections[i];
+        if (protection.damageType == damageType)
+            return protection.remainingAbsorption;
+    }
+    return 0;
+}
+
+int absorbEnergyProtection(Character& character,
+                           uint8_t damageType,
+                           int incomingDamage)
+{
+    if (incomingDamage <= 0 || damageType == 0)
+        return 0;
+
+    for (uint8_t i = 0; i < character.conditions.energyProtectionCount; i++)
+    {
+        EnergyProtection& protection = character.conditions.energyProtections[i];
+        if (protection.damageType != damageType)
+            continue;
+
+        const int absorbed = incomingDamage < protection.remainingAbsorption
+            ? incomingDamage : protection.remainingAbsorption;
+        protection.remainingAbsorption -= absorbed;
+        if (protection.remainingAbsorption == 0)
+        {
+            for (uint8_t j = i;
+                 j + 1 < character.conditions.energyProtectionCount; j++)
+            {
+                character.conditions.energyProtections[j] =
+                    character.conditions.energyProtections[j + 1];
+            }
+            character.conditions.energyProtectionCount--;
+            character.conditions.energyProtections[
+                character.conditions.energyProtectionCount] = {};
+        }
+        return absorbed;
+    }
+    return 0;
+}
+
+int applyEnergyMitigation(Character& character,
+                          uint8_t damageType,
+                          int incomingDamage)
+{
+    if (incomingDamage <= 0)
+        return 0;
+
+    incomingDamage -= absorbEnergyProtection(
+        character, damageType, incomingDamage);
+    incomingDamage -= getEnergyResistance(character, damageType);
+    return incomingDamage > 0 ? incomingDamage : 0;
+}
+
 void clearConditions(Character& character)
 {
     character.conditions = ConditionData{};
@@ -314,6 +404,26 @@ void tickConditions(Character& character)
             character.conditions.energyResistanceCount--;
             character.conditions.energyResistances[
                 character.conditions.energyResistanceCount] = {};
+            continue;
+        }
+        i++;
+    }
+
+    for (uint8_t i = 0; i < character.conditions.energyProtectionCount;)
+    {
+        EnergyProtection& protection =
+            character.conditions.energyProtections[i];
+        if (--protection.roundsRemaining == 0)
+        {
+            for (uint8_t j = i;
+                 j + 1 < character.conditions.energyProtectionCount; j++)
+            {
+                character.conditions.energyProtections[j] =
+                    character.conditions.energyProtections[j + 1];
+            }
+            character.conditions.energyProtectionCount--;
+            character.conditions.energyProtections[
+                character.conditions.energyProtectionCount] = {};
             continue;
         }
         i++;
