@@ -6,6 +6,7 @@
 enum CharacterCreationState
 {
     CCS_CLASS_SELECT,
+    CCS_WEAPON_STYLE_SELECT,
     CCS_VIEW_STATS,
     CCS_MENU
 };
@@ -28,6 +29,9 @@ void redrawCharacterMenu();
 // Called from buttons.cpp
 void rotateCharacterClassCW();
 void rotateCharacterClassCCW();
+void rotateFighterWeaponStyleCW();
+void rotateFighterWeaponStyleCCW();
+void cancelFighterWeaponStyleSelection();
 
 void createPreviewCharacter();
 void rerollCharacter();

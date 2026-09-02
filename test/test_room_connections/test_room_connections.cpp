@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <unity.h>
 
+#include "../../src/map/movement.h"
 #include "../../src/dungeon/roomgen.cpp"
 
 static void addFourTestConnections(DungeonRoom& room)
@@ -1069,6 +1070,142 @@ void test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint()
         GIANT_SPIDER_TEST_ROOM_INDEX);
 }
 
+void test_rubble_patch_is_walkable_connected_and_avoids_entry_tiles()
+{
+    DungeonRoom room{};
+    room.type = ROOM_EMPTY;
+    room.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(room, 7, 7);
+    TEST_ASSERT_TRUE(buildRoomGeometry(room, SHAPE_SQUARE));
+
+    const uint8_t placed = placeRubblePatch(room, 7, 7, 5);
+    TEST_ASSERT_TRUE(placed > 0);
+    TEST_ASSERT_TRUE(placed <= 5);
+    TEST_ASSERT_EQUAL_UINT16(placed, countTiles(room, TILE_RUBBLE));
+    TEST_ASSERT_TRUE(validateRoomConnectivity(room));
+    assertEveryConnectionEntryIsFloor(room);
+}
+
+void test_boss_rubble_is_mandatory_deliberate_and_connected()
+{
+    DungeonRoom room{};
+    room.type = ROOM_BOSS;
+    room.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(room, 7, 7);
+    TEST_ASSERT_TRUE(buildRoomGeometry(room, SHAPE_SQUARE));
+
+    const uint8_t placed = populateBossRubbleTerrain(room);
+    TEST_ASSERT_TRUE(placed >= 2);
+    TEST_ASSERT_EQUAL_UINT16(placed, countTiles(room, TILE_RUBBLE));
+    TEST_ASSERT_TRUE(validateRoomConnectivity(room));
+    assertEveryConnectionEntryIsFloor(room);
+}
+
+void test_pillar_is_wall_like_not_difficult_terrain()
+{
+    TEST_ASSERT_FALSE(isDungeonFloorTerrain(TILE_PILLAR));
+    TEST_ASSERT_TRUE(isWallLikeDungeonTile(TILE_PILLAR));
+    TEST_ASSERT_TRUE(isTileBlockingSight(TILE_PILLAR));
+    TEST_ASSERT_EQUAL_UINT8(1, getTerrainMovementCost(TILE_PILLAR));
+}
+
+void test_square_and_row_pillar_layouts_are_exact_and_connected()
+{
+    DungeonRoom square{};
+    square.type = ROOM_EMPTY;
+    square.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(square, 7, 7);
+    TEST_ASSERT_TRUE(buildRoomGeometry(square, SHAPE_SQUARE));
+    TEST_ASSERT_EQUAL_UINT8(
+        4, placePillarLayout(square, PILLAR_LAYOUT_SQUARE, 7, 7));
+    TEST_ASSERT_EQUAL_UINT16(4, countTiles(square, TILE_PILLAR));
+    TEST_ASSERT_TRUE(validateRoomConnectivity(square));
+    assertEveryConnectionEntryIsFloor(square);
+
+    DungeonRoom horizontal{};
+    horizontal.type = ROOM_EMPTY;
+    horizontal.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(horizontal, 5, 9);
+    TEST_ASSERT_TRUE(buildRoomGeometry(horizontal, SHAPE_SQUARE));
+    TEST_ASSERT_EQUAL_UINT8(4, placePillarLayout(
+        horizontal, PILLAR_LAYOUT_ROW_HORIZONTAL, 7, 7));
+    TEST_ASSERT_EQUAL(TILE_PILLAR, horizontal.map.tiles[7][4]);
+    TEST_ASSERT_EQUAL(TILE_PILLAR, horizontal.map.tiles[7][10]);
+    TEST_ASSERT_TRUE(validateRoomConnectivity(horizontal));
+
+    DungeonRoom vertical{};
+    vertical.type = ROOM_EMPTY;
+    vertical.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(vertical, 5, 9);
+    TEST_ASSERT_TRUE(buildRoomGeometry(vertical, SHAPE_SQUARE));
+    TEST_ASSERT_EQUAL_UINT8(4, placePillarLayout(
+        vertical, PILLAR_LAYOUT_ROW_VERTICAL, 7, 7));
+    TEST_ASSERT_EQUAL(TILE_PILLAR, vertical.map.tiles[4][7]);
+    TEST_ASSERT_EQUAL(TILE_PILLAR, vertical.map.tiles[10][7]);
+    TEST_ASSERT_TRUE(validateRoomConnectivity(vertical));
+}
+
+void test_hexagonal_pillar_layout_has_six_open_centered_points()
+{
+    DungeonRoom room{};
+    room.type = ROOM_BOSS;
+    room.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(room, 7, 7);
+    TEST_ASSERT_TRUE(buildRoomGeometry(room, SHAPE_SQUARE));
+
+    TEST_ASSERT_EQUAL_UINT8(
+        6, placePillarLayout(room, PILLAR_LAYOUT_HEXAGON, 7, 7));
+    TEST_ASSERT_EQUAL_UINT16(6, countTiles(room, TILE_PILLAR));
+    TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[7][7]);
+    TEST_ASSERT_TRUE(validateRoomConnectivity(room));
+}
+
+void test_pillar_layout_rejects_features_rubble_and_disconnection()
+{
+    DungeonRoom featureRoom{};
+    featureRoom.type = ROOM_EMPTY;
+    featureRoom.shape = SHAPE_SQUARE;
+    TEST_ASSERT_TRUE(buildRoomGeometry(featureRoom, SHAPE_SQUARE));
+    featureRoom.map.tiles[4][4] = TILE_RUBBLE;
+    TEST_ASSERT_EQUAL_UINT8(
+        0, placePillarLayout(featureRoom, PILLAR_LAYOUT_SQUARE, 7, 7));
+    TEST_ASSERT_EQUAL(TILE_RUBBLE, featureRoom.map.tiles[4][4]);
+
+    DungeonRoom corridor{};
+    corridor.type = ROOM_EMPTY;
+    corridor.shape = SHAPE_SQUARE;
+    fillRoom(corridor, TILE_WALL);
+    TEST_ASSERT_TRUE(carveCorridorSegment(corridor, 1, 7, 13, 7, 1));
+    TEST_ASSERT_TRUE(validateRoomConnectivity(corridor));
+    TEST_ASSERT_EQUAL_UINT8(0, placePillarLayout(
+        corridor, PILLAR_LAYOUT_ROW_HORIZONTAL, 7, 7));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(corridor, TILE_PILLAR));
+    TEST_ASSERT_TRUE(validateRoomConnectivity(corridor));
+}
+
+void test_pillar_eligibility_and_probability_are_conservative()
+{
+    DungeonRoom large{};
+    large.type = ROOM_COMBAT;
+    large.shape = SHAPE_SQUARE;
+    addHorizontalTestConnections(large, 7, 7);
+    TEST_ASSERT_TRUE(buildRoomGeometry(large, SHAPE_SQUARE));
+    TEST_ASSERT_TRUE(isRoomEligibleForPillars(large));
+    TEST_ASSERT_EQUAL_UINT8(0, populatePillarTerrain(
+        large, PILLAR_ROOM_CHANCE_PERCENT, PILLAR_LAYOUT_SQUARE));
+    TEST_ASSERT_EQUAL_UINT8(4, populatePillarTerrain(
+        large, PILLAR_ROOM_CHANCE_PERCENT - 1, PILLAR_LAYOUT_SQUARE));
+
+    DungeonRoom small{};
+    small.type = ROOM_EMPTY;
+    small.shape = SHAPE_SMALL_RECTANGLE;
+    fillRoom(small, TILE_WALL);
+    TEST_ASSERT_TRUE(carveRectangle(small, 4, 4, 6, 6));
+    TEST_ASSERT_FALSE(isRoomEligibleForPillars(small));
+    TEST_ASSERT_EQUAL_UINT8(
+        0, populatePillarTerrain(small, 0, PILLAR_LAYOUT_SQUARE));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -1102,6 +1239,13 @@ void setup()
     RUN_TEST(test_invalid_cave_request_uses_existing_full_room_fallback);
     RUN_TEST(test_entrance_uses_fixed_hallway_and_paired_alcoves);
     RUN_TEST(test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint);
+    RUN_TEST(test_rubble_patch_is_walkable_connected_and_avoids_entry_tiles);
+    RUN_TEST(test_boss_rubble_is_mandatory_deliberate_and_connected);
+    RUN_TEST(test_pillar_is_wall_like_not_difficult_terrain);
+    RUN_TEST(test_square_and_row_pillar_layouts_are_exact_and_connected);
+    RUN_TEST(test_hexagonal_pillar_layout_has_six_open_centered_points);
+    RUN_TEST(test_pillar_layout_rejects_features_rubble_and_disconnection);
+    RUN_TEST(test_pillar_eligibility_and_probability_are_conservative);
     UNITY_END();
 }
 

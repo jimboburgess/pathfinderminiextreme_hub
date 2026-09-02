@@ -268,7 +268,10 @@ MapEffectTriggerResult applyMapEffectToEntity(
         if (damageResult.applied)
         {
             result.damageTriggers = 1;
-            result.damageRolled = damage;
+            // Retain the compact result field, but report damage that reached
+            // HP after typed protection and resistance rather than the raw
+            // dice result.
+            result.damageRolled = damageResult.damageApplied;
             result.targetDefeated = damageResult.defeated ||
                 entity.character.state != STATE_ALIVE;
         }

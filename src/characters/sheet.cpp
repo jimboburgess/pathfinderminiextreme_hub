@@ -529,6 +529,31 @@ void drawCharacterSheet()
     drawLabelValue(LEFT_X, VALUE_X, y, "Movement", getMovementSpeed(*currentCharacter));
     y += 18;
 
+    if (currentCharacter->characterClass == CLASS_FIGHTER)
+    {
+        const WeaponGroup trainedGroup =
+            getFighterTrainedWeaponGroup(*currentCharacter);
+        const Weapon* trainedWeapon = getWeapon(
+            getFighterStartingMeleeWeapon(trainedGroup));
+        drawText(LEFT_X, y, "Weapon Style");
+        drawText(VALUE_X, y, getWeaponGroupName(trainedGroup));
+        y += 10;
+
+        if (trainedWeapon != nullptr)
+        {
+            drawLabelValue(LEFT_X, VALUE_X, y, "Group Attack",
+                getFighterWeaponAttackBonus(*currentCharacter, *trainedWeapon));
+            y += 10;
+            drawLabelValue(LEFT_X, VALUE_X, y, "Group Damage",
+                getFighterWeaponDamageBonus(*currentCharacter, *trainedWeapon));
+            y += 10;
+        }
+
+        drawLabelValue(LEFT_X, VALUE_X, y, "Toughness HP",
+            getFighterBonusMaxHP(*currentCharacter));
+        y += 18;
+    }
+
     //--------------------------------------------------
     // Saving Throws
     //--------------------------------------------------

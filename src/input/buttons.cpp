@@ -287,6 +287,14 @@ void handleCharacterCreationButtons()
                 playSound(SoundEffect::MENU_MOVE);
                 break;
 
+            case CCS_WEAPON_STYLE_SELECT:
+                if (direction == ENCODER_CLOCKWISE)
+                    rotateFighterWeaponStyleCW();
+                else
+                    rotateFighterWeaponStyleCCW();
+                playSound(SoundEffect::MENU_MOVE);
+                break;
+
             case CCS_VIEW_STATS:
 
                 if (direction == ENCODER_CLOCKWISE)
@@ -322,6 +330,10 @@ void handleCharacterCreationButtons()
         {
             case CCS_CLASS_SELECT:
 
+                createPreviewCharacter();
+                break;
+
+            case CCS_WEAPON_STYLE_SELECT:
                 createPreviewCharacter();
                 break;
 
@@ -363,6 +375,11 @@ void handleCharacterCreationButtons()
                 menuSelect();
                 playSound(SoundEffect::MENU_SELECT);
                 break;
+
+            case CCS_WEAPON_STYLE_SELECT:
+                createPreviewCharacter();
+                playSound(SoundEffect::MENU_SELECT);
+                break;
         }
     }
 
@@ -377,6 +394,11 @@ void handleCharacterCreationButtons()
             case CCS_CLASS_SELECT:
 
                 // Nothing.
+                break;
+
+            case CCS_WEAPON_STYLE_SELECT:
+                cancelFighterWeaponStyleSelection();
+                playSound(SoundEffect::MENU_BACK);
                 break;
 
             case CCS_VIEW_STATS:

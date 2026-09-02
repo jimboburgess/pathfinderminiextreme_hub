@@ -505,6 +505,7 @@ bool carveCorridorSegment(
 static bool isRoomGeometryWalkable(TileType tile) {
   switch (tile) {
     case TILE_FLOOR:
+    case TILE_RUBBLE:
     case TILE_DOOR:
     case TILE_CHEST_SPAWN:
     case TILE_LOOT_SPAWN:
@@ -1734,6 +1735,432 @@ static bool isReservedContentTile(
   return false;
 }
 
+static bool isNearRoomConnection(
+    const DungeonRoom &room,
+    int x,
+    int y) {
+  uint8_t count = room.connectionCount;
+  if (count > MAX_ROOM_CONNECTIONS)
+    count = MAX_ROOM_CONNECTIONS;
+
+  for (uint8_t i = 0; i < count; i++) {
+    int entryX = 0;
+    int entryY = 0;
+    if (!getConnectionInteriorPosition(
+          room.connections[i], entryX, entryY)) {
+      continue;
+    }
+
+    const int dx = x > entryX ? x - entryX : entryX - x;
+    const int dy = y > entryY ? y - entryY : entryY - y;
+    if (dx <= 1 && dy <= 1)
+      return true;
+  }
+
+  return false;
+}
+
+struct PillarOffset {
+  int8_t x;
+  int8_t y;
+};
+
+static bool getPillarFloorBounds(
+    const DungeonRoom &room,
+    int &minimumX,
+    int &minimumY,
+    int &maximumX,
+    int &maximumY,
+    uint16_t &floorCount) {
+  minimumX = ROOM_SIZE;
+  minimumY = ROOM_SIZE;
+  maximumX = -1;
+  maximumY = -1;
+  floorCount = 0;
+
+  for (int y = 1; y < ROOM_SIZE - 1; y++) {
+    for (int x = 1; x < ROOM_SIZE - 1; x++) {
+      if (room.map.tiles[y][x] != TILE_FLOOR)
+        continue;
+
+      floorCount++;
+      if (x < minimumX) minimumX = x;
+      if (x > maximumX) maximumX = x;
+      if (y < minimumY) minimumY = y;
+      if (y > maximumY) maximumY = y;
+    }
+  }
+
+  return floorCount > 0;
+}
+
+bool isRoomEligibleForPillars(const DungeonRoom &room) {
+  if (room.type == ROOM_ENTRANCE || room.type == ROOM_TREASURE ||
+      room.shape == SHAPE_ENTRANCE ||
+      room.shape == SHAPE_WINDING_CORRIDOR ||
+      room.shape == SHAPE_SMALL_RECTANGLE) {
+    return false;
+  }
+
+  int minimumX = 0;
+  int minimumY = 0;
+  int maximumX = 0;
+  int maximumY = 0;
+  uint16_t floorCount = 0;
+  if (!getPillarFloorBounds(
+          room, minimumX, minimumY, maximumX, maximumY, floorCount)) {
+    return false;
+  }
+
+  const int width = maximumX - minimumX + 1;
+  const int height = maximumY - minimumY + 1;
+  return floorCount >= PILLAR_MIN_WALKABLE_TILES &&
+         width >= PILLAR_MIN_INTERIOR_SPAN &&
+         height >= PILLAR_MIN_INTERIOR_SPAN;
+}
+
+static bool canPlacePillarAt(
+    const DungeonRoom &room,
+    int x,
+    int y) {
+  for (const TrapInstance &trap : room.traps) {
+    if (trap.id != TRAP_NONE && trap.x == x && trap.y == y)
+      return false;
+  }
+
+  for (const SuspicionInstance &suspicion : room.suspicions) {
+    if (suspicion.type != SUSPICION_NONE &&
+        suspicion.x == x && suspicion.y == y) {
+      return false;
+    }
+  }
+
+  return x > 0 && x < ROOM_SIZE - 1 &&
+         y > 0 && y < ROOM_SIZE - 1 &&
+         room.map.tiles[y][x] == TILE_FLOOR &&
+         !isReservedContentTile(room, x, y) &&
+         !isNearRoomConnection(room, x, y);
+}
+
+uint8_t placePillarLayout(
+    DungeonRoom &room,
+    PillarLayoutType layout,
+    int centerX,
+    int centerY) {
+  static constexpr PillarOffset square[] = {
+      {-3, -3}, {3, -3}, {-3, 3}, {3, 3}};
+  static constexpr PillarOffset horizontalRow[] = {
+      {-3, 0}, {-1, 0}, {1, 0}, {3, 0}};
+  static constexpr PillarOffset verticalRow[] = {
+      {0, -3}, {0, -1}, {0, 1}, {0, 3}};
+  static constexpr PillarOffset hexagon[] = {
+      {-2, -3}, {2, -3}, {-3, 0}, {3, 0}, {-2, 3}, {2, 3}};
+
+  const PillarOffset *offsets = nullptr;
+  uint8_t pillarCount = 0;
+  switch (layout) {
+    case PILLAR_LAYOUT_SQUARE:
+      offsets = square;
+      pillarCount = sizeof(square) / sizeof(square[0]);
+      break;
+    case PILLAR_LAYOUT_ROW_HORIZONTAL:
+      offsets = horizontalRow;
+      pillarCount = sizeof(horizontalRow) / sizeof(horizontalRow[0]);
+      break;
+    case PILLAR_LAYOUT_ROW_VERTICAL:
+      offsets = verticalRow;
+      pillarCount = sizeof(verticalRow) / sizeof(verticalRow[0]);
+      break;
+    case PILLAR_LAYOUT_HEXAGON:
+      offsets = hexagon;
+      pillarCount = sizeof(hexagon) / sizeof(hexagon[0]);
+      break;
+    default:
+      return 0;
+  }
+
+  for (uint8_t i = 0; i < pillarCount; i++) {
+    if (!canPlacePillarAt(
+            room, centerX + offsets[i].x, centerY + offsets[i].y)) {
+      return 0;
+    }
+  }
+
+  for (uint8_t i = 0; i < pillarCount; i++) {
+    room.map.tiles[centerY + offsets[i].y][centerX + offsets[i].x] =
+        TILE_PILLAR;
+  }
+
+  if (validateRoomConnectivity(room))
+    return pillarCount;
+
+  // Placement is transactional: an invalid arrangement never survives into
+  // the generated dungeon.
+  for (uint8_t i = 0; i < pillarCount; i++) {
+    room.map.tiles[centerY + offsets[i].y][centerX + offsets[i].x] =
+        TILE_FLOOR;
+  }
+  return 0;
+}
+
+uint8_t populatePillarTerrain(
+    DungeonRoom &room,
+    uint8_t chanceRoll,
+    uint8_t layoutRoll) {
+  if (!isRoomEligibleForPillars(room))
+    return 0;
+
+  const uint8_t chance = room.type == ROOM_BOSS
+      ? BOSS_PILLAR_ROOM_CHANCE_PERCENT
+      : PILLAR_ROOM_CHANCE_PERCENT;
+  if (chanceRoll >= chance)
+    return 0;
+
+  int minimumX = 0;
+  int minimumY = 0;
+  int maximumX = 0;
+  int maximumY = 0;
+  uint16_t floorCount = 0;
+  if (!getPillarFloorBounds(
+          room, minimumX, minimumY, maximumX, maximumY, floorCount)) {
+    return 0;
+  }
+
+  const int centerX = (minimumX + maximumX) / 2;
+  const int centerY = (minimumY + maximumY) / 2;
+  static constexpr PillarOffset translations[] = {
+      {0, 0}, {-1, 0}, {1, 0}, {0, -1}, {0, 1},
+      {-1, -1}, {1, -1}, {-1, 1}, {1, 1},
+      {-2, 0}, {2, 0}, {0, -2}, {0, 2}};
+
+  // Start with the rolled pattern, then try rotations/alternatives and small
+  // room-aware translations before giving up safely.
+  for (uint8_t patternAttempt = 0;
+       patternAttempt < PILLAR_LAYOUT_COUNT;
+       patternAttempt++) {
+    const PillarLayoutType layout = static_cast<PillarLayoutType>(
+        (layoutRoll + patternAttempt) % PILLAR_LAYOUT_COUNT);
+
+    for (const PillarOffset &translation : translations) {
+      const uint8_t placed = placePillarLayout(
+          room,
+          layout,
+          centerX + translation.x,
+          centerY + translation.y);
+      if (placed > 0)
+        return placed;
+    }
+  }
+
+  return 0;
+}
+
+bool isRoomEligibleForFurniture(const DungeonRoom& room)
+{
+  if (room.type == ROOM_ENTRANCE || room.type == ROOM_TREASURE ||
+      room.shape == SHAPE_ENTRANCE || room.shape == SHAPE_WINDING_CORRIDOR ||
+      room.shape == SHAPE_SMALL_RECTANGLE)
+  {
+    return false;
+  }
+
+  return countInteriorWalkableTiles(room) >= 42;
+}
+
+static bool placeFurnitureAt(
+    DungeonRoom& room,
+    DungeonFurnitureType type,
+    int x,
+    int y)
+{
+  if (x <= 0 || x >= ROOM_SIZE - 1 || y <= 0 || y >= ROOM_SIZE - 1 ||
+      room.map.tiles[y][x] != TILE_FLOOR || isReservedContentTile(room, x, y) ||
+      isNearRoomConnection(room, x, y))
+  {
+    return false;
+  }
+
+  if (!addDungeonFurniture(room, type, x, y))
+    return false;
+
+  if (validateRoomConnectivity(room))
+    return true;
+
+  DungeonFurnitureInstance* furniture = getDungeonFurnitureAt(room, x, y);
+  if (furniture != nullptr)
+    *furniture = DungeonFurnitureInstance{};
+  room.map.tiles[y][x] = TILE_FLOOR;
+  return false;
+}
+
+static uint8_t placeFurnitureCluster(
+    DungeonRoom& room,
+    DungeonFurnitureType type,
+    uint8_t desiredCount)
+{
+  static constexpr PillarOffset clusterOffsets[] = {
+      {0, 0}, {1, 0}, {0, 1}, {1, 1}, {-1, 0}, {0, -1}};
+
+  for (uint8_t attempt = 0; attempt < 24; attempt++)
+  {
+    const int originX = randomInclusive(2, ROOM_SIZE - 3);
+    const int originY = randomInclusive(2, ROOM_SIZE - 3);
+    uint8_t placed = 0;
+
+    for (const PillarOffset& offset : clusterOffsets)
+    {
+      if (placed >= desiredCount)
+        break;
+      if (placeFurnitureAt(
+              room, type, originX + offset.x, originY + offset.y))
+      {
+        placed++;
+      }
+    }
+
+    if (placed > 0)
+      return placed;
+  }
+
+  return 0;
+}
+
+uint8_t populateDungeonFurniture(
+    DungeonRoom& room,
+    uint8_t barrelRoll,
+    uint8_t crateRoll,
+    uint8_t statueRoll,
+    uint8_t brazierRoll)
+{
+  if (!isRoomEligibleForFurniture(room))
+    return 0;
+
+  uint8_t placed = 0;
+  if (barrelRoll < BARREL_CLUSTER_CHANCE_PERCENT)
+    placed += placeFurnitureCluster(room, FURNITURE_BARREL, randomInclusive(2, 3));
+  if (crateRoll < CRATE_CLUSTER_CHANCE_PERCENT)
+    placed += placeFurnitureCluster(room, FURNITURE_CRATE, randomInclusive(2, 3));
+  if (statueRoll < STATUE_CHANCE_PERCENT)
+    placed += placeFurnitureCluster(room, FURNITURE_STATUE, 1);
+  if (brazierRoll < BRAZIER_CHANCE_PERCENT)
+    placed += placeFurnitureCluster(room, FURNITURE_BRAZIER, randomInclusive(1, 2));
+  return placed;
+}
+
+static bool canPlaceRubbleAt(
+    const DungeonRoom &room,
+    int x,
+    int y) {
+  return x > 0 && x < ROOM_SIZE - 1 &&
+         y > 0 && y < ROOM_SIZE - 1 &&
+         room.map.tiles[y][x] == TILE_FLOOR &&
+         !isReservedContentTile(room, x, y) &&
+         !isNearRoomConnection(room, x, y);
+}
+
+uint8_t placeRubblePatch(
+    DungeonRoom &room,
+    uint8_t originX,
+    uint8_t originY,
+    uint8_t maximumTiles) {
+  if (maximumTiles == 0 ||
+      !canPlaceRubbleAt(room, originX, originY)) {
+    return 0;
+  }
+
+  // A compact, deterministic growth pattern makes patches readable and keeps
+  // the helper testable. Random generation supplies different origins/sizes.
+  static constexpr int8_t offsetX[] = {0, 1, 0, -1, 1, -1, 0, 2, -2};
+  static constexpr int8_t offsetY[] = {0, 0, 1, 0, 1, 1, -1, 0, 0};
+  const uint8_t candidateCount = sizeof(offsetX) / sizeof(offsetX[0]);
+  uint8_t placed = 0;
+
+  for (uint8_t i = 0; i < candidateCount && placed < maximumTiles; i++) {
+    const int x = originX + offsetX[i];
+    const int y = originY + offsetY[i];
+    if (!canPlaceRubbleAt(room, x, y))
+      continue;
+
+    room.map.tiles[y][x] = TILE_RUBBLE;
+    placed++;
+  }
+
+  return placed;
+}
+
+uint8_t populateRubbleTerrain(DungeonRoom &room) {
+  // Dungeon-level planning decides which ordinary rooms receive terrain.
+  // Entrance, final treasure, and boss use dedicated generation rules.
+  if (room.type == ROOM_ENTRANCE || room.type == ROOM_TREASURE ||
+      room.type == ROOM_BOSS) {
+    return 0;
+  }
+
+  const uint8_t patchSize = randomInclusive(2, 5);
+  for (uint8_t attempt = 0; attempt < 24; attempt++) {
+    const uint8_t x = randomInclusive(2, ROOM_SIZE - 3);
+    const uint8_t y = randomInclusive(2, ROOM_SIZE - 3);
+    const uint8_t placed = placeRubblePatch(room, x, y, patchSize);
+    if (placed > 0)
+      return placed;
+  }
+
+  // Narrow corridors can make random origins unlucky. Scan deterministically
+  // so every selected middle room receives at least one valid patch.
+  for (uint8_t y = 1; y < ROOM_SIZE - 1; y++) {
+    for (uint8_t x = 1; x < ROOM_SIZE - 1; x++) {
+      const uint8_t placed = placeRubblePatch(room, x, y, patchSize);
+      if (placed > 0)
+        return placed;
+    }
+  }
+
+  return 0;
+}
+
+uint8_t populateBossRubbleTerrain(DungeonRoom &room) {
+  if (room.type != ROOM_BOSS)
+    return 0;
+
+  // Two separated patches make the boss room feel deliberately broken and
+  // create tactical rough-ground choices without covering door approaches or
+  // authored creature markers.
+  static constexpr uint8_t preferredX[] = {4, 10};
+  static constexpr uint8_t preferredY[] = {6, 9};
+  static constexpr uint8_t patchSize[] = {5, 4};
+  uint8_t totalPlaced = 0;
+
+  for (uint8_t patch = 0; patch < 2; patch++) {
+    uint8_t placed = placeRubblePatch(
+        room, preferredX[patch], preferredY[patch], patchSize[patch]);
+
+    if (placed == 0) {
+      // Shape variants may wall off a preferred origin. Find the closest safe
+      // interior floor rather than skipping the mandatory boss terrain.
+      for (uint8_t radius = 1; radius < ROOM_SIZE && placed == 0; radius++) {
+        for (uint8_t y = 1; y < ROOM_SIZE - 1 && placed == 0; y++) {
+          for (uint8_t x = 1; x < ROOM_SIZE - 1; x++) {
+            const int dx = x > preferredX[patch]
+                ? x - preferredX[patch] : preferredX[patch] - x;
+            const int dy = y > preferredY[patch]
+                ? y - preferredY[patch] : preferredY[patch] - y;
+            if (dx + dy != radius)
+              continue;
+
+            placed = placeRubblePatch(room, x, y, patchSize[patch]);
+            if (placed > 0)
+              break;
+          }
+        }
+      }
+    }
+
+    totalPlaced += placed;
+  }
+
+  return totalPlaced;
+}
+
 static bool isFloorAreaAvailable(
     const DungeonRoom &room,
     int x,
@@ -1900,6 +2327,9 @@ static void generateTreasure(DungeonRoom &room) {
 
 
 void generateRoom(DungeonRoom &room) {
+  for (DungeonFurnitureInstance& furniture : room.furniture)
+    furniture = DungeonFurnitureInstance{};
+
   if (room.type == ROOM_ENTRANCE) {
     room.shape = SHAPE_ENTRANCE;
     generateEntrance(room);
@@ -1939,4 +2369,5 @@ void generateRoom(DungeonRoom &room) {
     case ROOM_EMPTY:
       break;
   }
+
 }

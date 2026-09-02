@@ -255,6 +255,7 @@ CombatDamageResult applyCombatDamage(
     target.character.health.currentHP -= damage;
     updateConditionsAfterDamage(target.character, damage);
     result.applied = true;
+    result.damageApplied = damage;
 
     if (target.character.health.currentHP <= 0)
     {

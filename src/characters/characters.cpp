@@ -6,6 +6,222 @@
 #include "data/progression.h"
 #include "graphics/sprites.h"
 
+const FighterFeatureGrant fighterFeatureProgression[] =
+{
+    {  1, FIGHTER_POWER_ATTACK },
+    {  2, FIGHTER_WEAPON_FOCUS },
+    {  3, FIGHTER_TOUGHNESS },
+    {  4, FIGHTER_WEAPON_SPECIALIZATION },
+    {  5, FIGHTER_WEAPON_TRAINING_1 },
+    {  8, FIGHTER_GREATER_WEAPON_FOCUS },
+    {  9, FIGHTER_WEAPON_TRAINING_2 },
+    { 10, FIGHTER_IMPROVED_CRITICAL },
+    { 12, FIGHTER_GREATER_WEAPON_SPECIALIZATION },
+    { 13, FIGHTER_WEAPON_TRAINING_3 },
+    { 14, FIGHTER_GREATER_TOUGHNESS },
+    { 17, FIGHTER_WEAPON_TRAINING_4 },
+    { 20, FIGHTER_WEAPON_MASTERY }
+};
+
+const uint8_t fighterFeatureProgressionCount =
+    sizeof(fighterFeatureProgression) / sizeof(fighterFeatureProgression[0]);
+
+bool hasFighterFeature(const Character& character, FighterFeature feature)
+{
+    if (character.characterClass != CLASS_FIGHTER)
+        return false;
+
+    for (uint8_t i = 0; i < fighterFeatureProgressionCount; i++)
+    {
+        if (fighterFeatureProgression[i].feature == feature)
+            return character.level >= fighterFeatureProgression[i].level;
+    }
+
+    return false;
+}
+
+WeaponGroup getFighterTrainedWeaponGroup(const Character& character)
+{
+    if (character.characterClass != CLASS_FIGHTER)
+        return WEAPON_GROUP_NONE;
+
+    switch (character.trainedWeaponGroup)
+    {
+        case WEAPON_GROUP_BLADES:
+        case WEAPON_GROUP_AXES:
+        case WEAPON_GROUP_BLUDGEONS:
+            return character.trainedWeaponGroup;
+
+        default:
+            return WEAPON_GROUP_NONE;
+    }
+}
+
+void setFighterTrainedWeaponGroup(Character& character, WeaponGroup group)
+{
+    character.trainedWeaponGroup = WEAPON_GROUP_NONE;
+    if (character.characterClass != CLASS_FIGHTER)
+        return;
+
+    switch (group)
+    {
+        case WEAPON_GROUP_BLADES:
+        case WEAPON_GROUP_AXES:
+        case WEAPON_GROUP_BLUDGEONS:
+            character.trainedWeaponGroup = group;
+            break;
+        default:
+            character.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+            break;
+    }
+}
+
+bool isFighterTrainedWeapon(const Character& character, const Weapon& weapon)
+{
+    const WeaponGroup trainedGroup = getFighterTrainedWeaponGroup(character);
+    return trainedGroup != WEAPON_GROUP_NONE && weapon.group == trainedGroup;
+}
+
+int getFighterWeaponTrainingBonus(const Character& character)
+{
+    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_4)) return 4;
+    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_3)) return 3;
+    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_2)) return 2;
+    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_1)) return 1;
+    return 0;
+}
+
+int getFighterWeaponAttackBonus(const Character& character,
+                                const Weapon& weapon)
+{
+    if (!isFighterTrainedWeapon(character, weapon))
+        return 0;
+
+    int bonus = getFighterWeaponTrainingBonus(character);
+    if (hasFighterFeature(character, FIGHTER_WEAPON_FOCUS))
+        bonus++;
+    if (hasFighterFeature(character, FIGHTER_GREATER_WEAPON_FOCUS))
+        bonus++;
+    return bonus;
+}
+
+int getFighterWeaponDamageBonus(const Character& character,
+                                const Weapon& weapon)
+{
+    if (!isFighterTrainedWeapon(character, weapon))
+        return 0;
+
+    int bonus = getFighterWeaponTrainingBonus(character);
+    if (hasFighterFeature(character, FIGHTER_WEAPON_SPECIALIZATION))
+        bonus += 2;
+    if (hasFighterFeature(character, FIGHTER_GREATER_WEAPON_SPECIALIZATION))
+        bonus += 2;
+    return bonus;
+}
+
+int getFighterBonusMaxHP(const Character& character)
+{
+    int bonus = 0;
+    if (hasFighterFeature(character, FIGHTER_TOUGHNESS))
+        bonus += character.level;
+    if (hasFighterFeature(character, FIGHTER_GREATER_TOUGHNESS))
+        bonus += character.level;
+    return bonus;
+}
+
+uint8_t getWeaponCriticalThreatMinimum(const Character& character,
+                                       const Weapon& weapon)
+{
+    if (!isFighterTrainedWeapon(character, weapon) ||
+        !hasFighterFeature(character, FIGHTER_IMPROVED_CRITICAL))
+    {
+        return weapon.criticalThreat;
+    }
+
+    const int naturalThreatCount = 21 - weapon.criticalThreat;
+    int doubledMinimum = 21 - naturalThreatCount * 2;
+    if (doubledMinimum < 2)
+        doubledMinimum = 2;
+    return static_cast<uint8_t>(doubledMinimum);
+}
+
+bool fighterAutomaticallyConfirmsCritical(const Character& character,
+                                           const Weapon& weapon)
+{
+    return isFighterTrainedWeapon(character, weapon) &&
+           hasFighterFeature(character, FIGHTER_WEAPON_MASTERY);
+}
+
+void assignAbilityScoresForClass(Character& character,
+                                 CharacterClass characterClass,
+                                 const int scores[6])
+{
+    if (scores == nullptr)
+        return;
+
+    switch (characterClass)
+    {
+        case CLASS_FIGHTER:
+            character.abilities.strength     = scores[0];
+            character.abilities.constitution = scores[1];
+            character.abilities.dexterity    = scores[2];
+            character.abilities.wisdom       = scores[3];
+            character.abilities.intelligence = scores[4];
+            character.abilities.charisma     = scores[5];
+            character.abilities.strength += 2;
+            break;
+
+        case CLASS_ROGUE:
+            character.abilities.dexterity    = scores[0];
+            character.abilities.intelligence = scores[1];
+            character.abilities.wisdom       = scores[2];
+            character.abilities.charisma     = scores[3];
+            character.abilities.constitution = scores[4];
+            character.abilities.strength     = scores[5];
+            character.abilities.dexterity += 2;
+            break;
+
+        case CLASS_WIZARD:
+            character.abilities.intelligence = scores[0];
+            character.abilities.dexterity    = scores[1];
+            character.abilities.wisdom       = scores[2];
+            character.abilities.constitution = scores[3];
+            character.abilities.charisma     = scores[4];
+            character.abilities.strength     = scores[5];
+            character.abilities.intelligence += 2;
+            break;
+
+        case CLASS_CLERIC:
+            character.abilities.wisdom       = scores[0];
+            character.abilities.constitution = scores[1];
+            character.abilities.strength     = scores[2];
+            character.abilities.charisma     = scores[3];
+            character.abilities.dexterity    = scores[4];
+            character.abilities.intelligence = scores[5];
+            character.abilities.wisdom += 2;
+            break;
+    }
+}
+
+ItemID getFighterStartingMeleeWeapon(WeaponGroup group)
+{
+    switch (group)
+    {
+        case WEAPON_GROUP_AXES:
+            return ITEM_BATTLEAXE;
+        case WEAPON_GROUP_BLUDGEONS:
+            return ITEM_WARHAMMER;
+        case WEAPON_GROUP_BLADES:
+        default:
+            return ITEM_LONGSWORD;
+    }
+}
+
+ItemID getFighterStartingRangedWeapon()
+{
+    return ITEM_SHORTBOW;
+}
+
 const uint16_t* getPlayerSprite(CharacterClass characterClass)
 {
     switch (characterClass)
@@ -90,7 +306,8 @@ int getMaxHP(const Character& character)
   return getBaseHitPoints(
       character.characterClass,
       character.level)
-      + getAbilityModifier(character, ABILITY_CONSTITUTION);
+      + getAbilityModifier(character, ABILITY_CONSTITUTION)
+      + getFighterBonusMaxHP(character);
 }
 
 int damageCharacter(Character& character, int damage)
@@ -250,8 +467,10 @@ int getMeleeAttackBonus(const Character& character)
 {
     const ItemInstance& weapon =
         character.equipment.equipped[SLOT_MELEE_WEAPON];
-    int weaponEnhancement = getWeapon(weapon.itemID) != nullptr
-        ? weapon.enhancementBonus : 0;
+    const Weapon* weaponData = getWeapon(weapon.itemID);
+    int weaponEnhancement = weaponData != nullptr ? weapon.enhancementBonus : 0;
+    int fighterBonus = weaponData != nullptr
+        ? getFighterWeaponAttackBonus(character, *weaponData) : 0;
 
     return getBaseAttackBonus(
                character.characterClass,
@@ -260,6 +479,7 @@ int getMeleeAttackBonus(const Character& character)
                character,
                ABILITY_STRENGTH)
          + weaponEnhancement
+         + fighterBonus
          + getConditionAttackModifier(character);
 }
 
@@ -267,8 +487,10 @@ int getRangedAttackBonus(const Character& character)
 {
     const ItemInstance& weapon =
         character.equipment.equipped[SLOT_RANGED_WEAPON];
-    int weaponEnhancement = getWeapon(weapon.itemID) != nullptr
-        ? weapon.enhancementBonus : 0;
+    const Weapon* weaponData = getWeapon(weapon.itemID);
+    int weaponEnhancement = weaponData != nullptr ? weapon.enhancementBonus : 0;
+    int fighterBonus = weaponData != nullptr
+        ? getFighterWeaponAttackBonus(character, *weaponData) : 0;
 
     return getBaseAttackBonus(
                character.characterClass,
@@ -277,6 +499,7 @@ int getRangedAttackBonus(const Character& character)
                character,
                ABILITY_DEXTERITY)
          + weaponEnhancement
+         + fighterBonus
          + getConditionAttackModifier(character);
 }
 
@@ -557,7 +780,10 @@ bool canAct(const Character& character)
 
 bool isLootable(const Character& character)
 {
-    return character.state == STATE_DEAD;
+    // STATE_TURNED is retained for compatibility with dungeon state created
+    // before Turn Undead began using the normal monster-defeat pipeline.
+    return character.state == STATE_DEAD ||
+           character.state == STATE_TURNED;
 }
 
 const char* getCharacterClassName(CharacterClass characterClass)

@@ -7,7 +7,8 @@
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 7;
+constexpr uint8_t SAVE_VERSION = 8;
+constexpr uint8_t FIGHTER_WEAPON_GROUP_SAVE_VERSION = 7;
 constexpr uint8_t PREVIOUS_MAGIC_SAVE_VERSION = 6;
 constexpr uint8_t CURRENT_MP_SAVE_VERSION = 5;
 constexpr uint8_t PREVIOUS_SAVE_VERSION = 4;
@@ -16,6 +17,26 @@ constexpr uint8_t ITEM_SLOT_SAVE_VERSION = 2;
 constexpr uint8_t LEGACY_SAVE_VERSION = 1;
 
 struct SavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    EquipmentData equipment;
+    InventoryData inventory;
+    int16_t currentMP;
+    uint8_t knownAbilityCount;
+    AbilityID knownAbilities[MAX_KNOWN_ABILITIES];
+    SpellLearningData learning;
+    uint32_t trainedWeaponGroup;
+};
+
+// Version 7 added persistent spell study but predates Fighter weapon-group
+// selection. Older Fighters migrate to the former Blades default.
+struct FighterDefaultSavedCharacter
 {
     uint32_t magic;
     uint8_t version;
@@ -81,7 +102,8 @@ struct PreviousSavedCharacter
 };
 
 static_assert(
-    sizeof(SavedCharacter) != sizeof(CurrentMPSavedCharacter) &&
+    sizeof(SavedCharacter) != sizeof(FighterDefaultSavedCharacter) &&
+    sizeof(FighterDefaultSavedCharacter) != sizeof(CurrentMPSavedCharacter) &&
     sizeof(CurrentMPSavedCharacter) != sizeof(PreviousSavedCharacter),
     "Persisted magic versions must have distinct save layouts.");
 
@@ -187,6 +209,16 @@ bool isValidCharacterData(CharacterClass characterClass,
            characterClass <= CLASS_CLERIC &&
            level > 0 && health.maxHP > 0 && health.currentHP >= 0 &&
            health.currentHP <= health.maxHP;
+}
+
+bool isValidSavedWeaponGroup(CharacterClass characterClass, uint32_t rawGroup)
+{
+    if (characterClass != CLASS_FIGHTER)
+        return rawGroup == WEAPON_GROUP_NONE;
+
+    return rawGroup == WEAPON_GROUP_BLADES ||
+           rawGroup == WEAPON_GROUP_AXES ||
+           rawGroup == WEAPON_GROUP_BLUDGEONS;
 }
 
 bool isValidKnownAbilityData(
@@ -421,7 +453,9 @@ bool restoreCharacter(Character& character,
                        int savedCurrentMP = 0,
                        const AbilityID* savedKnownAbilities = nullptr,
                        uint8_t savedKnownAbilityCount = 0,
-                       const SpellLearningData* savedLearning = nullptr)
+                       const SpellLearningData* savedLearning = nullptr,
+                       bool hasSavedWeaponGroup = false,
+                       WeaponGroup savedWeaponGroup = WEAPON_GROUP_NONE)
 {
     if (!isValidCharacterData(characterClass, level, health) ||
         !isValidEquipment(equipment) ||
@@ -439,9 +473,14 @@ bool restoreCharacter(Character& character,
     loaded.characterClass = characterClass;
     loaded.creatureType = CREATURE_PLAYER;
     loaded.team = TEAM_PLAYER;
-    loaded.state = STATE_ALIVE;
+    loaded.state = health.currentHP > 0
+        ? STATE_ALIVE
+        : STATE_UNCONSCIOUS;
     loaded.level = level;
     loaded.xp = xp;
+    loaded.trainedWeaponGroup = characterClass == CLASS_FIGHTER
+        ? (hasSavedWeaponGroup ? savedWeaponGroup : WEAPON_GROUP_BLADES)
+        : WEAPON_GROUP_NONE;
     loaded.speed = 6;
     loaded.abilities = abilities;
     loaded.health = health;
@@ -504,6 +543,9 @@ bool saveGame(const Character& character)
     saved.knownAbilityCount = copyKnownAbilitiesForSave(
         character, saved.knownAbilities);
     saved.learning = character.magic.learning;
+    saved.trainedWeaponGroup = character.characterClass == CLASS_FIGHTER
+        ? static_cast<uint32_t>(getFighterTrainedWeaponGroup(character))
+        : static_cast<uint32_t>(WEAPON_GROUP_NONE);
 
     Preferences preferences;
 
@@ -535,7 +577,9 @@ bool loadGame(Character& character)
 
         if (bytesRead != sizeof(saved) ||
             saved.magic != SAVE_MAGIC ||
-            saved.version != SAVE_VERSION)
+            saved.version != SAVE_VERSION ||
+            !isValidSavedWeaponGroup(
+                saved.characterClass, saved.trainedWeaponGroup))
         {
             return false;
         }
@@ -553,7 +597,29 @@ bool loadGame(Character& character)
             saved.currentMP,
             saved.knownAbilities,
             saved.knownAbilityCount,
-            &saved.learning);
+            &saved.learning,
+            true,
+            static_cast<WeaponGroup>(saved.trainedWeaponGroup));
+    }
+
+    if (savedSize == sizeof(FighterDefaultSavedCharacter))
+    {
+        FighterDefaultSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes(
+            "player", &saved, sizeof(saved));
+        preferences.end();
+
+        if (bytesRead != sizeof(saved) || saved.magic != SAVE_MAGIC ||
+            saved.version != FIGHTER_WEAPON_GROUP_SAVE_VERSION)
+        {
+            return false;
+        }
+
+        return restoreCharacter(
+            character, saved.characterClass, saved.level, saved.xp,
+            saved.abilities, saved.health, saved.equipment, saved.inventory,
+            true, saved.currentMP, saved.knownAbilities,
+            saved.knownAbilityCount, &saved.learning);
     }
 
     if (savedSize == sizeof(PreviousMagicSavedCharacter))

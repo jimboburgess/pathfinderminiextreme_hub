@@ -469,6 +469,22 @@ enum WeaponType
     WEAPON_RANGED
 };
 
+// Broad weapon families used by class features.  Groups deliberately describe
+// technique rather than a single ItemID, so a trained character can replace or
+// upgrade a weapon without losing specialization.
+enum WeaponGroup : uint8_t
+{
+    WEAPON_GROUP_NONE,
+    WEAPON_GROUP_BLADES,
+    WEAPON_GROUP_AXES,
+    WEAPON_GROUP_BLUDGEONS,
+    WEAPON_GROUP_POLEARMS,
+    WEAPON_GROUP_BOWS,
+    WEAPON_GROUP_CROSSBOWS,
+    WEAPON_GROUP_SLINGS,
+    WEAPON_GROUP_NATURAL
+};
+
 enum WeaponProperties
 {
     WEAPON_PROP_NONE            = 0,
@@ -517,7 +533,11 @@ struct Weapon
     uint8_t rangeIncrement;      // 0 for melee
 
     uint32_t properties;
+
+    WeaponGroup group;
 };
+
+const char* getWeaponGroupName(WeaponGroup group);
 
 struct Armor
 {

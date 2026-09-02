@@ -6,6 +6,7 @@
 #define PATHFINDERMINIEXTREME_025_ENTITIES_H
 
 #include "../characters/characters.h"
+#include "game.h"
 #include "dungeon/monsters.h"
 #include "dungeon/turns.h"
 #include "graphics/sprites.h"
@@ -57,6 +58,13 @@ struct Entity
     // Zero for initial combatants. Reinforcements skip turns until combat has
     // advanced beyond the round in which they heard and joined the fight.
     uint8_t reinforcementJoinedRound = 0;
+
+    // Exploration-only movement state. MonsterIdleBehavior remains static in
+    // the monster definition; each spawned Entity owns its independent timer
+    // and patrol segment.
+    Direction idleDirection = DIR_NORTH;
+    uint8_t idleStepsRemaining = 0;
+    uint32_t nextIdleActionTime = 0;
 
     LootData loot;
 

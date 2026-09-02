@@ -17,9 +17,8 @@ int getActiveMapHeight();
 bool isInsideActiveMap(int x, int y);
 TileType getActiveMapTile(int x, int y);
 
-// Base terrain and temporary overlays remain separate. No current tile is
-// difficult yet, but this is the single extension point for rubble, mud,
-// snow, and similar future terrain.
+// Base terrain and temporary overlays remain separate. Rubble currently uses
+// this seam; mud, snow, and similar future terrain can extend the same table.
 bool isBaseTerrainDifficultAt(int x, int y);
 
 bool hasLineOfSight(int startX, int startY, int endX, int endY);

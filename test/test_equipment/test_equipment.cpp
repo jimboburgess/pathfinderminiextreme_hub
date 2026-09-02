@@ -4,6 +4,7 @@
 #include "../../src/characters/characters.h"
 #include "../../src/characters/conditions.h"
 #include "../../src/data/progression.h"
+#include "../../src/dungeon/combatpolicy.h"
 #include "../../src/graphics/sprites.h"
 
 const uint16_t fighter16x16[SPRITE_W * SPRITE_H] = {};
@@ -15,6 +16,12 @@ int rollDice(int, int) { return 1; }
 static int controlledBaseAttackBonus = 0;
 static int controlledAttackModifier = 0;
 static int controlledArmorClassModifier = 0;
+ConditionModifiers getActiveConditionModifiers(const Character&) {
+    ConditionModifiers modifiers;
+    modifiers.attackBonus = controlledAttackModifier;
+    modifiers.acBonus = controlledArmorClassModifier;
+    return modifiers;
+}
 int getBaseAttackBonus(CharacterClass, uint8_t) {
     return controlledBaseAttackBonus;
 }
@@ -223,6 +230,237 @@ void test_touch_ac_ignores_armor_shield_and_untyped_ac_buffs()
     controlledArmorClassModifier = 0;
 }
 
+void test_locked_fighter_weapon_progression()
+{
+    Character fighter = makeTestCharacter();
+    fighter.characterClass = CLASS_FIGHTER;
+    fighter.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+    const Weapon* blade = getWeapon(ITEM_LONGSWORD);
+    const Weapon* untrained = getWeapon(ITEM_BATTLEAXE);
+    TEST_ASSERT_NOT_NULL(blade);
+    TEST_ASSERT_NOT_NULL(untrained);
+    TEST_ASSERT_EQUAL(WEAPON_GROUP_BLADES, blade->group);
+    TEST_ASSERT_EQUAL(WEAPON_GROUP_AXES, untrained->group);
+
+    fighter.level = 2;
+    TEST_ASSERT_EQUAL(1, getFighterWeaponAttackBonus(fighter, *blade));
+    TEST_ASSERT_EQUAL(0, getFighterWeaponAttackBonus(fighter, *untrained));
+
+    fighter.level = 4;
+    TEST_ASSERT_EQUAL(2, getFighterWeaponDamageBonus(fighter, *blade));
+
+    fighter.level = 5;
+    TEST_ASSERT_EQUAL(2, getFighterWeaponAttackBonus(fighter, *blade));
+    TEST_ASSERT_EQUAL(3, getFighterWeaponDamageBonus(fighter, *blade));
+
+    fighter.level = 8;
+    TEST_ASSERT_EQUAL(3, getFighterWeaponAttackBonus(fighter, *blade));
+
+    fighter.level = 12;
+    TEST_ASSERT_EQUAL(2, getFighterWeaponTrainingBonus(fighter));
+    TEST_ASSERT_EQUAL(6, getFighterWeaponDamageBonus(fighter, *blade));
+
+    fighter.level = 17;
+    TEST_ASSERT_EQUAL(6, getFighterWeaponAttackBonus(fighter, *blade));
+    TEST_ASSERT_EQUAL(8, getFighterWeaponDamageBonus(fighter, *blade));
+
+    Character rogue = fighter;
+    rogue.characterClass = CLASS_ROGUE;
+    TEST_ASSERT_EQUAL(0, getFighterWeaponAttackBonus(rogue, *blade));
+    TEST_ASSERT_EQUAL(0, getFighterWeaponDamageBonus(rogue, *blade));
+}
+
+void test_fighter_toughness_and_critical_progression()
+{
+    Character fighter = makeTestCharacter();
+    fighter.characterClass = CLASS_FIGHTER;
+    fighter.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+    const Weapon* longsword = getWeapon(ITEM_LONGSWORD);
+    const Weapon* scythe = getWeapon(ITEM_SCYTHE);
+    TEST_ASSERT_NOT_NULL(longsword);
+    TEST_ASSERT_NOT_NULL(scythe);
+
+    fighter.level = 3;
+    TEST_ASSERT_EQUAL(3, getFighterBonusMaxHP(fighter));
+    TEST_ASSERT_EQUAL(4, getMaxHP(fighter));
+
+    fighter.level = 10;
+    TEST_ASSERT_EQUAL_UINT8(17,
+        getWeaponCriticalThreatMinimum(fighter, *longsword));
+    TEST_ASSERT_EQUAL_UINT8(19,
+        getWeaponCriticalThreatMinimum(fighter, *scythe));
+    TEST_ASSERT_FALSE(fighterAutomaticallyConfirmsCritical(
+        fighter, *longsword));
+
+    fighter.level = 14;
+    TEST_ASSERT_EQUAL(28, getFighterBonusMaxHP(fighter));
+
+    fighter.level = 20;
+    TEST_ASSERT_EQUAL(40, getFighterBonusMaxHP(fighter));
+    TEST_ASSERT_TRUE(fighterAutomaticallyConfirmsCritical(
+        fighter, *longsword));
+
+    const Weapon* battleaxe = getWeapon(ITEM_BATTLEAXE);
+    TEST_ASSERT_NOT_NULL(battleaxe);
+    TEST_ASSERT_EQUAL_UINT8(battleaxe->criticalThreat,
+        getWeaponCriticalThreatMinimum(fighter, *battleaxe));
+    TEST_ASSERT_FALSE(fighterAutomaticallyConfirmsCritical(
+        fighter, *battleaxe));
+}
+
+void test_fighter_bonuses_flow_through_shared_attack_helpers()
+{
+    Character fighter = makeTestCharacter();
+    fighter.characterClass = CLASS_FIGHTER;
+    fighter.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+    fighter.level = 17;
+    fighter.equipment.equipped[SLOT_MELEE_WEAPON] =
+        makeItemInstance(ITEM_LONGSWORD);
+    fighter.equipment.equipped[SLOT_RANGED_WEAPON] =
+        makeItemInstance(ITEM_SHORTBOW);
+    controlledBaseAttackBonus = 17;
+
+    TEST_ASSERT_EQUAL(23, getMeleeAttackBonus(fighter));
+    TEST_ASSERT_EQUAL(17, getRangedAttackBonus(fighter));
+
+    controlledBaseAttackBonus = 0;
+}
+
+void test_power_attack_scaling_remains_compatible_with_iteratives()
+{
+    Character fighter = makeTestCharacter();
+    fighter.characterClass = CLASS_FIGHTER;
+    fighter.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+    fighter.level = 16;
+    const Weapon* longsword = getWeapon(ITEM_LONGSWORD);
+    TEST_ASSERT_NOT_NULL(longsword);
+    controlledBaseAttackBonus = 16;
+
+    TEST_ASSERT_EQUAL(-5, getPowerAttackPenalty(fighter));
+    TEST_ASSERT_EQUAL(10, getPowerAttackDamageBonus(fighter, *longsword));
+    TEST_ASSERT_EQUAL_UINT8(4, getIterativeAttackCount(16));
+    TEST_ASSERT_EQUAL(16, getSequenceAttackBAB(16, 0, 0));
+    TEST_ASSERT_EQUAL(11, getSequenceAttackBAB(16, 1, 0));
+    TEST_ASSERT_EQUAL(6, getSequenceAttackBAB(16, 2, 0));
+    TEST_ASSERT_EQUAL(1, getSequenceAttackBAB(16, 3, 0));
+
+    controlledBaseAttackBonus = 0;
+}
+
+void test_fighter_selected_groups_control_progression_bonuses()
+{
+    Character fighter = makeTestCharacter();
+    fighter.characterClass = CLASS_FIGHTER;
+    fighter.level = 20;
+    const Weapon* blade = getWeapon(ITEM_LONGSWORD);
+    const Weapon* axe = getWeapon(ITEM_BATTLEAXE);
+    const Weapon* bludgeon = getWeapon(ITEM_WARHAMMER);
+    const Weapon* bow = getWeapon(ITEM_SHORTBOW);
+    TEST_ASSERT_NOT_NULL(blade);
+    TEST_ASSERT_NOT_NULL(axe);
+    TEST_ASSERT_NOT_NULL(bludgeon);
+    TEST_ASSERT_NOT_NULL(bow);
+
+    const WeaponGroup groups[] =
+    {
+        WEAPON_GROUP_BLADES,
+        WEAPON_GROUP_AXES,
+        WEAPON_GROUP_BLUDGEONS
+    };
+    const Weapon* trainedWeapons[] = { blade, axe, bludgeon };
+
+    for (uint8_t selected = 0; selected < 3; selected++)
+    {
+        setFighterTrainedWeaponGroup(fighter, groups[selected]);
+        TEST_ASSERT_EQUAL(groups[selected],
+            getFighterTrainedWeaponGroup(fighter));
+
+        for (uint8_t weaponIndex = 0; weaponIndex < 3; weaponIndex++)
+        {
+            const int expectedAttack = selected == weaponIndex ? 6 : 0;
+            const int expectedDamage = selected == weaponIndex ? 8 : 0;
+            TEST_ASSERT_EQUAL(expectedAttack, getFighterWeaponAttackBonus(
+                fighter, *trainedWeapons[weaponIndex]));
+            TEST_ASSERT_EQUAL(expectedDamage, getFighterWeaponDamageBonus(
+                fighter, *trainedWeapons[weaponIndex]));
+        }
+
+        TEST_ASSERT_EQUAL(0, getFighterWeaponAttackBonus(fighter, *bow));
+        TEST_ASSERT_EQUAL(0, getFighterWeaponDamageBonus(fighter, *bow));
+        TEST_ASSERT_EQUAL_UINT8(
+            21 - (21 - trainedWeapons[selected]->criticalThreat) * 2,
+            getWeaponCriticalThreatMinimum(
+                fighter, *trainedWeapons[selected]));
+        TEST_ASSERT_TRUE(fighterAutomaticallyConfirmsCritical(
+            fighter, *trainedWeapons[selected]));
+        TEST_ASSERT_FALSE(fighterAutomaticallyConfirmsCritical(fighter, *bow));
+    }
+
+    Character rogue = fighter;
+    rogue.characterClass = CLASS_ROGUE;
+    setFighterTrainedWeaponGroup(rogue, WEAPON_GROUP_AXES);
+    TEST_ASSERT_EQUAL(WEAPON_GROUP_NONE, rogue.trainedWeaponGroup);
+}
+
+void test_character_creation_primary_bonus_is_assigned_once()
+{
+    const int rolls[6] = {18, 16, 14, 12, 10, 8};
+    Character character = makeTestCharacter();
+
+    assignAbilityScoresForClass(character, CLASS_FIGHTER, rolls);
+    TEST_ASSERT_EQUAL_UINT8(20, character.abilities.strength);
+    TEST_ASSERT_EQUAL_UINT8(16, character.abilities.constitution);
+    TEST_ASSERT_EQUAL_UINT8(14, character.abilities.dexterity);
+    TEST_ASSERT_EQUAL_UINT8(12, character.abilities.wisdom);
+    TEST_ASSERT_EQUAL_UINT8(10, character.abilities.intelligence);
+    TEST_ASSERT_EQUAL_UINT8(8, character.abilities.charisma);
+
+    // Reassigning models a reroll: every score is overwritten before +2.
+    assignAbilityScoresForClass(character, CLASS_FIGHTER, rolls);
+    TEST_ASSERT_EQUAL_UINT8(20, character.abilities.strength);
+
+    assignAbilityScoresForClass(character, CLASS_ROGUE, rolls);
+    TEST_ASSERT_EQUAL_UINT8(20, character.abilities.dexterity);
+    TEST_ASSERT_EQUAL_UINT8(18, character.abilities.intelligence);
+    TEST_ASSERT_EQUAL_UINT8(16, character.abilities.wisdom);
+
+    assignAbilityScoresForClass(character, CLASS_WIZARD, rolls);
+    TEST_ASSERT_EQUAL_UINT8(20, character.abilities.intelligence);
+    TEST_ASSERT_EQUAL_UINT8(18, character.abilities.dexterity);
+    TEST_ASSERT_EQUAL_UINT8(16, character.abilities.wisdom);
+    TEST_ASSERT_EQUAL_UINT8(14, character.abilities.constitution);
+
+    assignAbilityScoresForClass(character, CLASS_CLERIC, rolls);
+    TEST_ASSERT_EQUAL_UINT8(20, character.abilities.wisdom);
+    TEST_ASSERT_EQUAL_UINT8(18, character.abilities.constitution);
+    TEST_ASSERT_EQUAL_UINT8(16, character.abilities.strength);
+}
+
+void test_fighter_starting_weapon_mapping()
+{
+    TEST_ASSERT_EQUAL(ITEM_LONGSWORD,
+        getFighterStartingMeleeWeapon(WEAPON_GROUP_BLADES));
+    TEST_ASSERT_EQUAL(ITEM_BATTLEAXE,
+        getFighterStartingMeleeWeapon(WEAPON_GROUP_AXES));
+    TEST_ASSERT_EQUAL(ITEM_WARHAMMER,
+        getFighterStartingMeleeWeapon(WEAPON_GROUP_BLUDGEONS));
+    TEST_ASSERT_EQUAL(ITEM_SHORTBOW, getFighterStartingRangedWeapon());
+}
+
+void test_defeated_and_legacy_turned_monsters_are_lootable()
+{
+    Character character = makeTestCharacter();
+
+    character.state = STATE_ALIVE;
+    TEST_ASSERT_FALSE(isLootable(character));
+
+    character.state = STATE_DEAD;
+    TEST_ASSERT_TRUE(isLootable(character));
+
+    character.state = STATE_TURNED;
+    TEST_ASSERT_TRUE(isLootable(character));
+}
+
 void setup()
 {
     delay(2000);
@@ -235,6 +473,14 @@ void setup()
     RUN_TEST(test_ranged_touch_bonus_uses_bab_dex_and_generic_modifier_only);
     RUN_TEST(test_melee_touch_bonus_uses_bab_str_and_generic_modifier_only);
     RUN_TEST(test_touch_ac_ignores_armor_shield_and_untyped_ac_buffs);
+    RUN_TEST(test_locked_fighter_weapon_progression);
+    RUN_TEST(test_fighter_toughness_and_critical_progression);
+    RUN_TEST(test_fighter_bonuses_flow_through_shared_attack_helpers);
+    RUN_TEST(test_power_attack_scaling_remains_compatible_with_iteratives);
+    RUN_TEST(test_fighter_selected_groups_control_progression_bonuses);
+    RUN_TEST(test_character_creation_primary_bonus_is_assigned_once);
+    RUN_TEST(test_fighter_starting_weapon_mapping);
+    RUN_TEST(test_defeated_and_legacy_turned_monsters_are_lootable);
     UNITY_END();
 }
 

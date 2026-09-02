@@ -6,12 +6,13 @@
 #include "forest/forest.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
+#include "map/movement.h"
 
 namespace
 {
 bool blocksSight(TileType tile)
 {
-    return tile == TILE_TREE || tile == TILE_WALL;
+    return isTileBlockingSight(tile);
 }
 }
 
@@ -98,10 +99,7 @@ bool isBaseTerrainDifficultAt(int x, int y)
     if (!isInsideActiveMap(x, y))
         return false;
 
-    // No current dungeon or forest tile carries a difficult-terrain rule.
-    // Keeping this query separate lets later terrain add that property
-    // without coupling it to Grease or any other map effect.
-    return false;
+    return getTerrainMovementCost(getActiveMapTile(x, y)) > 1;
 }
 
 bool hasLineOfSight(int startX, int startY, int endX, int endY)

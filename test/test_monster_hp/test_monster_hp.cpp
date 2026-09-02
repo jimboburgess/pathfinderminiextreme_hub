@@ -147,6 +147,7 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL(LOOT_UNDEAD, zombie.lootTable);
     TEST_ASSERT_EQUAL(SCRIPT_MELEE, zombie.script);
     TEST_ASSERT_EQUAL(CREATURE_ZOMBIE, zombie.creatureType);
+    TEST_ASSERT_EQUAL(IDLE_WANDER, zombie.idleBehavior);
 
     const Monster& spectator = monsterDatabase[MONSTER_SPECTATOR];
     TEST_ASSERT_EQUAL(
@@ -179,6 +180,36 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL_UINT8(8, skeletonMage.maxMP);
     TEST_ASSERT_EQUAL_UINT8(3, skeletonMage.casterLevel);
     TEST_ASSERT_EQUAL(CREATURE_SKELETON, skeletonMage.creatureType);
+}
+
+void test_monster_idle_behaviors_match_exploration_roles()
+{
+    TEST_ASSERT_EQUAL(IDLE_PATROL,
+        monsterDatabase[MONSTER_GOBLIN_SCIMITAR].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_PATROL,
+        monsterDatabase[MONSTER_GOBLIN_ARCHER].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_PATROL,
+        monsterDatabase[MONSTER_BUGBEAR].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_STATIONARY,
+        monsterDatabase[MONSTER_SKELETON].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_WANDER,
+        monsterDatabase[MONSTER_ZOMBIE].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_PATROL,
+        monsterDatabase[MONSTER_GHOUL].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_PATROL,
+        monsterDatabase[MONSTER_WIGHT].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_HIDE,
+        monsterDatabase[MONSTER_GIANT_SPIDER].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_HIDE,
+        monsterDatabase[MONSTER_GRAY_OOZE].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_STATIONARY,
+        monsterDatabase[MONSTER_VIOLET_FUNGUS].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_HIDE,
+        monsterDatabase[MONSTER_CHOKER].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_STATIONARY,
+        monsterDatabase[MONSTER_SPECTATOR].idleBehavior);
+    TEST_ASSERT_EQUAL(IDLE_STATIONARY,
+        monsterDatabase[MONSTER_SKELETON_MAGE].idleBehavior);
 }
 
 void test_reused_entity_gets_one_fresh_monster_hp_roll()
@@ -304,6 +335,21 @@ void test_invalid_monster_does_not_consume_entity_slot()
     TEST_ASSERT_FALSE(entities[0].active);
 }
 
+void test_spawned_monster_idle_runtime_starts_unscheduled()
+{
+    Entity entities[MAX_ENTITIES] = {};
+    uint8_t entityCount = 0;
+    useHitPointRoll(8);
+
+    Entity* goblin = spawnMonster(
+        entities, entityCount, MONSTER_GOBLIN_SCIMITAR, 3, 4);
+
+    TEST_ASSERT_NOT_NULL(goblin);
+    TEST_ASSERT_EQUAL(DIR_NORTH, goblin->idleDirection);
+    TEST_ASSERT_EQUAL_UINT8(0, goblin->idleStepsRemaining);
+    TEST_ASSERT_EQUAL_UINT32(0, goblin->nextIdleActionTime);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -312,10 +358,12 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_low_constitution_hp_never_wraps);
     RUN_TEST(test_zombie_database_fields_and_id_lookup_are_aligned);
+    RUN_TEST(test_monster_idle_behaviors_match_exploration_roles);
     RUN_TEST(test_reused_entity_gets_one_fresh_monster_hp_roll);
     RUN_TEST(test_spellcaster_spawn_receives_definition_mp_pool);
     RUN_TEST(test_skeleton_mage_spawns_from_normal_monster_data);
     RUN_TEST(test_invalid_monster_does_not_consume_entity_slot);
+    RUN_TEST(test_spawned_monster_idle_runtime_starts_unscheduled);
     UNITY_END();
 }
 

@@ -598,6 +598,7 @@ CombatDamageResult applyCombatDamage(Entity& target, int damage,
 
     damage = applyEnergyMitigation(
         target.character, static_cast<uint8_t>(damageType), damage);
+    result.damageApplied = damage;
     if (damage == 0)
     {
         result.applied = true;
@@ -1533,7 +1534,7 @@ static void beginTurnStartConditionMessages(
             *entity, damage, static_cast<DamageType>(effect.damageType));
         if (damageResult.applied)
         {
-            result.damage += damage;
+            result.damage += damageResult.damageApplied;
             result.damageType = effect.damageType;
         }
     }
@@ -2480,15 +2481,36 @@ void confirmPlayerAttack()
     int attackBonus = normalAttackBonus + powerAttackPenalty +
         iterativePenalty;
     int total = dieRoll + attackBonus + rangePenalty;
+    const int targetArmorClass = getArmorClass(
+        target->character, target->turn.fullDefense ? 4 : 0);
     bool hit = (dieRoll == 20) ||
-               (dieRoll != 1 && total >= getArmorClass(
-                   target->character,
-                   target->turn.fullDefense ? 4 : 0));
+               (dieRoll != 1 && total >= targetArmorClass);
+    bool criticalConfirmed = false;
+
+    if (hit && dieRoll >= getWeaponCriticalThreatMinimum(
+            player->character, *weapon))
+    {
+        if (fighterAutomaticallyConfirmsCritical(player->character, *weapon))
+        {
+            criticalConfirmed = true;
+        }
+        else
+        {
+            const int confirmationRoll = rollDie(20);
+            const int confirmationTotal = confirmationRoll + attackBonus +
+                                          rangePenalty;
+            criticalConfirmed = confirmationRoll == 20 ||
+                (confirmationRoll != 1 &&
+                 confirmationTotal >= targetArmorClass);
+        }
+    }
 
     char message[64];
 
     snprintf(message, sizeof(message), "Attack %+d: %s! (%d)",
-             iterativeBAB, hit ? "Hit" : "Miss", total);
+             iterativeBAB,
+             criticalConfirmed ? "Critical" : (hit ? "Hit" : "Miss"),
+             total);
 
     setGameMessage(message);
 
@@ -2531,10 +2553,15 @@ void confirmPlayerAttack()
             }
         }
 
+        combat.pendingDamage += getFighterWeaponDamageBonus(
+            player->character, *weapon);
         combat.pendingDamage += getActiveConditionModifiers(
             player->character).damageBonus;
 
         combat.pendingDamage = std::max(1, combat.pendingDamage);
+
+        if (criticalConfirmed)
+            combat.pendingDamage *= weapon->criticalMultiplier;
 
         combat.pendingSneakAttackDamage =
             rollSneakAttackDamage(*player, *target);
@@ -2755,8 +2782,11 @@ static void executeTurnUndead(Entity& cleric)
             cleric, target, *ability);
         if (save.result == SAVE_RESULT_FAILURE)
         {
-            target.character.state = STATE_TURNED;
-            generateCorpseLoot(target);
+            // Turn Undead defeats the monster through the same one-time path
+            // as weapon and spell damage.  This creates an ordinary lootable
+            // corpse and keeps XP, room completion, and combat completion in
+            // sync with every other defeated monster.
+            finalizeDefeat(target);
             target.turn.movementRemaining = 0;
             target.turn.standardActionUsed = true;
             markEntityFootprintDirty(target);
@@ -3397,7 +3427,7 @@ bool canTogglePowerAttack(const Entity& fighter)
 {
     if (!combat.active || !fighter.active ||
         fighter.type != ENTITY_PLAYER ||
-        fighter.character.characterClass != CLASS_FIGHTER ||
+        !hasFighterFeature(fighter.character, FIGHTER_POWER_ATTACK) ||
         fighter.character.state != STATE_ALIVE ||
         getCurrentCombatant() != &fighter ||
         !combat.waitingForPlayer ||
@@ -3652,10 +3682,23 @@ void beginMonsterAttack(
                 getConditionAttackModifier(monster->character) +
                 rangePenalty;
 
+    const int targetArmorClass = getArmorClass(
+        target->character, target->turn.fullDefense ? 4 : 0);
+
     combat.monsterAttackHit = (dieRoll == 20) ||
-        (dieRoll != 1 && total >= getArmorClass(
-            target->character,
-            target->turn.fullDefense ? 4 : 0));
+        (dieRoll != 1 && total >= targetArmorClass);
+    bool criticalConfirmed = false;
+
+    if (combat.monsterAttackHit && dieRoll >= weapon->criticalThreat)
+    {
+        const int confirmationRoll = rollDie(20);
+        const int confirmationTotal = confirmationRoll + iterativeBAB +
+            abilityModifier + getConditionAttackModifier(monster->character) +
+            rangePenalty;
+        criticalConfirmed = confirmationRoll == 20 ||
+            (confirmationRoll != 1 &&
+             confirmationTotal >= targetArmorClass);
+    }
     combat.monsterPendingDamage = 0;
     combat.monsterSneakAttack = false;
     combat.monsterPendingSneakAttackDamage = 0;
@@ -3675,6 +3718,9 @@ void beginMonsterAttack(
         combat.monsterPendingDamage = std::max(
             1, combat.monsterPendingDamage);
 
+        if (criticalConfirmed)
+            combat.monsterPendingDamage *= weapon->criticalMultiplier;
+
         combat.monsterPendingSneakAttackDamage =
             rollSneakAttackDamage(*monster, *target);
         combat.monsterSneakAttack =
@@ -3692,12 +3738,13 @@ void beginMonsterAttack(
     monster->turn.standardActionUsed = true;
 
     char message[64];
-    snprintf(message, sizeof(message), "%s attack %+d with %s.",
+    snprintf(message, sizeof(message), "%s attack %+d with %s%s",
              getEntityName(monster),
              iterativeBAB,
              getEquippedItemName(
-                 monster->character,
-                 weaponSlot));
+                  monster->character,
+                  weaponSlot),
+             criticalConfirmed ? " (critical)." : ".");
     setGameMessage(message);
     requestCombatTileRedraw();
 }

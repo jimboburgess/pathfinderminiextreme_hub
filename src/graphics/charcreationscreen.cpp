@@ -25,6 +25,7 @@ extern Adafruit_ST7789 tft;
 
 static Character previewCharacter;
 static CharacterClass selectedClass = CLASS_FIGHTER;
+static WeaponGroup selectedWeaponStyle = WEAPON_GROUP_BLADES;
 
 static bool showingPreview = false;
 
@@ -36,10 +37,38 @@ void enterCharacterCreation()
     abortCombat();
     resetDungeonRun(dungeon);
     selectedClass = CLASS_FIGHTER;
+    selectedWeaponStyle = WEAPON_GROUP_BLADES;
     showingPreview = false;
     creationState = CCS_CLASS_SELECT;
     resetButtonStates();
     needsRedraw = true;
+}
+
+static void drawWeaponStyleSelection()
+{
+    const WeaponGroup styles[] =
+    {
+        WEAPON_GROUP_BLADES,
+        WEAPON_GROUP_AXES,
+        WEAPON_GROUP_BLUDGEONS
+    };
+
+    tft.fillScreen(ST77XX_BLACK);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setTextSize(2);
+    tft.setCursor(10, 15);
+    tft.println("Choose Weapon Style");
+
+    for (uint8_t i = 0; i < 3; i++)
+    {
+        tft.setCursor(30, 75 + i * 40);
+        tft.print(styles[i] == selectedWeaponStyle ? "> " : "  ");
+        tft.println(getWeaponGroupName(styles[i]));
+    }
+
+    tft.setTextSize(1);
+    tft.setCursor(15, 220);
+    tft.print("A/Encoder = Select  B = Back");
 }
 
 static void drawClassSelection() {
@@ -124,7 +153,11 @@ bool isCharacterMenuOpen()
 
 void drawCharacterCreationScreen()
 {
-    if (showingPreview)
+    if (creationState == CCS_WEAPON_STYLE_SELECT)
+    {
+        drawWeaponStyleSelection();
+    }
+    else if (showingPreview)
     {
         drawPreview();
 
@@ -135,6 +168,42 @@ void drawCharacterCreationScreen()
     {
         drawClassSelection();
     }
+}
+
+void rotateFighterWeaponStyleCW()
+{
+    if (creationState != CCS_WEAPON_STYLE_SELECT)
+        return;
+
+    if (selectedWeaponStyle == WEAPON_GROUP_BLADES)
+        selectedWeaponStyle = WEAPON_GROUP_AXES;
+    else if (selectedWeaponStyle == WEAPON_GROUP_AXES)
+        selectedWeaponStyle = WEAPON_GROUP_BLUDGEONS;
+    else
+        selectedWeaponStyle = WEAPON_GROUP_BLADES;
+    needsRedraw = true;
+}
+
+void rotateFighterWeaponStyleCCW()
+{
+    if (creationState != CCS_WEAPON_STYLE_SELECT)
+        return;
+
+    if (selectedWeaponStyle == WEAPON_GROUP_BLADES)
+        selectedWeaponStyle = WEAPON_GROUP_BLUDGEONS;
+    else if (selectedWeaponStyle == WEAPON_GROUP_BLUDGEONS)
+        selectedWeaponStyle = WEAPON_GROUP_AXES;
+    else
+        selectedWeaponStyle = WEAPON_GROUP_BLADES;
+    needsRedraw = true;
+}
+
+void cancelFighterWeaponStyleSelection()
+{
+    if (creationState != CCS_WEAPON_STYLE_SELECT)
+        return;
+    creationState = CCS_CLASS_SELECT;
+    needsRedraw = true;
 }
 
 //======================================================
@@ -169,7 +238,16 @@ void rotateCharacterClassCCW() {
 
 void createPreviewCharacter()
 {
-    createCharacter(previewCharacter, selectedClass);
+    if (selectedClass == CLASS_FIGHTER &&
+        creationState == CCS_CLASS_SELECT)
+    {
+        selectedWeaponStyle = WEAPON_GROUP_BLADES;
+        creationState = CCS_WEAPON_STYLE_SELECT;
+        needsRedraw = true;
+        return;
+    }
+
+    createCharacter(previewCharacter, selectedClass, selectedWeaponStyle);
 
     enterCharacterSheet(&previewCharacter);
 
@@ -188,7 +266,7 @@ void rerollCharacter() {
     if (!showingPreview)
         return;
 
-    createCharacter(previewCharacter, selectedClass);
+    createCharacter(previewCharacter, selectedClass, selectedWeaponStyle);
 
     needsRedraw = true;
 }
@@ -277,6 +355,7 @@ void menuSelect()
 
         case MENU_CHANGE_CLASS:
             showingPreview = false;
+            selectedWeaponStyle = WEAPON_GROUP_BLADES;
             creationState = CCS_CLASS_SELECT;
             needsRedraw = true;
             break;

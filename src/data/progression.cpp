@@ -201,6 +201,13 @@ void refreshCharacterMagicProgression(Character& character)
             learnAbility(character, wizardStarterSpellPool[i]);
         return;
     }
+    else if (character.characterClass == CLASS_FIGHTER)
+    {
+        // Power Attack is the locked level-1 active feature.  learnAbility is
+        // idempotent, so refresh/load/level-up paths cannot duplicate it.
+        learnAbility(character, ABILITY_POWER_ATTACK);
+        return;
+    }
     // Clerics intentionally do not copy Divine spells into knownAbilities.
     // Their spell menu derives access from ability type and this progression.
     else

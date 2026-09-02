@@ -68,7 +68,7 @@ static bool isMonsterWalkableTile(TileType tile)
     {
         // Doors change rooms for the player, so monsters must not attempt
         // to traverse them.  They navigate around walls on floor tiles.
-        return tile == TILE_FLOOR;
+        return isDungeonFloorTerrain(tile);
     }
 
     return false;

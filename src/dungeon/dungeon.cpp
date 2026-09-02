@@ -94,8 +94,7 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
 
         if (entity.active && entity.type == ENTITY_MONSTER &&
             entity.character.team == TEAM_MONSTER &&
-            entity.character.state != STATE_DEAD &&
-            entity.character.state != STATE_LOOTED)
+            entity.character.state == STATE_ALIVE)
         {
             hasLivingMonster = true;
             break;
@@ -357,6 +356,36 @@ const char* roomTypeName(RoomType type)
     return "Unknown";
 }
 
+DungeonRubblePlan createDungeonRubblePlan(
+    uint8_t themeRoll,
+    uint8_t guaranteedMiddleRoomRoll,
+    uint8_t optionalRoomChanceRoll,
+    uint8_t optionalMiddleRoomRoll)
+{
+    DungeonRubblePlan plan{};
+    plan.enabled = themeRoll < DUNGEON_RUBBLE_THEME_CHANCE_PERCENT;
+
+    if (!plan.enabled)
+        return plan;
+
+    const uint8_t guaranteedRoom =
+        guaranteedMiddleRoomRoll % MIDDLE_ROOM_COUNT;
+    plan.middleRooms[guaranteedRoom] = true;
+
+    // At most one additional middle room receives rubble. This keeps the
+    // theme visible without making every ordinary room difficult terrain.
+    if (optionalRoomChanceRoll < OPTIONAL_RUBBLE_ROOM_CHANCE_PERCENT)
+    {
+        const uint8_t offset = 1 + optionalMiddleRoomRoll %
+            (MIDDLE_ROOM_COUNT - 1);
+        const uint8_t optionalRoom =
+            (guaranteedRoom + offset) % MIDDLE_ROOM_COUNT;
+        plan.middleRooms[optionalRoom] = true;
+    }
+
+    return plan;
+}
+
 void enterDungeon()
 {
     // Entering a map must never inherit a stale encounter. Return to Town is
@@ -407,6 +436,13 @@ void generateDungeon(Dungeon& dungeon)
 {
     resetDungeonRun(dungeon);
     dungeon.currentRoom = 0;
+
+    const DungeonRubblePlan rubblePlan = createDungeonRubblePlan(
+        random(100),
+        random(MIDDLE_ROOM_COUNT),
+        random(100),
+        random(MIDDLE_ROOM_COUNT - 1));
+    dungeon.hasRubbleTheme = rubblePlan.enabled;
 
     // Clear room connections
     for (int i = 0; i < MAX_ROOMS; i++)
@@ -476,6 +512,28 @@ void generateDungeon(Dungeon& dungeon)
             ? SHAPE_ENTRANCE
             : randomProductionRoomShape(dungeon.rooms[i]);
         generateRoom(dungeon.rooms[i]);
+
+        // Major blockers precede difficult terrain and runtime traps so every
+        // later placement system sees pillar squares as unavailable.
+        populatePillarTerrain(
+            dungeon.rooms[i], random(100), random(PILLAR_LAYOUT_COUNT));
+
+        populateDungeonFurniture(
+            dungeon.rooms[i], random(100), random(100), random(100),
+            random(100));
+
+        if (rubblePlan.enabled)
+        {
+            if (i >= FIRST_MIDDLE_ROOM_INDEX && i < BOSS_ROOM_INDEX &&
+                rubblePlan.middleRooms[i - FIRST_MIDDLE_ROOM_INDEX])
+            {
+                populateRubbleTerrain(dungeon.rooms[i]);
+            }
+            else if (i == BOSS_ROOM_INDEX)
+            {
+                populateBossRubbleTerrain(dungeon.rooms[i]);
+            }
+        }
 
         if (i == 0)
             placeHealingFountain(dungeon.rooms[i]);
@@ -573,6 +631,7 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.entityCount = 0;
     dungeon.loadedRoom = NO_ROOM;
     dungeon.currentRoom = 0;
+    dungeon.hasRubbleTheme = false;
     dungeon.finalEncounterCleared = false;
     dungeon.finalTreasureLooted = false;
     dungeon.completed = false;

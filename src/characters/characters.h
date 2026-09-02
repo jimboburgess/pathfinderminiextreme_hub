@@ -71,6 +71,32 @@ enum CharacterClass
     CLASS_CLERIC
 };
 
+// Locked Fighter class-feature progression.  These are derived from class and
+// level rather than stored on Character, preventing duplicate grants on load
+// or repeated level-up recalculation.
+enum FighterFeature : uint8_t
+{
+    FIGHTER_POWER_ATTACK,
+    FIGHTER_WEAPON_FOCUS,
+    FIGHTER_TOUGHNESS,
+    FIGHTER_WEAPON_SPECIALIZATION,
+    FIGHTER_WEAPON_TRAINING_1,
+    FIGHTER_GREATER_WEAPON_FOCUS,
+    FIGHTER_WEAPON_TRAINING_2,
+    FIGHTER_IMPROVED_CRITICAL,
+    FIGHTER_GREATER_WEAPON_SPECIALIZATION,
+    FIGHTER_WEAPON_TRAINING_3,
+    FIGHTER_GREATER_TOUGHNESS,
+    FIGHTER_WEAPON_TRAINING_4,
+    FIGHTER_WEAPON_MASTERY
+};
+
+struct FighterFeatureGrant
+{
+    uint8_t level;
+    FighterFeature feature;
+};
+
 //==================================================
 // Abilities
 //==================================================
@@ -234,6 +260,10 @@ struct Character
     uint8_t level;
     uint32_t xp;
 
+    // Permanent Fighter specialization selected during character creation.
+    // Non-Fighters keep WEAPON_GROUP_NONE.
+    WeaponGroup trainedWeaponGroup;
+
     //==================================================
     // Movement
     //==================================================
@@ -290,6 +320,33 @@ int getEffectiveAbilityScore(const Character& character, AbilityScore ability);
 int getEffectiveSpeed(const Character& character);
 
 int getMaxHP(const Character& character);
+
+extern const FighterFeatureGrant fighterFeatureProgression[];
+extern const uint8_t fighterFeatureProgressionCount;
+
+bool hasFighterFeature(const Character& character, FighterFeature feature);
+WeaponGroup getFighterTrainedWeaponGroup(const Character& character);
+void setFighterTrainedWeaponGroup(Character& character, WeaponGroup group);
+bool isFighterTrainedWeapon(const Character& character, const Weapon& weapon);
+int getFighterWeaponTrainingBonus(const Character& character);
+int getFighterWeaponAttackBonus(const Character& character,
+                                const Weapon& weapon);
+int getFighterWeaponDamageBonus(const Character& character,
+                                const Weapon& weapon);
+int getFighterBonusMaxHP(const Character& character);
+uint8_t getWeaponCriticalThreatMinimum(const Character& character,
+                                       const Weapon& weapon);
+bool fighterAutomaticallyConfirmsCritical(const Character& character,
+                                           const Weapon& weapon);
+
+// Character-creation rules exposed for deterministic tests and previews.
+// Scores must already be sorted highest-to-lowest. Assignment overwrites all
+// six stored scores, then applies the class primary +2 exactly once.
+void assignAbilityScoresForClass(Character& character,
+                                 CharacterClass characterClass,
+                                 const int scores[6]);
+ItemID getFighterStartingMeleeWeapon(WeaponGroup group);
+ItemID getFighterStartingRangedWeapon();
 
 // Applies positive damage to a living character and notifies the shared
 // condition system. Defeat/XP/loot state remains with combat.

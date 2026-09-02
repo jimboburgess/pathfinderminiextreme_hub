@@ -36,8 +36,34 @@ int getAbilityModifier(const Character& character, AbilityScore ability)
 
 int getMaxHP(const Character& character)
 {
+    int fighterToughness = 0;
+    if (character.characterClass == CLASS_FIGHTER && character.level >= 3)
+        fighterToughness += character.level;
+    if (character.characterClass == CLASS_FIGHTER && character.level >= 14)
+        fighterToughness += character.level;
+
     return getBaseHitPoints(character.characterClass, character.level) +
-           getAbilityModifier(character, ABILITY_CONSTITUTION);
+           getAbilityModifier(character, ABILITY_CONSTITUTION) +
+           fighterToughness;
+}
+
+// progression.cpp completes an active Wizard study project on level-up. Keep
+// this embedded unit isolated from the inventory implementation while
+// matching the production completion semantics.
+bool completeSpellLearning(Character& character, AbilityID& completedAbility)
+{
+    completedAbility = ABILITY_NONE;
+    SpellLearningData& learning = character.magic.learning;
+    if (character.characterClass != CLASS_WIZARD || !learning.active ||
+        !isValidAbility(learning.ability))
+    {
+        return false;
+    }
+
+    const AbilityID ability = learning.ability;
+    learning = {};
+    completedAbility = ability;
+    return knowsAbility(character, ability) || learnAbility(character, ability);
 }
 
 #include "../../src/characters/abilities.cpp"
@@ -307,7 +333,7 @@ void test_one_award_can_advance_multiple_levels_without_healing()
     TEST_ASSERT_EQUAL_UINT32(5500, fighter.xp);
     TEST_ASSERT_EQUAL_UINT8(3, fighter.level);
     TEST_ASSERT_EQUAL_UINT8(16, fighter.abilities.strength);
-    TEST_ASSERT_EQUAL_INT(23, fighter.health.maxHP);
+    TEST_ASSERT_EQUAL_INT(26, fighter.health.maxHP);
     TEST_ASSERT_EQUAL_INT(7, fighter.health.currentHP);
 
     TEST_ASSERT_EQUAL_UINT32(321, fighter.inventory.gold);
@@ -339,8 +365,7 @@ void test_primary_ability_milestones_apply_once_for_every_class()
         TEST_ASSERT_EQUAL_UINT8(20, character.level);
         TEST_ASSERT_EQUAL_UINT8(15, getPrimaryAbilityScore(character));
         TEST_ASSERT_EQUAL_INT(4, character.health.currentHP);
-        TEST_ASSERT_EQUAL_INT(
-            getBaseHitPoints(classes[i], 20), character.health.maxHP);
+        TEST_ASSERT_EQUAL_INT(getMaxHP(character), character.health.maxHP);
 
         TEST_ASSERT_EQUAL_UINT8(0, awardExperience(character, 500));
         TEST_ASSERT_EQUAL_UINT8(15, getPrimaryAbilityScore(character));
@@ -364,10 +389,27 @@ void test_new_level_immediately_selects_existing_class_progression()
         fighter.characterClass, fighter.level));
 }
 
+void test_fighter_power_attack_is_automatic_and_idempotent()
+{
+    Character fighter = makeCharacter(CLASS_FIGHTER);
+    TEST_ASSERT_FALSE(knowsAbility(fighter, ABILITY_POWER_ATTACK));
+
+    refreshCharacterMagicProgression(fighter);
+    TEST_ASSERT_TRUE(knowsAbility(fighter, ABILITY_POWER_ATTACK));
+    TEST_ASSERT_EQUAL_UINT8(1, fighter.magic.knownAbilityCount);
+
+    refreshCharacterMagicProgression(fighter);
+    TEST_ASSERT_EQUAL_UINT8(1, fighter.magic.knownAbilityCount);
+}
+
 void test_all_class_bab_progressions_unlock_iterative_attacks()
 {
     TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
         getBaseAttackBonus(CLASS_FIGHTER, 6)));
+    TEST_ASSERT_EQUAL_UINT8(3, getIterativeAttackCount(
+        getBaseAttackBonus(CLASS_FIGHTER, 11)));
+    TEST_ASSERT_EQUAL_UINT8(4, getIterativeAttackCount(
+        getBaseAttackBonus(CLASS_FIGHTER, 16)));
     TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
         getBaseAttackBonus(CLASS_ROGUE, 8)));
     TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(
@@ -394,6 +436,7 @@ void setup()
     RUN_TEST(test_one_award_can_advance_multiple_levels_without_healing);
     RUN_TEST(test_primary_ability_milestones_apply_once_for_every_class);
     RUN_TEST(test_new_level_immediately_selects_existing_class_progression);
+    RUN_TEST(test_fighter_power_attack_is_automatic_and_idempotent);
     RUN_TEST(test_all_class_bab_progressions_unlock_iterative_attacks);
     UNITY_END();
 }

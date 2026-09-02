@@ -114,6 +114,33 @@ void generateRoom(DungeonRoom& room)
     }
 }
 
+uint8_t populateRubbleTerrain(DungeonRoom& room)
+{
+    // Terrain generation is covered by the room-generation suite. This
+    // lifecycle harness records the themed room with one walkable tile.
+    room.map.tiles[5][5] = TILE_RUBBLE;
+    return 1;
+}
+
+uint8_t populateBossRubbleTerrain(DungeonRoom& room)
+{
+    room.map.tiles[6][6] = TILE_RUBBLE;
+    return 1;
+}
+
+uint8_t populatePillarTerrain(DungeonRoom&, uint8_t, uint8_t)
+{
+    return 0;
+}
+
+uint8_t populateDungeonFurniture(
+    DungeonRoom&, uint8_t, uint8_t, uint8_t, uint8_t)
+{
+    // Furniture placement has focused coverage in test_furniture. The room
+    // lifecycle harness only needs the generator hook to remain linkable.
+    return 0;
+}
+
 void populateDungeonRoomFeatures(DungeonRoom&, uint8_t, bool)
 {
 }
@@ -479,6 +506,7 @@ void test_trap_uses_level_scaled_statistics()
 void test_resume_uses_existing_layout_and_does_not_regenerate()
 {
     configureLoadedRoom(3);
+    dungeon.hasRubbleTheme = true;
     dungeon.rooms[0].map.tiles[4][5] = TILE_WALL;
     dungeon.rooms[3].map.tiles[7][8] = TILE_WALL;
     dungeon.roomRuntime[3].entities[0].character.state = STATE_DEAD;
@@ -496,6 +524,7 @@ void test_resume_uses_existing_layout_and_does_not_regenerate()
 
     TEST_ASSERT_EQUAL_UINT8(0, dungeon.currentRoom);
     TEST_ASSERT_EQUAL_UINT8(0, generatedRoomCount);
+    TEST_ASSERT_TRUE(dungeon.hasRubbleTheme);
     TEST_ASSERT_EQUAL(TILE_WALL, dungeon.rooms[0].map.tiles[4][5]);
     TEST_ASSERT_EQUAL(TILE_WALL, dungeon.rooms[3].map.tiles[7][8]);
     TEST_ASSERT_EQUAL(STATE_DEAD,
@@ -506,6 +535,27 @@ void test_resume_uses_existing_layout_and_does_not_regenerate()
     TEST_ASSERT_NOT_NULL(getPlayerEntity(
         dungeon.entities, dungeon.entityCount));
     TEST_ASSERT_FALSE(combat.active);
+}
+
+void test_rubble_plan_is_dungeon_scoped_and_selects_some_middle_rooms()
+{
+    const DungeonRubblePlan clean = createDungeonRubblePlan(50, 0, 0, 0);
+    TEST_ASSERT_FALSE(clean.enabled);
+    for (bool selected : clean.middleRooms)
+        TEST_ASSERT_FALSE(selected);
+
+    const DungeonRubblePlan oneRoom = createDungeonRubblePlan(49, 1, 50, 0);
+    TEST_ASSERT_TRUE(oneRoom.enabled);
+    TEST_ASSERT_FALSE(oneRoom.middleRooms[0]);
+    TEST_ASSERT_TRUE(oneRoom.middleRooms[1]);
+    TEST_ASSERT_FALSE(oneRoom.middleRooms[2]);
+
+    const DungeonRubblePlan twoRooms = createDungeonRubblePlan(0, 0, 0, 0);
+    TEST_ASSERT_TRUE(twoRooms.enabled);
+    uint8_t selectedCount = 0;
+    for (bool selected : twoRooms.middleRooms)
+        selectedCount += selected ? 1 : 0;
+    TEST_ASSERT_EQUAL_UINT8(2, selectedCount);
 }
 
 void test_only_unfinished_runs_are_resumable()
@@ -608,7 +658,9 @@ void test_final_encounter_must_be_fully_defeated_before_completion()
     updateCurrentDungeonRoomCompletion(dungeon);
     TEST_ASSERT_FALSE(isDungeonRunComplete(dungeon));
 
-    runtime.entities[2].character.state = STATE_DEAD;
+    // Legacy persisted Turn Undead state is also a defeated monster and must
+    // not keep the boss encounter or room open.
+    runtime.entities[2].character.state = STATE_TURNED;
     updateCurrentDungeonRoomCompletion(dungeon);
     TEST_ASSERT_TRUE(dungeon.finalEncounterCleared);
     TEST_ASSERT_FALSE(isDungeonRunComplete(dungeon));
@@ -803,6 +855,7 @@ void setup()
     RUN_TEST(test_trap_state_persists_across_room_reload);
     RUN_TEST(test_trap_uses_level_scaled_statistics);
     RUN_TEST(test_resume_uses_existing_layout_and_does_not_regenerate);
+    RUN_TEST(test_rubble_plan_is_dungeon_scoped_and_selects_some_middle_rooms);
     RUN_TEST(test_only_unfinished_runs_are_resumable);
     RUN_TEST(test_new_run_generates_only_when_no_run_is_active);
     RUN_TEST(test_themed_encounters_spawn_only_their_theme_monsters);

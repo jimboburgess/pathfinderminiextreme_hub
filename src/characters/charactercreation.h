@@ -3,6 +3,8 @@
 
 #include "characters.h"
 
-void createCharacter(Character &character, CharacterClass characterClass);
+void createCharacter(Character &character,
+                     CharacterClass characterClass,
+                     WeaponGroup fighterWeaponGroup = WEAPON_GROUP_NONE);
 
 #endif

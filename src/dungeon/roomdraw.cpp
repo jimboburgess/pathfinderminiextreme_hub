@@ -5,6 +5,7 @@
 #include "roomdraw.h"
 #include <Adafruit_ST7789.h>
 #include "config.h"
+#include "graphics/display.h"
 #include "graphics/tiles.h"
 #include "traps.h"
 #include "fountain.h"
@@ -189,16 +190,10 @@ void drawTrapStateArt(int tileX, int tileY, TrapVisualState state)
       break;
 
     case TRAP_VISUAL_TRIGGERED:
-      // The plate is depressed and the spike rack has sprung upward.
-      tft.drawRect(x + 3, y + 10, 10, 3, COLOR_TRAP_METAL_DARK);
-      tft.drawLine(x + 4, y + 11, x + 11, y + 11, COLOR_TRAP_METAL);
-      for (int spikeX = 5; spikeX <= 11; spikeX += 3)
-      {
-        tft.drawLine(x + spikeX, y + 10, x + spikeX, y + 4,
-                     COLOR_TRAP_METAL_LIGHT);
-        tft.drawPixel(x + spikeX, y + 3, ST77XX_WHITE);
-      }
-      tft.drawLine(x + 4, y + 13, x + 11, y + 13, COLOR_TRAP_RUST);
+      // The supplied spike artwork is an overlay: the regular floor beneath
+      // it stays intact and the persistent triggered flag selects it again
+      // whenever this tile is redrawn or the room is revisited.
+      drawSpriteTransparent(x, y, dungeonSpikes16x16);
       break;
 
     case TRAP_VISUAL_DISABLED:
@@ -254,6 +249,46 @@ void drawTile(int tileX, int tileY, TileType tile) {
                         dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
                         TILE_SIZE, TILE_SIZE);
       return;
+
+    case TILE_RUBBLE:
+      // The supplied rubble art is transparent, so retain the regular floor
+      // beneath its broken-stone overlay rather than drawing magenta pixels.
+      tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                        dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                        TILE_SIZE, TILE_SIZE);
+      drawSpriteTransparent(
+          tileX * TILE_SIZE, tileY * TILE_SIZE, dungeonRubble16x16);
+      return;
+
+    case TILE_PILLAR:
+      // Pillars are transparent blocking dressing over the normal floor.
+      tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                        dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                        TILE_SIZE, TILE_SIZE);
+      drawSpriteTransparent(
+          tileX * TILE_SIZE, tileY * TILE_SIZE, dungeonPillar16x16);
+      return;
+
+    case TILE_STATUE:
+    case TILE_BRAZIER:
+    case TILE_CRATE:
+    case TILE_BARREL:
+    {
+      const uint16_t* furnishing = dungeonStatue16x16;
+      if (tile == TILE_BRAZIER)
+        furnishing = dungeonBrazier16x16;
+      else if (tile == TILE_CRATE)
+        furnishing = dungeonCrate16x16;
+      else if (tile == TILE_BARREL)
+        furnishing = dungeonBarrel16x16;
+
+      tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                        dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                        TILE_SIZE, TILE_SIZE);
+      drawSpriteTransparent(
+          tileX * TILE_SIZE, tileY * TILE_SIZE, furnishing);
+      return;
+    }
 
     case TILE_DOOR:
       tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,

@@ -76,54 +76,6 @@ static void rollAbilities(int scores[])
     sortDescending(scores, 6);
 }
 
-static void assignAbilitiesForClass(Character &character,
-                                        CharacterClass characterClass,
-                                        int scores[])
-{
-    switch (characterClass)
-    {
-        case CLASS_FIGHTER:
-
-            character.abilities.strength     = scores[0];
-            character.abilities.constitution = scores[1];
-            character.abilities.dexterity    = scores[2];
-            character.abilities.wisdom       = scores[3];
-            character.abilities.charisma     = scores[4];
-            character.abilities.intelligence = scores[5];
-            break;
-
-        case CLASS_ROGUE:
-
-            character.abilities.dexterity    = scores[0];
-            character.abilities.intelligence = scores[1];
-            character.abilities.charisma     = scores[2];
-            character.abilities.constitution = scores[3];
-            character.abilities.wisdom       = scores[4];
-            character.abilities.strength     = scores[5];
-            break;
-
-        case CLASS_WIZARD:
-
-            character.abilities.intelligence = scores[0];
-            character.abilities.dexterity    = scores[1];
-            character.abilities.constitution = scores[2];
-            character.abilities.wisdom       = scores[3];
-            character.abilities.charisma     = scores[4];
-            character.abilities.strength     = scores[5];
-            break;
-
-        case CLASS_CLERIC:
-
-            character.abilities.wisdom       = scores[0];
-            character.abilities.constitution = scores[1];
-            character.abilities.strength     = scores[2];
-            character.abilities.charisma     = scores[3];
-            character.abilities.dexterity    = scores[4];
-            character.abilities.intelligence = scores[5];
-            break;
-    }
-}
-
 static void giveStartingEquipment(Character &character,
                                   CharacterClass characterClass)
 {
@@ -136,7 +88,14 @@ static void giveStartingEquipment(Character &character,
     clearInventory(character.inventory);
     character.inventory.gold = STARTING_GOLD;
 
-    const ClassStartingEquipment& gear = startingEquipment[characterClass];
+    ClassStartingEquipment gear = startingEquipment[characterClass];
+
+    if (characterClass == CLASS_FIGHTER)
+    {
+        gear.meleeWeapon = getFighterStartingMeleeWeapon(
+            character.trainedWeaponGroup);
+        gear.rangedWeapon = getFighterStartingRangedWeapon();
+    }
 
     character.equipment.equipped[SLOT_MELEE_WEAPON] =
         makeItemInstance(gear.meleeWeapon);
@@ -150,7 +109,9 @@ static void giveStartingEquipment(Character &character,
     // TODO: Add starting potions once consumables are implemented.
 }
 
-void createCharacter(Character &character, CharacterClass characterClass)
+void createCharacter(Character &character,
+                     CharacterClass characterClass,
+                     WeaponGroup fighterWeaponGroup)
 {
     int scores[6];
 
@@ -158,9 +119,10 @@ void createCharacter(Character &character, CharacterClass characterClass)
 
     character.characterClass = characterClass;
     character.creatureType = CREATURE_PLAYER;
+    setFighterTrainedWeaponGroup(character, fighterWeaponGroup);
     clearConditions(character);
 
-    assignAbilitiesForClass(character, characterClass, scores);
+    assignAbilityScoresForClass(character, characterClass, scores);
 
     giveStartingEquipment(character, characterClass);
 
@@ -174,8 +136,10 @@ void createCharacter(Character &character, CharacterClass characterClass)
     if (character.characterClass == CLASS_FIGHTER)
         learnAbility(character, ABILITY_POWER_ATTACK);
     else if (character.characterClass == CLASS_CLERIC)
+    {
         learnAbility(character, ABILITY_CHANNEL_ENERGY);
         learnAbility(character, ABILITY_TURN_UNDEAD);
+    }
 
     restoreClassAbilityUses(character);
 

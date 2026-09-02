@@ -11,6 +11,8 @@
 #include <Arduino.h>
 
 #include "dungeon/combat.h"
+#include "dungeon/furniture.h"
+#include "dungeon/abilityresolver.h"
 #include "../audio/audio.h"
 #include "forest/forest.h"
 #include "map/movement.h"
@@ -53,7 +55,11 @@ bool handlePlayerStandAttempt(Entity& player, bool& handled)
     return true;
 }
 
-void finishPlayerMovement(Entity& player, int targetX, int targetY)
+void finishPlayerMovement(
+    Entity& player,
+    int targetX,
+    int targetY,
+    uint8_t resolvedMovementCost)
 {
     bool trapTriggered = false;
     ConditionType enteredCondition = handleEnteredTile(
@@ -61,7 +67,7 @@ void finishPlayerMovement(Entity& player, int targetX, int targetY)
 
     if (combat.active)
     {
-        spendMovementCost(player, targetX, targetY);
+        spendMovementCost(player, resolvedMovementCost);
 
         if (player.turn.movementRemaining == 0)
         {
@@ -77,6 +83,44 @@ void finishPlayerMovement(Entity& player, int targetX, int targetY)
         setGameMessage("You fall prone!");
     else if (enteredCondition == CONDITION_WEBBED)
         setGameMessage("Caught in the web!");
+}
+
+uint8_t resolvePlayerMovementAttemptCost(
+    const Entity& player,
+    int targetX,
+    int targetY,
+    TileType terrain)
+{
+    if (terrain != TILE_RUBBLE)
+        return getMovementCost(player, targetX, targetY);
+
+    const int acrobaticsTotal = rollDice(1, 20) +
+        getSkillBonus(player.character, SKILL_ACROBATICS);
+    const bool succeeded = acrobaticsTotal >= RUBBLE_ACROBATICS_DC;
+
+    setGameMessage(succeeded
+        ? "With fleet foot you are able to move across the rough ground easily."
+        : "The rubble slows your movement.");
+
+    return getMovementCostWithTerrainCheck(
+        player, targetX, targetY, TILE_RUBBLE, succeeded);
+}
+
+bool resolveBrazierMovementAttempt(Entity& player)
+{
+    const AbilitySavingThrow savingThrow = resolveSavingThrow(
+        player.character, SAVE_REFLEX, BRAZIER_REFLEX_DC);
+    if (savingThrow.result == SAVE_RESULT_SUCCESS)
+    {
+        setGameMessage("You pull back from the flames.");
+        return false;
+    }
+
+    const int fireDamage = rollDice(1, 6);
+    applyCombatDamage(player, fireDamage, DAMAGE_FIRE);
+    markEntityFootprintDirty(player);
+    setGameMessage("The flames scorch you!");
+    return false;
 }
 
 bool canPlayerTraverseEnemy(
@@ -307,7 +351,50 @@ bool tryMovePlayer(Dungeon &dungeon)
         //--------------------------------------------------
 
         case TILE_FLOOR:
+        case TILE_RUBBLE:
+        case TILE_BARREL:
+        case TILE_CRATE:
         {
+            if (tile == TILE_BARREL || tile == TILE_CRATE)
+            {
+                const int strengthTotal = rollDie(20) + getAbilityModifier(
+                    player->character, ABILITY_STRENGTH);
+                const FurniturePushResult pushResult = tryPushDungeonFurniture(
+                    dungeon,
+                    *player,
+                    targetX,
+                    targetY,
+                    directionOffsets[moveDirection].dx,
+                    directionOffsets[moveDirection].dy,
+                    strengthTotal);
+
+                if (pushResult != FURNITURE_PUSH_SUCCEEDED)
+                {
+                    if (pushResult == FURNITURE_PUSH_FAILED_STRENGTH)
+                        setGameMessage(tile == TILE_CRATE
+                            ? "The crate won't budge."
+                            : "The barrel won't budge.");
+                    else
+                        playSound(SoundEffect::BUMP);
+                    return false;
+                }
+
+                const DungeonFurnitureType furnitureType =
+                    getDungeonFurnitureTypeForTile(tile);
+                setGameMessage(furnitureType == FURNITURE_CRATE
+                    ? "You push the crate."
+                    : "You push the barrel.");
+                markTileDirty(targetX, targetY);
+                markTileDirty(
+                    targetX + directionOffsets[moveDirection].dx,
+                    targetY + directionOffsets[moveDirection].dy);
+                tile = TILE_FLOOR;
+            }
+
+            const uint8_t resolvedMovementCost =
+                resolvePlayerMovementAttemptCost(
+                    *player, targetX, targetY, tile);
+
             //--------------------------------------------------
             // Combat movement restrictions.
             //--------------------------------------------------
@@ -325,7 +412,7 @@ bool tryMovePlayer(Dungeon &dungeon)
             }
 
             if (combat.active &&
-                !canAffordMovementCost(*player, targetX, targetY))
+                !canAffordMovementCost(*player, resolvedMovementCost))
             {
                 playSound(SoundEffect::BUMP);
                 return false;
@@ -342,7 +429,8 @@ bool tryMovePlayer(Dungeon &dungeon)
             // Consume one square of movement.
             //--------------------------------------------------
 
-            finishPlayerMovement(*player, targetX, targetY);
+            finishPlayerMovement(
+                *player, targetX, targetY, resolvedMovementCost);
 
             //--------------------------------------------------
             // Redraw affected tiles.
@@ -371,9 +459,14 @@ bool tryMovePlayer(Dungeon &dungeon)
         //--------------------------------------------------
 
         case TILE_WALL:
+        case TILE_PILLAR:
+        case TILE_STATUE:
 
             playSound(SoundEffect::BUMP);
             return false;
+
+        case TILE_BRAZIER:
+            return resolveBrazierMovementAttempt(*player);
 
         //--------------------------------------------------
         // Door
@@ -550,8 +643,11 @@ static bool tryMoveForestPlayer()
         }
     }
 
+    const uint8_t resolvedMovementCost =
+        getMovementCost(*player, targetX, targetY);
+
     if (combat.active &&
-        !canAffordMovementCost(*player, targetX, targetY))
+        !canAffordMovementCost(*player, resolvedMovementCost))
     {
         playSound(SoundEffect::BUMP);
         return false;
@@ -568,7 +664,8 @@ static bool tryMoveForestPlayer()
     // Consume one square of movement.
     //--------------------------------------------------
 
-    finishPlayerMovement(*player, targetX, targetY);
+    finishPlayerMovement(
+        *player, targetX, targetY, resolvedMovementCost);
 
     //--------------------------------------------------
     // Redraw tiles.

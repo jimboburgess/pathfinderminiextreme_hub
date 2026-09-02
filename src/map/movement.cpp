@@ -7,10 +7,15 @@
 #include "data/entityspawn.h"
 #include "dungeon/traps.h"
 
-uint8_t getMovementCost(
+namespace
+{
+uint8_t calculateMovementCost(
     const Entity& mover,
     int targetX,
-    int targetY)
+    int targetY,
+    TileType checkedTerrain,
+    bool terrainCheckSucceeded,
+    bool hasTerrainCheck)
 {
     if (hasCondition(mover.character, CONDITION_WEBBED))
         return 0;
@@ -25,6 +30,8 @@ uint8_t getMovementCost(
         return 0;
     }
 
+    uint8_t movementCost = 1;
+
     for (uint8_t offsetY = 0; offsetY < height; offsetY++)
     {
         for (uint8_t offsetX = 0; offsetX < width; offsetX++)
@@ -32,15 +39,44 @@ uint8_t getMovementCost(
             int x = targetX + offsetX;
             int y = targetY + offsetY;
 
-            if (isBaseTerrainDifficultAt(x, y) ||
-                hasDifficultMapEffectAt(x, y))
-            {
-                return 2;
-            }
+            const TileType tile = getActiveMapTile(x, y);
+            const uint8_t terrainCost =
+                hasTerrainCheck && tile == checkedTerrain
+                    ? resolveTerrainMovementCost(
+                          tile, terrainCheckSucceeded)
+                    : getTerrainMovementCost(tile);
+
+            if (terrainCost > movementCost)
+                movementCost = terrainCost;
+
+            if (hasDifficultMapEffectAt(x, y) && movementCost < 2)
+                movementCost = 2;
         }
     }
 
-    return 1;
+    return movementCost;
+}
+}
+
+uint8_t getMovementCost(
+    const Entity& mover,
+    int targetX,
+    int targetY)
+{
+    return calculateMovementCost(
+        mover, targetX, targetY, TILE_VOID, false, false);
+}
+
+uint8_t getMovementCostWithTerrainCheck(
+    const Entity& mover,
+    int targetX,
+    int targetY,
+    TileType checkedTerrain,
+    bool terrainCheckSucceeded)
+{
+    return calculateMovementCost(
+        mover, targetX, targetY,
+        checkedTerrain, terrainCheckSucceeded, true);
 }
 
 bool canAffordMovementCost(
@@ -49,7 +85,15 @@ bool canAffordMovementCost(
     int targetY)
 {
     uint8_t cost = getMovementCost(mover, targetX, targetY);
-    return cost > 0 && mover.turn.movementRemaining >= cost;
+    return canAffordMovementCost(mover, cost);
+}
+
+bool canAffordMovementCost(
+    const Entity& mover,
+    uint8_t resolvedCost)
+{
+    return canPayMovementCost(
+        mover.turn.movementRemaining, resolvedCost);
 }
 
 void spendMovementCost(
@@ -58,6 +102,13 @@ void spendMovementCost(
     int targetY)
 {
     uint8_t cost = getMovementCost(mover, targetX, targetY);
+
+    spendMovementCost(mover, cost);
+}
+
+void spendMovementCost(Entity& mover, uint8_t resolvedCost)
+{
+    const uint8_t cost = resolvedCost;
 
     if (cost == 0)
         return;

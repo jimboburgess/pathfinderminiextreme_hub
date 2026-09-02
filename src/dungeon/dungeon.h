@@ -12,6 +12,7 @@
 #include "../data/entities.h"
 #include "traps.h"
 #include "fountain.h"
+#include "furniture.h"
 
 constexpr uint8_t ROOM_SIZE = 15;
 constexpr uint8_t TILE_SIZE = 16;
@@ -102,6 +103,7 @@ struct DungeonRoom {
     // a clue can be a warning for a trap or harmless dungeon dressing.
     TrapInstance traps[MAX_TRAPS_PER_ROOM] = {};
     SuspicionInstance suspicions[MAX_SUSPICIONS_PER_ROOM] = {};
+    DungeonFurnitureInstance furniture[MAX_FURNITURE_PER_ROOM] = {};
     HealingFountain fountain;
 };
 
@@ -109,6 +111,10 @@ struct DungeonRoom {
 constexpr uint8_t MAX_ROOMS = 6;
 constexpr uint8_t BOSS_ROOM_INDEX = 4;
 constexpr uint8_t FINAL_DUNGEON_ROOM_INDEX = 5;
+constexpr uint8_t FIRST_MIDDLE_ROOM_INDEX = 1;
+constexpr uint8_t MIDDLE_ROOM_COUNT = 3;
+constexpr uint8_t DUNGEON_RUBBLE_THEME_CHANCE_PERCENT = 70;
+constexpr uint8_t OPTIONAL_RUBBLE_ROOM_CHANCE_PERCENT = 60;
 constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = BOSS_ROOM_INDEX;
 constexpr uint8_t MAX_COMBATANTS = 16;
 constexpr uint8_t NO_ENTITY_SLOT = 255;
@@ -136,14 +142,28 @@ struct Dungeon {
     uint8_t entityCount = 0;
     uint8_t loadedRoom = NO_ROOM;
     bool runActive = false;
+    // Rolled once when a new dungeon is generated. Room terrain itself stores
+    // the selected room/patch layout for the lifetime of the run.
+    bool hasRubbleTheme = false;
     bool finalEncounterCleared = false;
     bool finalTreasureLooted = false;
     bool completed = false;
     };
 
+struct DungeonRubblePlan
+{
+    bool enabled = false;
+    bool middleRooms[MIDDLE_ROOM_COUNT] = {};
+};
+
 extern Dungeon dungeon;
 
 const char* roomTypeName(RoomType type);
+DungeonRubblePlan createDungeonRubblePlan(
+    uint8_t themeRoll,
+    uint8_t guaranteedMiddleRoomRoll,
+    uint8_t optionalRoomChanceRoll,
+    uint8_t optionalMiddleRoomRoll);
 void enterDungeon();
 void generateDungeon(Dungeon& dungeon);
 void generateRoom(DungeonRoom& room);

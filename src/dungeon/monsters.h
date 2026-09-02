@@ -120,6 +120,17 @@ enum MonsterScript
     SCRIPT_DEBUG          // For testing combat behavior.
 };
 
+// Exploration movement is deliberately independent from MonsterScript.
+// Awareness decides when combat begins; MonsterScript becomes authoritative
+// only after that transition.
+enum MonsterIdleBehavior : uint8_t
+{
+    IDLE_STATIONARY,
+    IDLE_PATROL,
+    IDLE_WANDER,
+    IDLE_HIDE
+};
+
 // Poison is attack metadata only.  The active condition itself remains in
 // Character::conditions and is resolved by the shared condition system.
 struct MonsterPoisonData
@@ -181,6 +192,10 @@ struct Monster
     // Awareness bonuses are static monster traits; Entity owns mutable state.
     int8_t perceptionBonus;
     int8_t stealthBonus;
+
+    // Appended so older aggregate initializers remain aligned and default to
+    // stationary until an explicit exploration behavior is assigned.
+    MonsterIdleBehavior idleBehavior;
 };
 
 const Monster* getMonster(MonsterID id);

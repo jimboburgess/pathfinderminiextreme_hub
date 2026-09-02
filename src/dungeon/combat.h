@@ -13,6 +13,7 @@ struct CombatDamageResult
     bool applied = false;
     bool defeated = false;
     uint8_t levelReached = 0;
+    int damageApplied = 0;
 };
 
 //==================================================

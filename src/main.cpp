@@ -8,6 +8,7 @@
 #include "dungeon/combat.h"
 #include "dungeon/dungeon.h"
 #include "map/awareness.h"
+#include "map/monsteridle.h"
 #include "map/playermovement.h"
 #include "dungeon/roomdraw.h"
 #include "dungeon/roomgen.h"
@@ -67,6 +68,7 @@ void loop()
     handleButtons();
 
     updateAwareness();
+    updateMonsterIdleBehavior();
 
     if (combat.active)
     {

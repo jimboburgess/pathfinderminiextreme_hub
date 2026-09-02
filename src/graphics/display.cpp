@@ -959,9 +959,17 @@ void redrawDirtyTiles()
                          TILE_SIZE, TILE_SIZE, colors[phase]);
         delay(40);
     }
+    // Restore every flashed tile immediately. Large cones can exceed the
+    // bounded dirty-tile queue, so using that queue here could leave the last
+    // few tiles painted with the flash color until a later full redraw.
     for (uint8_t i = 0; i < tileCount; i++)
-        markTileDirty(tiles[i].x, tiles[i].y);
-      redrawDirtyTiles();
+    {
+        if (gameState == GAME_DUNGEON)
+            redrawDungeonTile(tiles[i].x, tiles[i].y);
+        else if (gameState == GAME_FOREST)
+            redrawForestTile(tiles[i].x, tiles[i].y);
+    }
+    redrawMapMessage();
   }
 
   void playAbilityImpactFlash(AbilityImpactVisual visual,

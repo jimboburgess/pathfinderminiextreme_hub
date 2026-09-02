@@ -24,6 +24,24 @@ constexpr uint8_t ENTRANCE_PLAYER_START_X = 2;
 constexpr uint8_t ENTRANCE_PLAYER_START_Y = 6;
 constexpr uint8_t ENTRANCE_EAST_CONNECTION_Y = 6;
 
+constexpr uint8_t PILLAR_ROOM_CHANCE_PERCENT = 30;
+constexpr uint8_t BOSS_PILLAR_ROOM_CHANCE_PERCENT = 50;
+constexpr uint8_t PILLAR_MIN_WALKABLE_TILES = 72;
+constexpr uint8_t PILLAR_MIN_INTERIOR_SPAN = 9;
+constexpr uint8_t BARREL_CLUSTER_CHANCE_PERCENT = 30;
+constexpr uint8_t CRATE_CLUSTER_CHANCE_PERCENT = 30;
+constexpr uint8_t STATUE_CHANCE_PERCENT = 20;
+constexpr uint8_t BRAZIER_CHANCE_PERCENT = 20;
+
+enum PillarLayoutType : uint8_t
+{
+    PILLAR_LAYOUT_SQUARE,
+    PILLAR_LAYOUT_ROW_HORIZONTAL,
+    PILLAR_LAYOUT_ROW_VERTICAL,
+    PILLAR_LAYOUT_HEXAGON,
+    PILLAR_LAYOUT_COUNT
+};
+
 void clearRoomConnections(DungeonRoom& room);
 bool addRoomConnection(
     DungeonRoom& room,
@@ -82,6 +100,34 @@ RoomShape selectProductionRoomShape(
 RoomShape randomProductionRoomShape(const DungeonRoom& room);
 
 bool placeGiantSpiderEncounter(DungeonRoom& room);
+
+bool isRoomEligibleForPillars(const DungeonRoom& room);
+uint8_t placePillarLayout(
+    DungeonRoom& room,
+    PillarLayoutType layout,
+    int centerX,
+    int centerY);
+uint8_t populatePillarTerrain(
+    DungeonRoom& room,
+    uint8_t chanceRoll,
+    uint8_t layoutRoll);
+bool isRoomEligibleForFurniture(const DungeonRoom& room);
+uint8_t populateDungeonFurniture(
+    DungeonRoom& room,
+    uint8_t barrelRoll,
+    uint8_t crateRoll,
+    uint8_t statueRoll,
+    uint8_t brazierRoll);
+
+// Places a small authored/generated patch without replacing doors, content
+// markers, or protected room-entry squares. Returns the tiles converted.
+uint8_t placeRubblePatch(
+    DungeonRoom& room,
+    uint8_t originX,
+    uint8_t originY,
+    uint8_t maximumTiles);
+uint8_t populateRubbleTerrain(DungeonRoom& room);
+uint8_t populateBossRubbleTerrain(DungeonRoom& room);
 
 void generateRoom(DungeonRoom& room);
 #endif //PATHFINDERMINIEXTREME_025_ROOMGEN_H

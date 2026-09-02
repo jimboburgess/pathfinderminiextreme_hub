@@ -643,7 +643,7 @@ bool isTileInDirectionalAbilityArea(
     }
 
     TileType tile = getActiveMapTile(tileX, tileY);
-    if (tile == TILE_WALL || tile == TILE_TREE ||
+    if (isTileBlockingSight(tile) ||
         !hasLineOfSightFromFootprintAt(
             caster, caster.x, caster.y, tileX, tileY))
     {
@@ -969,7 +969,7 @@ AbilityResolution resolveAbility(
                     resolution.result = ABILITY_RESULT_INVALID_TARGET;
                     return resolution;
                 }
-                resolution.damage = amount;
+                resolution.damage = damageResult.damageApplied;
                 resolution.targetDefeated = damageResult.defeated;
                 resolution.levelReached = damageResult.levelReached;
                 playAbilityImpactFlash(
@@ -1008,7 +1008,7 @@ AbilityResolution resolveAbility(
                     resolution.result = ABILITY_RESULT_INVALID_TARGET;
                     return resolution;
                 }
-                resolution.damage += damage;
+                resolution.damage += damageResult.damageApplied;
                 resolution.targetDefeated = damageResult.defeated;
                 resolution.levelReached = damageResult.levelReached;
                 playAbilityImpactFlash(IMPACT_DAMAGE, effect.damageType,
@@ -1055,7 +1055,7 @@ AbilityResolution resolveAbility(
             return resolution;
         }
 
-        resolution.damage = damage;
+        resolution.damage = damageResult.damageApplied;
         resolution.targetDefeated = damageResult.defeated;
         resolution.levelReached = damageResult.levelReached;
         playAbilityImpactFlash(IMPACT_DAMAGE, ability->effects[0].damageType,
@@ -1271,7 +1271,7 @@ AbilityResolution resolveAbilityAt(
                 target, damage, ability->effects[0].damageType);
             if (result.applied)
             {
-                resolution.damage += damage;
+                resolution.damage += result.damageApplied;
                 resolution.targetsAffected++;
             }
             applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
@@ -1435,7 +1435,7 @@ AbilityResolution resolveAbilityInDirection(
                 target, damage, ability->effects[0].damageType);
             if (result.applied)
             {
-                resolution.damage += damage;
+                resolution.damage += result.damageApplied;
                 resolution.targetsAffected++;
             }
             applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
