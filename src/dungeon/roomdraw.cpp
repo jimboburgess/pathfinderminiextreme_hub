@@ -7,6 +7,7 @@
 #include "config.h"
 #include "graphics/display.h"
 #include "graphics/tiles.h"
+#include "graphics/elementalvisual.h"
 #include "traps.h"
 #include "fountain.h"
 
@@ -203,6 +204,19 @@ void drawTrapStateArt(int tileX, int tileY, TrapID trapID, TrapVisualState state
       drawSpriteTransparent(x, y, dungeonSpikes16x16);
       break;
 
+    case TRAP_VISUAL_CHARGING:
+    {
+      uint16_t color = COLOR_TRAP_RUST;
+      if (trapID == TRAP_FROST) color = 0x5DDF;
+      else if (trapID == TRAP_ELECTRIC) color = 0xFFE0;
+      else if (trapID == TRAP_ACID) color = 0x07E0;
+      else if (trapID == TRAP_FIRE) color = 0xFBE0;
+      tft.drawRect(x + 2, y + 2, 12, 12, color);
+      tft.drawLine(x + 4, y + 8, x + 11, y + 8, color);
+      tft.drawLine(x + 8, y + 4, x + 8, y + 11, color);
+      break;
+    }
+
     case TRAP_VISUAL_DISABLED:
       // Ordered loose spikes, plate pieces, and a tiny exposed gear read as
       // a deliberately dismantled mechanism rather than a sprung one.
@@ -343,4 +357,5 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
   const TrapInstance* trap = getTrapAt(room, tileX, tileY);
   if (trap != nullptr)
     drawTrapStateArt(tileX, tileY, trap->id, getTrapVisualState(*trap));
+  drawElementalVisualOverlay(tileX, tileY);
 }

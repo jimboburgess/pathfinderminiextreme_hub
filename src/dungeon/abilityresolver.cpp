@@ -79,6 +79,7 @@ bool hasSupportedDelivery(const Ability& ability)
 }
 
 int getEffectAmount(const AbilityEffectData& effect, const Entity& caster);
+int getEffectAmountForLevel(const AbilityEffectData& effect, int level);
 
 ConditionType getGenericBuffCondition(const AbilityEffectData& effect)
 {
@@ -380,8 +381,13 @@ int getEffectAmount(
     const AbilityEffectData& effect,
     const Entity& caster)
 {
-    return effect.baseValue +
-           effect.valuePerLevel * getCasterLevel(caster);
+    return getEffectAmountForLevel(effect, getCasterLevel(caster));
+}
+
+int getEffectAmountForLevel(const AbilityEffectData& effect, int level)
+{
+    if (level < 1) level = 1;
+    return effect.baseValue + effect.valuePerLevel * level;
 }
 
 int getEffectDamage(const AbilityEffectData& effect, const Entity& caster)
@@ -511,6 +517,18 @@ bool entityIsInDirectionalArea(
         }
     }
 
+    return false;
+}
+
+bool entityIsInDirectionalAreaFromSource(
+    int sourceX, int sourceY, const Entity& target,
+    const Ability& ability, Direction direction)
+{
+    for (uint8_t oy=0; oy<getEntityTileHeight(target); oy++)
+        for (uint8_t ox=0; ox<getEntityTileWidth(target); ox++)
+            if (isTileInDirectionalAbilityAreaFromSource(
+                    sourceX, sourceY, ability.id, direction,
+                    target.x + ox, target.y + oy)) return true;
     return false;
 }
 
@@ -675,6 +693,143 @@ bool isTileInDirectionalAbilityArea(
     }
 
     return false;
+}
+
+bool isTileInDirectionalAbilityAreaFromSource(
+    int sourceX, int sourceY, AbilityID abilityID, Direction direction,
+    int tileX, int tileY)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr || !isValidDirection(direction) ||
+        (ability->delivery != DELIVERY_CONE && ability->delivery != DELIVERY_LINE) ||
+        !isInsideActiveMap(sourceX, sourceY) || !isInsideActiveMap(tileX, tileY) ||
+        (sourceX == tileX && sourceY == tileY) ||
+        isTileBlockingSight(getActiveMapTile(tileX, tileY)) ||
+        !hasLineOfSight(sourceX, sourceY, tileX, tileY))
+        return false;
+    const DirectionOffset& offset = directionOffsets[direction];
+    const int rx = tileX - sourceX;
+    const int ry = tileY - sourceY;
+    if (ability->delivery == DELIVERY_CONE)
+        return isConeOffset(rx, ry, offset, ability->rangeTiles);
+    const int forward = rx * offset.dx + ry * offset.dy;
+    return rx * offset.dy == ry * offset.dx && forward > 0 &&
+        forward <= ability->rangeTiles;
+}
+
+bool canResolveEnvironmentally(AbilityID abilityID)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr || !isAbilitySupported(abilityID)) return false;
+    return hasSupportedMapEffect(*ability) ||
+        abilityID == ABILITY_SLEEP || hasSupportedColorSprayProfile(*ability);
+}
+
+AbilityResolution resolveEnvironmentalAbility(
+    const EnvironmentalAbilityContext& context, AbilityID abilityID)
+{
+    AbilityResolution resolution;
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr) return resolution;
+    if (!canResolveEnvironmentally(abilityID)) {
+        resolution.result = ABILITY_RESULT_UNSUPPORTED; return resolution;
+    }
+    if (!isInsideActiveMap(context.sourceX, context.sourceY) ||
+        context.effectiveLevel == 0 || context.saveDC <= 0) {
+        resolution.result = ABILITY_RESULT_INVALID_TARGET; return resolution;
+    }
+    resolution.result = ABILITY_RESULT_SUCCESS;
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+
+    if (hasSupportedMapEffect(*ability))
+    {
+        if (!hasMapEffectCapacity()) { resolution.result = ABILITY_RESULT_MAP_EFFECT_LIMIT; return resolution; }
+        const AbilityEffectData& effect = ability->effects[0];
+        MapEffect mapEffect;
+        mapEffect.active = true; mapEffect.type = ability->mapEffectType;
+        mapEffect.sourceAbility = abilityID; mapEffect.x = context.sourceX;
+        mapEffect.y = context.sourceY; mapEffect.radius = ability->areaRadiusTiles;
+        mapEffect.roundsRemaining = ability->mapEffectDurationRounds;
+        mapEffect.expiresWithCombat = ability->duration == DURATION_COMBAT;
+        mapEffect.saveType = ability->saveType; mapEffect.saveDC = context.saveDC;
+        resolution.savingThrow.dc = context.saveDC;
+        mapEffect.conditionType = effect.conditionType;
+        mapEffect.conditionValue = getEffectAmountForLevel(effect, context.effectiveLevel);
+        mapEffect.conditionDuration = static_cast<uint8_t>(effect.duration);
+        for (int y=context.sourceY-ability->areaRadiusTiles; y<=context.sourceY+ability->areaRadiusTiles; y++)
+            for (int x=context.sourceX-ability->areaRadiusTiles; x<=context.sourceX+ability->areaRadiusTiles; x++)
+                if (mapEffect.tileCount < MAX_MAP_EFFECT_TILES && isInsideActiveMap(x,y) &&
+                    hasLineOfSight(context.sourceX,context.sourceY,x,y)) {
+                    mapEffect.tiles[mapEffect.tileCount].x=x;
+                    mapEffect.tiles[mapEffect.tileCount++].y=y;
+                }
+        MapEffect* created = addMapEffect(mapEffect);
+        if (created == nullptr) { resolution.result=ABILITY_RESULT_MAP_EFFECT_LIMIT; return resolution; }
+        resolution.mapEffectCreated = true;
+        for(uint8_t i=0; entities && i<entityCount; i++) {
+            MapEffectTriggerResult trigger=applyMapEffectToEntity(*created,entities[i]);
+            resolution.targetsAffected += trigger.conditionsApplied;
+            resolution.targetsResisted += trigger.savesSucceeded;
+        }
+        markMapEffectTilesDirty(*created);
+        return resolution;
+    }
+
+    if (abilityID == ABILITY_COLOR_SPRAY)
+    {
+        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        uint8_t flashTileCount = 0;
+        for (int y = 0; y < ROOM_SIZE; y++)
+            for (int x = 0; x < ROOM_SIZE; x++)
+                if (flashTileCount < sizeof(flashTiles) / sizeof(flashTiles[0]) &&
+                    isTileInDirectionalAbilityAreaFromSource(
+                        context.sourceX, context.sourceY, abilityID,
+                        context.direction, x, y))
+                {
+                    flashTiles[flashTileCount++] = {
+                        static_cast<int8_t>(x), static_cast<int8_t>(y)};
+                }
+        // The existing sonic palette is the shared purple/white magical
+        // area flash; this is visual-only and does not alter damage typing.
+        playAreaDamageFlash(DAMAGE_SONIC, flashTiles, flashTileCount);
+    }
+
+    for(uint8_t i=0; entities && i<entityCount; i++)
+    {
+        Entity& target=entities[i];
+        if(!target.active || !isCombatEntityType(target.type) || target.character.state!=STATE_ALIVE) continue;
+        bool affected = abilityID == ABILITY_SLEEP
+            ? entityOccupiesTile(target,context.sourceX,context.sourceY)
+            : entityIsInDirectionalAreaFromSource(context.sourceX,context.sourceY,target,*ability,context.direction);
+        if(!affected || (abilityID==ABILITY_COLOR_SPRAY && !canSee(target))) continue;
+        if (abilityID == ABILITY_SLEEP &&
+            !canReceiveCondition(
+                target.character, ability->effects[0].conditionType))
+        {
+            resolution.targetsImmune++;
+            continue;
+        }
+        if (abilityID == ABILITY_SLEEP)
+            playAbilityImpactFlash(
+                IMPACT_CONDITION, DAMAGE_NONE, target.x, target.y);
+        AbilitySavingThrow save=resolveSavingThrow(target.character,ability->saveType,context.saveDC);
+        resolution.savingThrow=save;
+        if(save.result==SAVE_RESULT_SUCCESS){ resolution.targetsResisted++; continue; }
+        if(abilityID==ABILITY_SLEEP) {
+            const AbilityEffectData& effect=ability->effects[0];
+            if(canReceiveCondition(target.character,effect.conditionType) && addCondition(target.character,effect.conditionType,0,effect.duration)) {
+                resolution.targetsAffected++; resolution.conditionApplied=effect.conditionType; resolution.conditionDuration=effect.duration;
+            }
+        } else {
+            ColorSprayDurations durations=getColorSprayDurations(target,*ability);
+            bool applied=false;
+            if(durations.stunned && addCondition(target.character,CONDITION_STUNNED,0,durations.stunned)) applied=true;
+            if(durations.blinded && addCondition(target.character,CONDITION_BLINDED,0,durations.blinded)) applied=true;
+            if(applied) resolution.targetsAffected++;
+        }
+    }
+    return resolution;
 }
 
 int getAbilitySaveDC(const Entity& caster, const Ability& ability)
@@ -1490,6 +1645,15 @@ AbilityResolution resolveAbilityInDirection(
         payAbilityCost(caster.character, *ability, source);
         if (combat.active) caster.turn.standardActionUsed = true;
         return resolution;
+    }
+
+    if (hasSupportedColorSprayProfile(*ability))
+    {
+        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        const uint8_t flashTileCount = collectDirectionalAreaTiles(
+            caster, *ability, direction, flashTiles,
+            sizeof(flashTiles) / sizeof(flashTiles[0]));
+        playAreaDamageFlash(DAMAGE_SONIC, flashTiles, flashTileCount);
     }
 
     for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)

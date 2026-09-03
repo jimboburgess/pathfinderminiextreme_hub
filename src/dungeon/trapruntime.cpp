@@ -12,6 +12,7 @@
 #include "dungeon/dungeon.h"
 #include "dungeon/roomgen.h"
 #include "graphics/display.h"
+#include "graphics/elementalvisual.h"
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
 
@@ -27,6 +28,7 @@ constexpr uint8_t THIRD_RED_HERRING_PERCENT = 24;
 constexpr int ROGUE_TRAPFINDING_RANGE = 3;
 constexpr int ENTRY_CLEARANCE = 2;
 constexpr int CONTENT_CLEARANCE = 1;
+constexpr unsigned long ELEMENTAL_TRAP_WARNING_MS = 6000UL;
 
 constexpr SuspicionType SPIKE_CLUES[] =
 {
@@ -46,6 +48,31 @@ constexpr SuspicionType DART_CLUES[] =
 {
     SUSPICION_SMALL_HOLES, SUSPICION_WALL_HOLE, SUSPICION_BLOODSTAIN,
     SUSPICION_BONES, SUSPICION_DISCOLORED_TILE
+};
+constexpr SuspicionType GREASE_CLUES[] =
+{
+    SUSPICION_DISCOLORED_TILE,
+    SUSPICION_DISTURBED_DUST,
+    SUSPICION_FLOOR_GROOVES
+};
+constexpr SuspicionType WEB_CLUES[] =
+{
+    SUSPICION_SMALL_HOLES,
+    SUSPICION_WALL_HOLE,
+    SUSPICION_DISTURBED_DUST,
+    SUSPICION_BONES
+};
+constexpr SuspicionType SLEEP_CLUES[] =
+{
+    SUSPICION_DISTURBED_DUST,
+    SUSPICION_BONES,
+    SUSPICION_DISCOLORED_TILE
+};
+constexpr SuspicionType COLOR_SPRAY_CLUES[] =
+{
+    SUSPICION_DISCOLORED_TILE,
+    SUSPICION_SCORCH_MARK,
+    SUSPICION_OZONE_MARK
 };
 
 constexpr SuspicionType DRESSING_CLUES[] =
@@ -82,6 +109,42 @@ SuspicionType randomProjectileClue(TrapID id)
     const uint8_t count = id == TRAP_POISON_DART
         ? sizeof(DART_CLUES) / sizeof(DART_CLUES[0])
         : sizeof(ARROW_CLUES) / sizeof(ARROW_CLUES[0]);
+    return clues[static_cast<uint8_t>(random(count))];
+}
+
+SuspicionType randomElementalClue(TrapID id)
+{
+    static const SuspicionType fire[] = {SUSPICION_SCORCH_MARK, SUSPICION_DISCOLORED_TILE, SUSPICION_SMALL_HOLES, SUSPICION_BONES};
+    static const SuspicionType frost[] = {SUSPICION_FROST, SUSPICION_DISCOLORED_TILE, SUSPICION_CRACKED_FLOOR};
+    static const SuspicionType electric[] = {SUSPICION_OZONE_MARK, SUSPICION_SCORCH_MARK, SUSPICION_WIRE_OR_STRING, SUSPICION_SMALL_HOLES};
+    static const SuspicionType acid[] = {SUSPICION_CORROSION, SUSPICION_DISCOLORED_TILE, SUSPICION_FLOOR_GROOVES, SUSPICION_BONES};
+    const SuspicionType* clues = fire;
+    uint8_t count = sizeof(fire) / sizeof(fire[0]);
+    if (id == TRAP_FROST) { clues = frost; count = sizeof(frost) / sizeof(frost[0]); }
+    else if (id == TRAP_ELECTRIC) { clues = electric; count = sizeof(electric) / sizeof(electric[0]); }
+    else if (id == TRAP_ACID) { clues = acid; count = sizeof(acid) / sizeof(acid[0]); }
+    return clues[random(count)];
+}
+
+SuspicionType randomSpellClue(TrapID id)
+{
+    const SuspicionType* clues = GREASE_CLUES;
+    uint8_t count = sizeof(GREASE_CLUES) / sizeof(GREASE_CLUES[0]);
+    if (id == TRAP_WEB)
+    {
+        clues = WEB_CLUES;
+        count = sizeof(WEB_CLUES) / sizeof(WEB_CLUES[0]);
+    }
+    else if (id == TRAP_SLEEP)
+    {
+        clues = SLEEP_CLUES;
+        count = sizeof(SLEEP_CLUES) / sizeof(SLEEP_CLUES[0]);
+    }
+    else if (id == TRAP_COLOR_SPRAY)
+    {
+        clues = COLOR_SPRAY_CLUES;
+        count = sizeof(COLOR_SPRAY_CLUES) / sizeof(COLOR_SPRAY_CLUES[0]);
+    }
     return clues[static_cast<uint8_t>(random(count))];
 }
 
@@ -354,7 +417,29 @@ void presentTrapTrigger(
     setGameMessage(message);
 }
 
-bool configureRandomProjectileTrap(DungeonRoom& room, TrapInstance& trap)
+const char* elementalWarningMessage(TrapID id)
+{
+    switch (id) {
+        case TRAP_FIRE: return "The floor begins to glow red-hot!";
+        case TRAP_FROST: return "Frost rapidly spreads across the floor!";
+        case TRAP_ELECTRIC: return "The air crackles with electricity!";
+        case TRAP_ACID: return "Green liquid begins bubbling through the cracks!";
+        default: return "The trap begins to charge!";
+    }
+}
+
+const char* elementalResolutionMessage(TrapID id)
+{
+    switch (id) {
+        case TRAP_FIRE: return "Flames erupt!";
+        case TRAP_FROST: return "A wave of freezing cold erupts!";
+        case TRAP_ELECTRIC: return "Electricity arcs across the floor!";
+        case TRAP_ACID: return "Acid sprays across the area!";
+        default: return "The trap discharges!";
+    }
+}
+
+bool configureRandomSourcedTrap(DungeonRoom& room, TrapInstance& trap)
 {
     static const Direction directions[] = {DIR_NORTH, DIR_EAST, DIR_SOUTH, DIR_WEST};
     for (Direction direction : directions)
@@ -369,7 +454,9 @@ bool configureRandomProjectileTrap(DungeonRoom& room, TrapInstance& trap)
             room.map.tiles[sourceY][sourceX] != TILE_WALL ||
             !isDungeonFloorTerrain(room.map.tiles[laneY][laneX]))
             continue;
-        return configureProjectileTrap(trap, sourceX, sourceY, direction);
+        return isProjectileTrap(trap)
+            ? configureProjectileTrap(trap, sourceX, sourceY, direction)
+            : configureDirectionalTrap(trap, sourceX, sourceY, direction);
     }
     return false;
 }
@@ -397,9 +484,10 @@ void populateDungeonRoomFeatures(
         uint8_t y = 0;
         if (chooseFeatureCandidate(room, x, y))
         {
-            const uint8_t kindRoll = static_cast<uint8_t>(random(100));
-            const TrapID trapID = kindRoll < 45 ? TRAP_SPIKE_PLATE :
-                (kindRoll < 75 ? TRAP_ARROW : TRAP_POISON_DART);
+            const TrapID trapID = selectGeneratedTrapID(
+                challengeLevel,
+                static_cast<uint8_t>(random(100)),
+                static_cast<uint8_t>(random(100)));
             if (!addTrap(
                 room,
                 trapID,
@@ -407,7 +495,11 @@ void populateDungeonRoomFeatures(
                 y,
                 randomTrapLevel(challengeLevel),
                 trapID == TRAP_SPIKE_PLATE ? randomSpikeClue() :
-                    randomProjectileClue(trapID)))
+                    ((trapID == TRAP_ARROW || trapID == TRAP_POISON_DART)
+                        ? randomProjectileClue(trapID)
+                        : (getTrapDefinition(trapID)->abilityId != ABILITY_NONE
+                            ? randomSpellClue(trapID)
+                            : randomElementalClue(trapID)))))
             {
                 // Leave the room otherwise unchanged; harmless dressing may
                 // still be added below.
@@ -415,8 +507,9 @@ void populateDungeonRoomFeatures(
             else
             {
                 TrapInstance* trap = getTrapAt(room, x, y);
-                if (trap != nullptr && isProjectileTrap(*trap) &&
-                    !configureRandomProjectileTrap(room, *trap))
+                if (trap != nullptr &&
+                    (isProjectileTrap(*trap) || trap->id == TRAP_COLOR_SPRAY) &&
+                    !configureRandomSourcedTrap(room, *trap))
                 {
                     *trap = TrapInstance{};
                 }
@@ -491,6 +584,50 @@ void updateRogueTrapAwareness(Entity& playerEntity)
         setGameMessage("You discover a pressure plate!");
 }
 
+void updateElementalTrapCharges()
+{
+    if (gameState != GAME_DUNGEON || !dungeon.runActive ||
+        dungeon.currentRoom >= MAX_ROOMS)
+        return;
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    for (TrapInstance& trap : room.traps)
+    {
+        if (!trap.charging || !isElementalTrap(trap))
+            continue;
+        const bool due = combat.active
+            ? combat.combatRound > trap.chargingCombatRound
+            : static_cast<long>(millis() - trap.chargingUntilMillis) >= 0;
+        if (!due)
+            continue;
+
+        const TrapDefinition* definition = getTrapDefinition(trap.id);
+        trap.charging = false;
+        trap.triggered = true;
+        trap.discovered = true;
+        const AreaFlashTile flashTile = {trap.x, trap.y};
+        playAreaDamageFlash(definition->damageType, &flashTile, 1);
+        ElementalVisualTile visualTile;
+        visualTile.x = trap.x;
+        visualTile.y = trap.y;
+        startElementalVisualEffect(definition->damageType, &visualTile, 1);
+        for (uint8_t i = 0; i < dungeon.entityCount; i++)
+        {
+            Entity& target = dungeon.entities[i];
+            if (!target.active || target.character.state != STATE_ALIVE ||
+                !footprintContainsTile(target, target.x, target.y, trap.x, trap.y))
+                continue;
+            const AbilitySavingThrow save = resolveSavingThrow(
+                target.character, SAVE_REFLEX, getTrapSaveDC(trap));
+            int damage = rollDice(getTrapDamageDice(trap), getTrapDamageSides(trap));
+            if (save.result == SAVE_RESULT_SUCCESS)
+                damage /= 2;
+            applyCombatDamage(target, damage, definition->damageType);
+        }
+        markTileDirty(trap.x, trap.y);
+        setGameMessage(elementalResolutionMessage(trap.id));
+    }
+}
+
 bool triggerTrapForEntityAt(
     Entity& entity,
     int targetX,
@@ -519,6 +656,48 @@ bool triggerTrapForEntityAt(
         const TrapDefinition* definition = getTrapDefinition(trap.id);
         if (definition == nullptr)
             return false;
+
+        if (isElementalTrap(trap))
+        {
+            trap.charging = true;
+            trap.discovered = true;
+            trap.chargingCombatRound = combat.active ? combat.combatRound : 0;
+            trap.chargingUntilMillis = millis() + ELEMENTAL_TRAP_WARNING_MS;
+            markTileDirty(trap.x, trap.y);
+            setGameMessage(elementalWarningMessage(trap.id));
+            return true;
+        }
+
+        if (isSpellTrap(trap))
+        {
+            EnvironmentalAbilityContext context;
+            if (!buildEnvironmentalAbilityContext(trap, context))
+                return false;
+
+            resolveEnvironmentalAbility(context, definition->abilityId);
+            trap.triggered = true;
+            trap.discovered = true;
+            markTileDirty(trap.x, trap.y);
+
+            switch (trap.id)
+            {
+                case TRAP_GREASE:
+                    setGameMessage("Grease spreads across the floor!");
+                    break;
+                case TRAP_WEB:
+                    setGameMessage("Webs burst across the area!");
+                    break;
+                case TRAP_SLEEP:
+                    setGameMessage("Drowsy magic fills the air!");
+                    break;
+                case TRAP_COLOR_SPRAY:
+                    setGameMessage("Brilliant colors spray from the wall!");
+                    break;
+                default:
+                    break;
+            }
+            return true;
+        }
 
         Entity* target = &entity;
         if (isProjectileTrap(trap))

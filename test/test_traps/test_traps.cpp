@@ -61,6 +61,106 @@ void test_projectile_trap_definitions_and_launcher_state_are_data_driven()
     TEST_ASSERT_EQUAL(DIR_EAST, trap.direction);
 }
 
+void test_elemental_traps_use_shared_damage_types_and_charging_visual_state()
+{
+    TEST_ASSERT_EQUAL(DAMAGE_FIRE, getTrapDefinition(TRAP_FIRE)->damageType);
+    TEST_ASSERT_EQUAL(DAMAGE_COLD, getTrapDefinition(TRAP_FROST)->damageType);
+    TEST_ASSERT_EQUAL(DAMAGE_ELECTRIC, getTrapDefinition(TRAP_ELECTRIC)->damageType);
+    TEST_ASSERT_EQUAL(DAMAGE_ACID, getTrapDefinition(TRAP_ACID)->damageType);
+    TrapInstance trap{};
+    trap.id = TRAP_FIRE;
+    trap.hp = 10;
+    trap.charging = true;
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_CHARGING, getTrapVisualState(trap));
+    trap.disabled = true;
+    TEST_ASSERT_EQUAL(TRAP_VISUAL_DISABLED, getTrapVisualState(trap));
+}
+
+void test_spell_traps_map_to_existing_abilities()
+{
+    TEST_ASSERT_EQUAL(
+        ABILITY_GREASE, getTrapDefinition(TRAP_GREASE)->abilityId);
+    TEST_ASSERT_EQUAL(
+        ABILITY_WEB, getTrapDefinition(TRAP_WEB)->abilityId);
+    TEST_ASSERT_EQUAL(
+        ABILITY_SLEEP, getTrapDefinition(TRAP_SLEEP)->abilityId);
+    TEST_ASSERT_EQUAL(
+        ABILITY_COLOR_SPRAY,
+        getTrapDefinition(TRAP_COLOR_SPRAY)->abilityId);
+
+    TrapInstance grease{};
+    grease.id = TRAP_GREASE;
+    TEST_ASSERT_TRUE(isSpellTrap(grease));
+    TEST_ASSERT_EQUAL(ABILITY_GREASE, getTrapAbilityID(grease));
+
+    TrapInstance spike{};
+    spike.id = TRAP_SPIKE_PLATE;
+    TEST_ASSERT_FALSE(isSpellTrap(spike));
+    TEST_ASSERT_EQUAL(ABILITY_NONE, getTrapAbilityID(spike));
+}
+
+void test_color_spray_trap_preserves_directional_source_geometry()
+{
+    TrapInstance trap{};
+    trap.id = TRAP_COLOR_SPRAY;
+    TEST_ASSERT_TRUE(configureDirectionalTrap(trap, 1, 7, DIR_EAST));
+    TEST_ASSERT_EQUAL_INT(1, trap.sourceX);
+    TEST_ASSERT_EQUAL_INT(7, trap.sourceY);
+    TEST_ASSERT_EQUAL(DIR_EAST, trap.direction);
+
+    TrapInstance sleep{};
+    sleep.id = TRAP_SLEEP;
+    TEST_ASSERT_FALSE(configureDirectionalTrap(sleep, 1, 7, DIR_EAST));
+}
+
+void test_spell_trap_context_uses_trap_level_dc_source_and_direction()
+{
+    TrapInstance grease{};
+    grease.id = TRAP_GREASE;
+    grease.x = 6;
+    grease.y = 8;
+    grease.level = 7;
+    EnvironmentalAbilityContext areaContext;
+    TEST_ASSERT_TRUE(buildEnvironmentalAbilityContext(grease, areaContext));
+    TEST_ASSERT_EQUAL_INT(6, areaContext.sourceX);
+    TEST_ASSERT_EQUAL_INT(8, areaContext.sourceY);
+    TEST_ASSERT_EQUAL_UINT8(7, areaContext.effectiveLevel);
+    TEST_ASSERT_EQUAL_INT(getTrapSaveDC(grease), areaContext.saveDC);
+
+    TrapInstance spray{};
+    spray.id = TRAP_COLOR_SPRAY;
+    spray.x = 5;
+    spray.y = 5;
+    spray.level = 4;
+    TEST_ASSERT_TRUE(configureDirectionalTrap(spray, 1, 5, DIR_EAST));
+    EnvironmentalAbilityContext coneContext;
+    TEST_ASSERT_TRUE(buildEnvironmentalAbilityContext(spray, coneContext));
+    TEST_ASSERT_EQUAL_INT(1, coneContext.sourceX);
+    TEST_ASSERT_EQUAL_INT(5, coneContext.sourceY);
+    TEST_ASSERT_EQUAL(DIR_EAST, coneContext.direction);
+    TEST_ASSERT_EQUAL_UINT8(4, coneContext.effectiveLevel);
+    TEST_ASSERT_EQUAL_INT(getTrapSaveDC(spray), coneContext.saveDC);
+}
+
+void test_generated_trap_categories_retain_all_families_and_level_gates()
+{
+    TEST_ASSERT_EQUAL(TRAP_SPIKE_PLATE, selectGeneratedTrapID(5, 0, 0));
+    TEST_ASSERT_EQUAL(TRAP_ARROW, selectGeneratedTrapID(5, 30, 0));
+    TEST_ASSERT_EQUAL(TRAP_POISON_DART, selectGeneratedTrapID(5, 50, 0));
+    TEST_ASSERT_EQUAL(TRAP_FIRE, selectGeneratedTrapID(5, 60, 0));
+    TEST_ASSERT_EQUAL(TRAP_FROST, selectGeneratedTrapID(5, 60, 1));
+    TEST_ASSERT_EQUAL(TRAP_ELECTRIC, selectGeneratedTrapID(5, 60, 2));
+    TEST_ASSERT_EQUAL(TRAP_ACID, selectGeneratedTrapID(5, 60, 3));
+    TEST_ASSERT_EQUAL(TRAP_GREASE, selectGeneratedTrapID(5, 75, 0));
+    TEST_ASSERT_EQUAL(TRAP_SLEEP, selectGeneratedTrapID(5, 85, 0));
+    TEST_ASSERT_EQUAL(TRAP_COLOR_SPRAY, selectGeneratedTrapID(5, 93, 0));
+    TEST_ASSERT_EQUAL(TRAP_WEB, selectGeneratedTrapID(5, 98, 0));
+
+    TEST_ASSERT_EQUAL(TRAP_GREASE, selectGeneratedTrapID(1, 93, 0));
+    TEST_ASSERT_EQUAL(TRAP_SLEEP, selectGeneratedTrapID(1, 98, 0));
+    TEST_ASSERT_EQUAL(TRAP_SPIKE_PLATE, selectGeneratedTrapID(1, 60, 0));
+}
+
 void test_trap_level_selection_varies_and_stays_in_intended_ranges()
 {
     bool differsFromChallenge = false;
@@ -344,6 +444,11 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_spike_plate_definition_uses_shared_damage_and_save_types);
     RUN_TEST(test_projectile_trap_definitions_and_launcher_state_are_data_driven);
+    RUN_TEST(test_elemental_traps_use_shared_damage_types_and_charging_visual_state);
+    RUN_TEST(test_spell_traps_map_to_existing_abilities);
+    RUN_TEST(test_color_spray_trap_preserves_directional_source_geometry);
+    RUN_TEST(test_spell_trap_context_uses_trap_level_dc_source_and_direction);
+    RUN_TEST(test_generated_trap_categories_retain_all_families_and_level_gates);
     RUN_TEST(test_trap_level_selection_varies_and_stays_in_intended_ranges);
     RUN_TEST(test_trap_scaling_is_linear_and_bounded);
     RUN_TEST(test_room_helpers_keep_clues_independent_from_traps);

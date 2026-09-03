@@ -1,5 +1,6 @@
 #include "dungeon/traps.h"
 
+#include "dungeon/abilityresolver.h"
 #include "dungeon/dungeon.h"
 
 namespace
@@ -18,16 +19,25 @@ const TrapDefinition SPIKE_PLATE_DEFINITION = {
     DAMAGE_PIERCING,
     1,  // damageDice
     6,  // damageSides
-    SAVE_REFLEX
+    SAVE_REFLEX,
+    ABILITY_NONE
 };
 const TrapDefinition ARROW_DEFINITION = {
     TRAP_ARROW, "arrow trap", 1, 13, 15, 10, 2,
-    DAMAGE_PIERCING, 1, 8, SAVE_REFLEX
+    DAMAGE_PIERCING, 1, 8, SAVE_REFLEX, ABILITY_NONE
 };
 const TrapDefinition POISON_DART_DEFINITION = {
     TRAP_POISON_DART, "dart trap", 1, 14, 16, 8, 2,
-    DAMAGE_PIERCING, 1, 1, SAVE_REFLEX
+    DAMAGE_PIERCING, 1, 1, SAVE_REFLEX, ABILITY_NONE
 };
+const TrapDefinition FIRE_DEFINITION = {TRAP_FIRE, "fire trap", 3, 14, 16, 12, 3, DAMAGE_FIRE, 2, 6, SAVE_REFLEX, ABILITY_NONE};
+const TrapDefinition FROST_DEFINITION = {TRAP_FROST, "frost trap", 3, 14, 16, 12, 3, DAMAGE_COLD, 2, 6, SAVE_REFLEX, ABILITY_NONE};
+const TrapDefinition ELECTRIC_DEFINITION = {TRAP_ELECTRIC, "electric trap", 4, 15, 17, 12, 3, DAMAGE_ELECTRIC, 2, 6, SAVE_REFLEX, ABILITY_NONE};
+const TrapDefinition ACID_DEFINITION = {TRAP_ACID, "acid trap", 4, 15, 17, 12, 3, DAMAGE_ACID, 2, 6, SAVE_REFLEX, ABILITY_NONE};
+const TrapDefinition GREASE_DEFINITION = {TRAP_GREASE, "grease trap", 1, 13, 15, 8, 2, DAMAGE_NONE, 0, 0, SAVE_REFLEX, ABILITY_GREASE};
+const TrapDefinition WEB_DEFINITION = {TRAP_WEB, "web trap", 3, 15, 17, 10, 2, DAMAGE_NONE, 0, 0, SAVE_REFLEX, ABILITY_WEB};
+const TrapDefinition SLEEP_DEFINITION = {TRAP_SLEEP, "sleep trap", 1, 14, 16, 8, 2, DAMAGE_NONE, 0, 0, SAVE_WILL, ABILITY_SLEEP};
+const TrapDefinition COLOR_SPRAY_DEFINITION = {TRAP_COLOR_SPRAY, "color spray trap", 2, 14, 16, 8, 2, DAMAGE_NONE, 0, 0, SAVE_WILL, ABILITY_COLOR_SPRAY};
 
 uint8_t clampTrapLevel(int level)
 {
@@ -96,6 +106,14 @@ const TrapDefinition* getTrapDefinition(TrapID id)
             return &ARROW_DEFINITION;
         case TRAP_POISON_DART:
             return &POISON_DART_DEFINITION;
+        case TRAP_FIRE: return &FIRE_DEFINITION;
+        case TRAP_FROST: return &FROST_DEFINITION;
+        case TRAP_ELECTRIC: return &ELECTRIC_DEFINITION;
+        case TRAP_ACID: return &ACID_DEFINITION;
+        case TRAP_GREASE: return &GREASE_DEFINITION;
+        case TRAP_WEB: return &WEB_DEFINITION;
+        case TRAP_SLEEP: return &SLEEP_DEFINITION;
+        case TRAP_COLOR_SPRAY: return &COLOR_SPRAY_DEFINITION;
 
         case TRAP_NONE:
         default:
@@ -114,9 +132,54 @@ bool configureProjectileTrap(TrapInstance& trap, int sourceX, int sourceY,
     return true;
 }
 
+bool configureDirectionalTrap(TrapInstance& trap, int sourceX, int sourceY,
+                              Direction direction)
+{
+    if (trap.id != TRAP_COLOR_SPRAY || !isInsideRoom(sourceX, sourceY))
+        return false;
+    trap.sourceX = static_cast<int8_t>(sourceX);
+    trap.sourceY = static_cast<int8_t>(sourceY);
+    trap.direction = direction;
+    return true;
+}
+
 bool isProjectileTrap(const TrapInstance& trap)
 {
     return trap.id == TRAP_ARROW || trap.id == TRAP_POISON_DART;
+}
+
+bool isElementalTrap(const TrapInstance& trap)
+{
+    return trap.id == TRAP_FIRE || trap.id == TRAP_FROST ||
+        trap.id == TRAP_ELECTRIC || trap.id == TRAP_ACID;
+}
+
+AbilityID getTrapAbilityID(const TrapInstance& trap)
+{
+    const TrapDefinition* definition = getTrapDefinition(trap.id);
+    return definition == nullptr ? ABILITY_NONE : definition->abilityId;
+}
+
+bool isSpellTrap(const TrapInstance& trap)
+{
+    return getTrapAbilityID(trap) != ABILITY_NONE;
+}
+
+bool buildEnvironmentalAbilityContext(
+    const TrapInstance& trap,
+    EnvironmentalAbilityContext& context)
+{
+    if (!isSpellTrap(trap))
+        return false;
+
+    context.sourceX = trap.id == TRAP_COLOR_SPRAY
+        ? trap.sourceX : trap.x;
+    context.sourceY = trap.id == TRAP_COLOR_SPRAY
+        ? trap.sourceY : trap.y;
+    context.direction = trap.direction;
+    context.effectiveLevel = effectiveTrapLevel(trap);
+    context.saveDC = getTrapSaveDC(trap);
+    return isInsideRoom(context.sourceX, context.sourceY);
 }
 
 uint8_t selectTrapLevel(uint8_t challengeLevel, uint8_t percentile)
@@ -138,6 +201,42 @@ uint8_t selectTrapLevel(uint8_t challengeLevel, uint8_t percentile)
         offset = 3;
 
     return clampTrapLevel(static_cast<int>(challengeLevel) + offset);
+}
+
+TrapID selectGeneratedTrapID(
+    uint8_t challengeLevel,
+    uint8_t categoryPercentile,
+    uint8_t variant)
+{
+    const uint8_t roll = categoryPercentile % 100;
+
+    // Mechanical traps remain the largest category. Elemental and spell
+    // traps occupy separate slices so neither family displaces the other.
+    if (roll < 25)
+        return TRAP_SPIKE_PLATE;
+    if (roll < 42)
+        return TRAP_ARROW;
+    if (roll < 55)
+        return TRAP_POISON_DART;
+    if (roll < 72)
+    {
+        if (challengeLevel < 3)
+            return TRAP_SPIKE_PLATE;
+        static const TrapID elemental[] = {
+            TRAP_FIRE, TRAP_FROST, TRAP_ELECTRIC, TRAP_ACID};
+        TrapID selected = elemental[variant % 4];
+        const TrapDefinition* definition = getTrapDefinition(selected);
+        return definition != nullptr && challengeLevel >= definition->minimumLevel
+            ? selected : TRAP_FIRE;
+    }
+
+    if (roll < 82)
+        return TRAP_GREASE;
+    if (roll < 90)
+        return TRAP_SLEEP;
+    if (roll < 96)
+        return challengeLevel >= 2 ? TRAP_COLOR_SPRAY : TRAP_GREASE;
+    return challengeLevel >= 3 ? TRAP_WEB : TRAP_SLEEP;
 }
 
 uint8_t getTrapPerceptionDC(const TrapInstance& trap)
@@ -331,6 +430,8 @@ TrapVisualState getTrapVisualState(const TrapInstance& trap)
         return TRAP_VISUAL_DISABLED;
     if (trap.triggered)
         return TRAP_VISUAL_TRIGGERED;
+    if (trap.charging)
+        return TRAP_VISUAL_CHARGING;
     if (trap.discovered)
         return TRAP_VISUAL_ARMED;
     return TRAP_VISUAL_HIDDEN;

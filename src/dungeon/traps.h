@@ -8,13 +8,22 @@
 
 struct DungeonRoom;
 struct Entity;
+struct EnvironmentalAbilityContext;
 
 enum TrapID : uint8_t
 {
     TRAP_NONE,
     TRAP_SPIKE_PLATE,
     TRAP_ARROW,
-    TRAP_POISON_DART
+    TRAP_POISON_DART,
+    TRAP_FIRE,
+    TRAP_FROST,
+    TRAP_ELECTRIC,
+    TRAP_ACID,
+    TRAP_GREASE,
+    TRAP_WEB,
+    TRAP_SLEEP,
+    TRAP_COLOR_SPRAY
 };
 
 enum SuspicionType : uint8_t
@@ -60,6 +69,7 @@ struct TrapDefinition
     uint8_t damageDice;
     uint8_t damageSides;
     SaveType saveType;
+    AbilityID abilityId;
 };
 
 struct TrapInstance
@@ -78,7 +88,10 @@ struct TrapInstance
     bool discovered = false;
     bool disabled = false;
     bool triggered = false;
+    bool charging = false;
     bool destroyed = false;
+    uint8_t chargingCombatRound = 0;
+    uint32_t chargingUntilMillis = 0;
 
     // Manual searching and Rogue trapfinding are separate opportunities, but
     // neither can be repeated by reopening a menu or leaving detection range.
@@ -95,6 +108,7 @@ enum TrapVisualState : uint8_t
 {
     TRAP_VISUAL_HIDDEN,
     TRAP_VISUAL_ARMED,
+    TRAP_VISUAL_CHARGING,
     TRAP_VISUAL_TRIGGERED,
     TRAP_VISUAL_DISABLED,
     TRAP_VISUAL_DESTROYED
@@ -152,6 +166,10 @@ const TrapDefinition* getTrapDefinition(TrapID id);
 // Percentile is deterministic input in the inclusive conceptual range 0..99.
 // Values outside it wrap, which keeps the helper safe for byte-sized RNGs.
 uint8_t selectTrapLevel(uint8_t challengeLevel, uint8_t percentile);
+TrapID selectGeneratedTrapID(
+    uint8_t challengeLevel,
+    uint8_t categoryPercentile,
+    uint8_t variant);
 
 uint8_t getTrapPerceptionDC(const TrapInstance& trap);
 uint8_t getTrapDisableDC(const TrapInstance& trap);
@@ -173,6 +191,15 @@ bool addTrap(
 bool configureProjectileTrap(
     TrapInstance& trap, int sourceX, int sourceY, Direction direction);
 bool isProjectileTrap(const TrapInstance& trap);
+bool isElementalTrap(const TrapInstance& trap);
+bool isSpellTrap(const TrapInstance& trap);
+AbilityID getTrapAbilityID(const TrapInstance& trap);
+bool configureDirectionalTrap(
+    TrapInstance& trap, int sourceX, int sourceY, Direction direction);
+bool buildEnvironmentalAbilityContext(
+    const TrapInstance& trap,
+    EnvironmentalAbilityContext& context);
+void updateElementalTrapCharges();
 
 SuspicionType getSuspicionAt(const DungeonRoom& room, int x, int y);
 bool addSuspicion(

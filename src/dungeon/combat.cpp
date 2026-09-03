@@ -1822,6 +1822,7 @@ void nextTurn()
         {
             combat.combatRound++;
             tickMapEffects();
+            updateElementalTrapCharges();
             checkReinforcementAwareness();
             combat.currentTurnIndex = 0;
         }

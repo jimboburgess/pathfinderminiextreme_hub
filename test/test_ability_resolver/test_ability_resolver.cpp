@@ -179,6 +179,12 @@ bool hasLineOfSightFromFootprintAt(
             targetY != controlledBlockedLOSY);
 }
 
+bool hasLineOfSight(int, int, int targetX, int targetY)
+{
+    return controlledLineOfSight &&
+           (targetX != controlledBlockedLOSX || targetY != controlledBlockedLOSY);
+}
+
 int getActiveMapWidth()
 {
     return 10;
@@ -2015,6 +2021,33 @@ void test_overlapping_persistent_damage_and_expiration_are_independent()
     TEST_ASSERT_GREATER_THAN_UINT8(dirtyBefore, dirtyTileMarkCount);
 }
 
+void test_environmental_adapter_uses_explicit_dc_and_spends_no_resources()
+{
+    resetResolverControls();
+    activeTestEntityCount = 1;
+    initializeEntity(activeTestEntities[0], ENTITY_MONSTER, TEAM_MONSTER);
+    Entity& target = activeTestEntities[0];
+    target.x = 3; target.y = 3;
+    target.character.magic.currentMP = 7;
+    target.turn.standardActionUsed = false;
+    controlledSaveRoll = 1;
+
+    EnvironmentalAbilityContext context;
+    context.sourceX = 3; context.sourceY = 3;
+    context.effectiveLevel = 9; context.saveDC = 27;
+    AbilityResolution result = resolveEnvironmentalAbility(context, ABILITY_GREASE);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    TEST_ASSERT_TRUE(result.mapEffectCreated);
+    TEST_ASSERT_EQUAL_INT(27, result.savingThrow.dc);
+    TEST_ASSERT_EQUAL_INT(7, target.character.magic.currentMP);
+    TEST_ASSERT_FALSE(target.turn.standardActionUsed);
+    TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_GREASE, 3, 3));
+    TEST_ASSERT_TRUE(canResolveEnvironmentally(ABILITY_WEB));
+    TEST_ASSERT_TRUE(canResolveEnvironmentally(ABILITY_SLEEP));
+    TEST_ASSERT_TRUE(canResolveEnvironmentally(ABILITY_COLOR_SPRAY));
+    TEST_ASSERT_FALSE(canResolveEnvironmentally(ABILITY_MAGIC_MISSILE));
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -2069,6 +2102,7 @@ void setup()
     RUN_TEST(test_persistent_damage_spell_metadata_and_geometry);
     RUN_TEST(test_persistent_damage_triggers_once_on_entry_and_start_turn);
     RUN_TEST(test_overlapping_persistent_damage_and_expiration_are_independent);
+    RUN_TEST(test_environmental_adapter_uses_explicit_dc_and_spends_no_resources);
     UNITY_END();
 }
 

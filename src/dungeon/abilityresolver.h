@@ -85,6 +85,15 @@ struct AbilityResolution
     int protectionAmount = 0;
 };
 
+struct EnvironmentalAbilityContext
+{
+    int8_t sourceX = -1;
+    int8_t sourceY = -1;
+    Direction direction = DIR_NORTH;
+    uint8_t effectiveLevel = 1;
+    int16_t saveDC = 10;
+};
+
 // The resolver deliberately accepts only standard-action abilities handled
 // by the current narrow feature set: entity-target instant damage/healing or
 // one timed condition, one persistent ground/area effect, and the supported
@@ -92,6 +101,12 @@ struct AbilityResolution
 bool isAbilitySupported(AbilityID abilityID);
 bool isGroundTargetAbility(AbilityID abilityID);
 bool isDirectionalAbility(AbilityID abilityID);
+bool canResolveEnvironmentally(AbilityID abilityID);
+AbilityResolution resolveEnvironmentalAbility(
+    const EnvironmentalAbilityContext& context, AbilityID abilityID);
+bool isTileInDirectionalAbilityAreaFromSource(
+    int sourceX, int sourceY, AbilityID abilityID, Direction direction,
+    int tileX, int tileY);
 EnergyInteraction getEnergyInteraction(
     DamageType energyType,
     CreatureType creatureType);
