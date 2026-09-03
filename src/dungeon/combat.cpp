@@ -1583,6 +1583,22 @@ static void beginTurnStartConditionMessages(
         return;
     }
 
+    if (result.poisonStageAdvanced > 0)
+    {
+        setGameMessage("The numbness is spreading.");
+        combat.turnStartConditionPhase = TURN_START_CONDITION_EXPIRY_MESSAGE;
+        needsRedraw = true;
+        return;
+    }
+
+    if (result.poisonRecovered)
+    {
+        setGameMessage("The feeling slowly begins to return.");
+        combat.turnStartConditionPhase = TURN_START_CONDITION_EXPIRY_MESSAGE;
+        needsRedraw = true;
+        return;
+    }
+
     const char* actionStatus = entity->type == ENTITY_PLAYER
         ? getActionAffectingConditionMessage(entity->character)
         : nullptr;

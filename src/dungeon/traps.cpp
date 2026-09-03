@@ -20,6 +20,14 @@ const TrapDefinition SPIKE_PLATE_DEFINITION = {
     6,  // damageSides
     SAVE_REFLEX
 };
+const TrapDefinition ARROW_DEFINITION = {
+    TRAP_ARROW, "arrow trap", 1, 13, 15, 10, 2,
+    DAMAGE_PIERCING, 1, 8, SAVE_REFLEX
+};
+const TrapDefinition POISON_DART_DEFINITION = {
+    TRAP_POISON_DART, "dart trap", 1, 14, 16, 8, 2,
+    DAMAGE_PIERCING, 1, 1, SAVE_REFLEX
+};
 
 uint8_t clampTrapLevel(int level)
 {
@@ -84,11 +92,31 @@ const TrapDefinition* getTrapDefinition(TrapID id)
     {
         case TRAP_SPIKE_PLATE:
             return &SPIKE_PLATE_DEFINITION;
+        case TRAP_ARROW:
+            return &ARROW_DEFINITION;
+        case TRAP_POISON_DART:
+            return &POISON_DART_DEFINITION;
 
         case TRAP_NONE:
         default:
             return nullptr;
     }
+}
+
+bool configureProjectileTrap(TrapInstance& trap, int sourceX, int sourceY,
+                             Direction direction)
+{
+    if (!isProjectileTrap(trap) || !isInsideRoom(sourceX, sourceY))
+        return false;
+    trap.sourceX = static_cast<int8_t>(sourceX);
+    trap.sourceY = static_cast<int8_t>(sourceY);
+    trap.direction = direction;
+    return true;
+}
+
+bool isProjectileTrap(const TrapInstance& trap)
+{
+    return trap.id == TRAP_ARROW || trap.id == TRAP_POISON_DART;
 }
 
 uint8_t selectTrapLevel(uint8_t challengeLevel, uint8_t percentile)

@@ -41,6 +41,26 @@ void test_spike_plate_definition_uses_shared_damage_and_save_types()
     TEST_ASSERT_NULL(getTrapDefinition(TRAP_NONE));
 }
 
+void test_projectile_trap_definitions_and_launcher_state_are_data_driven()
+{
+    const TrapDefinition* arrow = getTrapDefinition(TRAP_ARROW);
+    const TrapDefinition* dart = getTrapDefinition(TRAP_POISON_DART);
+    TEST_ASSERT_NOT_NULL(arrow);
+    TEST_ASSERT_NOT_NULL(dart);
+    TEST_ASSERT_EQUAL(DAMAGE_PIERCING, arrow->damageType);
+    TEST_ASSERT_EQUAL(SAVE_REFLEX, arrow->saveType);
+    TEST_ASSERT_EQUAL_UINT8(1, dart->damageDice);
+    TEST_ASSERT_EQUAL_UINT8(1, dart->damageSides);
+
+    TrapInstance trap{};
+    trap.id = TRAP_ARROW;
+    TEST_ASSERT_TRUE(configureProjectileTrap(trap, 1, 4, DIR_EAST));
+    TEST_ASSERT_TRUE(isProjectileTrap(trap));
+    TEST_ASSERT_EQUAL_INT(1, trap.sourceX);
+    TEST_ASSERT_EQUAL_INT(4, trap.sourceY);
+    TEST_ASSERT_EQUAL(DIR_EAST, trap.direction);
+}
+
 void test_trap_level_selection_varies_and_stays_in_intended_ranges()
 {
     bool differsFromChallenge = false;
@@ -323,6 +343,7 @@ void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_spike_plate_definition_uses_shared_damage_and_save_types);
+    RUN_TEST(test_projectile_trap_definitions_and_launcher_state_are_data_driven);
     RUN_TEST(test_trap_level_selection_varies_and_stays_in_intended_ranges);
     RUN_TEST(test_trap_scaling_is_linear_and_bounded);
     RUN_TEST(test_room_helpers_keep_clues_independent_from_traps);

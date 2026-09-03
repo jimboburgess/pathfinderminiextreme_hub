@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "characters/abilities.h"
+#include "data/game.h"
 
 struct DungeonRoom;
 struct Entity;
@@ -11,7 +12,9 @@ struct Entity;
 enum TrapID : uint8_t
 {
     TRAP_NONE,
-    TRAP_SPIKE_PLATE
+    TRAP_SPIKE_PLATE,
+    TRAP_ARROW,
+    TRAP_POISON_DART
 };
 
 enum SuspicionType : uint8_t
@@ -64,6 +67,11 @@ struct TrapInstance
     TrapID id = TRAP_NONE;
     int8_t x = -1;
     int8_t y = -1;
+    // Projectile traps keep their pressure plate at x/y and their launcher in
+    // a nearby wall. Spike plates simply leave these at their defaults.
+    int8_t sourceX = -1;
+    int8_t sourceY = -1;
+    Direction direction = DIR_NORTH;
     uint8_t level = 1;
     int16_t hp = 0;
 
@@ -162,6 +170,9 @@ bool addTrap(
     uint8_t level,
     SuspicionType suspicion = SUSPICION_NONE,
     uint8_t controlGroup = 0);
+bool configureProjectileTrap(
+    TrapInstance& trap, int sourceX, int sourceY, Direction direction);
+bool isProjectileTrap(const TrapInstance& trap);
 
 SuspicionType getSuspicionAt(const DungeonRoom& room, int x, int y);
 bool addSuspicion(

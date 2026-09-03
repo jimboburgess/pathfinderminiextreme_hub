@@ -173,7 +173,7 @@ void drawSuspicionClue(
   }
 }
 
-void drawTrapStateArt(int tileX, int tileY, TrapVisualState state)
+void drawTrapStateArt(int tileX, int tileY, TrapID trapID, TrapVisualState state)
 {
   const int x = tileX * TILE_SIZE;
   const int y = tileY * TILE_SIZE;
@@ -190,6 +190,13 @@ void drawTrapStateArt(int tileX, int tileY, TrapVisualState state)
       break;
 
     case TRAP_VISUAL_TRIGGERED:
+      if (trapID != TRAP_SPIKE_PLATE)
+      {
+        // A spent wall launcher is represented compactly at its linked plate.
+        tft.drawRect(x + 4, y + 7, 8, 3, COLOR_TRAP_METAL_DARK);
+        tft.drawLine(x + 5, y + 8, x + 10, y + 8, COLOR_TRAP_RUST);
+        break;
+      }
       // The supplied spike artwork is an overlay: the regular floor beneath
       // it stays intact and the persistent triggered flag selects it again
       // whenever this tile is redrawn or the room is revisited.
@@ -335,5 +342,5 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
 
   const TrapInstance* trap = getTrapAt(room, tileX, tileY);
   if (trap != nullptr)
-    drawTrapStateArt(tileX, tileY, getTrapVisualState(*trap));
+    drawTrapStateArt(tileX, tileY, trap->id, getTrapVisualState(*trap));
 }

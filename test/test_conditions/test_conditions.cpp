@@ -50,6 +50,11 @@ int rollDie(int sides)
     return sides > 0 ? 2 : 0;
 }
 
+int getFortitudeSave(const Character&)
+{
+    return 0;
+}
+
 #include "../../src/characters/conditions.cpp"
 
 void test_add_get_and_refresh_condition()
@@ -458,6 +463,23 @@ void test_poison_ticks_at_turn_start_and_expires()
     TEST_ASSERT_FALSE(hasCondition(character, CONDITION_POISONED));
 }
 
+void test_slowing_venom_uses_temporary_speed_penalties_and_progresses()
+{
+    Character character = {};
+    character.state = STATE_ALIVE;
+    character.speed = 40;
+    TEST_ASSERT_TRUE(applySlowingVenom(character, 20));
+    TEST_ASSERT_EQUAL_INT(-10, getActiveConditionModifiers(character).speedBonus);
+    TEST_ASSERT_EQUAL_INT(40, character.speed);
+    for (int i = 0; i < 10; i++)
+        processConditionsAtTurnStart(character);
+    const PoisonAffliction* poison = getPoisonAffliction(character);
+    TEST_ASSERT_NOT_NULL(poison);
+    TEST_ASSERT_EQUAL_UINT8(2, poison->stage);
+    TEST_ASSERT_EQUAL_INT(-20, getActiveConditionModifiers(character).speedBonus);
+    TEST_ASSERT_EQUAL_INT(40, character.speed);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -481,6 +503,7 @@ void setup()
     RUN_TEST(test_action_affecting_turn_message_is_centralized);
     RUN_TEST(test_condition_capacity_failure_is_safe);
     RUN_TEST(test_poison_ticks_at_turn_start_and_expires);
+    RUN_TEST(test_slowing_venom_uses_temporary_speed_penalties_and_progresses);
     UNITY_END();
 }
 

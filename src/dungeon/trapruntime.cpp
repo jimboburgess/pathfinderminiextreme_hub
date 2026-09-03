@@ -37,6 +37,16 @@ constexpr SuspicionType SPIKE_CLUES[] =
     SUSPICION_BONES,
     SUSPICION_DISTURBED_DUST
 };
+constexpr SuspicionType ARROW_CLUES[] =
+{
+    SUSPICION_WALL_HOLE, SUSPICION_SMALL_HOLES, SUSPICION_FLOOR_GROOVES,
+    SUSPICION_WIRE_OR_STRING, SUSPICION_SCRATCHES
+};
+constexpr SuspicionType DART_CLUES[] =
+{
+    SUSPICION_SMALL_HOLES, SUSPICION_WALL_HOLE, SUSPICION_BLOODSTAIN,
+    SUSPICION_BONES, SUSPICION_DISCOLORED_TILE
+};
 
 constexpr SuspicionType DRESSING_CLUES[] =
 {
@@ -64,6 +74,15 @@ SuspicionType randomDressingClue()
     constexpr uint8_t clueCount =
         sizeof(DRESSING_CLUES) / sizeof(DRESSING_CLUES[0]);
     return DRESSING_CLUES[static_cast<uint8_t>(random(clueCount))];
+}
+
+SuspicionType randomProjectileClue(TrapID id)
+{
+    const SuspicionType* clues = id == TRAP_POISON_DART ? DART_CLUES : ARROW_CLUES;
+    const uint8_t count = id == TRAP_POISON_DART
+        ? sizeof(DART_CLUES) / sizeof(DART_CLUES[0])
+        : sizeof(ARROW_CLUES) / sizeof(ARROW_CLUES[0]);
+    return clues[static_cast<uint8_t>(random(count))];
 }
 
 int coordinateDistance(int first, int second)
@@ -263,6 +282,33 @@ bool footprintContainsTile(
            tileY < entityY + getEntityTileHeight(entity);
 }
 
+Entity* traceProjectileTarget(const DungeonRoom& room, const TrapInstance& trap)
+{
+    if (!isProjectileTrap(trap) || trap.sourceX < 0 || trap.sourceY < 0)
+        return nullptr;
+    const DirectionOffset offset = directionOffsets[trap.direction];
+    int x = trap.sourceX + offset.dx;
+    int y = trap.sourceY + offset.dy;
+    while (x >= 0 && x < ROOM_SIZE && y >= 0 && y < ROOM_SIZE)
+    {
+        if (isTileBlockingSight(room.map.tiles[y][x]))
+            return nullptr;
+        for (uint8_t i = 0; i < dungeon.entityCount; i++)
+        {
+            Entity& candidate = dungeon.entities[i];
+            if (candidate.active && candidate.character.state == STATE_ALIVE &&
+                footprintContainsTile(candidate, candidate.x, candidate.y, x, y))
+                return &candidate;
+        }
+        // Barrels/crates/braziers are not LOS blockers but stop a physical dart.
+        if (!isDungeonFloorTerrain(room.map.tiles[y][x]))
+            return nullptr;
+        x += offset.dx;
+        y += offset.dy;
+    }
+    return nullptr;
+}
+
 void presentTrapTrigger(
     const Entity& entity,
     const TrapTriggerResult& result)
@@ -307,6 +353,26 @@ void presentTrapTrigger(
 
     setGameMessage(message);
 }
+
+bool configureRandomProjectileTrap(DungeonRoom& room, TrapInstance& trap)
+{
+    static const Direction directions[] = {DIR_NORTH, DIR_EAST, DIR_SOUTH, DIR_WEST};
+    for (Direction direction : directions)
+    {
+        const DirectionOffset offset = directionOffsets[direction];
+        const int sourceX = trap.x - offset.dx * 2;
+        const int sourceY = trap.y - offset.dy * 2;
+        const int laneX = trap.x - offset.dx;
+        const int laneY = trap.y - offset.dy;
+        if (sourceX <= 0 || sourceX >= ROOM_SIZE - 1 || sourceY <= 0 || sourceY >= ROOM_SIZE - 1 ||
+            laneX < 0 || laneX >= ROOM_SIZE || laneY < 0 || laneY >= ROOM_SIZE ||
+            room.map.tiles[sourceY][sourceX] != TILE_WALL ||
+            !isDungeonFloorTerrain(room.map.tiles[laneY][laneX]))
+            continue;
+        return configureProjectileTrap(trap, sourceX, sourceY, direction);
+    }
+    return false;
+}
 }
 
 uint8_t randomTrapLevel(uint8_t challengeLevel)
@@ -331,13 +397,30 @@ void populateDungeonRoomFeatures(
         uint8_t y = 0;
         if (chooseFeatureCandidate(room, x, y))
         {
-            addTrap(
+            const uint8_t kindRoll = static_cast<uint8_t>(random(100));
+            const TrapID trapID = kindRoll < 45 ? TRAP_SPIKE_PLATE :
+                (kindRoll < 75 ? TRAP_ARROW : TRAP_POISON_DART);
+            if (!addTrap(
                 room,
-                TRAP_SPIKE_PLATE,
+                trapID,
                 x,
                 y,
                 randomTrapLevel(challengeLevel),
-                randomSpikeClue());
+                trapID == TRAP_SPIKE_PLATE ? randomSpikeClue() :
+                    randomProjectileClue(trapID)))
+            {
+                // Leave the room otherwise unchanged; harmless dressing may
+                // still be added below.
+            }
+            else
+            {
+                TrapInstance* trap = getTrapAt(room, x, y);
+                if (trap != nullptr && isProjectileTrap(*trap) &&
+                    !configureRandomProjectileTrap(room, *trap))
+                {
+                    *trap = TrapInstance{};
+                }
+            }
         }
     }
 
@@ -437,8 +520,22 @@ bool triggerTrapForEntityAt(
         if (definition == nullptr)
             return false;
 
+        Entity* target = &entity;
+        if (isProjectileTrap(trap))
+        {
+            target = traceProjectileTarget(room, trap);
+            trap.triggered = true;
+            trap.discovered = true;
+            markTileDirty(trap.x, trap.y);
+            if (target == nullptr)
+            {
+                setGameMessage("A hidden mechanism clicks. It hits nothing.");
+                return true;
+            }
+        }
+
         const AbilitySavingThrow savingThrow = resolveSavingThrow(
-            entity.character,
+            target->character,
             definition->saveType,
             getTrapSaveDC(trap));
         const bool saveSucceeded =
@@ -447,16 +544,36 @@ bool triggerTrapForEntityAt(
             getTrapDamageDice(trap),
             getTrapDamageSides(trap));
 
-        result = resolveTrapTrigger(
-            trap, saveSucceeded, rolledDamage);
+        result = resolveTrapTrigger(trap, saveSucceeded, rolledDamage);
         if (!result.triggered)
             return false;
 
         if (result.damage > 0)
-            applyEnvironmentalDamage(entity, result.damage);
+            applyCombatDamage(*target, result.damage, definition->damageType);
+
+        bool slowingVenomApplied = false;
+        if (trap.id == TRAP_POISON_DART && result.damage > 0)
+        {
+            const AbilitySavingThrow poisonSave = resolveSavingThrow(
+                target->character, SAVE_FORTITUDE, getTrapSaveDC(trap));
+            slowingVenomApplied = poisonSave.result != SAVE_RESULT_SUCCESS &&
+                applySlowingVenom(target->character, getTrapSaveDC(trap));
+        }
 
         markTileDirty(trap.x, trap.y);
-        presentTrapTrigger(entity, result);
+        if (isProjectileTrap(trap))
+        {
+            if (target->type == ENTITY_PLAYER)
+                setGameMessage(slowingVenomApplied
+                    ? "Your leg is beginning to feel numb."
+                    : (trap.id == TRAP_POISON_DART && result.damage > 0
+                        ? "Something strikes your leg. 1 damage."
+                        : "An arrow shoots from the wall!"));
+            else
+                presentTrapTrigger(*target, result);
+        }
+        else
+            presentTrapTrigger(entity, result);
         return true;
     }
 

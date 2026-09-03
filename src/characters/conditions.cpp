@@ -26,6 +26,16 @@ ConditionModifiers getLegacyModifiers(ConditionType type, int value)
     return modifiers;
 }
 
+ConditionModifiers slowingVenomModifiers(const Character& character,
+                                         uint8_t stage)
+{
+    ConditionModifiers modifiers;
+    const int baseSpeed = character.speed > 0 ? character.speed : 30;
+    modifiers.speedBonus = static_cast<int8_t>(stage >= 2
+        ? -(baseSpeed / 2) : -(baseSpeed / 4));
+    return modifiers;
+}
+
 void accumulateModifiers(ConditionModifiers& result,
                          const ConditionModifiers& value)
 {
@@ -191,6 +201,25 @@ bool removeCondition(Character& character, ConditionType type)
     }
 
     return false;
+}
+
+bool applySlowingVenom(Character& character, uint8_t saveDC)
+{
+    if (saveDC == 0)
+        return false;
+    PoisonAffliction& poison = character.conditions.poison;
+    poison.type = POISON_SLOWING_VENOM;
+    poison.stage = 1;
+    poison.roundsUntilSave = 10;
+    poison.saveDC = saveDC;
+    return addCondition(character, CONDITION_SLOWING_VENOM,
+                        slowingVenomModifiers(character, poison.stage), 0);
+}
+
+const PoisonAffliction* getPoisonAffliction(const Character& character)
+{
+    return character.conditions.poison.type == POISON_NONE
+        ? nullptr : &character.conditions.poison;
 }
 
 bool addTimedDamageEffect(Character& character,
@@ -436,6 +465,31 @@ ConditionTurnResult processConditionsAtTurnStart(Character& character)
 
     if (character.state != STATE_ALIVE)
         return result;
+
+    PoisonAffliction& poison = character.conditions.poison;
+    if (poison.type == POISON_SLOWING_VENOM && poison.roundsUntilSave > 0 &&
+        --poison.roundsUntilSave == 0)
+    {
+        const int total = rollDie(20) + getFortitudeSave(character);
+        if (total >= poison.saveDC)
+        {
+            removeCondition(character, CONDITION_SLOWING_VENOM);
+            poison = PoisonAffliction{};
+            result.poisonRecovered = true;
+        }
+        else if (poison.stage < 2)
+        {
+            poison.stage = 2;
+            poison.roundsUntilSave = 10;
+            addCondition(character, CONDITION_SLOWING_VENOM,
+                         slowingVenomModifiers(character, poison.stage), 0);
+            result.poisonStageAdvanced = poison.stage;
+        }
+        else
+        {
+            poison.roundsUntilSave = 10;
+        }
+    }
 
     // Capture action eligibility before durations advance. A one-round
     // disabling condition therefore prevents exactly one turn even though it

@@ -16,6 +16,7 @@ enum ConditionType
     // Combat
     CONDITION_FLAT_FOOTED,
     CONDITION_POISONED,
+    CONDITION_SLOWING_VENOM,
     CONDITION_BURNING,
     CONDITION_SLEEPING,
     CONDITION_STUNNED,
@@ -85,6 +86,20 @@ constexpr uint8_t MAX_TIMED_DAMAGE_EFFECTS = 4;
 constexpr uint8_t MAX_ENERGY_RESISTANCES = 5;
 constexpr uint8_t MAX_ENERGY_PROTECTIONS = 4;
 
+enum PoisonID : uint8_t
+{
+    POISON_NONE,
+    POISON_SLOWING_VENOM
+};
+
+struct PoisonAffliction
+{
+    PoisonID type = POISON_NONE;
+    uint8_t stage = 0;
+    uint8_t roundsUntilSave = 0;
+    uint8_t saveDC = 0;
+};
+
 // DamageType deliberately remains owned by abilities.h. Store its compact
 // numeric value here to keep the condition layer independent of spell data.
 struct TimedDamageEffect
@@ -120,6 +135,7 @@ struct ConditionData
     uint8_t energyResistanceCount = 0;
     EnergyProtection energyProtections[MAX_ENERGY_PROTECTIONS];
     uint8_t energyProtectionCount = 0;
+    PoisonAffliction poison{};
 };
 
 // Generic information about effects resolved at the start of one creature's
@@ -131,6 +147,8 @@ struct ConditionTurnResult
     ConditionType damageCondition = CONDITION_NONE;
     uint8_t damageType = 0;
     bool poisonExpired = false;
+    uint8_t poisonStageAdvanced = 0;
+    bool poisonRecovered = false;
     bool actionPrevented = false;
     TimedDamageEffect timedDamage[MAX_TIMED_DAMAGE_EFFECTS];
     uint8_t timedDamageCount = 0;
@@ -160,6 +178,8 @@ bool addCondition(Character& character,
                   int rounds);
 
 bool removeCondition(Character& character, ConditionType type);
+bool applySlowingVenom(Character& character, uint8_t saveDC);
+const PoisonAffliction* getPoisonAffliction(const Character& character);
 
 bool addTimedDamageEffect(Character& character,
                           const TimedDamageEffect& effect);
