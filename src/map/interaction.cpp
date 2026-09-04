@@ -15,6 +15,8 @@
 #include "dungeon/loot.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/fountain.h"
+#include "dungeon/npcs.h"
+#include "dungeon/riddlepuzzle.h"
 #include "audio/audio.h"
 #include "graphics/messagelog.h"
 #include "graphics/display.h"
@@ -26,6 +28,7 @@ namespace
 {
 Entity* lockedChest = nullptr;
 HealingFountain* selectedFountain = nullptr;
+Direction selectedRiddleDoorDirection = DIR_NORTH;
 
 const MenuItem lockedChestMenuItems[] =
 {
@@ -42,6 +45,21 @@ const Menu lockedChestMenu =
     "Locked Chest",
     lockedChestMenuItems,
     sizeof(lockedChestMenuItems) / sizeof(lockedChestMenuItems[0])
+};
+
+const MenuItem riddleDoorMenuItems[] =
+{
+    { "Pick Lock", "Attempt a difficult Disable Device check.",
+      MENU_RIDDLE_DOOR_PICK_LOCK, nullptr, MENU_CLASS_ALL },
+    { "Back", "Leave Bertram's puzzle door locked.",
+      MENU_RIDDLE_DOOR_BACK, nullptr, MENU_CLASS_ALL }
+};
+
+const Menu riddleDoorMenu =
+{
+    "Puzzle Door",
+    riddleDoorMenuItems,
+    sizeof(riddleDoorMenuItems) / sizeof(riddleDoorMenuItems[0])
 };
 
 const MenuItem fountainMenuItems[] =
@@ -179,6 +197,51 @@ void forceOpenLockedChest()
     }
 }
 
+void pickRiddlemanDoorLock()
+{
+    Entity* playerEntity = getActiveMapPlayer();
+    if (playerEntity == nullptr || dungeon.currentRoom >= dungeon.roomCount ||
+        !isRiddlemanExitLocked(
+            dungeon.rooms[dungeon.currentRoom], selectedRiddleDoorDirection))
+    {
+        closeMenu();
+        return;
+    }
+
+    const bool showBertramReaction = noteCurrentRiddlemanBypassAttempt();
+    const DisableDeviceToolType tool =
+        getDisableDeviceTool(playerEntity->character);
+    const int naturalRoll = rollDie(20);
+    RiddlemanDoorBypassResult result = RIDDLEMAN_BYPASS_FAILED;
+
+    if (isDisableDeviceAutomaticFailure(naturalRoll))
+    {
+        handleDisableDeviceToolBreak(playerEntity->character, tool, naturalRoll);
+    }
+    else
+    {
+        const int total = naturalRoll +
+            getSkillBonus(playerEntity->character, SKILL_DISABLE_DEVICE) +
+            getLockDisableDeviceModifier(playerEntity->character);
+        result = attemptCurrentRiddlemanDoorBypass(
+            selectedRiddleDoorDirection, total);
+    }
+
+    closeMenu();
+    if (showBertramReaction)
+        setGameMessage("Hey! What are you doing?");
+    else if (result == RIDDLEMAN_BYPASS_SUCCEEDED)
+        setGameMessage("Lock picked.");
+    else if (isDisableDeviceAutomaticFailure(naturalRoll) &&
+             tool == DISABLE_TOOL_MASTERWORK)
+        setGameMessage("Your masterwork tools broke!");
+    else if (isDisableDeviceAutomaticFailure(naturalRoll) &&
+             tool == DISABLE_TOOL_STANDARD)
+        setGameMessage("Your thieves' tools broke!");
+    else
+        setGameMessage("Failed to pick lock.");
+}
+
 bool tryInteractWithFacingEntity()
 {
     // Looting is deliberately a post-combat map interaction. It should not
@@ -214,6 +277,17 @@ bool tryInteractWithFacingEntity()
             }
             return true;
         }
+
+        Direction riddleExitDirection = DIR_NORTH;
+        if (getCurrentRiddlemanExitDirectionAt(
+                targetX, targetY, riddleExitDirection) &&
+            isRiddlemanExitLocked(
+                dungeon.rooms[dungeon.currentRoom], riddleExitDirection))
+        {
+            selectedRiddleDoorDirection = riddleExitDirection;
+            openMenu(&riddleDoorMenu);
+            return true;
+        }
     }
 
     uint8_t entityCount = 0;
@@ -232,6 +306,9 @@ bool tryInteractWithFacingEntity()
     {
         return false;
     }
+
+    if (target->type == ENTITY_NPC)
+        return handleNPCInteraction(*target);
 
     if (target->type == ENTITY_CHEST)
     {

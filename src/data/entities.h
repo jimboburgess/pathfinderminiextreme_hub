@@ -8,6 +8,7 @@
 #include "../characters/characters.h"
 #include "game.h"
 #include "dungeon/monsters.h"
+#include "dungeon/npcs.h"
 #include "dungeon/turns.h"
 #include "graphics/sprites.h"
 
@@ -20,7 +21,9 @@ enum EntityType : uint8_t {
     ENTITY_MONSTER,
     ENTITY_CHEST,
     ENTITY_LOOT,
-    ENTITY_NPC
+    ENTITY_NPC,
+    ENTITY_PUZZLE_KEY,
+    ENTITY_RIDDLE_CAT
   };
 
 constexpr uint8_t MAX_CORPSE_LOOT_SLOTS = 8;
@@ -64,6 +67,9 @@ struct Entity
     // and patrol segment.
     Direction idleDirection = DIR_NORTH;
     uint8_t idleStepsRemaining = 0;
+    // NPC identity occupies padding beside the byte-sized idle state, keeping
+    // the already-large persistent Entity record from growing.
+    NPCID npcID = NPC_NONE;
     uint32_t nextIdleActionTime = 0;
 
     LootData loot;

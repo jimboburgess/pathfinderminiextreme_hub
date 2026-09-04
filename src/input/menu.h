@@ -83,8 +83,16 @@ enum MenuAction
     MENU_CHEST_PICK_LOCK,
     MENU_CHEST_FORCE_OPEN,
     MENU_CHEST_BACK,
+    MENU_RIDDLE_DOOR_PICK_LOCK,
+    MENU_RIDDLE_DOOR_BACK,
     MENU_FOUNTAIN_DRINK,
     MENU_FOUNTAIN_BACK,
+
+    // Neutral NPC dialogue
+    MENU_RIDDLE_ANSWER,
+    MENU_RIDDLE_RETRY_PAY,
+    MENU_RIDDLE_RETRY_CAT,
+    MENU_RIDDLE_RETRY_LEAVE,
 
     // Character
     MENU_CHARACTER_SHEET,
@@ -170,6 +178,10 @@ struct Menu
     // Optional fixed-buffer text used by dynamic menus such as the shop.
     const char* headerText;
     const char* statusText;
+
+    // Optional wrapped body shown between the title and selectable rows.
+    const char* bodyText;
+    uint8_t bodyHeight;
 };
 
 struct MenuState

@@ -20,6 +20,7 @@ bool tryInteractWithFacingEntity();
 // open. They only affect the chest selected by the preceding interaction.
 void pickLockedChest();
 void forceOpenLockedChest();
+void pickRiddlemanDoorLock();
 
 // Healing-fountain actions are selected through the same contextual menu as
 // other dungeon interactables.

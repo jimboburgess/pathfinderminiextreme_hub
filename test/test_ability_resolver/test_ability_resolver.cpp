@@ -218,6 +218,12 @@ Entity* getActiveMapEntities(uint8_t& entityCount)
     return activeTestEntityCount > 0 ? activeTestEntities : nullptr;
 }
 
+bool isBertramRiddleman(const Entity& entity)
+{
+    return entity.active && entity.type == ENTITY_NPC &&
+        entity.npcID == NPC_BERTRAM_RIDDLEMAN;
+}
+
 uint8_t getEntityTileWidth(const Entity&)
 {
     return 1;
@@ -2048,6 +2054,50 @@ void test_environmental_adapter_uses_explicit_dc_and_spends_no_resources()
     TEST_ASSERT_FALSE(canResolveEnvironmentally(ABILITY_MAGIC_MISSILE));
 }
 
+void test_bertram_is_rejected_directly_and_skipped_by_areas()
+{
+    resetResolverControls();
+    activeTestEntityCount = 2;
+    initializeEntity(activeTestEntities[0], ENTITY_NPC, TEAM_NEUTRAL, 20);
+    Entity& bertram = activeTestEntities[0];
+    bertram.npcID = NPC_BERTRAM_RIDDLEMAN;
+    bertram.x = 4;
+    bertram.y = 4;
+    initializeEntity(activeTestEntities[1], ENTITY_MONSTER, TEAM_MONSTER, 20);
+    Entity& monster = activeTestEntities[1];
+    monster.x = 4;
+    monster.y = 5;
+
+    Entity caster;
+    initializeEntity(caster, ENTITY_PLAYER, TEAM_PLAYER, 20);
+    caster.x = 2;
+    caster.y = 2;
+    caster.character.level = 8;
+    caster.character.magic.currentMP = 50;
+    TEST_ASSERT_EQUAL(
+        ABILITY_RESULT_INVALID_TARGET,
+        validateAbility(caster, &bertram, ABILITY_MAGIC_MISSILE));
+
+    const int bertramHP = bertram.character.health.currentHP;
+    AbilityResolution fireball = resolveAbilityAt(
+        caster, 4, 4, ABILITY_FIREBALL);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, fireball.result);
+    TEST_ASSERT_EQUAL(bertramHP, bertram.character.health.currentHP);
+    TEST_ASSERT_LESS_THAN(20, monster.character.health.currentHP);
+
+    MapEffect web;
+    web.active = true;
+    web.type = MAP_EFFECT_WEB;
+    web.x = 4;
+    web.y = 4;
+    web.conditionType = CONDITION_WEBBED;
+    web.saveType = SAVE_REFLEX;
+    web.saveDC = 99;
+    TEST_ASSERT_EQUAL_UINT8(
+        0, applyMapEffectToEntity(web, bertram).conditionsApplied);
+    TEST_ASSERT_FALSE(hasCondition(bertram.character, CONDITION_WEBBED));
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -2103,6 +2153,7 @@ void setup()
     RUN_TEST(test_persistent_damage_triggers_once_on_entry_and_start_turn);
     RUN_TEST(test_overlapping_persistent_damage_and_expiration_are_independent);
     RUN_TEST(test_environmental_adapter_uses_explicit_dc_and_spends_no_resources);
+    RUN_TEST(test_bertram_is_rejected_directly_and_skipped_by_areas);
     UNITY_END();
 }
 

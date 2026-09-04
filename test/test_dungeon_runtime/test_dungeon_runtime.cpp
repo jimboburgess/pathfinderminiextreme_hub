@@ -217,6 +217,24 @@ Entity* spawnMonster(
     return entity;
 }
 
+Entity* spawnNPC(
+    Entity* entities,
+    uint8_t& entityCount,
+    NPCID npcID,
+    uint8_t x,
+    uint8_t y)
+{
+    Entity* entity = spawnEntity(
+        entities, entityCount, ENTITY_NPC, x, y);
+    if (entity != nullptr)
+    {
+        entity->npcID = npcID;
+        entity->character.team = TEAM_NEUTRAL;
+        entity->character.state = STATE_ALIVE;
+    }
+    return entity;
+}
+
 Entity* getPlayerEntity(Entity entities[], uint8_t entityCount)
 {
     for (uint8_t i = 0; i < entityCount; i++)
@@ -259,12 +277,37 @@ Entity* getEntityAt(
 #include "../../src/dungeon/combatabort.cpp"
 #include "../../src/dungeon/traps.cpp"
 #include "../../src/dungeon/fountain.cpp"
+#include "../../src/dungeon/dungeongraph.cpp"
+#include "../../src/dungeon/riddles.cpp"
+
+bool configureRiddlemanPuzzleRoom(
+    DungeonRoom& room, Direction direction, RiddleID id, const uint8_t rolls[3])
+{
+    room.npcSpawn.id = NPC_BERTRAM_RIDDLEMAN;
+    room.npcSpawn.x = 7;
+    room.npcSpawn.y = 7;
+    room.npcSpawn.keyX = 8;
+    room.npcSpawn.keyY = 7;
+    room.npcSpawn.puzzleState = RIDDLE_ROOM_UNSOLVED;
+    room.npcSpawn.lockedExitDirection = direction;
+    initializeRiddleState(room.npcSpawn.riddle, id, rolls);
+    return true;
+}
+
+bool isRiddlemanPuzzleRoom(const DungeonRoom& room)
+{
+    return room.npcSpawn.puzzleState != RIDDLE_ROOM_NONE;
+}
+
 #include "../../src/dungeon/dungeon.cpp"
 
 static void configureLoadedRoom(uint8_t roomIndex)
 {
     resetDungeonRun(dungeon);
     dungeon.runActive = true;
+    dungeon.roomCount = MIN_DUNGEON_ROOMS;
+    dungeon.bossRoom = MIN_DUNGEON_ROOMS - 2;
+    dungeon.treasureRoom = MIN_DUNGEON_ROOMS - 1;
     dungeon.currentRoom = roomIndex;
     dungeon.loadedRoom = roomIndex;
 
@@ -507,6 +550,12 @@ void test_resume_uses_existing_layout_and_does_not_regenerate()
 {
     configureLoadedRoom(3);
     dungeon.hasRubbleTheme = true;
+    dungeon.rooms[0].dungeonX = 0;
+    dungeon.rooms[0].dungeonY = 0;
+    dungeon.rooms[0].east = 3;
+    dungeon.rooms[3].dungeonX = 1;
+    dungeon.rooms[3].dungeonY = 0;
+    dungeon.rooms[3].west = 0;
     dungeon.rooms[0].map.tiles[4][5] = TILE_WALL;
     dungeon.rooms[3].map.tiles[7][8] = TILE_WALL;
     dungeon.roomRuntime[3].entities[0].character.state = STATE_DEAD;
@@ -525,6 +574,9 @@ void test_resume_uses_existing_layout_and_does_not_regenerate()
     TEST_ASSERT_EQUAL_UINT8(0, dungeon.currentRoom);
     TEST_ASSERT_EQUAL_UINT8(0, generatedRoomCount);
     TEST_ASSERT_TRUE(dungeon.hasRubbleTheme);
+    TEST_ASSERT_EQUAL_UINT8(3, dungeon.rooms[0].east);
+    TEST_ASSERT_EQUAL_UINT8(0, dungeon.rooms[3].west);
+    TEST_ASSERT_EQUAL_INT8(1, dungeon.rooms[3].dungeonX);
     TEST_ASSERT_EQUAL(TILE_WALL, dungeon.rooms[0].map.tiles[4][5]);
     TEST_ASSERT_EQUAL(TILE_WALL, dungeon.rooms[3].map.tiles[7][8]);
     TEST_ASSERT_EQUAL(STATE_DEAD,
@@ -537,14 +589,56 @@ void test_resume_uses_existing_layout_and_does_not_regenerate()
     TEST_ASSERT_FALSE(combat.active);
 }
 
+void test_neutral_npc_spawn_persists_when_room_is_resumed()
+{
+    resetDungeonRun(dungeon);
+    dungeon.runActive = true;
+    dungeon.roomCount = MIN_DUNGEON_ROOMS;
+    dungeon.currentRoom = 2;
+    DungeonRoom& room = dungeon.rooms[2];
+    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+            room.map.tiles[y][x] = TILE_FLOOR;
+    room.npcSpawn.id = NPC_BERTRAM_RIDDLEMAN;
+    room.npcSpawn.x = 9;
+    room.npcSpawn.y = 4;
+    room.npcSpawn.puzzleState = RIDDLE_ROOM_KEY_COLLECTED;
+    room.npcSpawn.lockedExitDirection = DIR_EAST;
+
+    loadRoom(dungeon, ENTRY_START);
+    Entity* bertram = getEntityAt(
+        dungeon.entities, dungeon.entityCount, 9, 4);
+    TEST_ASSERT_NOT_NULL(bertram);
+    TEST_ASSERT_EQUAL(ENTITY_NPC, bertram->type);
+    TEST_ASSERT_EQUAL(NPC_BERTRAM_RIDDLEMAN, bertram->npcID);
+    TEST_ASSERT_EQUAL(TEAM_NEUTRAL, bertram->character.team);
+    TEST_ASSERT_NOT_EQUAL(RIDDLE_NONE, room.npcSpawn.riddle.id);
+    TEST_ASSERT_TRUE(isValidRiddleAnswerOrder(room.npcSpawn.riddle));
+    const RiddleID assignedRiddle = room.npcSpawn.riddle.id;
+    room.npcSpawn.riddle.result = RIDDLE_ANSWERED_INCORRECT;
+
+    suspendDungeonRun(dungeon);
+    loadRoom(dungeon, ENTRY_START);
+    Entity* resumed = getEntityAt(
+        dungeon.entities, dungeon.entityCount, 9, 4);
+    TEST_ASSERT_EQUAL_PTR(bertram, resumed);
+    TEST_ASSERT_EQUAL(NPC_BERTRAM_RIDDLEMAN, resumed->npcID);
+    TEST_ASSERT_EQUAL(assignedRiddle, room.npcSpawn.riddle.id);
+    TEST_ASSERT_EQUAL(RIDDLE_ANSWERED_INCORRECT, room.npcSpawn.riddle.result);
+    TEST_ASSERT_EQUAL(RIDDLE_ROOM_KEY_COLLECTED, room.npcSpawn.puzzleState);
+    TEST_ASSERT_EQUAL(DIR_EAST, room.npcSpawn.lockedExitDirection);
+}
+
 void test_rubble_plan_is_dungeon_scoped_and_selects_some_middle_rooms()
 {
-    const DungeonRubblePlan clean = createDungeonRubblePlan(50, 0, 0, 0);
+    const DungeonRubblePlan clean = createDungeonRubblePlan(
+        DUNGEON_RUBBLE_THEME_CHANCE_PERCENT, 0, 0, 0);
     TEST_ASSERT_FALSE(clean.enabled);
     for (bool selected : clean.middleRooms)
         TEST_ASSERT_FALSE(selected);
 
-    const DungeonRubblePlan oneRoom = createDungeonRubblePlan(49, 1, 50, 0);
+    const DungeonRubblePlan oneRoom = createDungeonRubblePlan(
+        DUNGEON_RUBBLE_THEME_CHANCE_PERCENT - 1, 1, 50, 0);
     TEST_ASSERT_TRUE(oneRoom.enabled);
     TEST_ASSERT_FALSE(oneRoom.middleRooms[0]);
     TEST_ASSERT_TRUE(oneRoom.middleRooms[1]);
@@ -580,8 +674,16 @@ void test_new_run_generates_only_when_no_run_is_active()
     enterDungeon();
 
     TEST_ASSERT_TRUE(dungeon.runActive);
-    TEST_ASSERT_EQUAL_UINT8(MAX_ROOMS, generatedRoomCount);
+    TEST_ASSERT_TRUE(dungeon.roomCount >= MIN_DUNGEON_ROOMS);
+    TEST_ASSERT_TRUE(dungeon.roomCount <= MAX_DUNGEON_ROOMS);
+    TEST_ASSERT_EQUAL_UINT8(dungeon.roomCount, generatedRoomCount);
     TEST_ASSERT_EQUAL_UINT8(0, dungeon.currentRoom);
+    TEST_ASSERT_TRUE(dungeon.riddleRoom < dungeon.roomCount);
+    const DungeonRoom& riddleRoom = dungeon.rooms[dungeon.riddleRoom];
+    TEST_ASSERT_EQUAL(ROOM_PUZZLE, riddleRoom.type);
+    TEST_ASSERT_EQUAL(NPC_BERTRAM_RIDDLEMAN, riddleRoom.npcSpawn.id);
+    TEST_ASSERT_EQUAL(RIDDLE_ROOM_UNSOLVED, riddleRoom.npcSpawn.puzzleState);
+    TEST_ASSERT_TRUE(isValidRiddleAnswerOrder(riddleRoom.npcSpawn.riddle));
 }
 
 void test_themed_encounters_spawn_only_their_theme_monsters()
@@ -630,10 +732,13 @@ void test_final_encounter_must_be_fully_defeated_before_completion()
 {
     resetDungeonRun(dungeon);
     dungeon.runActive = true;
-    dungeon.currentRoom = BOSS_ROOM_INDEX;
-    dungeon.loadedRoom = BOSS_ROOM_INDEX;
+    dungeon.roomCount = MIN_DUNGEON_ROOMS;
+    dungeon.bossRoom = MIN_DUNGEON_ROOMS - 2;
+    dungeon.treasureRoom = MIN_DUNGEON_ROOMS - 1;
+    dungeon.currentRoom = dungeon.bossRoom;
+    dungeon.loadedRoom = dungeon.bossRoom;
     DungeonRoomRuntime& runtime =
-        dungeon.roomRuntime[BOSS_ROOM_INDEX];
+        dungeon.roomRuntime[dungeon.bossRoom];
     runtime.initialized = true;
     runtime.entityCount = 3;
     dungeon.entities = runtime.entities;
@@ -707,7 +812,9 @@ void test_starting_new_run_clears_old_runtime_before_generation()
     enterDungeon();
 
     TEST_ASSERT_TRUE(dungeon.runActive);
-    TEST_ASSERT_EQUAL_UINT8(MAX_ROOMS, generatedRoomCount);
+    TEST_ASSERT_TRUE(generatedRoomCount >= MIN_DUNGEON_ROOMS);
+    TEST_ASSERT_TRUE(generatedRoomCount <= MAX_DUNGEON_ROOMS);
+    TEST_ASSERT_EQUAL_UINT8(dungeon.roomCount, generatedRoomCount);
 }
 
 void test_entrance_fountain_is_one_persistent_multi_tile_healing_object()
@@ -855,6 +962,7 @@ void setup()
     RUN_TEST(test_trap_state_persists_across_room_reload);
     RUN_TEST(test_trap_uses_level_scaled_statistics);
     RUN_TEST(test_resume_uses_existing_layout_and_does_not_regenerate);
+    RUN_TEST(test_neutral_npc_spawn_persists_when_room_is_resumed);
     RUN_TEST(test_rubble_plan_is_dungeon_scoped_and_selects_some_middle_rooms);
     RUN_TEST(test_only_unfinished_runs_are_resumable);
     RUN_TEST(test_new_run_generates_only_when_no_run_is_active);

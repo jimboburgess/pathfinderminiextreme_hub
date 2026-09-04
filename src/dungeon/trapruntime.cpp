@@ -10,6 +10,7 @@
 #include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
 #include "dungeon/dungeon.h"
+#include "dungeon/npcs.h"
 #include "dungeon/roomgen.h"
 #include "graphics/display.h"
 #include "graphics/elementalvisual.h"
@@ -613,7 +614,8 @@ void updateElementalTrapCharges()
         for (uint8_t i = 0; i < dungeon.entityCount; i++)
         {
             Entity& target = dungeon.entities[i];
-            if (!target.active || target.character.state != STATE_ALIVE ||
+            if (!target.active || isBertramRiddleman(target) ||
+                target.character.state != STATE_ALIVE ||
                 !footprintContainsTile(target, target.x, target.y, trap.x, trap.y))
                 continue;
             const AbilitySavingThrow save = resolveSavingThrow(
@@ -731,7 +733,8 @@ bool triggerTrapForEntityAt(
             applyCombatDamage(*target, result.damage, definition->damageType);
 
         bool slowingVenomApplied = false;
-        if (trap.id == TRAP_POISON_DART && result.damage > 0)
+        if (trap.id == TRAP_POISON_DART && result.damage > 0 &&
+            !isBertramRiddleman(*target))
         {
             const AbilitySavingThrow poisonSave = resolveSavingThrow(
                 target->character, SAVE_FORTITUDE, getTrapSaveDC(trap));

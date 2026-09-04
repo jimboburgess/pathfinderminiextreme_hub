@@ -140,6 +140,29 @@ Entity* spawnMonster(
     return entity;
 }
 
+Entity* spawnNPC(
+    Entity* entities,
+    uint8_t& entityCount,
+    NPCID npcID,
+    uint8_t x,
+    uint8_t y)
+{
+    const NPCDefinition* definition = getNPCDefinition(npcID);
+    if (definition == nullptr)
+        return nullptr;
+
+    Entity* entity = spawnEntity(
+        entities, entityCount, ENTITY_NPC, x, y);
+    if (entity == nullptr)
+        return nullptr;
+
+    entity->npcID = npcID;
+    entity->sprite = definition->sprite;
+    entity->character.team = definition->team;
+    entity->character.state = STATE_ALIVE;
+    return entity;
+}
+
 
 void removeEntity(Entity& entity)
 {
@@ -253,6 +276,18 @@ const char* getEntityName(const Entity* entity)
 
             return "Monster";
         }
+
+        case ENTITY_NPC:
+        {
+            const NPCDefinition* npc = getNPCDefinition(entity->npcID);
+            return npc != nullptr ? npc->name : "NPC";
+        }
+
+        case ENTITY_PUZZLE_KEY:
+            return "Puzzle Key";
+
+        case ENTITY_RIDDLE_CAT:
+            return "Bertram's Cat";
 
         default:
             return "Unknown";

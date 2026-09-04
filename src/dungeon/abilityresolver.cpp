@@ -4,6 +4,7 @@
 
 #include "map/activemap.h"
 #include "combat.h"
+#include "npcs.h"
 #include "map/mapeffects.h"
 #include "characters/characters.h"
 #include "data/dice.h"
@@ -768,6 +769,7 @@ AbilityResolution resolveEnvironmentalAbility(
         if (created == nullptr) { resolution.result=ABILITY_RESULT_MAP_EFFECT_LIMIT; return resolution; }
         resolution.mapEffectCreated = true;
         for(uint8_t i=0; entities && i<entityCount; i++) {
+            if (isBertramRiddleman(entities[i])) continue;
             MapEffectTriggerResult trigger=applyMapEffectToEntity(*created,entities[i]);
             resolution.targetsAffected += trigger.conditionsApplied;
             resolution.targetsResisted += trigger.savesSucceeded;
@@ -798,7 +800,8 @@ AbilityResolution resolveEnvironmentalAbility(
     for(uint8_t i=0; entities && i<entityCount; i++)
     {
         Entity& target=entities[i];
-        if(!target.active || !isCombatEntityType(target.type) || target.character.state!=STATE_ALIVE) continue;
+        if(!target.active || isBertramRiddleman(target) ||
+           !isCombatEntityType(target.type) || target.character.state!=STATE_ALIVE) continue;
         bool affected = abilityID == ABILITY_SLEEP
             ? entityOccupiesTile(target,context.sourceX,context.sourceY)
             : entityIsInDirectionalAreaFromSource(context.sourceX,context.sourceY,target,*ability,context.direction);
@@ -980,6 +983,8 @@ AbilityResult validateAbility(
 
     const bool hostileToTarget =
         isAbilityEffectHostileToTarget(*ability, resolvedTarget->character);
+    if (hostileToTarget && isBertramRiddleman(*resolvedTarget))
+        return ABILITY_RESULT_INVALID_TARGET;
     if ((hostileToTarget &&
          (resolvedTarget == &caster ||
           !areOpposingTeams(caster, *resolvedTarget))) ||
@@ -1408,7 +1413,8 @@ AbilityResolution resolveAbilityAt(
         for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
         {
             Entity& target = entities[i];
-            if (!target.active || !isCombatEntityType(target.type) ||
+            if (!target.active || isBertramRiddleman(target) ||
+                !isCombatEntityType(target.type) ||
                 target.character.state != STATE_ALIVE ||
                 getEntityGridDistanceToTile(target, targetX, targetY) > ability->areaRadiusTiles ||
                 !hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, target.x, target.y))
@@ -1489,6 +1495,7 @@ AbilityResolution resolveAbilityAt(
     {
         for (uint8_t i = 0; i < entityCount; i++)
         {
+            if (isBertramRiddleman(entities[i])) continue;
             MapEffectTriggerResult trigger = applyMapEffectToEntity(
                 *createdEffect, entities[i]);
             resolution.targetsAffected += trigger.conditionsApplied;
@@ -1570,7 +1577,8 @@ AbilityResolution resolveAbilityInDirection(
         for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
         {
             Entity& target = entities[i];
-            if (!target.active || !isCombatEntityType(target.type) ||
+            if (!target.active || isBertramRiddleman(target) ||
+                !isCombatEntityType(target.type) ||
                 target.character.state != STATE_ALIVE ||
                 !entityIsInDirectionalArea(caster, target, *ability, direction))
                 continue;
@@ -1661,6 +1669,7 @@ AbilityResolution resolveAbilityInDirection(
         Entity& target = entities[i];
 
         if (&target == &caster || !target.active ||
+            isBertramRiddleman(target) ||
             !isCombatEntityType(target.type) ||
             target.character.state != STATE_ALIVE ||
             !areOpposingTeams(caster, target) ||

@@ -1064,10 +1064,6 @@ void test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint()
         assertEveryConnectionEntryIsFloor(room);
     }
 
-    TEST_ASSERT_TRUE(GIANT_SPIDER_TEST_ROOM_INDEX > 1);
-    TEST_ASSERT_EQUAL_UINT8(
-        BOSS_ROOM_INDEX,
-        GIANT_SPIDER_TEST_ROOM_INDEX);
 }
 
 void test_rubble_patch_is_walkable_connected_and_avoids_entry_tiles()

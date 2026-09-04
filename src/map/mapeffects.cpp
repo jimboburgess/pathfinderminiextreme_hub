@@ -4,6 +4,7 @@
 
 #include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
+#include "dungeon/npcs.h"
 #include "data/dice.h"
 #include "map/activemap.h"
 #include "data/entities.h"
@@ -227,7 +228,8 @@ MapEffectTriggerResult applyMapEffectToEntity(
 {
     MapEffectTriggerResult result;
 
-    if (!effect.active || !entity.active || !isCombatEntity(entity) ||
+    if (!effect.active || !entity.active || isBertramRiddleman(entity) ||
+        !isCombatEntity(entity) ||
         entity.character.state != STATE_ALIVE ||
         !mapEffectAffectsEntityAt(
             effect, entity, entity.x, entity.y))

@@ -21,6 +21,13 @@ Entity* spawnMonster(
     uint8_t x,
     uint8_t y);
 
+Entity* spawnNPC(
+    Entity* entities,
+    uint8_t& entityCount,
+    NPCID npcID,
+    uint8_t x,
+    uint8_t y);
+
 void removeEntity(Entity& entity);
 
 uint8_t getEntityTileWidth(const Entity& entity);

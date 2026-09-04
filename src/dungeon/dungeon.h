@@ -18,6 +18,7 @@ constexpr uint8_t ROOM_SIZE = 15;
 constexpr uint8_t TILE_SIZE = 16;
 constexpr uint16_t SCREEN_SIZE = ROOM_SIZE * TILE_SIZE;
 constexpr uint8_t NO_ROOM = 255;
+constexpr int8_t NO_DUNGEON_COORDINATE = 127;
 
 //==================================================
 // Rooms
@@ -90,10 +91,15 @@ struct DungeonRoom {
     bool discovered;
     bool completed;
 
-    uint8_t north;
-    uint8_t south;
-    uint8_t east;
-    uint8_t west;
+    uint8_t north = NO_ROOM;
+    uint8_t south = NO_ROOM;
+    uint8_t east = NO_ROOM;
+    uint8_t west = NO_ROOM;
+
+    // Logical graph coordinates. These locate rooms relative to one another;
+    // they are intentionally independent from the room's 15x15 tile map.
+    int8_t dungeonX = NO_DUNGEON_COORDINATE;
+    int8_t dungeonY = NO_DUNGEON_COORDINATE;
 
     RoomConnection connections[MAX_ROOM_CONNECTIONS] = {};
     uint8_t connectionCount = 0;
@@ -105,17 +111,19 @@ struct DungeonRoom {
     SuspicionInstance suspicions[MAX_SUSPICIONS_PER_ROOM] = {};
     DungeonFurnitureInstance furniture[MAX_FURNITURE_PER_ROOM] = {};
     HealingFountain fountain;
+    DungeonNPCSpawn npcSpawn;
 };
 
 
-constexpr uint8_t MAX_ROOMS = 6;
-constexpr uint8_t BOSS_ROOM_INDEX = 4;
-constexpr uint8_t FINAL_DUNGEON_ROOM_INDEX = 5;
+constexpr uint8_t MIN_DUNGEON_ROOMS = 7;
+constexpr uint8_t MAX_DUNGEON_ROOMS = 12;
+constexpr uint8_t MAX_ROOMS = MAX_DUNGEON_ROOMS;
+constexpr uint8_t MIN_BOSS_GRAPH_DISTANCE = 4;
+constexpr uint8_t DUNGEON_LOOP_CHANCE_PERCENT = 25;
 constexpr uint8_t FIRST_MIDDLE_ROOM_INDEX = 1;
 constexpr uint8_t MIDDLE_ROOM_COUNT = 3;
 constexpr uint8_t DUNGEON_RUBBLE_THEME_CHANCE_PERCENT = 70;
 constexpr uint8_t OPTIONAL_RUBBLE_ROOM_CHANCE_PERCENT = 60;
-constexpr uint8_t GIANT_SPIDER_TEST_ROOM_INDEX = BOSS_ROOM_INDEX;
 constexpr uint8_t MAX_COMBATANTS = 16;
 constexpr uint8_t NO_ENTITY_SLOT = 255;
 
@@ -138,7 +146,11 @@ struct Dungeon {
     // Compatibility view of the currently loaded room.  This points directly
     // into roomRuntime[currentRoom]; it is not a second entity collection.
     Entity* entities = nullptr;
+    uint8_t roomCount = 0;
     uint8_t currentRoom = 0;
+    uint8_t bossRoom = NO_ROOM;
+    uint8_t treasureRoom = NO_ROOM;
+    uint8_t riddleRoom = NO_ROOM;
     uint8_t entityCount = 0;
     uint8_t loadedRoom = NO_ROOM;
     bool runActive = false;

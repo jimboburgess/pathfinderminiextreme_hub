@@ -17,6 +17,7 @@
 #include "forest/forest.h"
 #include "graphics/messagelog.h"
 #include "input/inventorymenu.h"
+#include "input/riddlemenu.h"
 #include "town/shop.h"
 #include "data/progression.h"
 
@@ -192,6 +193,12 @@ static const MenuItem* getVisibleMenuItem(
 }
 
 static void drawMenuItem(uint8_t visibleRow, bool highlighted);
+
+static int getMenuListY(const Menu* menu)
+{
+    return MENU_Y + MENU_HEADER_HEIGHT + 2 +
+        (menu != nullptr ? menu->bodyHeight : 0);
+}
 
 
 //
@@ -973,6 +980,22 @@ void menuActivate()
 
     switch (item->action)
     {
+        case MENU_RIDDLE_ANSWER:
+            answerActiveBertramRiddle(menuState.cursorIndex);
+            break;
+
+        case MENU_RIDDLE_RETRY_PAY:
+            payBertramRiddleRetry();
+            break;
+
+        case MENU_RIDDLE_RETRY_CAT:
+            startBertramCatRetry();
+            break;
+
+        case MENU_RIDDLE_RETRY_LEAVE:
+            menuCancel();
+            break;
+
         case MENU_MELEE_ATTACK:
 
             closeMenu();
@@ -1113,6 +1136,14 @@ void menuActivate()
             break;
 
         case MENU_CHEST_BACK:
+            menuCancel();
+            break;
+
+        case MENU_RIDDLE_DOOR_PICK_LOCK:
+            pickRiddlemanDoorLock();
+            break;
+
+        case MENU_RIDDLE_DOOR_BACK:
             menuCancel();
             break;
 
@@ -1365,6 +1396,88 @@ static void drawMenuWindow()
         footerY,
         MENU_BORDER);
 }
+
+static void drawMenuBody(const Menu* menu)
+{
+    if (menu == nullptr || menu->bodyText == nullptr ||
+        menu->bodyText[0] == '\0' || menu->bodyHeight == 0) return;
+
+    constexpr int BODY_CHARACTER_WIDTH = 6;
+    constexpr int BODY_LINE_HEIGHT = 8;
+    const int left = MENU_X + MENU_PADDING;
+    const int right = MENU_X + MENU_WIDTH - MENU_PADDING;
+    const int bottom = getMenuListY(menu);
+    int x = left;
+    int y = MENU_Y + MENU_HEADER_HEIGHT + 5;
+
+    tft.setTextColor(MENU_TEXT, MENU_BG);
+    tft.setTextSize(1);
+    tft.setTextWrap(false);
+    tft.setCursor(x, y);
+
+    const char* text = menu->bodyText;
+    while (*text != '\0' && y + BODY_LINE_HEIGHT <= bottom)
+    {
+        if (*text == '\n')
+        {
+            ++text;
+            x = left;
+            y += BODY_LINE_HEIGHT;
+            tft.setCursor(x, y);
+            continue;
+        }
+
+        while (*text == ' ') ++text;
+        if (*text == '\0') break;
+        if (*text == '\n') continue;
+
+        const char* word = text;
+        uint16_t wordLength = 0;
+        while (word[wordLength] != '\0' &&
+               word[wordLength] != ' ' &&
+               word[wordLength] != '\n')
+        {
+            ++wordLength;
+        }
+
+        const int leadingSpace = x == left ? 0 : BODY_CHARACTER_WIDTH;
+        if (x != left &&
+            x + leadingSpace + wordLength * BODY_CHARACTER_WIDTH > right)
+        {
+            x = left;
+            y += BODY_LINE_HEIGHT;
+            if (y + BODY_LINE_HEIGHT > bottom) break;
+            tft.setCursor(x, y);
+        }
+        else if (leadingSpace != 0)
+        {
+            tft.write(' ');
+            x += BODY_CHARACTER_WIDTH;
+        }
+
+        for (uint16_t index = 0; index < wordLength; ++index)
+        {
+            if (x + BODY_CHARACTER_WIDTH > right)
+            {
+                x = left;
+                y += BODY_LINE_HEIGHT;
+                if (y + BODY_LINE_HEIGHT > bottom)
+                {
+                    tft.setTextWrap(true);
+                    return;
+                }
+                tft.setCursor(x, y);
+            }
+            tft.write(static_cast<uint8_t>(word[index]));
+            x += BODY_CHARACTER_WIDTH;
+        }
+        text += wordLength;
+    }
+
+    // Other menu descriptions retain their existing GFX wrapping behavior.
+    tft.setTextWrap(true);
+}
+
 static void drawMenuItems()
 {
     const Menu* menu = getCurrentMenu();
@@ -1405,9 +1518,7 @@ static void drawMenuItem(uint8_t row, bool highlighted)
         return;
 
     int y =
-        MENU_Y +
-        MENU_HEADER_HEIGHT +
-        2 +
+        getMenuListY(menu) +
         row * MENU_LINE_HEIGHT;
 
     //--------------------------------------------------
@@ -1453,13 +1564,12 @@ static void drawMenuItem(uint8_t row, bool highlighted)
 
 static void drawMenuList()
 {
-    int listY =
-        MENU_Y +
-        MENU_HEADER_HEIGHT +
-        2;
+    const Menu* menu = getCurrentMenu();
+    int listY = getMenuListY(menu);
 
-    int listHeight =
-        MENU_VISIBLE_ITEMS * MENU_LINE_HEIGHT;
+    const int descriptionY = MENU_Y + MENU_HEIGHT -
+        MENU_FOOTER_HEIGHT - MENU_DESCRIPTION_HEIGHT;
+    int listHeight = max(0, descriptionY - listY);
 
     //--------------------------------------------------
     // Clear the list area
@@ -1591,6 +1701,7 @@ void drawMenu()
     //--------------------------------------------------
 
     drawMenuWindow();
+    drawMenuBody(menu);
     drawMenuItems();
 
     //--------------------------------------------------

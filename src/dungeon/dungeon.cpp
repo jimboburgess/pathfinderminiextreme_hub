@@ -5,6 +5,8 @@
 #include "dungeon.h"
 #include <Arduino.h>
 #include "roomgen.h"
+#include "dungeongraph.h"
+#include "riddlepuzzle.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "combat.h"
@@ -78,7 +80,7 @@ void resetRoomTurnState(DungeonRoomRuntime& runtime)
 
 void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
 {
-    if (roomIndex >= MAX_ROOMS)
+    if (roomIndex >= dungeon.roomCount)
         return;
 
     DungeonRoomRuntime& runtime = dungeon.roomRuntime[roomIndex];
@@ -101,9 +103,17 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
         }
     }
 
-    dungeon.rooms[roomIndex].completed = !hasLivingMonster;
+    if (isRiddlemanPuzzleRoom(dungeon.rooms[roomIndex]))
+    {
+        dungeon.rooms[roomIndex].completed =
+            dungeon.rooms[roomIndex].npcSpawn.puzzleState == RIDDLE_ROOM_COMPLETE;
+    }
+    else
+    {
+        dungeon.rooms[roomIndex].completed = !hasLivingMonster;
+    }
 
-    if (roomIndex == FINAL_DUNGEON_ROOM_INDEX)
+    if (roomIndex == dungeon.treasureRoom)
     {
         for (uint8_t i = 0; i < runtime.entityCount; i++)
         {
@@ -117,7 +127,7 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
         }
     }
 
-    if (roomIndex == BOSS_ROOM_INDEX)
+    if (roomIndex == dungeon.bossRoom)
         dungeon.finalEncounterCleared = !hasLivingMonster;
 }
 
@@ -248,12 +258,12 @@ void initializeRoomEntities(
                     break;
 
                 case TILE_NPC_SPAWN:
-                    spawnEntity(
-                        dungeon.entities,
-                        dungeon.entityCount,
-                        ENTITY_NPC,
-                        x,
-                        y);
+                    if (room.npcSpawn.id == NPC_NONE)
+                    {
+                        room.npcSpawn.id = NPC_BERTRAM_RIDDLEMAN;
+                        room.npcSpawn.x = static_cast<int8_t>(x);
+                        room.npcSpawn.y = static_cast<int8_t>(y);
+                    }
                     room.map.tiles[y][x] = TILE_FLOOR;
                     break;
 
@@ -261,6 +271,28 @@ void initializeRoomEntities(
                     break;
             }
         }
+    }
+
+    if (room.npcSpawn.id != NPC_NONE)
+    {
+        if (room.npcSpawn.id == NPC_BERTRAM_RIDDLEMAN &&
+            room.npcSpawn.riddle.id == RIDDLE_NONE)
+        {
+            const uint8_t shuffleRolls[3] = {
+                static_cast<uint8_t>(random(256)),
+                static_cast<uint8_t>(random(256)),
+                static_cast<uint8_t>(random(256))};
+            initializeRiddleState(
+                room.npcSpawn.riddle,
+                static_cast<RiddleID>(random(RIDDLE_COUNT)),
+                shuffleRolls);
+        }
+        spawnNPC(
+            dungeon.entities,
+            dungeon.entityCount,
+            room.npcSpawn.id,
+            static_cast<uint8_t>(room.npcSpawn.x),
+            static_cast<uint8_t>(room.npcSpawn.y));
     }
 
     runtime.entityCount = dungeon.entityCount;
@@ -437,55 +469,54 @@ void generateDungeon(Dungeon& dungeon)
     resetDungeonRun(dungeon);
     dungeon.currentRoom = 0;
 
-    const DungeonRubblePlan rubblePlan = createDungeonRubblePlan(
-        random(100),
-        random(MIDDLE_ROOM_COUNT),
-        random(100),
-        random(MIDDLE_ROOM_COUNT - 1));
-    dungeon.hasRubbleTheme = rubblePlan.enabled;
+    const uint8_t targetRoomCount = static_cast<uint8_t>(random(
+        MIN_DUNGEON_ROOMS, MAX_DUNGEON_ROOMS + 1));
+    bool topologyGenerated = false;
+    for (uint8_t attempt = 0; attempt < 24 && !topologyGenerated; attempt++)
+        topologyGenerated = generateDungeonTopology(dungeon, targetRoomCount);
+    if (!topologyGenerated)
+        return;
 
-    // Clear room connections
-    for (int i = 0; i < MAX_ROOMS; i++)
+    Direction riddleExitDirection = DIR_NORTH;
+    const Direction directions[4] = {DIR_NORTH, DIR_EAST, DIR_SOUTH, DIR_WEST};
+    for (uint8_t roomIndex = 1; roomIndex < dungeon.roomCount; ++roomIndex)
     {
-        dungeon.rooms[i].north = NO_ROOM;
-        dungeon.rooms[i].south = NO_ROOM;
-        dungeon.rooms[i].east  = NO_ROOM;
-        dungeon.rooms[i].west  = NO_ROOM;
-
-        clearRoomConnections(dungeon.rooms[i]);
-
-        dungeon.rooms[i].discovered = false;
-        dungeon.rooms[i].completed = false;
-    }
-
-    // Connect the rooms
-    for (int i = 0; i < MAX_ROOMS - 1; i++)
-    {
-        dungeon.rooms[i].east = i + 1;
-        dungeon.rooms[i + 1].west = i;
-    }
-
-    dungeon.rooms[0].type = ROOM_ENTRANCE;
-
-    for (uint8_t roomIndex = 1;
-         roomIndex < FINAL_DUNGEON_ROOM_INDEX;
-         roomIndex++)
-    {
-        RoomType type = selectMiddleRoomType();
-
-        // A bounded reroll prevents a monotonous three-room middle stretch.
-        if (roomIndex == FINAL_DUNGEON_ROOM_INDEX - 1 &&
-            dungeon.rooms[1].type == dungeon.rooms[2].type &&
-            type == dungeon.rooms[1].type)
+        if (roomIndex == dungeon.bossRoom || roomIndex == dungeon.treasureRoom) continue;
+        for (Direction direction : directions)
         {
-            type = selectMiddleRoomType();
+            if (getRoomNeighbor(dungeon.rooms[roomIndex], direction) == dungeon.bossRoom)
+            {
+                dungeon.riddleRoom = roomIndex;
+                riddleExitDirection = direction;
+                break;
+            }
+        }
+        if (dungeon.riddleRoom != NO_ROOM) break;
+    }
+    if (dungeon.riddleRoom == NO_ROOM)
+        return;
 
-            if (type == dungeon.rooms[1].type)
-                type = dungeon.rooms[1].type == ROOM_COMBAT
-                    ? ROOM_AMBUSH
-                    : ROOM_COMBAT;
+    dungeon.hasRubbleTheme =
+        random(100) < DUNGEON_RUBBLE_THEME_CHANCE_PERCENT;
+    bool rubbleRooms[MAX_ROOMS] = {};
+    bool ordinaryRubbleSelected = false;
+    uint8_t firstOrdinaryRoom = NO_ROOM;
+    for (uint8_t roomIndex = 1; roomIndex < dungeon.roomCount; roomIndex++)
+    {
+        if (roomIndex == dungeon.bossRoom ||
+            roomIndex == dungeon.treasureRoom)
+            continue;
+        if (firstOrdinaryRoom == NO_ROOM)
+            firstOrdinaryRoom = roomIndex;
+        if (dungeon.hasRubbleTheme &&
+            random(100) < OPTIONAL_RUBBLE_ROOM_CHANCE_PERCENT)
+        {
+            rubbleRooms[roomIndex] = true;
+            ordinaryRubbleSelected = true;
         }
 
+        RoomType type = roomIndex == dungeon.riddleRoom
+            ? ROOM_PUZZLE : selectMiddleRoomType();
         DungeonRoom& room = dungeon.rooms[roomIndex];
         room.type = type;
         room.encounterTheme =
@@ -496,22 +527,43 @@ void generateDungeon(Dungeon& dungeon)
                 : ENCOUNTER_NONE;
     }
 
+    if (dungeon.hasRubbleTheme && !ordinaryRubbleSelected &&
+        firstOrdinaryRoom != NO_ROOM)
+        rubbleRooms[firstOrdinaryRoom] = true;
+
     dungeon.rooms[0].encounterTheme = ENCOUNTER_NONE;
-    dungeon.rooms[BOSS_ROOM_INDEX].type = ROOM_BOSS;
-    dungeon.rooms[BOSS_ROOM_INDEX].encounterTheme = ENCOUNTER_NONE;
-    dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].type = ROOM_TREASURE;
-    dungeon.rooms[FINAL_DUNGEON_ROOM_INDEX].encounterTheme = ENCOUNTER_NONE;
+    dungeon.rooms[dungeon.bossRoom].type = ROOM_BOSS;
+    dungeon.rooms[dungeon.bossRoom].encounterTheme = ENCOUNTER_NONE;
+    dungeon.rooms[dungeon.treasureRoom].type = ROOM_TREASURE;
+    dungeon.rooms[dungeon.treasureRoom].encounterTheme = ENCOUNTER_NONE;
 
     dungeon.rooms[0].discovered = true;
 
     // Generate every room
-    for (int i = 0; i < MAX_ROOMS; i++)
+    for (uint8_t i = 0; i < dungeon.roomCount; i++)
     {
         populateRoomConnections(dungeon.rooms[i]);
         dungeon.rooms[i].shape = dungeon.rooms[i].type == ROOM_ENTRANCE
             ? SHAPE_ENTRANCE
-            : randomProductionRoomShape(dungeon.rooms[i]);
+            : (i == dungeon.riddleRoom
+                ? SHAPE_SQUARE : randomProductionRoomShape(dungeon.rooms[i]));
         generateRoom(dungeon.rooms[i]);
+
+        if (i == dungeon.riddleRoom)
+        {
+            const uint8_t shuffleRolls[3] = {
+                static_cast<uint8_t>(random(256)),
+                static_cast<uint8_t>(random(256)),
+                static_cast<uint8_t>(random(256))};
+            if (!configureRiddlemanPuzzleRoom(
+                    dungeon.rooms[i], riddleExitDirection,
+                    static_cast<RiddleID>(random(RIDDLE_COUNT)), shuffleRolls))
+            {
+                resetDungeonRun(dungeon);
+                return;
+            }
+            continue;
+        }
 
         // Major blockers precede difficult terrain and runtime traps so every
         // later placement system sees pillar squares as unavailable.
@@ -522,27 +574,22 @@ void generateDungeon(Dungeon& dungeon)
             dungeon.rooms[i], random(100), random(100), random(100),
             random(100));
 
-        if (rubblePlan.enabled)
+        if (dungeon.hasRubbleTheme)
         {
-            if (i >= FIRST_MIDDLE_ROOM_INDEX && i < BOSS_ROOM_INDEX &&
-                rubblePlan.middleRooms[i - FIRST_MIDDLE_ROOM_INDEX])
-            {
-                populateRubbleTerrain(dungeon.rooms[i]);
-            }
-            else if (i == BOSS_ROOM_INDEX)
-            {
+            if (i == dungeon.bossRoom)
                 populateBossRubbleTerrain(dungeon.rooms[i]);
-            }
+            else if (rubbleRooms[i])
+                populateRubbleTerrain(dungeon.rooms[i]);
         }
 
         if (i == 0)
             placeHealingFountain(dungeon.rooms[i]);
 
-        // Keep the first pass sparse: only the three middle rooms may receive
-        // a random spike plate. The feature helper also consumes any authored
-        // TILE_TRAP marker and may add harmless visual-clue dressing.
+        // Ordinary graph rooms remain eligible for the existing mixed trap
+        // pool. The Entrance, Boss, and final Treasure room stay authored.
         const bool allowRandomTrap =
-            i > 0 && i < BOSS_ROOM_INDEX;
+            i > 0 && i != dungeon.bossRoom &&
+            i != dungeon.treasureRoom;
         if (i > 0)
         {
             populateDungeonRoomFeatures(
@@ -553,6 +600,7 @@ void generateDungeon(Dungeon& dungeon)
     }
 
     dungeon.runActive = true;
+    dumpDungeonTopology(dungeon);
 
     // Load the starting room
     loadRoom(dungeon, ENTRY_START);
@@ -560,6 +608,8 @@ void generateDungeon(Dungeon& dungeon)
 
 void loadRoom(Dungeon& dungeon, RoomEntry entry)
 {
+    if (dungeon.currentRoom >= dungeon.roomCount)
+        return;
     clearMapEffects();
     detachLoadedDungeonPlayer(dungeon);
 
@@ -631,6 +681,10 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.entityCount = 0;
     dungeon.loadedRoom = NO_ROOM;
     dungeon.currentRoom = 0;
+    dungeon.roomCount = 0;
+    dungeon.bossRoom = NO_ROOM;
+    dungeon.treasureRoom = NO_ROOM;
+    dungeon.riddleRoom = NO_ROOM;
     dungeon.hasRubbleTheme = false;
     dungeon.finalEncounterCleared = false;
     dungeon.finalTreasureLooted = false;
@@ -652,6 +706,14 @@ void resetDungeonRun(Dungeon& dungeon)
 
         dungeon.rooms[roomIndex].discovered = false;
         dungeon.rooms[roomIndex].completed = false;
+        dungeon.rooms[roomIndex].npcSpawn = DungeonNPCSpawn{};
+        dungeon.rooms[roomIndex].north = NO_ROOM;
+        dungeon.rooms[roomIndex].east = NO_ROOM;
+        dungeon.rooms[roomIndex].south = NO_ROOM;
+        dungeon.rooms[roomIndex].west = NO_ROOM;
+        dungeon.rooms[roomIndex].dungeonX = NO_DUNGEON_COORDINATE;
+        dungeon.rooms[roomIndex].dungeonY = NO_DUNGEON_COORDINATE;
+        clearRoomConnections(dungeon.rooms[roomIndex]);
         for (TrapInstance& trap : dungeon.rooms[roomIndex].traps)
             trap = TrapInstance{};
         for (SuspicionInstance& suspicion :
@@ -664,7 +726,7 @@ void resetDungeonRun(Dungeon& dungeon)
 
 void updateCurrentDungeonRoomCompletion(Dungeon& dungeon)
 {
-    if (!dungeon.runActive || dungeon.loadedRoom >= MAX_ROOMS)
+    if (!dungeon.runActive || dungeon.loadedRoom >= dungeon.roomCount)
         return;
 
     DungeonRoomRuntime& runtime =

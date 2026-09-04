@@ -11,6 +11,8 @@
 #include "map/awareness.h"
 #include "map/mapeffects.h"
 #include "monsterscripts.h"
+#include "npcs.h"
+#include "riddlepuzzle.h"
 #include "audio/audio.h"
 #include "data/dice.h"
 #include "data/entityspawn.h"
@@ -214,7 +216,10 @@ static bool isValidAbilitySelectionTarget(
 
     const bool hostile =
         isAbilityEffectHostileToTarget(*ability, target->character);
+    const bool bertramRefusalTarget =
+        hostile && isBertramRiddleman(*target);
     if ((hostile &&
+         !bertramRefusalTarget &&
          (target == caster || !areHostile(*caster, *target))) ||
         (!hostile && target->character.team != caster->character.team))
     {
@@ -374,7 +379,8 @@ static bool selectNextEntityTarget(
         if (valid && !abilityTargeting && combat.openingAttackTargeting)
         {
             valid = entities[index].revealedToPlayer &&
-                    areHostile(*player, entities[index]);
+                    (areHostile(*player, entities[index]) ||
+                     isBertramRiddleman(entities[index]));
         }
 
         if (valid)
@@ -589,6 +595,12 @@ CombatDamageResult applyCombatDamage(Entity& target, int damage,
                                      DamageType damageType)
 {
     CombatDamageResult result;
+
+    if (isBertramRiddleman(target))
+    {
+        result.applied = true;
+        return result;
+    }
 
     if (damage <= 0 || !target.active ||
         target.character.state != STATE_ALIVE)
@@ -2251,9 +2263,11 @@ bool canPlayerAttackOutsideCombat(CombatAttackType attackType)
             ? getEntityGridDistance(*player, entities[i]) <= 1
             : isValidRangedTarget(player, &entities[i]);
 
-        if (isLivingHostileForCombat(entities[i]) &&
+        if ((isLivingHostileForCombat(entities[i]) ||
+             isBertramRiddleman(entities[i])) &&
             entities[i].revealedToPlayer &&
-            areHostile(*player, entities[i]) && validGeometry)
+            (areHostile(*player, entities[i]) ||
+             isBertramRiddleman(entities[i])) && validGeometry)
         {
             return true;
         }
@@ -2317,7 +2331,8 @@ Entity* getSelectedAttackTarget()
             targetY);
 
         return target != nullptr && target->revealedToPlayer &&
-               areHostile(*player, *target) &&
+               (areHostile(*player, *target) ||
+                isBertramRiddleman(*target)) &&
                target->character.state == STATE_ALIVE
                    ? target
                    : nullptr;
@@ -2331,7 +2346,8 @@ Entity* getSelectedAttackTarget()
 
     Entity* target = &entities[combat.selectedTargetIndex];
 
-    return target->revealedToPlayer && areHostile(*player, *target) &&
+    return target->revealedToPlayer &&
+           (areHostile(*player, *target) || isBertramRiddleman(*target)) &&
            isValidRangedTarget(player, target) ? target : nullptr;
 }
 
@@ -2391,6 +2407,20 @@ void confirmPlayerAttack()
     {
         setGameMessage("No target selected.");
         needsRedraw = true;
+        return;
+    }
+
+    if (refuseCurrentBertramHostileAction(*target))
+    {
+        markAttackCursorDirty();
+        combat.attackType = COMBAT_ATTACK_NONE;
+        combat.iterativeAttackActive = false;
+        combat.iterativeAttackIndex = 0;
+        combat.iterativeAttackCount = 1;
+        combat.openingAttackTargeting = false;
+        combat.selectedTargetIndex = -1;
+        markPlayerFacingCursorDirty();
+        requestCombatTileRedraw();
         return;
     }
 
@@ -3245,6 +3275,22 @@ void confirmPlayerAbility()
     }
 
     AbilityID abilityID = combat.selectedAbility;
+    const Ability* ability = getAbility(abilityID);
+    if (ability != nullptr &&
+        isAbilityEffectHostileToTarget(*ability, target->character) &&
+        refuseCurrentBertramHostileAction(*target))
+    {
+        markAbilityCursorDirty();
+        combat.selectedAbility = ABILITY_NONE;
+        combat.selectedAbilityX = -1;
+        combat.selectedAbilityY = -1;
+        combat.selectedAbilityDirection = moveDirection;
+        combat.selectedTargetIndex = -1;
+        clearSelectedAbilityScroll();
+        markPlayerFacingCursorDirty();
+        requestCombatTileRedraw();
+        return;
+    }
     AbilityResolution resolution = resolveAbility(
         *player, target, abilityID,
         combat.selectedAbilityFromScroll

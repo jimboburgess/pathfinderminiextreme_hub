@@ -12,6 +12,8 @@
 
 #include "dungeon/combat.h"
 #include "dungeon/furniture.h"
+#include "dungeon/npcs.h"
+#include "dungeon/riddlepuzzle.h"
 #include "dungeon/abilityresolver.h"
 #include "../audio/audio.h"
 #include "forest/forest.h"
@@ -322,6 +324,33 @@ bool tryMovePlayer(Dungeon &dungeon)
         targetY);
 
     if (targetEntity != nullptr && targetEntity != player &&
+        targetEntity->type == ENTITY_PUZZLE_KEY)
+    {
+        if (!collectCurrentRiddleKey(*targetEntity)) return false;
+        targetEntity = nullptr;
+    }
+
+    if (targetEntity != nullptr && targetEntity != player &&
+        isBertramRiddleCat(*targetEntity))
+    {
+        const RiddleCatCatchResult catchResult =
+            attemptCatchCurrentRiddleCat(
+                *player, *targetEntity, static_cast<uint8_t>(random(100)));
+        if (catchResult == RIDDLE_CAT_ESCAPED ||
+            catchResult == RIDDLE_CAT_CAUGHT)
+        {
+            // The old cat square is now free, so this movement attempt may
+            // continue normally onto it.
+            targetEntity = nullptr;
+        }
+        else
+        {
+            playSound(SoundEffect::BUMP);
+            return false;
+        }
+    }
+
+    if (targetEntity != nullptr && targetEntity != player &&
         targetEntity->type == ENTITY_MONSTER &&
         targetEntity->character.state == STATE_ALIVE)
     {
@@ -342,6 +371,13 @@ bool tryMovePlayer(Dungeon &dungeon)
             oldDirection,
             directionOffsets[moveDirection].dx,
             directionOffsets[moveDirection].dy);
+    }
+
+    if (targetEntity != nullptr && targetEntity != player &&
+        isBlockingNeutralNPC(*targetEntity))
+    {
+        playSound(SoundEffect::BUMP);
+        return false;
     }
 
     switch (tile)
@@ -485,21 +521,39 @@ bool tryMovePlayer(Dungeon &dungeon)
             }
 
             uint8_t nextRoom = 255;
+            Direction doorDirection = DIR_NORTH;
 
             if (targetY == 0)
+            {
                 nextRoom = room.north;
+                doorDirection = DIR_NORTH;
+            }
             else if (targetY == ROOM_SIZE - 1)
+            {
                 nextRoom = room.south;
+                doorDirection = DIR_SOUTH;
+            }
             else if (targetX == 0)
+            {
                 nextRoom = room.west;
+                doorDirection = DIR_WEST;
+            }
             else if (targetX == ROOM_SIZE - 1)
+            {
                 nextRoom = room.east;
+                doorDirection = DIR_EAST;
+            }
 
             if (nextRoom != 255)
             {
-                if (dungeon.currentRoom == BOSS_ROOM_INDEX &&
-                    nextRoom == FINAL_DUNGEON_ROOM_INDEX &&
-                    !dungeon.rooms[BOSS_ROOM_INDEX].completed)
+                if (!tryUnlockCurrentRiddleExit(doorDirection))
+                {
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
+                if (dungeon.currentRoom == dungeon.bossRoom &&
+                    nextRoom == dungeon.treasureRoom &&
+                    !dungeon.rooms[dungeon.bossRoom].completed)
                 {
                     setGameMessage("Defeat the enemies first!");
                     playSound(SoundEffect::BUMP);

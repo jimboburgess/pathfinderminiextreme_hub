@@ -863,6 +863,16 @@ void drawEntity(const Entity& entity)
     if (!entity.active)
         return;
 
+    if (entity.type == ENTITY_PUZZLE_KEY)
+    {
+        const int x = entity.x * TILE_SIZE;
+        const int y = entity.y * TILE_SIZE;
+        tft.drawCircle(x + 5, y + 6, 3, ST77XX_YELLOW);
+        tft.drawLine(x + 8, y + 8, x + 13, y + 13, ST77XX_YELLOW);
+        tft.drawLine(x + 11, y + 11, x + 13, y + 9, ST77XX_YELLOW);
+        return;
+    }
+
     if (entity.type == ENTITY_MONSTER && entity.character.state == STATE_ALIVE)
     {
         if (entity.sprite == nullptr)
