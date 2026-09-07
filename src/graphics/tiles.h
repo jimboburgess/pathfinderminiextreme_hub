@@ -36,12 +36,17 @@ enum TileType : uint8_t {
     TILE_STATUE,
     TILE_BRAZIER,
     TILE_CRATE,
-    TILE_BARREL
+    TILE_BARREL,
+    TILE_BELL_LOW,
+    TILE_BELL_MID,
+    TILE_BELL_HIGH,
+    TILE_BELL_LISTEN_RUNE
   };
 
 inline bool isDungeonFloorTerrain(TileType tile)
 {
-    return tile == TILE_FLOOR || tile == TILE_RUBBLE;
+    return tile == TILE_FLOOR || tile == TILE_RUBBLE ||
+           tile == TILE_BELL_LISTEN_RUNE;
 }
 
 inline bool isWallLikeDungeonTile(TileType tile)
@@ -68,6 +73,10 @@ extern const uint16_t dungeonStatue16x16[16 * 16];
 extern const uint16_t dungeonBrazier16x16[16 * 16];
 extern const uint16_t dungeonCrate16x16[16 * 16];
 extern const uint16_t dungeonBarrel16x16[16 * 16];
+extern const uint16_t bellLow16x16[16 * 16];
+extern const uint16_t bellMid16x16[16 * 16];
+extern const uint16_t bellHigh16x16[16 * 16];
+extern const uint16_t bellListenRune16x16[16 * 16];
 extern const uint16_t dungeonDoor16x16[16 * 16];
 
 extern const uint16_t chestclosed[16 * 16];

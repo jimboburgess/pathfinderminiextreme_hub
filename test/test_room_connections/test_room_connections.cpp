@@ -11,34 +11,34 @@ static void addFourTestConnections(DungeonRoom& room)
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_SOUTH,
-        ROOM_CONNECTION_MAX,
-        ROOM_SIZE - 1));
+        ROOM_HORIZONTAL_CONNECTION_MAX,
+        ROOM_HEIGHT - 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room, DIR_WEST, 0, ROOM_CONNECTION_MIN + 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_EAST,
-        ROOM_SIZE - 1,
-        ROOM_CONNECTION_MAX - 1));
+        ROOM_WIDTH - 1,
+        ROOM_VERTICAL_CONNECTION_MAX - 1));
 }
 
 static void addHorizontalTestConnections(
     DungeonRoom& room,
     uint8_t westY = ROOM_CONNECTION_MIN + 1,
-    uint8_t eastY = ROOM_CONNECTION_MAX - 1)
+    uint8_t eastY = ROOM_VERTICAL_CONNECTION_MAX - 1)
 {
     TEST_ASSERT_TRUE(addRoomConnection(room, DIR_WEST, 0, westY));
     TEST_ASSERT_TRUE(addRoomConnection(
-        room, DIR_EAST, ROOM_SIZE - 1, eastY));
+        room, DIR_EAST, ROOM_WIDTH - 1, eastY));
 }
 
 static uint16_t countTiles(const DungeonRoom& room, TileType tile)
 {
     uint16_t count = 0;
 
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
         {
             if (room.map.tiles[y][x] == tile)
                 count++;
@@ -54,9 +54,9 @@ static uint16_t countInteriorTiles(
 {
     uint16_t count = 0;
 
-    for (uint8_t y = 1; y < ROOM_SIZE - 1; y++)
+    for (uint8_t y = 1; y < ROOM_HEIGHT - 1; y++)
     {
-        for (uint8_t x = 1; x < ROOM_SIZE - 1; x++)
+        for (uint8_t x = 1; x < ROOM_WIDTH - 1; x++)
         {
             if (room.map.tiles[y][x] == tile)
                 count++;
@@ -69,15 +69,20 @@ static uint16_t countInteriorTiles(
 static void assertBoundaryContainsOnlyWallsAndDoors(
     const DungeonRoom& room)
 {
-    for (uint8_t offset = 0; offset < ROOM_SIZE; offset++)
+    for (uint8_t x = 0; x < ROOM_WIDTH; x++)
     {
-        const TileType north = room.map.tiles[0][offset];
-        const TileType south = room.map.tiles[ROOM_SIZE - 1][offset];
-        const TileType west = room.map.tiles[offset][0];
-        const TileType east = room.map.tiles[offset][ROOM_SIZE - 1];
+        const TileType north = room.map.tiles[0][x];
+        const TileType south = room.map.tiles[ROOM_HEIGHT - 1][x];
 
         TEST_ASSERT_TRUE(north == TILE_WALL || north == TILE_DOOR);
         TEST_ASSERT_TRUE(south == TILE_WALL || south == TILE_DOOR);
+    }
+
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
+    {
+        const TileType west = room.map.tiles[y][0];
+        const TileType east = room.map.tiles[y][ROOM_WIDTH - 1];
+
         TEST_ASSERT_TRUE(west == TILE_WALL || west == TILE_DOOR);
         TEST_ASSERT_TRUE(east == TILE_WALL || east == TILE_DOOR);
     }
@@ -127,6 +132,36 @@ void test_value_initialized_room_has_no_connections()
     TEST_ASSERT_NULL(getRoomConnection(room, DIR_NORTH));
 }
 
+void test_room_dimensions_and_cardinal_edges_are_axis_specific()
+{
+    TEST_ASSERT_EQUAL_UINT8(15, ROOM_WIDTH);
+    TEST_ASSERT_EQUAL_UINT8(14, ROOM_HEIGHT);
+    TEST_ASSERT_EQUAL_UINT16(240, DUNGEON_PIXEL_WIDTH);
+    TEST_ASSERT_EQUAL_UINT16(224, DUNGEON_PIXEL_HEIGHT);
+
+    DungeonRoom room{};
+    const size_t tileCount = sizeof(room.map.tiles) /
+        sizeof(room.map.tiles[0][0]);
+    TEST_ASSERT_EQUAL_UINT16(ROOM_WIDTH * ROOM_HEIGHT, tileCount);
+
+    TEST_ASSERT_TRUE(addRoomConnection(
+        room, DIR_NORTH, ROOM_HORIZONTAL_CONNECTION_MAX, 0));
+    TEST_ASSERT_TRUE(addRoomConnection(
+        room, DIR_SOUTH, ROOM_HORIZONTAL_CONNECTION_MAX, ROOM_HEIGHT - 1));
+    TEST_ASSERT_TRUE(addRoomConnection(
+        room, DIR_WEST, 0, ROOM_VERTICAL_CONNECTION_MAX));
+    TEST_ASSERT_TRUE(addRoomConnection(
+        room, DIR_EAST, ROOM_WIDTH - 1, ROOM_VERTICAL_CONNECTION_MAX));
+
+    DungeonRoom invalid{};
+    TEST_ASSERT_FALSE(addRoomConnection(
+        invalid, DIR_SOUTH, ROOM_WIDTH / 2, ROOM_HEIGHT));
+    TEST_ASSERT_FALSE(addRoomConnection(
+        invalid, DIR_EAST, ROOM_WIDTH, ROOM_HEIGHT / 2));
+    TEST_ASSERT_FALSE(addRoomConnection(
+        invalid, DIR_EAST, ROOM_WIDTH - 1, ROOM_HEIGHT - 2));
+}
+
 void test_cardinal_edge_connections_are_accepted()
 {
     DungeonRoom room{};
@@ -134,53 +169,55 @@ void test_cardinal_edge_connections_are_accepted()
     TEST_ASSERT_TRUE(addRoomConnection(
         room, DIR_NORTH, ROOM_CONNECTION_MIN, 0));
     TEST_ASSERT_TRUE(addRoomConnection(
-        room, DIR_SOUTH, ROOM_CONNECTION_MAX, ROOM_SIZE - 1));
+        room, DIR_SOUTH, ROOM_HORIZONTAL_CONNECTION_MAX, ROOM_HEIGHT - 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room, DIR_WEST, 0, ROOM_CONNECTION_MIN));
     TEST_ASSERT_TRUE(addRoomConnection(
-        room, DIR_EAST, ROOM_SIZE - 1, ROOM_CONNECTION_MAX));
+        room, DIR_EAST, ROOM_WIDTH - 1, ROOM_VERTICAL_CONNECTION_MAX));
     TEST_ASSERT_EQUAL_UINT8(MAX_ROOM_CONNECTIONS, room.connectionCount);
 }
 
 void test_connections_on_wrong_edges_are_rejected()
 {
     DungeonRoom room{};
-    const uint8_t center = ROOM_SIZE / 2;
+    const uint8_t centerX = ROOM_WIDTH / 2;
+    const uint8_t centerY = ROOM_HEIGHT / 2;
 
-    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, center, 1));
+    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, centerX, 1));
     TEST_ASSERT_FALSE(addRoomConnection(
-        room, DIR_SOUTH, center, ROOM_SIZE - 2));
-    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_WEST, 1, center));
+        room, DIR_SOUTH, centerX, ROOM_HEIGHT - 2));
+    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_WEST, 1, centerY));
     TEST_ASSERT_FALSE(addRoomConnection(
-        room, DIR_EAST, ROOM_SIZE - 2, center));
-    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTHEAST, center, 0));
-    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, ROOM_SIZE, 0));
+        room, DIR_EAST, ROOM_WIDTH - 2, centerY));
+    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTHEAST, centerX, 0));
+    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, ROOM_WIDTH, 0));
     TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, 0, 0));
     TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, 1, 0));
     TEST_ASSERT_FALSE(addRoomConnection(
-        room, DIR_SOUTH, ROOM_SIZE - 2, ROOM_SIZE - 1));
+        room, DIR_SOUTH, ROOM_WIDTH - 2, ROOM_HEIGHT - 1));
     TEST_ASSERT_FALSE(addRoomConnection(room, DIR_WEST, 0, 1));
     TEST_ASSERT_FALSE(addRoomConnection(
-        room, DIR_EAST, ROOM_SIZE - 1, ROOM_SIZE - 1));
+        room, DIR_EAST, ROOM_WIDTH - 1, ROOM_HEIGHT - 1));
     TEST_ASSERT_EQUAL_UINT8(0, room.connectionCount);
 }
 
 void test_connection_capacity_fails_without_overwriting_entries()
 {
     DungeonRoom room{};
-    const uint8_t center = ROOM_SIZE / 2;
+    const uint8_t centerX = ROOM_WIDTH / 2;
+    const uint8_t centerY = ROOM_HEIGHT / 2;
 
-    TEST_ASSERT_TRUE(addRoomConnection(room, DIR_NORTH, center, 0));
+    TEST_ASSERT_TRUE(addRoomConnection(room, DIR_NORTH, centerX, 0));
     TEST_ASSERT_TRUE(addRoomConnection(
-        room, DIR_SOUTH, center, ROOM_SIZE - 1));
-    TEST_ASSERT_TRUE(addRoomConnection(room, DIR_WEST, 0, center));
+        room, DIR_SOUTH, centerX, ROOM_HEIGHT - 1));
+    TEST_ASSERT_TRUE(addRoomConnection(room, DIR_WEST, 0, centerY));
     TEST_ASSERT_TRUE(addRoomConnection(
-        room, DIR_EAST, ROOM_SIZE - 1, center));
+        room, DIR_EAST, ROOM_WIDTH - 1, centerY));
 
-    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, center - 1, 0));
+    TEST_ASSERT_FALSE(addRoomConnection(room, DIR_NORTH, centerX - 1, 0));
     TEST_ASSERT_EQUAL_UINT8(MAX_ROOM_CONNECTIONS, room.connectionCount);
     TEST_ASSERT_EQUAL_UINT8(
-        ROOM_SIZE - 1,
+        ROOM_WIDTH - 1,
         room.connections[MAX_ROOM_CONNECTIONS - 1].x);
 }
 
@@ -188,7 +225,7 @@ void test_clear_removes_existing_connections()
 {
     DungeonRoom room{};
 
-    TEST_ASSERT_TRUE(addRoomConnection(room, DIR_NORTH, ROOM_SIZE / 2, 0));
+    TEST_ASSERT_TRUE(addRoomConnection(room, DIR_NORTH, ROOM_WIDTH / 2, 0));
     clearRoomConnections(room);
 
     TEST_ASSERT_EQUAL_UINT8(0, room.connectionCount);
@@ -201,7 +238,8 @@ void test_random_connection_offsets_stay_in_safe_range()
     {
         const uint8_t offset = randomRoomConnectionOffset();
         TEST_ASSERT_GREATER_OR_EQUAL_UINT8(ROOM_CONNECTION_MIN, offset);
-        TEST_ASSERT_LESS_OR_EQUAL_UINT8(ROOM_CONNECTION_MAX, offset);
+        TEST_ASSERT_LESS_OR_EQUAL_UINT8(
+            ROOM_HORIZONTAL_CONNECTION_MAX, offset);
     }
 }
 
@@ -225,17 +263,21 @@ void test_neighbors_populate_safe_variable_wall_coordinates()
     TEST_ASSERT_NOT_NULL(east);
     TEST_ASSERT_NOT_NULL(west);
     TEST_ASSERT_EQUAL_UINT8(0, north->y);
-    TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 1, south->y);
-    TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 1, east->x);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_HEIGHT - 1, south->y);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_WIDTH - 1, east->x);
     TEST_ASSERT_EQUAL_UINT8(0, west->x);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT8(ROOM_CONNECTION_MIN, north->x);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT8(ROOM_CONNECTION_MAX, north->x);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT8(
+        ROOM_HORIZONTAL_CONNECTION_MAX, north->x);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT8(ROOM_CONNECTION_MIN, south->x);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT8(ROOM_CONNECTION_MAX, south->x);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT8(
+        ROOM_HORIZONTAL_CONNECTION_MAX, south->x);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT8(ROOM_CONNECTION_MIN, east->y);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT8(ROOM_CONNECTION_MAX, east->y);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT8(
+        ROOM_VERTICAL_CONNECTION_MAX, east->y);
     TEST_ASSERT_GREATER_OR_EQUAL_UINT8(ROOM_CONNECTION_MIN, west->y);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT8(ROOM_CONNECTION_MAX, west->y);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT8(
+        ROOM_VERTICAL_CONNECTION_MAX, west->y);
 }
 
 void test_room_generation_places_doors_from_connections()
@@ -249,15 +291,15 @@ void test_room_generation_places_doors_from_connections()
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_SOUTH,
-        ROOM_CONNECTION_MAX,
-        ROOM_SIZE - 1));
+        ROOM_HORIZONTAL_CONNECTION_MAX,
+        ROOM_HEIGHT - 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room, DIR_WEST, 0, ROOM_CONNECTION_MIN + 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_EAST,
-        ROOM_SIZE - 1,
-        ROOM_CONNECTION_MAX - 1));
+        ROOM_WIDTH - 1,
+        ROOM_VERTICAL_CONNECTION_MAX - 1));
 
     generateRoom(room);
 
@@ -266,13 +308,13 @@ void test_room_generation_places_doors_from_connections()
         room.map.tiles[0][ROOM_CONNECTION_MIN]);
     TEST_ASSERT_EQUAL(
         TILE_DOOR,
-        room.map.tiles[ROOM_SIZE - 1][ROOM_CONNECTION_MAX]);
+        room.map.tiles[ROOM_HEIGHT - 1][ROOM_HORIZONTAL_CONNECTION_MAX]);
     TEST_ASSERT_EQUAL(
         TILE_DOOR,
         room.map.tiles[ROOM_CONNECTION_MIN + 1][0]);
     TEST_ASSERT_EQUAL(
         TILE_DOOR,
-        room.map.tiles[ROOM_CONNECTION_MAX - 1][ROOM_SIZE - 1]);
+        room.map.tiles[ROOM_VERTICAL_CONNECTION_MAX - 1][ROOM_WIDTH - 1]);
 }
 
 void test_entry_positions_use_destination_connections_and_walkable_tiles()
@@ -286,15 +328,15 @@ void test_entry_positions_use_destination_connections_and_walkable_tiles()
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_SOUTH,
-        ROOM_CONNECTION_MAX,
-        ROOM_SIZE - 1));
+        ROOM_HORIZONTAL_CONNECTION_MAX,
+        ROOM_HEIGHT - 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room, DIR_WEST, 0, ROOM_CONNECTION_MIN + 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_EAST,
-        ROOM_SIZE - 1,
-        ROOM_CONNECTION_MAX - 1));
+        ROOM_WIDTH - 1,
+        ROOM_VERTICAL_CONNECTION_MAX - 1));
 
     generateRoom(room);
 
@@ -307,8 +349,8 @@ void test_entry_positions_use_destination_connections_and_walkable_tiles()
     TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[y][x]);
 
     TEST_ASSERT_TRUE(getRoomEntryPosition(room, ENTRY_SOUTH, x, y));
-    TEST_ASSERT_EQUAL_UINT8(ROOM_CONNECTION_MAX, x);
-    TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 2, y);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_HORIZONTAL_CONNECTION_MAX, x);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_HEIGHT - 2, y);
     TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[y][x]);
 
     TEST_ASSERT_TRUE(getRoomEntryPosition(room, ENTRY_WEST, x, y));
@@ -317,8 +359,8 @@ void test_entry_positions_use_destination_connections_and_walkable_tiles()
     TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[y][x]);
 
     TEST_ASSERT_TRUE(getRoomEntryPosition(room, ENTRY_EAST, x, y));
-    TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 2, x);
-    TEST_ASSERT_EQUAL_UINT8(ROOM_CONNECTION_MAX - 1, y);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_WIDTH - 2, x);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_VERTICAL_CONNECTION_MAX - 1, y);
     TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[y][x]);
 }
 
@@ -334,7 +376,7 @@ void test_full_rectangle_remains_connected_and_full_sized()
     TEST_ASSERT_EQUAL(SHAPE_SQUARE, room.shape);
     TEST_ASSERT_TRUE(validateRoomConnectivity(room));
     TEST_ASSERT_EQUAL_UINT16(
-        (ROOM_SIZE - 2) * (ROOM_SIZE - 2),
+        (ROOM_WIDTH - 2) * (ROOM_HEIGHT - 2),
         countTiles(room, TILE_FLOOR));
     assertBoundaryContainsOnlyWallsAndDoors(room);
     assertAllTestEntriesAreFloor(room);
@@ -425,7 +467,7 @@ void test_invalid_shape_falls_back_to_full_rectangle()
     TEST_ASSERT_EQUAL(SHAPE_SQUARE, room.shape);
     TEST_ASSERT_TRUE(validateRoomConnectivity(room));
     TEST_ASSERT_EQUAL_UINT16(
-        (ROOM_SIZE - 2) * (ROOM_SIZE - 2),
+        (ROOM_WIDTH - 2) * (ROOM_HEIGHT - 2),
         countTiles(room, TILE_FLOOR));
     assertAllTestEntriesAreFloor(room);
 }
@@ -504,7 +546,7 @@ void test_production_shape_selection_is_conservative_and_bounded()
     DungeonRoom windingIneligible{};
     windingIneligible.type = ROOM_PUZZLE;
     TEST_ASSERT_TRUE(addRoomConnection(
-        windingIneligible, DIR_WEST, 0, ROOM_SIZE / 2));
+        windingIneligible, DIR_WEST, 0, ROOM_HEIGHT / 2));
 
     TEST_ASSERT_EQUAL(
         SHAPE_CAVE,
@@ -535,11 +577,11 @@ void test_winding_corridor_eligibility_requires_two_safe_connections()
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_EAST,
-        ROOM_SIZE - 1,
-        ROOM_CONNECTION_MAX));
+        ROOM_WIDTH - 1,
+        ROOM_VERTICAL_CONNECTION_MAX));
     TEST_ASSERT_TRUE(isWindingCorridorEligible(room));
     TEST_ASSERT_TRUE(addRoomConnection(
-        room, DIR_NORTH, ROOM_SIZE / 2, 0));
+        room, DIR_NORTH, ROOM_WIDTH / 2, 0));
     TEST_ASSERT_FALSE(isWindingCorridorEligible(room));
 
     DungeonRoom entrance{};
@@ -576,7 +618,7 @@ void test_winding_paths_have_meaningful_orthogonal_bends()
     const RoomConnection west = {
         DIR_WEST, 0, ROOM_CONNECTION_MIN + 1};
     const RoomConnection east = {
-        DIR_EAST, ROOM_SIZE - 1, ROOM_CONNECTION_MAX - 1};
+        DIR_EAST, ROOM_WIDTH - 1, ROOM_VERTICAL_CONNECTION_MAX - 1};
     CorridorPath oppositePath{};
 
     TEST_ASSERT_TRUE(generateWindingCorridorPath(
@@ -634,11 +676,11 @@ void test_winding_corridors_connect_stored_doors_and_entries()
             room.map.tiles[ROOM_CONNECTION_MIN + 1][0]);
         TEST_ASSERT_EQUAL(
             TILE_DOOR,
-            room.map.tiles[ROOM_CONNECTION_MAX - 1][ROOM_SIZE - 1]);
+            room.map.tiles[ROOM_VERTICAL_CONNECTION_MAX - 1][ROOM_WIDTH - 1]);
         TEST_ASSERT_TRUE(countInteriorTiles(room, TILE_WALL) > 0);
         TEST_ASSERT_TRUE(
             countTiles(room, TILE_FLOOR) <
-            (ROOM_SIZE - 2) * (ROOM_SIZE - 2));
+            (ROOM_WIDTH - 2) * (ROOM_HEIGHT - 2));
         assertBoundaryContainsOnlyWallsAndDoors(room);
         assertEveryConnectionEntryIsFloor(room);
 
@@ -648,8 +690,8 @@ void test_winding_corridors_connect_stored_doors_and_entries()
         TEST_ASSERT_EQUAL_UINT8(1, x);
         TEST_ASSERT_EQUAL_UINT8(ROOM_CONNECTION_MIN + 1, y);
         TEST_ASSERT_TRUE(getRoomEntryPosition(room, ENTRY_EAST, x, y));
-        TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 2, x);
-        TEST_ASSERT_EQUAL_UINT8(ROOM_CONNECTION_MAX - 1, y);
+        TEST_ASSERT_EQUAL_UINT8(ROOM_WIDTH - 2, x);
+        TEST_ASSERT_EQUAL_UINT8(ROOM_VERTICAL_CONNECTION_MAX - 1, y);
     }
 }
 
@@ -659,7 +701,7 @@ void test_invalid_winding_corridor_requests_fall_back_safely()
     oneConnection.type = ROOM_PUZZLE;
     oneConnection.shape = SHAPE_WINDING_CORRIDOR;
     TEST_ASSERT_TRUE(addRoomConnection(
-        oneConnection, DIR_WEST, 0, ROOM_SIZE / 2));
+        oneConnection, DIR_WEST, 0, ROOM_HEIGHT / 2));
 
     generateRoom(oneConnection);
 
@@ -671,7 +713,7 @@ void test_invalid_winding_corridor_requests_fall_back_safely()
     threeConnections.shape = SHAPE_WINDING_CORRIDOR;
     addHorizontalTestConnections(threeConnections);
     TEST_ASSERT_TRUE(addRoomConnection(
-        threeConnections, DIR_NORTH, ROOM_SIZE / 2, 0));
+        threeConnections, DIR_NORTH, ROOM_WIDTH / 2, 0));
 
     generateRoom(threeConnections);
 
@@ -693,15 +735,15 @@ void test_winding_room_content_markers_remain_on_connected_interior_floor()
     TEST_ASSERT_TRUE(validateRoomConnectivity(room));
     TEST_ASSERT_EQUAL_UINT16(2, countTiles(room, TILE_ENEMY_START));
 
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
         {
             if (room.map.tiles[y][x] != TILE_ENEMY_START)
                 continue;
 
-            TEST_ASSERT_TRUE(x > 0 && x < ROOM_SIZE - 1);
-            TEST_ASSERT_TRUE(y > 0 && y < ROOM_SIZE - 1);
+            TEST_ASSERT_TRUE(x > 0 && x < ROOM_WIDTH - 1);
+            TEST_ASSERT_TRUE(y > 0 && y < ROOM_HEIGHT - 1);
             TEST_ASSERT_FALSE(isReservedContentTile(room, x, y));
         }
     }
@@ -770,16 +812,17 @@ void test_combat_and_ambush_markers_use_distinct_placement_biases()
     addHorizontalTestConnections(ambush);
     generateRoom(ambush);
 
-    const int center = ROOM_SIZE / 2;
+    const int centerX = ROOM_WIDTH / 2;
+    const int centerY = ROOM_HEIGHT / 2;
     int combatDistance = 0;
     int ambushDistance = 0;
 
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
         {
-            const int distance = abs(static_cast<int>(x) - center) +
-                abs(static_cast<int>(y) - center);
+            const int distance = abs(static_cast<int>(x) - centerX) +
+                abs(static_cast<int>(y) - centerY);
 
             if (combat.map.tiles[y][x] == TILE_ENEMY_START)
                 combatDistance += distance;
@@ -831,18 +874,18 @@ void test_cave_parameter_selection_and_eligibility_are_bounded()
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_EAST,
-        ROOM_SIZE - 1,
+        ROOM_WIDTH - 1,
         ROOM_CONNECTION_MIN + 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_SOUTH,
-        ROOM_CONNECTION_MAX,
-        ROOM_SIZE - 1));
+        ROOM_HORIZONTAL_CONNECTION_MAX,
+        ROOM_HEIGHT - 1));
     TEST_ASSERT_TRUE(addRoomConnection(
         room,
         DIR_WEST,
         0,
-        ROOM_CONNECTION_MAX - 1));
+        ROOM_VERTICAL_CONNECTION_MAX - 1));
     TEST_ASSERT_TRUE(isCaveEligible(room));
 
     room.connectionCount = MAX_ROOM_CONNECTIONS + 1;
@@ -873,7 +916,7 @@ void test_caves_support_one_through_four_connected_entries()
                 TEST_ASSERT_TRUE(addRoomConnection(
                     room,
                     DIR_EAST,
-                    ROOM_SIZE - 1,
+                    ROOM_WIDTH - 1,
                     static_cast<uint8_t>(
                         ROOM_CONNECTION_MIN + (sample + 2) % 7)));
             }
@@ -884,8 +927,8 @@ void test_caves_support_one_through_four_connected_entries()
                     room,
                     DIR_SOUTH,
                     static_cast<uint8_t>(
-                        ROOM_CONNECTION_MAX - sample % 4),
-                    ROOM_SIZE - 1));
+                        ROOM_HORIZONTAL_CONNECTION_MAX - sample % 4),
+                    ROOM_HEIGHT - 1));
             }
 
             if (connectionCount >= 4)
@@ -895,7 +938,7 @@ void test_caves_support_one_through_four_connected_entries()
                     DIR_WEST,
                     0,
                     static_cast<uint8_t>(
-                        ROOM_CONNECTION_MAX - (sample + 1) % 7)));
+                        ROOM_VERTICAL_CONNECTION_MAX - (sample + 1) % 7)));
             }
 
             generateRoom(room);
@@ -963,11 +1006,11 @@ void test_entrance_uses_fixed_hallway_and_paired_alcoves()
     TEST_ASSERT_EQUAL_UINT8(1, room.connectionCount);
     const RoomConnection* east = getRoomConnection(room, DIR_EAST);
     TEST_ASSERT_NOT_NULL(east);
-    TEST_ASSERT_EQUAL_UINT8(ROOM_SIZE - 1, east->x);
+    TEST_ASSERT_EQUAL_UINT8(ROOM_WIDTH - 1, east->x);
     TEST_ASSERT_EQUAL_UINT8(ENTRANCE_EAST_CONNECTION_Y, east->y);
     TEST_ASSERT_EQUAL(
         TILE_DOOR,
-        room.map.tiles[ENTRANCE_EAST_CONNECTION_Y][ROOM_SIZE - 1]);
+        room.map.tiles[ENTRANCE_EAST_CONNECTION_Y][ROOM_WIDTH - 1]);
 
     for (uint8_t y = ENTRANCE_HALL_Y;
          y < ENTRANCE_HALL_Y + ENTRANCE_HALL_HEIGHT;
@@ -1039,9 +1082,9 @@ void test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint()
         int markerY = -1;
         uint8_t markerCount = 0;
 
-        for (uint8_t y = 1; y < ROOM_SIZE - 1; y++)
+        for (uint8_t y = 1; y < ROOM_HEIGHT - 1; y++)
         {
-            for (uint8_t x = 1; x < ROOM_SIZE - 1; x++)
+            for (uint8_t x = 1; x < ROOM_WIDTH - 1; x++)
             {
                 if (room.map.tiles[y][x] == TILE_GIANT_SPIDER_START)
                 {
@@ -1053,8 +1096,8 @@ void test_deeper_giant_spider_marker_has_a_two_by_two_floor_footprint()
         }
 
         TEST_ASSERT_EQUAL_UINT8(1, markerCount);
-        TEST_ASSERT_TRUE(markerX > 0 && markerX < ROOM_SIZE - 2);
-        TEST_ASSERT_TRUE(markerY > 0 && markerY < ROOM_SIZE - 2);
+        TEST_ASSERT_TRUE(markerX > 0 && markerX < ROOM_WIDTH - 2);
+        TEST_ASSERT_TRUE(markerY > 0 && markerY < ROOM_HEIGHT - 2);
         TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[markerY][markerX + 1]);
         TEST_ASSERT_EQUAL(TILE_FLOOR, room.map.tiles[markerY + 1][markerX]);
         TEST_ASSERT_EQUAL(
@@ -1206,6 +1249,7 @@ void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_value_initialized_room_has_no_connections);
+    RUN_TEST(test_room_dimensions_and_cardinal_edges_are_axis_specific);
     RUN_TEST(test_cardinal_edge_connections_are_accepted);
     RUN_TEST(test_connections_on_wrong_edges_are_rejected);
     RUN_TEST(test_connection_capacity_fails_without_overwriting_entries);

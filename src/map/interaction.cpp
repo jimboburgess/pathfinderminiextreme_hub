@@ -17,6 +17,8 @@
 #include "dungeon/fountain.h"
 #include "dungeon/npcs.h"
 #include "dungeon/riddlepuzzle.h"
+#include "dungeon/bellpuzzle.h"
+#include "dungeon/furniture.h"
 #include "audio/audio.h"
 #include "graphics/messagelog.h"
 #include "graphics/display.h"
@@ -277,6 +279,9 @@ bool tryInteractWithFacingEntity()
             }
             return true;
         }
+
+        if (strikeCurrentBellAt(targetX, targetY))
+            return true;
 
         Direction riddleExitDirection = DIR_NORTH;
         if (getCurrentRiddlemanExitDirectionAt(

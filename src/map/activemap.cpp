@@ -52,7 +52,7 @@ int getActiveMapWidth()
             return FOREST_WIDTH;
 
         case GAME_DUNGEON:
-            return ROOM_SIZE;
+            return ROOM_WIDTH;
 
         default:
             return 0;
@@ -67,7 +67,7 @@ int getActiveMapHeight()
             return FOREST_HEIGHT;
 
         case GAME_DUNGEON:
-            return ROOM_SIZE;
+            return ROOM_HEIGHT;
 
         default:
             return 0;

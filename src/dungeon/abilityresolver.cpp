@@ -780,10 +780,10 @@ AbilityResolution resolveEnvironmentalAbility(
 
     if (abilityID == ABILITY_COLOR_SPRAY)
     {
-        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        AreaFlashTile flashTiles[ROOM_WIDTH * ROOM_HEIGHT];
         uint8_t flashTileCount = 0;
-        for (int y = 0; y < ROOM_SIZE; y++)
-            for (int x = 0; x < ROOM_SIZE; x++)
+        for (int y = 0; y < getActiveMapHeight(); y++)
+            for (int x = 0; x < getActiveMapWidth(); x++)
                 if (flashTileCount < sizeof(flashTiles) / sizeof(flashTiles[0]) &&
                     isTileInDirectionalAbilityAreaFromSource(
                         context.sourceX, context.sourceY, abilityID,
@@ -1401,7 +1401,7 @@ AbilityResolution resolveAbilityAt(
     const Ability* ability = getAbility(abilityID);
     if (hasInstantAreaDamageProfile(*ability))
     {
-        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        AreaFlashTile flashTiles[ROOM_WIDTH * ROOM_HEIGHT];
         const uint8_t flashTileCount = collectRadiusAreaTiles(
             caster, *ability, targetX, targetY, flashTiles,
             sizeof(flashTiles) / sizeof(flashTiles[0]));
@@ -1567,7 +1567,7 @@ AbilityResolution resolveAbilityInDirection(
 
     if (hasInstantAreaDamageProfile(*ability))
     {
-        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        AreaFlashTile flashTiles[ROOM_WIDTH * ROOM_HEIGHT];
         const uint8_t flashTileCount = collectDirectionalAreaTiles(
             caster, *ability, direction, flashTiles,
             sizeof(flashTiles) / sizeof(flashTiles[0]));
@@ -1657,7 +1657,7 @@ AbilityResolution resolveAbilityInDirection(
 
     if (hasSupportedColorSprayProfile(*ability))
     {
-        AreaFlashTile flashTiles[ROOM_SIZE * ROOM_SIZE];
+        AreaFlashTile flashTiles[ROOM_WIDTH * ROOM_HEIGHT];
         const uint8_t flashTileCount = collectDirectionalAreaTiles(
             caster, *ability, direction, flashTiles,
             sizeof(flashTiles) / sizeof(flashTiles[0]));

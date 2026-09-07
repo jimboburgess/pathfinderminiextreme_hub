@@ -33,8 +33,8 @@ bool isEntryClearanceTile(const DungeonRoom& room, int x, int y)
 bool canPlaceHealingFountainAt(const DungeonRoom& room, int x, int y)
 {
     if (x < 1 || y < 1 ||
-        x + HEALING_FOUNTAIN_WIDTH >= ROOM_SIZE ||
-        y + HEALING_FOUNTAIN_HEIGHT >= ROOM_SIZE)
+        x + HEALING_FOUNTAIN_WIDTH >= ROOM_WIDTH ||
+        y + HEALING_FOUNTAIN_HEIGHT >= ROOM_HEIGHT)
     {
         return false;
     }
@@ -85,9 +85,9 @@ bool placeHealingFountain(DungeonRoom& room)
 
     // Search from the rear of the room first, retaining the centered entrance
     // and its eastward exit as open circulation space when possible.
-    for (int y = ROOM_SIZE - HEALING_FOUNTAIN_HEIGHT - 1; y >= 1; y--)
+    for (int y = ROOM_HEIGHT - HEALING_FOUNTAIN_HEIGHT - 1; y >= 1; y--)
     {
-        for (int x = ROOM_SIZE - HEALING_FOUNTAIN_WIDTH - 1; x >= 1; x--)
+        for (int x = ROOM_WIDTH - HEALING_FOUNTAIN_WIDTH - 1; x >= 1; x--)
         {
             if (!canPlaceHealingFountainAt(room, x, y))
                 continue;

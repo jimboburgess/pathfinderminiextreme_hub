@@ -16,7 +16,10 @@ enum DungeonFurnitureType : uint8_t
     FURNITURE_BARREL,
     FURNITURE_CRATE,
     FURNITURE_STATUE,
-    FURNITURE_BRAZIER
+    FURNITURE_BRAZIER,
+    FURNITURE_BELL_LOW,
+    FURNITURE_BELL_MID,
+    FURNITURE_BELL_HIGH
 };
 
 struct DungeonFurnitureDefinition

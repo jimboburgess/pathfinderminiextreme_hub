@@ -22,8 +22,8 @@
 
 namespace
 {
-constexpr uint8_t PATH_MAP_WIDTH = ROOM_SIZE;
-constexpr uint8_t PATH_MAP_HEIGHT = ROOM_SIZE;
+constexpr uint8_t PATH_MAP_WIDTH = ROOM_WIDTH;
+constexpr uint8_t PATH_MAP_HEIGHT = ROOM_HEIGHT;
 constexpr uint16_t PATH_NODE_COUNT =
     PATH_MAP_WIDTH * PATH_MAP_HEIGHT;
 constexpr uint8_t CONTROL_CASTER_LOW_HP_PERCENT = 40;

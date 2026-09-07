@@ -514,6 +514,7 @@ struct AudioPlaybackState
 };
 
 AudioPlaybackState playback;
+AudioCommand runtimeToneSequence[MAX_RUNTIME_TONE_SEQUENCE * 2] = {};
 uint16_t hardwareFrequency = 0;
 AudioDuty hardwareDuty = AudioDuty::DUTY_50;
 bool audioMuted = false;
@@ -846,6 +847,34 @@ void playSound(SoundEffect sound)
         return;
 
     playSoundAt(sound, millis());
+}
+
+bool playToneSequence(const uint16_t* frequencies, uint8_t count,
+                      uint16_t toneDurationMs, uint16_t pauseDurationMs,
+                      AudioDuty duty)
+{
+    if (audioMuted || frequencies == nullptr || count == 0 ||
+        count > MAX_RUNTIME_TONE_SEQUENCE || toneDurationMs == 0)
+        return false;
+
+    uint8_t commandIndex = 0;
+    for (uint8_t i = 0; i < count; ++i)
+    {
+        if (frequencies[i] == 0) return false;
+        runtimeToneSequence[commandIndex++] =
+            audioTone(frequencies[i], toneDurationMs, duty);
+        if (i + 1 < count && pauseDurationMs > 0)
+            runtimeToneSequence[commandIndex++] = audioPause(pauseDurationMs);
+    }
+    runtimeToneSequence[commandIndex] = audioEnd();
+
+    finishPlayback();
+    playback.sequence = runtimeToneSequence;
+    playback.commandIndex = 0;
+    playback.commandStarted = false;
+    playback.active = true;
+    updateAudioAt(millis());
+    return true;
 }
 
 void updateAudio()

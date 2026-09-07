@@ -24,10 +24,22 @@ const DungeonFurnitureDefinition BRAZIER_DEFINITION = {
     FURNITURE_BRAZIER, TILE_BRAZIER, "brazier", 0, 0, 0,
     false, false, false
 };
+const DungeonFurnitureDefinition BELL_LOW_DEFINITION = {
+    FURNITURE_BELL_LOW, TILE_BELL_LOW, "low bell", 0, 0, 0,
+    false, false, false
+};
+const DungeonFurnitureDefinition BELL_MID_DEFINITION = {
+    FURNITURE_BELL_MID, TILE_BELL_MID, "middle bell", 0, 0, 0,
+    false, false, false
+};
+const DungeonFurnitureDefinition BELL_HIGH_DEFINITION = {
+    FURNITURE_BELL_HIGH, TILE_BELL_HIGH, "high bell", 0, 0, 0,
+    false, false, false
+};
 
 bool isInsideRoom(int x, int y)
 {
-    return x >= 0 && x < ROOM_SIZE && y >= 0 && y < ROOM_SIZE;
+    return x >= 0 && x < ROOM_WIDTH && y >= 0 && y < ROOM_HEIGHT;
 }
 
 uint16_t clampPositiveDamage(int damage)
@@ -67,6 +79,9 @@ const DungeonFurnitureDefinition* getDungeonFurnitureDefinition(
         case FURNITURE_CRATE: return &CRATE_DEFINITION;
         case FURNITURE_STATUE: return &STATUE_DEFINITION;
         case FURNITURE_BRAZIER: return &BRAZIER_DEFINITION;
+        case FURNITURE_BELL_LOW: return &BELL_LOW_DEFINITION;
+        case FURNITURE_BELL_MID: return &BELL_MID_DEFINITION;
+        case FURNITURE_BELL_HIGH: return &BELL_HIGH_DEFINITION;
         case FURNITURE_NONE:
         default: return nullptr;
     }
@@ -80,6 +95,9 @@ DungeonFurnitureType getDungeonFurnitureTypeForTile(TileType tile)
         case TILE_CRATE: return FURNITURE_CRATE;
         case TILE_STATUE: return FURNITURE_STATUE;
         case TILE_BRAZIER: return FURNITURE_BRAZIER;
+        case TILE_BELL_LOW: return FURNITURE_BELL_LOW;
+        case TILE_BELL_MID: return FURNITURE_BELL_MID;
+        case TILE_BELL_HIGH: return FURNITURE_BELL_HIGH;
         default: return FURNITURE_NONE;
     }
 }

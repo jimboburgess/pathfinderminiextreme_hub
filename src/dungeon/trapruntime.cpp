@@ -222,9 +222,9 @@ bool isNearRoomEntry(const DungeonRoom& room, int x, int y)
 
 bool isNearContent(const DungeonRoom& room, int x, int y)
 {
-    for (int contentY = 0; contentY < ROOM_SIZE; contentY++)
+    for (int contentY = 0; contentY < ROOM_HEIGHT; contentY++)
     {
-        for (int contentX = 0; contentX < ROOM_SIZE; contentX++)
+        for (int contentX = 0; contentX < ROOM_WIDTH; contentX++)
         {
             if (isContentMarker(room.map.tiles[contentY][contentX]) &&
                 gridDistance(x, y, contentX, contentY) <=
@@ -249,7 +249,7 @@ bool remainsBypassable(DungeonRoom& room, int x, int y)
 
 bool isFeatureCandidate(DungeonRoom& room, int x, int y)
 {
-    return x > 0 && y > 0 && x < ROOM_SIZE - 1 && y < ROOM_SIZE - 1 &&
+    return x > 0 && y > 0 && x < ROOM_WIDTH - 1 && y < ROOM_HEIGHT - 1 &&
            room.map.tiles[y][x] == TILE_FLOOR &&
            getTrapAt(room, x, y) == nullptr &&
            getSuspicionAt(room, x, y) == SUSPICION_NONE &&
@@ -260,12 +260,12 @@ bool isFeatureCandidate(DungeonRoom& room, int x, int y)
 
 bool chooseFeatureCandidate(DungeonRoom& room, uint8_t& x, uint8_t& y)
 {
-    FeatureCandidate candidates[ROOM_SIZE * ROOM_SIZE];
+    FeatureCandidate candidates[ROOM_WIDTH * ROOM_HEIGHT];
     uint16_t candidateCount = 0;
 
-    for (int candidateY = 1; candidateY < ROOM_SIZE - 1; candidateY++)
+    for (int candidateY = 1; candidateY < ROOM_HEIGHT - 1; candidateY++)
     {
-        for (int candidateX = 1; candidateX < ROOM_SIZE - 1; candidateX++)
+        for (int candidateX = 1; candidateX < ROOM_WIDTH - 1; candidateX++)
         {
             if (!isFeatureCandidate(room, candidateX, candidateY))
                 continue;
@@ -305,9 +305,9 @@ bool consumeAuthoredTrapMarkers(
 {
     bool added = false;
 
-    for (int y = 0; y < ROOM_SIZE; y++)
+    for (int y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (int x = 0; x < ROOM_SIZE; x++)
+        for (int x = 0; x < ROOM_WIDTH; x++)
         {
             if (room.map.tiles[y][x] != TILE_TRAP)
                 continue;
@@ -353,7 +353,7 @@ Entity* traceProjectileTarget(const DungeonRoom& room, const TrapInstance& trap)
     const DirectionOffset offset = directionOffsets[trap.direction];
     int x = trap.sourceX + offset.dx;
     int y = trap.sourceY + offset.dy;
-    while (x >= 0 && x < ROOM_SIZE && y >= 0 && y < ROOM_SIZE)
+    while (x >= 0 && x < ROOM_WIDTH && y >= 0 && y < ROOM_HEIGHT)
     {
         if (isTileBlockingSight(room.map.tiles[y][x]))
             return nullptr;
@@ -450,8 +450,8 @@ bool configureRandomSourcedTrap(DungeonRoom& room, TrapInstance& trap)
         const int sourceY = trap.y - offset.dy * 2;
         const int laneX = trap.x - offset.dx;
         const int laneY = trap.y - offset.dy;
-        if (sourceX <= 0 || sourceX >= ROOM_SIZE - 1 || sourceY <= 0 || sourceY >= ROOM_SIZE - 1 ||
-            laneX < 0 || laneX >= ROOM_SIZE || laneY < 0 || laneY >= ROOM_SIZE ||
+        if (sourceX <= 0 || sourceX >= ROOM_WIDTH - 1 || sourceY <= 0 || sourceY >= ROOM_HEIGHT - 1 ||
+            laneX < 0 || laneX >= ROOM_WIDTH || laneY < 0 || laneY >= ROOM_HEIGHT ||
             room.map.tiles[sourceY][sourceX] != TILE_WALL ||
             !isDungeonFloorTerrain(room.map.tiles[laneY][laneX]))
             continue;

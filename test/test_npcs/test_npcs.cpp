@@ -70,8 +70,8 @@ namespace
 {
 void fillFloor(DungeonRoom& room)
 {
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
             room.map.tiles[y][x] = TILE_FLOOR;
 }
 }

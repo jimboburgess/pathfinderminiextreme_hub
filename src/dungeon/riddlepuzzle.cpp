@@ -21,7 +21,7 @@ constexpr int8_t CARDINAL_Y[4] = {0, 1, 0, -1};
 
 bool isKeyFloorAvailable(const DungeonRoom& room, int x, int y)
 {
-    return x > 0 && x < ROOM_SIZE - 1 && y > 0 && y < ROOM_SIZE - 1 &&
+    return x > 0 && x < ROOM_WIDTH - 1 && y > 0 && y < ROOM_HEIGHT - 1 &&
         room.map.tiles[y][x] == TILE_FLOOR &&
         getTrapAt(room, x, y) == nullptr &&
         getDungeonFurnitureAt(room, x, y) == nullptr &&
@@ -32,11 +32,11 @@ bool isKeyFloorAvailable(const DungeonRoom& room, int x, int y)
 bool findKeyTileNear(const DungeonRoom& room, int originX, int originY,
                      int8_t& resultX, int8_t& resultY, bool checkEntities)
 {
-    for (int distance = 1; distance < ROOM_SIZE * 2; ++distance)
+    for (int distance = 1; distance < ROOM_WIDTH + ROOM_HEIGHT; ++distance)
     {
-        for (int y = 1; y < ROOM_SIZE - 1; ++y)
+        for (int y = 1; y < ROOM_HEIGHT - 1; ++y)
         {
-            for (int x = 1; x < ROOM_SIZE - 1; ++x)
+            for (int x = 1; x < ROOM_WIDTH - 1; ++x)
             {
                 if (abs(x - originX) + abs(y - originY) != distance ||
                     !isKeyFloorAvailable(room, x, y)) continue;
@@ -53,7 +53,7 @@ bool findKeyTileNear(const DungeonRoom& room, int originX, int originY,
 
 bool isCatFloorAvailable(const DungeonRoom& room, int x, int y)
 {
-    return x > 0 && x < ROOM_SIZE - 1 && y > 0 && y < ROOM_SIZE - 1 &&
+    return x > 0 && x < ROOM_WIDTH - 1 && y > 0 && y < ROOM_HEIGHT - 1 &&
         room.map.tiles[y][x] == TILE_FLOOR &&
         getTrapAt(room, x, y) == nullptr &&
         getDungeonFurnitureAt(room, x, y) == nullptr &&
@@ -79,9 +79,9 @@ bool findCatSpawnTile(const DungeonRoom& room, const Entity& player,
 {
     int bestDistance = -1;
     bool found = false;
-    for (int y = 1; y < ROOM_SIZE - 1; ++y)
+    for (int y = 1; y < ROOM_HEIGHT - 1; ++y)
     {
-        for (int x = 1; x < ROOM_SIZE - 1; ++x)
+        for (int x = 1; x < ROOM_WIDTH - 1; ++x)
         {
             if (!isCatFloorAvailable(room, x, y)) continue;
             const int distance = abs(x - player.x) + abs(y - player.y);
@@ -103,11 +103,11 @@ bool fleeCatFromPlayer(
     int8_t bestX = -1;
     int8_t bestY = -1;
     int bestPlayerDistance = -1;
-    int bestStepDistance = ROOM_SIZE * 2;
+    int bestStepDistance = ROOM_WIDTH + ROOM_HEIGHT;
 
-    for (int y = 1; y < ROOM_SIZE - 1; ++y)
+    for (int y = 1; y < ROOM_HEIGHT - 1; ++y)
     {
-        for (int x = 1; x < ROOM_SIZE - 1; ++x)
+        for (int x = 1; x < ROOM_WIDTH - 1; ++x)
         {
             const int stepDistance = abs(x - cat.x) + abs(y - cat.y);
             if (stepDistance < 1 || stepDistance > maximumStep ||
@@ -181,22 +181,23 @@ bool configureRiddlemanPuzzleRoom(DungeonRoom& room, Direction lockedDirection,
         return false;
 
     const RoomConnection* exit = getRoomConnection(room, lockedDirection);
-    int preferredX = ROOM_SIZE / 2;
-    int preferredY = ROOM_SIZE / 2;
+    int preferredX = ROOM_WIDTH / 2;
+    int preferredY = ROOM_HEIGHT / 2;
     if (lockedDirection == DIR_NORTH) { preferredX = exit->x; preferredY = 4; }
-    else if (lockedDirection == DIR_SOUTH) { preferredX = exit->x; preferredY = ROOM_SIZE - 5; }
+    else if (lockedDirection == DIR_SOUTH) { preferredX = exit->x; preferredY = ROOM_HEIGHT - 5; }
     else if (lockedDirection == DIR_WEST) { preferredX = 4; preferredY = exit->y; }
-    else if (lockedDirection == DIR_EAST) { preferredX = ROOM_SIZE - 5; preferredY = exit->y; }
+    else if (lockedDirection == DIR_EAST) { preferredX = ROOM_WIDTH - 5; preferredY = exit->y; }
 
-    for (int distance = 0; distance < ROOM_SIZE * 2; ++distance)
+    for (int distance = 0; distance < ROOM_WIDTH + ROOM_HEIGHT; ++distance)
     {
-        for (int y = 2; y < ROOM_SIZE - 2; ++y)
+        for (int y = 2; y < ROOM_HEIGHT - 2; ++y)
         {
-            for (int x = 2; x < ROOM_SIZE - 2; ++x)
+            for (int x = 2; x < ROOM_WIDTH - 2; ++x)
             {
                 if (abs(x - preferredX) + abs(y - preferredY) != distance ||
                     room.map.tiles[y][x] != TILE_FLOOR) continue;
-                DungeonRoom candidate = room;
+    DungeonRoom candidate = room;
+    candidate.puzzleType = PUZZLE_RIDDLEMAN;
                 if (!placeDungeonNPC(candidate, NPC_BERTRAM_RIDDLEMAN, x, y)) continue;
                 if (!findKeyTileNear(candidate, x, y,
                                      candidate.npcSpawn.keyX,

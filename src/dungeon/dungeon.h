@@ -13,10 +13,13 @@
 #include "traps.h"
 #include "fountain.h"
 #include "furniture.h"
+#include "bellpuzzle.h"
 
-constexpr uint8_t ROOM_SIZE = 15;
+constexpr uint8_t ROOM_WIDTH = 15;
+constexpr uint8_t ROOM_HEIGHT = 14;
 constexpr uint8_t TILE_SIZE = 16;
-constexpr uint16_t SCREEN_SIZE = ROOM_SIZE * TILE_SIZE;
+constexpr uint16_t DUNGEON_PIXEL_WIDTH = ROOM_WIDTH * TILE_SIZE;
+constexpr uint16_t DUNGEON_PIXEL_HEIGHT = ROOM_HEIGHT * TILE_SIZE;
 constexpr uint8_t NO_ROOM = 255;
 constexpr int8_t NO_DUNGEON_COORDINATE = 127;
 
@@ -64,16 +67,18 @@ enum RoomEntry {
 //==================================================
 
 struct RoomMap {
-    TileType tiles[ROOM_SIZE][ROOM_SIZE];
+    TileType tiles[ROOM_HEIGHT][ROOM_WIDTH];
 };
 
 constexpr uint8_t MAX_ROOM_CONNECTIONS = 4;
 constexpr uint8_t ROOM_CONNECTION_MIN = 2;
-constexpr uint8_t ROOM_CONNECTION_MAX = ROOM_SIZE - 3;
+constexpr uint8_t ROOM_HORIZONTAL_CONNECTION_MAX = ROOM_WIDTH - 3;
+constexpr uint8_t ROOM_VERTICAL_CONNECTION_MAX = ROOM_HEIGHT - 3;
 
 static_assert(
-    ROOM_CONNECTION_MIN <= ROOM_CONNECTION_MAX,
-    "ROOM_SIZE is too small for safe room connections");
+    ROOM_CONNECTION_MIN <= ROOM_HORIZONTAL_CONNECTION_MAX &&
+    ROOM_CONNECTION_MIN <= ROOM_VERTICAL_CONNECTION_MAX,
+    "Dungeon room dimensions are too small for safe room connections");
 
 struct RoomConnection
 {
@@ -84,6 +89,7 @@ struct RoomConnection
 
 struct DungeonRoom {
     RoomType type;
+    DungeonPuzzleType puzzleType = PUZZLE_NONE;
     EncounterTheme encounterTheme = ENCOUNTER_NONE;
     RoomShape shape;
 
@@ -97,7 +103,7 @@ struct DungeonRoom {
     uint8_t west = NO_ROOM;
 
     // Logical graph coordinates. These locate rooms relative to one another;
-    // they are intentionally independent from the room's 15x15 tile map.
+    // they are intentionally independent from the room's 15x14 tile map.
     int8_t dungeonX = NO_DUNGEON_COORDINATE;
     int8_t dungeonY = NO_DUNGEON_COORDINATE;
 
@@ -112,6 +118,7 @@ struct DungeonRoom {
     DungeonFurnitureInstance furniture[MAX_FURNITURE_PER_ROOM] = {};
     HealingFountain fountain;
     DungeonNPCSpawn npcSpawn;
+    BellPuzzleState bellPuzzle;
 };
 
 
@@ -137,6 +144,8 @@ struct DungeonRoomRuntime
     uint8_t entityCount = 0;
     uint8_t playerSlot = NO_ENTITY_SLOT;
     bool initialized = false;
+    // Only the currently matched prefix is retained; wrong input resets it.
+    uint8_t bellEnteredCount = 0;
 };
 
 struct Dungeon {

@@ -35,7 +35,7 @@ const NPCDefinition* getNPCDefinition(NPCID id)
 bool placeDungeonNPC(DungeonRoom& room, NPCID id, int x, int y)
 {
     if (getNPCDefinition(id) == nullptr || room.npcSpawn.id != NPC_NONE ||
-        x < 0 || x >= ROOM_SIZE || y < 0 || y >= ROOM_SIZE ||
+        x < 0 || x >= ROOM_WIDTH || y < 0 || y >= ROOM_HEIGHT ||
         room.map.tiles[y][x] != TILE_FLOOR ||
         getTrapAt(room, x, y) != nullptr ||
         getDungeonFurnitureAt(room, x, y) != nullptr ||

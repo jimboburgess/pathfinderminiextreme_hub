@@ -69,7 +69,7 @@ uint16_t clampPositiveDamage(int damage)
 
 bool isInsideRoom(int x, int y)
 {
-    return x >= 0 && x < ROOM_SIZE && y >= 0 && y < ROOM_SIZE;
+    return x >= 0 && x < ROOM_WIDTH && y >= 0 && y < ROOM_HEIGHT;
 }
 
 TrapDiscoveryResult attemptTrapDiscovery(

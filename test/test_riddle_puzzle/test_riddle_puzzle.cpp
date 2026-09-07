@@ -72,12 +72,13 @@ void prepareRoom(DungeonRoom& room)
 {
     room = DungeonRoom{};
     room.type = ROOM_PUZZLE;
-    for (uint8_t y = 0; y < ROOM_SIZE; ++y)
-        for (uint8_t x = 0; x < ROOM_SIZE; ++x)
-            room.map.tiles[y][x] = (x == 0 || y == 0 || x == ROOM_SIZE - 1 || y == ROOM_SIZE - 1)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; ++y)
+        for (uint8_t x = 0; x < ROOM_WIDTH; ++x)
+            room.map.tiles[y][x] = (x == 0 || y == 0 ||
+                x == ROOM_WIDTH - 1 || y == ROOM_HEIGHT - 1)
                 ? TILE_WALL : TILE_FLOOR;
-    room.map.tiles[7][ROOM_SIZE - 1] = TILE_DOOR;
-    room.connections[0] = {DIR_EAST, ROOM_SIZE - 1, 7};
+    room.map.tiles[7][ROOM_WIDTH - 1] = TILE_DOOR;
+    room.connections[0] = {DIR_EAST, ROOM_WIDTH - 1, 7};
     room.connectionCount = 1;
 }
 }

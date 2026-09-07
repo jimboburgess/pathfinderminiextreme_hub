@@ -248,8 +248,8 @@ void drawTrapStateArt(int tileX, int tileY, TrapID trapID, TrapVisualState state
 }
 
 void drawRoom(const DungeonRoom &room) {
-  for (int y = 0; y < ROOM_SIZE; y++) {
-    for (int x = 0; x < ROOM_SIZE; x++) {
+  for (int y = 0; y < ROOM_HEIGHT; y++) {
+    for (int x = 0; x < ROOM_WIDTH; x++) {
       drawRoomTile(room, x, y);
     }
   }
@@ -294,6 +294,9 @@ void drawTile(int tileX, int tileY, TileType tile) {
     case TILE_BRAZIER:
     case TILE_CRATE:
     case TILE_BARREL:
+    case TILE_BELL_LOW:
+    case TILE_BELL_MID:
+    case TILE_BELL_HIGH:
     {
       const uint16_t* furnishing = dungeonStatue16x16;
       if (tile == TILE_BRAZIER)
@@ -302,6 +305,12 @@ void drawTile(int tileX, int tileY, TileType tile) {
         furnishing = dungeonCrate16x16;
       else if (tile == TILE_BARREL)
         furnishing = dungeonBarrel16x16;
+      else if (tile == TILE_BELL_LOW)
+        furnishing = bellLow16x16;
+      else if (tile == TILE_BELL_MID)
+        furnishing = bellMid16x16;
+      else if (tile == TILE_BELL_HIGH)
+        furnishing = bellHigh16x16;
 
       tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
                         dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
@@ -310,6 +319,14 @@ void drawTile(int tileX, int tileY, TileType tile) {
           tileX * TILE_SIZE, tileY * TILE_SIZE, furnishing);
       return;
     }
+
+    case TILE_BELL_LISTEN_RUNE:
+      tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                        dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                        TILE_SIZE, TILE_SIZE);
+      drawSpriteTransparent(
+          tileX * TILE_SIZE, tileY * TILE_SIZE, bellListenRune16x16);
+      return;
 
     case TILE_DOOR:
       tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
@@ -342,8 +359,8 @@ void drawTile(int tileX, int tileY, TileType tile) {
 
 void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
 {
-  if (tileX < 0 || tileX >= ROOM_SIZE ||
-      tileY < 0 || tileY >= ROOM_SIZE)
+  if (tileX < 0 || tileX >= ROOM_WIDTH ||
+      tileY < 0 || tileY >= ROOM_HEIGHT)
   {
     return;
   }

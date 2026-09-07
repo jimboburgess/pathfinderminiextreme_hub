@@ -196,6 +196,16 @@ void updateAudio();
 void stopSound();
 bool isSoundPlaying();
 
+// Copies a short runtime sequence into the single-channel audio engine. This
+// keeps room state limited to compact tone IDs rather than AudioCommands.
+constexpr uint8_t MAX_RUNTIME_TONE_SEQUENCE = 7;
+bool playToneSequence(
+    const uint16_t* frequencies,
+    uint8_t count,
+    uint16_t toneDurationMs,
+    uint16_t pauseDurationMs,
+    AudioDuty duty = AudioDuty::DUTY_50);
+
 // Runtime-wide audio setting. Muting immediately stops any active sound and
 // suppresses later effects until audio is enabled again.
 void setAudioMuted(bool muted);

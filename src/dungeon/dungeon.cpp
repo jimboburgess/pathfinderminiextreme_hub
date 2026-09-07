@@ -108,6 +108,11 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
         dungeon.rooms[roomIndex].completed =
             dungeon.rooms[roomIndex].npcSpawn.puzzleState == RIDDLE_ROOM_COMPLETE;
     }
+    else if (isBellPuzzleRoom(dungeon.rooms[roomIndex]))
+    {
+        dungeon.rooms[roomIndex].completed =
+            dungeon.rooms[roomIndex].bellPuzzle.progress == BELL_PUZZLE_COMPLETE;
+    }
     else
     {
         dungeon.rooms[roomIndex].completed = !hasLivingMonster;
@@ -181,9 +186,9 @@ void initializeRoomEntities(
 
     // Marker tiles are consumed exactly once for this dungeon run. Subsequent
     // visits bind the same runtime array instead of reconstructing monsters.
-    for (int y = 0; y < ROOM_SIZE; y++)
+    for (int y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (int x = 0; x < ROOM_SIZE; x++)
+        for (int x = 0; x < ROOM_WIDTH; x++)
         {
             switch (room.map.tiles[y][x])
             {
@@ -337,12 +342,12 @@ bool findSafePlayerEntry(
     uint8_t& resultX,
     uint8_t& resultY)
 {
-    int bestDistance = ROOM_SIZE * 2;
+    int bestDistance = ROOM_WIDTH + ROOM_HEIGHT;
     bool found = false;
 
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
         {
             if (room.map.tiles[y][x] != TILE_FLOOR ||
                 getEntityAt(
@@ -519,6 +524,11 @@ void generateDungeon(Dungeon& dungeon)
             ? ROOM_PUZZLE : selectMiddleRoomType();
         DungeonRoom& room = dungeon.rooms[roomIndex];
         room.type = type;
+        room.puzzleType = roomIndex == dungeon.riddleRoom
+            ? PUZZLE_RIDDLEMAN
+            : (room.type == ROOM_PUZZLE &&
+               random(100) < BELL_ROOM_SELECTION_CHANCE_PERCENT
+                ? PUZZLE_BELLS : PUZZLE_NONE);
         room.encounterTheme =
             (room.type == ROOM_COMBAT || room.type == ROOM_AMBUSH)
                 ? static_cast<EncounterTheme>(random(
@@ -545,7 +555,8 @@ void generateDungeon(Dungeon& dungeon)
         populateRoomConnections(dungeon.rooms[i]);
         dungeon.rooms[i].shape = dungeon.rooms[i].type == ROOM_ENTRANCE
             ? SHAPE_ENTRANCE
-            : (i == dungeon.riddleRoom
+            : (dungeon.rooms[i].puzzleType == PUZZLE_RIDDLEMAN ||
+               dungeon.rooms[i].puzzleType == PUZZLE_BELLS
                 ? SHAPE_SQUARE : randomProductionRoomShape(dungeon.rooms[i]));
         generateRoom(dungeon.rooms[i]);
 
@@ -563,6 +574,37 @@ void generateDungeon(Dungeon& dungeon)
                 return;
             }
             continue;
+        }
+
+        if (dungeon.rooms[i].puzzleType == PUZZLE_BELLS)
+        {
+            Direction lockedDirection = dungeon.rooms[i].connections[0].direction;
+            const uint8_t currentDistance = getRoomDistanceFromEntrance(dungeon, i);
+            for (uint8_t c = 0; c < dungeon.rooms[i].connectionCount; ++c)
+            {
+                const RoomConnection& connection = dungeon.rooms[i].connections[c];
+                const uint8_t neighbor = getRoomNeighbor(dungeon.rooms[i], connection.direction);
+                if (neighbor != NO_ROOM &&
+                    getRoomDistanceFromEntrance(dungeon, neighbor) > currentDistance)
+                {
+                    lockedDirection = connection.direction;
+                    break;
+                }
+            }
+            uint8_t sequenceRolls[MAX_BELL_SEQUENCE * 8] = {};
+            for (uint8_t& roll : sequenceRolls)
+                roll = static_cast<uint8_t>(random(256));
+            if (!configureBellPuzzleRoom(
+                    dungeon.rooms[i], lockedDirection,
+                    player.level > 0 ? player.level : 1,
+                    sequenceRolls, sizeof(sequenceRolls)))
+            {
+                dungeon.rooms[i].puzzleType = PUZZLE_NONE;
+            }
+            else
+            {
+                continue;
+            }
         }
 
         // Major blockers precede difficult terrain and runtime traps so every
@@ -624,9 +666,10 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
         initializeRoomEntities(dungeon, room, runtime);
 
     resetRoomTurnState(runtime);
+    runtime.bellEnteredCount = 0;
 
-    uint8_t entryX = ROOM_SIZE / 2;
-    uint8_t entryY = ROOM_SIZE / 2;
+    uint8_t entryX = ROOM_WIDTH / 2;
+    uint8_t entryY = ROOM_HEIGHT / 2;
 
     // Cardinal entries use the destination room's connection. The centered
     // values above remain only as a defensive fallback for corrupted data.
@@ -696,6 +739,7 @@ void resetDungeonRun(Dungeon& dungeon)
         runtime.entityCount = 0;
         runtime.playerSlot = NO_ENTITY_SLOT;
         runtime.initialized = false;
+        runtime.bellEnteredCount = 0;
 
         for (uint8_t entityIndex = 0;
              entityIndex < MAX_ENTITIES;
@@ -707,6 +751,8 @@ void resetDungeonRun(Dungeon& dungeon)
         dungeon.rooms[roomIndex].discovered = false;
         dungeon.rooms[roomIndex].completed = false;
         dungeon.rooms[roomIndex].npcSpawn = DungeonNPCSpawn{};
+        dungeon.rooms[roomIndex].puzzleType = PUZZLE_NONE;
+        dungeon.rooms[roomIndex].bellPuzzle = BellPuzzleState{};
         dungeon.rooms[roomIndex].north = NO_ROOM;
         dungeon.rooms[roomIndex].east = NO_ROOM;
         dungeon.rooms[roomIndex].south = NO_ROOM;

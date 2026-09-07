@@ -58,6 +58,9 @@ void getDamageFlashColors(DamageType type, uint16_t& primary, uint16_t& highligh
 
 void drawMapEffectOverlayAt(int tileX, int tileY)
 {
+    if (!isInsideActiveMap(tileX, tileY))
+        return;
+
     int screenX = tileX * TILE_SIZE;
     int screenY = tileY * TILE_SIZE;
 
@@ -385,9 +388,9 @@ void drawMapBackground()
             drawRoom(
                 dungeon.rooms[dungeon.currentRoom]);
 
-            for (int y = 0; y < ROOM_SIZE; y++)
+            for (int y = 0; y < ROOM_HEIGHT; y++)
             {
-                for (int x = 0; x < ROOM_SIZE; x++)
+                for (int x = 0; x < ROOM_WIDTH; x++)
                     drawMapEffectOverlayAt(x, y);
             }
 
@@ -422,6 +425,9 @@ static void drawMoveCursor()
         player->x + directionOffsets[moveDirection].dx;
     const int cursorY =
         player->y + directionOffsets[moveDirection].dy;
+
+    if (!isInsideActiveMap(cursorX, cursorY))
+        return;
 
     tft.drawRect(
         cursorX * TILE_SIZE,
@@ -465,12 +471,15 @@ void drawMapCursor()
                 int cursorY =
                     player->y + directionOffsets[moveDirection].dy;
 
-                tft.drawRect(
-                    cursorX * TILE_SIZE,
-                    cursorY * TILE_SIZE,
-                    TILE_SIZE,
-                    TILE_SIZE,
-                    ST77XX_YELLOW);
+                if (isInsideActiveMap(cursorX, cursorY))
+                {
+                    tft.drawRect(
+                        cursorX * TILE_SIZE,
+                        cursorY * TILE_SIZE,
+                        TILE_SIZE,
+                        TILE_SIZE,
+                        ST77XX_YELLOW);
+                }
             }
         }
         else if (target != nullptr)
@@ -549,17 +558,22 @@ void redrawMapMessage()
     if (gameState != GAME_FOREST && gameState != GAME_DUNGEON)
         return;
 
-    tft.fillRect(0, 224, 240, 16, ST77XX_BLACK);
+    tft.fillRect(
+        0,
+        DUNGEON_PIXEL_HEIGHT,
+        DUNGEON_PIXEL_WIDTH,
+        TILE_SIZE,
+        ST77XX_BLACK);
     tft.setTextSize(1);
     tft.setTextColor(ST77XX_WHITE);
-    tft.setCursor(2, 228);
+    tft.setCursor(2, DUNGEON_PIXEL_HEIGHT + 4);
     tft.print(getGameMessage());
 }
 
 void redrawDungeonTile(int x, int y)
 {
-    if (x < 0 || x >= ROOM_SIZE ||
-        y < 0 || y >= ROOM_SIZE)
+    if (x < 0 || x >= ROOM_WIDTH ||
+        y < 0 || y >= ROOM_HEIGHT)
     {
         return;
     }
@@ -863,6 +877,14 @@ void drawEntity(const Entity& entity)
     if (!entity.active)
         return;
 
+    if ((gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&
+        (!isInsideActiveMap(entity.x, entity.y) ||
+         entity.x + getEntityTileWidth(entity) > getActiveMapWidth() ||
+         entity.y + getEntityTileHeight(entity) > getActiveMapHeight()))
+    {
+        return;
+    }
+
     if (entity.type == ENTITY_PUZZLE_KEY)
     {
         const int x = entity.x * TILE_SIZE;
@@ -965,8 +987,14 @@ void redrawDirtyTiles()
     for (uint8_t phase = 0; phase < 3; phase++)
     {
         for (uint8_t i = 0; i < tileCount; i++)
-            tft.fillRect(tiles[i].x * TILE_SIZE, tiles[i].y * TILE_SIZE,
-                         TILE_SIZE, TILE_SIZE, colors[phase]);
+        {
+            if (isInsideActiveMap(tiles[i].x, tiles[i].y))
+            {
+                tft.fillRect(tiles[i].x * TILE_SIZE,
+                             tiles[i].y * TILE_SIZE,
+                             TILE_SIZE, TILE_SIZE, colors[phase]);
+            }
+        }
         delay(40);
     }
     // Restore every flashed tile immediately. Large cones can exceed the
@@ -986,6 +1014,9 @@ void redrawDirtyTiles()
                               DamageType damageType,
                               int tileX, int tileY)
   {
+      if (!isInsideActiveMap(tileX, tileY))
+          return;
+
       uint16_t primary = 0xC81F;
       uint16_t highlight = ST77XX_WHITE;
       if (visual == IMPACT_DAMAGE)
@@ -1024,6 +1055,14 @@ void markTileDirty(int x, int y)
     {
         if (x < 0 || x >= FOREST_WIDTH ||
             y < 0 || y >= FOREST_HEIGHT)
+        {
+            return;
+        }
+    }
+    else if (gameState == GAME_DUNGEON)
+    {
+        if (x < 0 || x >= ROOM_WIDTH ||
+            y < 0 || y >= ROOM_HEIGHT)
         {
             return;
         }

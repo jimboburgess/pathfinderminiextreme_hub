@@ -2,6 +2,7 @@
 #include <unity.h>
 
 #include "../../src/dungeon/combatpolicy.h"
+#include "../../src/dungeon/dungeon.h"
 #include "../../src/map/skillactions.h"
 #include "../../src/map/awareness.h"
 
@@ -102,7 +103,7 @@ void test_detection_range_does_not_limit_dungeon_membership()
     entities[0].x = 1;
     entities[0].y = 1;
     entities[1].x = 14;
-    entities[1].y = 14;
+    entities[1].y = ROOM_HEIGHT - 1;
     Entity* roster[MAX_ENTITIES] = {};
 
     TEST_ASSERT_EQUAL_UINT8(1, makeRoster(entities, 2, roster));

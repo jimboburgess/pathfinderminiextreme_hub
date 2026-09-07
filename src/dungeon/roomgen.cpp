@@ -16,7 +16,8 @@ constexpr uint8_t CORRIDOR_MIN_WIDTH = 1;
 constexpr uint8_t CORRIDOR_MAX_WIDTH = 2;
 constexpr uint8_t CORRIDOR_MIN_SEGMENT_LENGTH = 2;
 constexpr uint8_t CORRIDOR_TURN_MIN = 3;
-constexpr uint8_t CORRIDOR_TURN_MAX = ROOM_SIZE - 4;
+constexpr uint8_t CORRIDOR_TURN_MAX_X = ROOM_WIDTH - 4;
+constexpr uint8_t CORRIDOR_TURN_MAX_Y = ROOM_HEIGHT - 4;
 constexpr uint8_t MAX_CORRIDOR_POINTS = 6;
 constexpr uint8_t MAX_CORRIDOR_GENERATION_ATTEMPTS = 8;
 constexpr uint8_t CAVE_MIN_TARGET_COVERAGE = 50;
@@ -28,11 +29,12 @@ constexpr uint8_t CAVE_MAX_CHAMBERS = 4;
 constexpr uint8_t MAX_CAVE_GENERATION_ATTEMPTS = 16;
 constexpr uint8_t CAVE_CONNECTOR_WIDTH = 2;
 constexpr uint16_t ROOM_INTERIOR_AREA =
-    (ROOM_SIZE - 2) * (ROOM_SIZE - 2);
+    (ROOM_WIDTH - 2) * (ROOM_HEIGHT - 2);
 
 static_assert(
-    CORRIDOR_TURN_MIN <= CORRIDOR_TURN_MAX,
-    "ROOM_SIZE is too small for winding corridor turns");
+    CORRIDOR_TURN_MIN <= CORRIDOR_TURN_MAX_X &&
+    CORRIDOR_TURN_MIN <= CORRIDOR_TURN_MAX_Y,
+    "Dungeon room dimensions are too small for winding corridor turns");
 
 struct RoomFloorAnchor {
   uint8_t x;
@@ -101,29 +103,29 @@ static bool isValidRoomConnection(
     uint8_t x,
     uint8_t y)
 {
-  if (x >= ROOM_SIZE || y >= ROOM_SIZE)
+  if (x >= ROOM_WIDTH || y >= ROOM_HEIGHT)
     return false;
 
   switch (direction) {
     case DIR_NORTH:
       return y == 0 &&
              x >= ROOM_CONNECTION_MIN &&
-             x <= ROOM_CONNECTION_MAX;
+             x <= ROOM_HORIZONTAL_CONNECTION_MAX;
 
     case DIR_EAST:
-      return x == ROOM_SIZE - 1 &&
+      return x == ROOM_WIDTH - 1 &&
              y >= ROOM_CONNECTION_MIN &&
-             y <= ROOM_CONNECTION_MAX;
+             y <= ROOM_VERTICAL_CONNECTION_MAX;
 
     case DIR_SOUTH:
-      return y == ROOM_SIZE - 1 &&
+      return y == ROOM_HEIGHT - 1 &&
              x >= ROOM_CONNECTION_MIN &&
-             x <= ROOM_CONNECTION_MAX;
+             x <= ROOM_HORIZONTAL_CONNECTION_MAX;
 
     case DIR_WEST:
       return x == 0 &&
              y >= ROOM_CONNECTION_MIN &&
-             y <= ROOM_CONNECTION_MAX;
+             y <= ROOM_VERTICAL_CONNECTION_MAX;
 
     default:
       return false;
@@ -171,7 +173,13 @@ const RoomConnection* getRoomConnection(
 uint8_t randomRoomConnectionOffset() {
   return static_cast<uint8_t>(random(
       ROOM_CONNECTION_MIN,
-      ROOM_CONNECTION_MAX + 1));
+      ROOM_HORIZONTAL_CONNECTION_MAX + 1));
+}
+
+static uint8_t randomVerticalRoomConnectionOffset() {
+  return static_cast<uint8_t>(random(
+      ROOM_CONNECTION_MIN,
+      ROOM_VERTICAL_CONNECTION_MAX + 1));
 }
 
 bool isWindingCorridorEligible(const DungeonRoom &room) {
@@ -251,7 +259,7 @@ void populateRoomConnections(DungeonRoom &room) {
       addRoomConnection(
           room,
           DIR_EAST,
-          ROOM_SIZE - 1,
+          ROOM_WIDTH - 1,
           ENTRANCE_EAST_CONNECTION_Y);
     }
     return;
@@ -266,18 +274,18 @@ void populateRoomConnections(DungeonRoom &room) {
         room,
         DIR_SOUTH,
         randomRoomConnectionOffset(),
-        ROOM_SIZE - 1);
+        ROOM_HEIGHT - 1);
 
   if (room.west != NO_ROOM)
     addRoomConnection(
-        room, DIR_WEST, 0, randomRoomConnectionOffset());
+        room, DIR_WEST, 0, randomVerticalRoomConnectionOffset());
 
   if (room.east != NO_ROOM)
     addRoomConnection(
         room,
         DIR_EAST,
-        ROOM_SIZE - 1,
-        randomRoomConnectionOffset());
+        ROOM_WIDTH - 1,
+        randomVerticalRoomConnectionOffset());
 }
 
 bool findNearestRoomFloor(
@@ -290,8 +298,8 @@ bool findNearestRoomFloor(
   int bestY = -1;
   int bestDistance = 32767;
 
-  for (int tileY = 1; tileY < ROOM_SIZE - 1; tileY++) {
-    for (int tileX = 1; tileX < ROOM_SIZE - 1; tileX++) {
+  for (int tileY = 1; tileY < ROOM_HEIGHT - 1; tileY++) {
+    for (int tileX = 1; tileX < ROOM_WIDTH - 1; tileX++) {
       if (room.map.tiles[tileY][tileX] != TILE_FLOOR)
         continue;
 
@@ -333,15 +341,16 @@ bool getRoomEntryPosition(
       return true;
     }
 
-    const uint8_t center = ROOM_SIZE / 2;
+    const uint8_t centerX = ROOM_WIDTH / 2;
+    const uint8_t centerY = ROOM_HEIGHT / 2;
 
-    if (room.map.tiles[center][center] == TILE_FLOOR) {
-      x = center;
-      y = center;
+    if (room.map.tiles[centerY][centerX] == TILE_FLOOR) {
+      x = centerX;
+      y = centerY;
       return true;
     }
 
-    return findNearestRoomFloor(room, center, center, x, y);
+    return findNearestRoomFloor(room, centerX, centerY, x, y);
   }
 
   Direction direction;
@@ -385,13 +394,13 @@ bool getRoomEntryPosition(
       break;
 
     case DIR_EAST:
-      x = ROOM_SIZE - 2;
+      x = ROOM_WIDTH - 2;
       y = connection->y;
       break;
 
     case DIR_SOUTH:
       x = connection->x;
-      y = ROOM_SIZE - 2;
+      y = ROOM_HEIGHT - 2;
       break;
 
     case DIR_WEST:
@@ -410,15 +419,15 @@ bool getRoomEntryPosition(
 
 
 void fillRoom(DungeonRoom &room, TileType tile) {
-  for (int y = 0; y < ROOM_SIZE; y++) {
-    for (int x = 0; x < ROOM_SIZE; x++) {
+  for (int y = 0; y < ROOM_HEIGHT; y++) {
+    for (int x = 0; x < ROOM_WIDTH; x++) {
       room.map.tiles[y][x] = tile;
     }
   }
 }
 
 bool carveFloorTile(DungeonRoom &room, int x, int y) {
-  if (x < 0 || x >= ROOM_SIZE || y < 0 || y >= ROOM_SIZE)
+  if (x < 0 || x >= ROOM_WIDTH || y < 0 || y >= ROOM_HEIGHT)
     return false;
 
   room.map.tiles[y][x] = TILE_FLOOR;
@@ -432,7 +441,7 @@ bool carveRectangle(
     int width,
     int height) {
   if (x < 0 || y < 0 || width <= 0 || height <= 0 ||
-      x + width > ROOM_SIZE || y + height > ROOM_SIZE) {
+      x + width > ROOM_WIDTH || y + height > ROOM_HEIGHT) {
     return false;
   }
 
@@ -446,8 +455,8 @@ bool carveRectangle(
 }
 
 static bool isInsideRoomInterior(int x, int y) {
-  return x >= 1 && x < ROOM_SIZE - 1 &&
-         y >= 1 && y < ROOM_SIZE - 1;
+  return x >= 1 && x < ROOM_WIDTH - 1 &&
+         y >= 1 && y < ROOM_HEIGHT - 1;
 }
 
 static bool carveCorridorPoint(
@@ -465,8 +474,8 @@ static bool carveCorridorPoint(
 
   // Keep widening inside the outer wall. Near the south/east interior edge,
   // shift the second tile inward instead of overwriting the boundary.
-  const int carveX = x == ROOM_SIZE - 2 ? x - 1 : x;
-  const int carveY = y == ROOM_SIZE - 2 ? y - 1 : y;
+  const int carveX = x == ROOM_WIDTH - 2 ? x - 1 : x;
+  const int carveY = y == ROOM_HEIGHT - 2 ? y - 1 : y;
   return carveRectangle(room, carveX, carveY, 2, 2);
 }
 
@@ -506,6 +515,7 @@ static bool isRoomGeometryWalkable(TileType tile) {
   switch (tile) {
     case TILE_FLOOR:
     case TILE_RUBBLE:
+    case TILE_BELL_LISTEN_RUNE:
     case TILE_DOOR:
     case TILE_CHEST_SPAWN:
     case TILE_LOOT_SPAWN:
@@ -540,13 +550,13 @@ static bool getConnectionInteriorPosition(
       return true;
 
     case DIR_EAST:
-      x = ROOM_SIZE - 2;
+      x = ROOM_WIDTH - 2;
       y = connection.y;
       return true;
 
     case DIR_SOUTH:
       x = connection.x;
-      y = ROOM_SIZE - 2;
+      y = ROOM_HEIGHT - 2;
       return true;
 
     case DIR_WEST:
@@ -606,7 +616,7 @@ bool connectRoomConnectionToFloor(
     const RoomConnection &connection,
     uint8_t targetX,
     uint8_t targetY) {
-  if (targetX >= ROOM_SIZE || targetY >= ROOM_SIZE ||
+  if (targetX >= ROOM_WIDTH || targetY >= ROOM_HEIGHT ||
       room.map.tiles[targetY][targetX] != TILE_FLOOR) {
     return false;
   }
@@ -631,15 +641,15 @@ bool connectRoomConnectionToFloor(
 }
 
 bool validateRoomConnectivity(const DungeonRoom &room) {
-  bool visited[ROOM_SIZE][ROOM_SIZE] = {};
-  uint8_t queue[ROOM_SIZE * ROOM_SIZE] = {};
+  bool visited[ROOM_HEIGHT][ROOM_WIDTH] = {};
+  uint8_t queue[ROOM_WIDTH * ROOM_HEIGHT] = {};
   uint16_t head = 0;
   uint16_t tail = 0;
   int startX = -1;
   int startY = -1;
 
-  for (int y = 0; y < ROOM_SIZE && startX < 0; y++) {
-    for (int x = 0; x < ROOM_SIZE; x++) {
+  for (int y = 0; y < ROOM_HEIGHT && startX < 0; y++) {
+    for (int x = 0; x < ROOM_WIDTH; x++) {
       if (isRoomGeometryWalkable(room.map.tiles[y][x])) {
         startX = x;
         startY = y;
@@ -652,34 +662,34 @@ bool validateRoomConnectivity(const DungeonRoom &room) {
     return false;
 
   visited[startY][startX] = true;
-  queue[tail++] = static_cast<uint8_t>(startY * ROOM_SIZE + startX);
+  queue[tail++] = static_cast<uint8_t>(startY * ROOM_WIDTH + startX);
 
   static constexpr int8_t neighborX[4] = {1, -1, 0, 0};
   static constexpr int8_t neighborY[4] = {0, 0, 1, -1};
 
   while (head < tail) {
     const uint8_t index = queue[head++];
-    const int x = index % ROOM_SIZE;
-    const int y = index / ROOM_SIZE;
+    const int x = index % ROOM_WIDTH;
+    const int y = index / ROOM_WIDTH;
 
     for (uint8_t direction = 0; direction < 4; direction++) {
       const int nextX = x + neighborX[direction];
       const int nextY = y + neighborY[direction];
 
-      if (nextX < 0 || nextX >= ROOM_SIZE ||
-          nextY < 0 || nextY >= ROOM_SIZE ||
+      if (nextX < 0 || nextX >= ROOM_WIDTH ||
+          nextY < 0 || nextY >= ROOM_HEIGHT ||
           visited[nextY][nextX] ||
           !isRoomGeometryWalkable(room.map.tiles[nextY][nextX])) {
         continue;
       }
 
       visited[nextY][nextX] = true;
-      queue[tail++] = static_cast<uint8_t>(nextY * ROOM_SIZE + nextX);
+      queue[tail++] = static_cast<uint8_t>(nextY * ROOM_WIDTH + nextX);
     }
   }
 
-  for (int y = 0; y < ROOM_SIZE; y++) {
-    for (int x = 0; x < ROOM_SIZE; x++) {
+  for (int y = 0; y < ROOM_HEIGHT; y++) {
+    for (int x = 0; x < ROOM_WIDTH; x++) {
       if (isRoomGeometryWalkable(room.map.tiles[y][x]) &&
           !visited[y][x]) {
         return false;
@@ -736,13 +746,14 @@ static bool chooseTurnCoordinate(
     int avoidFirst,
     int avoidSecond,
     uint8_t minimumDistance,
+    uint8_t maximum,
     uint8_t &coordinate) {
   uint8_t candidates[
-      CORRIDOR_TURN_MAX - CORRIDOR_TURN_MIN + 1] = {};
+      CORRIDOR_TURN_MAX_X - CORRIDOR_TURN_MIN + 1] = {};
   uint8_t candidateCount = 0;
 
   for (uint8_t value = CORRIDOR_TURN_MIN;
-       value <= CORRIDOR_TURN_MAX;
+       value <= maximum;
        value++) {
     if (coordinateDistance(value, avoidFirst) >= minimumDistance &&
         coordinateDistance(value, avoidSecond) >= minimumDistance) {
@@ -760,16 +771,21 @@ static bool chooseTurnCoordinate(
 static bool chooseProgressiveTurns(
     int start,
     int end,
+    uint8_t axisExtent,
     uint8_t &firstTurn,
     uint8_t &secondTurn) {
-  if (start == 1 && end == ROOM_SIZE - 2) {
+  const uint8_t lastInterior = axisExtent - 2;
+  const uint8_t lateMinimum = axisExtent - 6;
+  const uint8_t lateMaximum = axisExtent - 4;
+
+  if (start == 1 && end == lastInterior) {
     firstTurn = randomInclusive(3, 5);
-    secondTurn = randomInclusive(9, ROOM_SIZE - 4);
+    secondTurn = randomInclusive(lateMinimum, lateMaximum);
     return true;
   }
 
-  if (start == ROOM_SIZE - 2 && end == 1) {
-    firstTurn = randomInclusive(9, ROOM_SIZE - 4);
+  if (start == lastInterior && end == 1) {
+    firstTurn = randomInclusive(lateMinimum, lateMaximum);
     secondTurn = randomInclusive(3, 5);
     return true;
   }
@@ -945,11 +961,12 @@ static bool generateWindingCorridorPath(
 
     if (startVertical) {
       if (!chooseProgressiveTurns(
-            startY, endY, firstTurn, secondTurn) ||
+            startY, endY, ROOM_HEIGHT, firstTurn, secondTurn) ||
           !chooseTurnCoordinate(
               startX,
               endX,
               minimumTurnDistance,
+              CORRIDOR_TURN_MAX_X,
               crossTurn)) {
         return false;
       }
@@ -966,11 +983,12 @@ static bool generateWindingCorridorPath(
           static_cast<uint8_t>(endY)};
     } else {
       if (!chooseProgressiveTurns(
-            startX, endX, firstTurn, secondTurn) ||
+            startX, endX, ROOM_WIDTH, firstTurn, secondTurn) ||
           !chooseTurnCoordinate(
               startY,
               endY,
               minimumTurnDistance,
+              CORRIDOR_TURN_MAX_Y,
               crossTurn)) {
         return false;
       }
@@ -994,9 +1012,11 @@ static bool generateWindingCorridorPath(
   uint8_t turnX = 0;
   uint8_t turnY = 0;
   if (!chooseTurnCoordinate(
-        startX, endX, minimumTurnDistance, turnX) ||
+        startX, endX, minimumTurnDistance,
+        CORRIDOR_TURN_MAX_X, turnX) ||
       !chooseTurnCoordinate(
-        startY, endY, minimumTurnDistance, turnY)) {
+        startY, endY, minimumTurnDistance,
+        CORRIDOR_TURN_MAX_Y, turnY)) {
     return false;
   }
 
@@ -1078,8 +1098,8 @@ static bool createWindingCorridorRoom(
 static uint16_t countInteriorWalkableTiles(const DungeonRoom &room) {
   uint16_t count = 0;
 
-  for (int y = 1; y < ROOM_SIZE - 1; y++) {
-    for (int x = 1; x < ROOM_SIZE - 1; x++) {
+  for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
+    for (int x = 1; x < ROOM_WIDTH - 1; x++) {
       if (isRoomGeometryWalkable(room.map.tiles[y][x]))
         count++;
     }
@@ -1101,10 +1121,10 @@ static bool isCaveFloor(const DungeonRoom &room, int x, int y) {
 }
 
 bool caveHasLongOneTileTunnel(const DungeonRoom &room) {
-  for (int x = 1; x < ROOM_SIZE - 1; x++) {
+  for (int x = 1; x < ROOM_WIDTH - 1; x++) {
     uint8_t narrowRun = 0;
 
-    for (int y = 1; y < ROOM_SIZE - 1; y++) {
+    for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
       const bool verticallyNarrow =
           isCaveFloor(room, x, y) &&
           !isCaveFloor(room, x - 1, y) &&
@@ -1119,10 +1139,10 @@ bool caveHasLongOneTileTunnel(const DungeonRoom &room) {
     }
   }
 
-  for (int y = 1; y < ROOM_SIZE - 1; y++) {
+  for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
     uint8_t narrowRun = 0;
 
-    for (int x = 1; x < ROOM_SIZE - 1; x++) {
+    for (int x = 1; x < ROOM_WIDTH - 1; x++) {
       const bool horizontallyNarrow =
           isCaveFloor(room, x, y) &&
           !isCaveFloor(room, x, y - 1) &&
@@ -1140,9 +1160,8 @@ bool caveHasLongOneTileTunnel(const DungeonRoom &room) {
   return false;
 }
 
-static uint8_t clampCaveCenter(int value) {
+static uint8_t clampCaveCenter(int value, uint8_t maximum) {
   constexpr uint8_t minimum = 3;
-  constexpr uint8_t maximum = ROOM_SIZE - 4;
 
   if (value < minimum)
     return minimum;
@@ -1182,8 +1201,8 @@ static bool carveCaveBlob(
   const int ellipseLimit = radiusXSquared * radiusYSquared;
   bool carvedAny = false;
 
-  for (int y = 1; y < ROOM_SIZE - 1; y++) {
-    for (int x = 1; x < ROOM_SIZE - 1; x++) {
+  for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
+    for (int x = 1; x < ROOM_WIDTH - 1; x++) {
       const int dx = x - blob.centerX;
       const int dy = y - blob.centerY;
       const int ellipseValue =
@@ -1339,8 +1358,8 @@ static bool growCaveTowardCoverage(
          offset++) {
       const uint16_t index = static_cast<uint16_t>(
           (offset + scanSeed) % ROOM_INTERIOR_AREA);
-      const int x = 1 + index % (ROOM_SIZE - 2);
-      const int y = 1 + index / (ROOM_SIZE - 2);
+      const int x = 1 + index % (ROOM_WIDTH - 2);
+      const int y = 1 + index / (ROOM_WIDTH - 2);
 
       if (room.map.tiles[y][x] == TILE_WALL &&
           countOrthogonalCaveNeighbors(room, x, y) >= 2) {
@@ -1360,8 +1379,8 @@ static bool growCaveTowardCoverage(
 }
 
 static bool caveHasOpenCombatArea(const DungeonRoom &room) {
-  for (int y = 1; y <= ROOM_SIZE - 4; y++) {
-    for (int x = 1; x <= ROOM_SIZE - 4; x++) {
+  for (int y = 1; y <= ROOM_HEIGHT - 4; y++) {
+    for (int x = 1; x <= ROOM_WIDTH - 4; x++) {
       bool open = true;
 
       for (int offsetY = 0; offsetY < 3 && open; offsetY++) {
@@ -1440,8 +1459,10 @@ static bool createCaveAttempt(
         directionY[direction] * distance +
         directionX[direction] * perpendicularJitter;
 
-    blobs[i].centerX = clampCaveCenter(blobs[0].centerX + offsetX);
-    blobs[i].centerY = clampCaveCenter(blobs[0].centerY + offsetY);
+    blobs[i].centerX = clampCaveCenter(
+        blobs[0].centerX + offsetX, ROOM_WIDTH - 4);
+    blobs[i].centerY = clampCaveCenter(
+        blobs[0].centerY + offsetY, ROOM_HEIGHT - 4);
     blobs[i].radiusX = static_cast<uint8_t>(
         baseRadius - ((layoutSeed + i) % 2));
     blobs[i].radiusY = static_cast<uint8_t>(
@@ -1525,8 +1546,8 @@ static bool createSquareRoom(
     DungeonRoom &room,
     RoomFloorAnchor &anchor) {
   fillRoom(room, TILE_WALL);
-  anchor = {ROOM_SIZE / 2, ROOM_SIZE / 2};
-  return carveRectangle(room, 1, 1, ROOM_SIZE - 2, ROOM_SIZE - 2);
+  anchor = {ROOM_WIDTH / 2, ROOM_HEIGHT / 2};
+  return carveRectangle(room, 1, 1, ROOM_WIDTH - 2, ROOM_HEIGHT - 2);
 }
 
 static bool createSmallRectangleRoom(
@@ -1538,8 +1559,8 @@ static bool createSmallRectangleRoom(
       SMALL_ROOM_MIN_SIZE, SMALL_ROOM_MAX_SIZE);
   const uint8_t height = randomInclusive(
       SMALL_ROOM_MIN_SIZE, SMALL_ROOM_MAX_SIZE);
-  const uint8_t x = randomInclusive(1, ROOM_SIZE - 1 - width);
-  const uint8_t y = randomInclusive(1, ROOM_SIZE - 1 - height);
+  const uint8_t x = randomInclusive(1, ROOM_WIDTH - 1 - width);
+  const uint8_t y = randomInclusive(1, ROOM_HEIGHT - 1 - height);
 
   anchor = {
       static_cast<uint8_t>(x + width / 2),
@@ -1558,8 +1579,8 @@ static bool createLRoom(
       L_ROOM_MIN_SIZE, L_ROOM_MAX_SIZE);
   const uint8_t height = randomInclusive(
       L_ROOM_MIN_SIZE, L_ROOM_MAX_SIZE);
-  const uint8_t x = randomInclusive(1, ROOM_SIZE - 1 - width);
-  const uint8_t y = randomInclusive(1, ROOM_SIZE - 1 - height);
+  const uint8_t x = randomInclusive(1, ROOM_WIDTH - 1 - width);
+  const uint8_t y = randomInclusive(1, ROOM_HEIGHT - 1 - height);
   const uint8_t verticalArmWidth = randomInclusive(
       L_ROOM_MIN_ARM, L_ROOM_MAX_ARM);
   const uint8_t horizontalArmHeight = randomInclusive(
@@ -1592,24 +1613,26 @@ static bool createCrossRoom(
     DungeonRoom &room,
     RoomFloorAnchor &anchor) {
   fillRoom(room, TILE_WALL);
-  const uint8_t center = ROOM_SIZE / 2;
-  anchor = {center, center};
+  const uint8_t centerX = ROOM_WIDTH / 2;
+  const uint8_t centerY = ROOM_HEIGHT / 2;
+  anchor = {centerX, centerY};
 
-  return carveRectangle(room, center - 1, 1, 3, ROOM_SIZE - 2) &&
-         carveRectangle(room, 1, center - 1, ROOM_SIZE - 2, 3);
+  return carveRectangle(room, centerX - 1, 1, 3, ROOM_HEIGHT - 2) &&
+         carveRectangle(room, 1, centerY - 1, ROOM_WIDTH - 2, 3);
 }
 
 static bool createCircleRoom(
     DungeonRoom &room,
     RoomFloorAnchor &anchor) {
   fillRoom(room, TILE_WALL);
-  const uint8_t center = ROOM_SIZE / 2;
-  anchor = {center, center};
+  const uint8_t centerX = ROOM_WIDTH / 2;
+  const uint8_t centerY = ROOM_HEIGHT / 2;
+  anchor = {centerX, centerY};
 
-  for (int y = 1; y < ROOM_SIZE - 1; y++) {
-    for (int x = 1; x < ROOM_SIZE - 1; x++) {
-      const int dx = x - center;
-      const int dy = y - center;
+  for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
+    for (int x = 1; x < ROOM_WIDTH - 1; x++) {
+      const int dx = x - centerX;
+      const int dy = y - centerY;
 
       if (dx * dx + dy * dy <= 42)
         carveFloorTile(room, x, y);
@@ -1772,14 +1795,14 @@ static bool getPillarFloorBounds(
     int &maximumX,
     int &maximumY,
     uint16_t &floorCount) {
-  minimumX = ROOM_SIZE;
-  minimumY = ROOM_SIZE;
+  minimumX = ROOM_WIDTH;
+  minimumY = ROOM_HEIGHT;
   maximumX = -1;
   maximumY = -1;
   floorCount = 0;
 
-  for (int y = 1; y < ROOM_SIZE - 1; y++) {
-    for (int x = 1; x < ROOM_SIZE - 1; x++) {
+  for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
+    for (int x = 1; x < ROOM_WIDTH - 1; x++) {
       if (room.map.tiles[y][x] != TILE_FLOOR)
         continue;
 
@@ -1835,8 +1858,8 @@ static bool canPlacePillarAt(
     }
   }
 
-  return x > 0 && x < ROOM_SIZE - 1 &&
-         y > 0 && y < ROOM_SIZE - 1 &&
+  return x > 0 && x < ROOM_WIDTH - 1 &&
+         y > 0 && y < ROOM_HEIGHT - 1 &&
          room.map.tiles[y][x] == TILE_FLOOR &&
          !isReservedContentTile(room, x, y) &&
          !isNearRoomConnection(room, x, y);
@@ -1973,7 +1996,8 @@ static bool placeFurnitureAt(
     int x,
     int y)
 {
-  if (x <= 0 || x >= ROOM_SIZE - 1 || y <= 0 || y >= ROOM_SIZE - 1 ||
+  if (x <= 0 || x >= ROOM_WIDTH - 1 ||
+      y <= 0 || y >= ROOM_HEIGHT - 1 ||
       room.map.tiles[y][x] != TILE_FLOOR || isReservedContentTile(room, x, y) ||
       isNearRoomConnection(room, x, y))
   {
@@ -2003,8 +2027,8 @@ static uint8_t placeFurnitureCluster(
 
   for (uint8_t attempt = 0; attempt < 24; attempt++)
   {
-    const int originX = randomInclusive(2, ROOM_SIZE - 3);
-    const int originY = randomInclusive(2, ROOM_SIZE - 3);
+    const int originX = randomInclusive(2, ROOM_WIDTH - 3);
+    const int originY = randomInclusive(2, ROOM_HEIGHT - 3);
     uint8_t placed = 0;
 
     for (const PillarOffset& offset : clusterOffsets)
@@ -2051,8 +2075,8 @@ static bool canPlaceRubbleAt(
     const DungeonRoom &room,
     int x,
     int y) {
-  return x > 0 && x < ROOM_SIZE - 1 &&
-         y > 0 && y < ROOM_SIZE - 1 &&
+  return x > 0 && x < ROOM_WIDTH - 1 &&
+         y > 0 && y < ROOM_HEIGHT - 1 &&
          room.map.tiles[y][x] == TILE_FLOOR &&
          !isReservedContentTile(room, x, y) &&
          !isNearRoomConnection(room, x, y);
@@ -2098,8 +2122,8 @@ uint8_t populateRubbleTerrain(DungeonRoom &room) {
 
   const uint8_t patchSize = randomInclusive(2, 5);
   for (uint8_t attempt = 0; attempt < 24; attempt++) {
-    const uint8_t x = randomInclusive(2, ROOM_SIZE - 3);
-    const uint8_t y = randomInclusive(2, ROOM_SIZE - 3);
+    const uint8_t x = randomInclusive(2, ROOM_WIDTH - 3);
+    const uint8_t y = randomInclusive(2, ROOM_HEIGHT - 3);
     const uint8_t placed = placeRubblePatch(room, x, y, patchSize);
     if (placed > 0)
       return placed;
@@ -2107,8 +2131,8 @@ uint8_t populateRubbleTerrain(DungeonRoom &room) {
 
   // Narrow corridors can make random origins unlucky. Scan deterministically
   // so every selected middle room receives at least one valid patch.
-  for (uint8_t y = 1; y < ROOM_SIZE - 1; y++) {
-    for (uint8_t x = 1; x < ROOM_SIZE - 1; x++) {
+  for (uint8_t y = 1; y < ROOM_HEIGHT - 1; y++) {
+    for (uint8_t x = 1; x < ROOM_WIDTH - 1; x++) {
       const uint8_t placed = placeRubblePatch(room, x, y, patchSize);
       if (placed > 0)
         return placed;
@@ -2137,9 +2161,11 @@ uint8_t populateBossRubbleTerrain(DungeonRoom &room) {
     if (placed == 0) {
       // Shape variants may wall off a preferred origin. Find the closest safe
       // interior floor rather than skipping the mandatory boss terrain.
-      for (uint8_t radius = 1; radius < ROOM_SIZE && placed == 0; radius++) {
-        for (uint8_t y = 1; y < ROOM_SIZE - 1 && placed == 0; y++) {
-          for (uint8_t x = 1; x < ROOM_SIZE - 1; x++) {
+      for (uint8_t radius = 1;
+           radius < ROOM_WIDTH + ROOM_HEIGHT && placed == 0;
+           radius++) {
+        for (uint8_t y = 1; y < ROOM_HEIGHT - 1 && placed == 0; y++) {
+          for (uint8_t x = 1; x < ROOM_WIDTH - 1; x++) {
             const int dx = x > preferredX[patch]
                 ? x - preferredX[patch] : preferredX[patch] - x;
             const int dy = y > preferredY[patch]
@@ -2168,8 +2194,8 @@ static bool isFloorAreaAvailable(
     uint8_t width,
     uint8_t height) {
   if (x < 1 || y < 1 || width == 0 || height == 0 ||
-      x + width > ROOM_SIZE - 1 ||
-      y + height > ROOM_SIZE - 1) {
+      x + width > ROOM_WIDTH - 1 ||
+      y + height > ROOM_HEIGHT - 1) {
     return false;
   }
 
@@ -2196,8 +2222,8 @@ static bool placeContentMarkerNear(
   int bestY = -1;
   int bestDistance = 32767;
 
-  for (int y = 1; y < ROOM_SIZE - 1; y++) {
-    for (int x = 1; x < ROOM_SIZE - 1; x++) {
+  for (int y = 1; y < ROOM_HEIGHT - 1; y++) {
+    for (int x = 1; x < ROOM_WIDTH - 1; x++) {
       if (!isFloorAreaAvailable(room, x, y, width, height))
         continue;
 
@@ -2257,7 +2283,7 @@ static bool generateEntrance(DungeonRoom &room) {
     if (!connectRoomConnectionToFloor(
             room,
             connection,
-            ROOM_SIZE - 2,
+            ROOM_WIDTH - 2,
             ENTRANCE_EAST_CONNECTION_Y)) {
       return false;
     }
@@ -2274,17 +2300,18 @@ bool placeGiantSpiderEncounter(DungeonRoom &room) {
   return placeContentMarkerNear(
       room,
       TILE_GIANT_SPIDER_START,
-      ROOM_SIZE / 2 - 1,
-      ROOM_SIZE / 2 - 1,
+      ROOM_WIDTH / 2 - 1,
+      ROOM_HEIGHT / 2 - 1,
       2,
       2);
 }
 
 static void generateCombat(DungeonRoom &room) {
-  const int center = ROOM_SIZE / 2;
+  const int centerX = ROOM_WIDTH / 2;
+  const int centerY = ROOM_HEIGHT / 2;
   // A direct encounter occupies central connected floor rather than corners.
-  placeContentMarkerNear(room, TILE_ENEMY_START, center - 2, center);
-  placeContentMarkerNear(room, TILE_ENEMY_START, center + 2, center);
+  placeContentMarkerNear(room, TILE_ENEMY_START, centerX - 2, centerY);
+  placeContentMarkerNear(room, TILE_ENEMY_START, centerX + 2, centerY);
 }
 
 
@@ -2298,30 +2325,31 @@ static void generatePuzzle(DungeonRoom &room) {
 static void generateAmbush(DungeonRoom &room) {
   // Favor the far side/periphery, leaving the central entry area clear.
   placeContentMarkerNear(
-      room, TILE_ENEMY_START, ROOM_SIZE - 3, 3);
+      room, TILE_ENEMY_START, ROOM_WIDTH - 3, 3);
   placeContentMarkerNear(
-      room, TILE_ENEMY_START, ROOM_SIZE - 3, ROOM_SIZE - 3);
+      room, TILE_ENEMY_START, ROOM_WIDTH - 3, ROOM_HEIGHT - 3);
 }
 
 static void generateBoss(DungeonRoom &room) {
-  int center = ROOM_SIZE / 2;
+  const int centerX = ROOM_WIDTH / 2;
 
   // The final encounter deliberately replaces normal random population:
   // Skeleton Mage with two existing longsword Skeleton guards.
   placeContentMarkerNear(room, TILE_SKELETON_START, 2, 2);
-  placeContentMarkerNear(room, TILE_SKELETON_MAGE_START, center, 2);
-  placeContentMarkerNear(room, TILE_SKELETON_START, 12, 2);
+  placeContentMarkerNear(room, TILE_SKELETON_MAGE_START, centerX, 2);
+  placeContentMarkerNear(
+      room, TILE_SKELETON_START, ROOM_WIDTH - 3, 2);
 }
 
 static void generateTreasure(DungeonRoom &room) {
-  int center = ROOM_SIZE / 2;
+  const int centerX = ROOM_WIDTH / 2;
 
   // Treasure chest.
-  placeContentMarkerNear(room, TILE_CHEST_SPAWN, center, 3);
+  placeContentMarkerNear(room, TILE_CHEST_SPAWN, centerX, 3);
 
   // Loose loot.
-  placeContentMarkerNear(room, TILE_LOOT_SPAWN, center - 2, 3);
-  placeContentMarkerNear(room, TILE_LOOT_SPAWN, center + 2, 3);
+  placeContentMarkerNear(room, TILE_LOOT_SPAWN, centerX - 2, 3);
+  placeContentMarkerNear(room, TILE_LOOT_SPAWN, centerX + 2, 3);
 }
 
 

@@ -107,9 +107,9 @@ void generateRoom(DungeonRoom& room)
 {
     generatedRoomCount++;
 
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
     {
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
             room.map.tiles[y][x] = TILE_FLOOR;
     }
 }
@@ -156,8 +156,8 @@ bool getRoomEntryPosition(
     uint8_t& x,
     uint8_t& y)
 {
-    x = ROOM_SIZE / 2;
-    y = ROOM_SIZE / 2;
+    x = ROOM_WIDTH / 2;
+    y = ROOM_HEIGHT / 2;
     return true;
 }
 
@@ -297,6 +297,26 @@ bool configureRiddlemanPuzzleRoom(
 bool isRiddlemanPuzzleRoom(const DungeonRoom& room)
 {
     return room.npcSpawn.puzzleState != RIDDLE_ROOM_NONE;
+}
+
+bool configureBellPuzzleRoom(
+    DungeonRoom& room, Direction direction, uint8_t level,
+    const uint8_t* rolls, uint8_t rollCount)
+{
+    (void)level;
+    (void)rolls;
+    (void)rollCount;
+    room.puzzleType = PUZZLE_BELLS;
+    room.bellPuzzle.progress = BELL_PUZZLE_UNSOLVED;
+    room.bellPuzzle.lockedExitDirection = direction;
+    room.bellPuzzle.sequenceLength = 3;
+    return true;
+}
+
+bool isBellPuzzleRoom(const DungeonRoom& room)
+{
+    return room.puzzleType == PUZZLE_BELLS &&
+        room.bellPuzzle.progress != BELL_PUZZLE_NONE;
 }
 
 #include "../../src/dungeon/dungeon.cpp"
@@ -596,8 +616,8 @@ void test_neutral_npc_spawn_persists_when_room_is_resumed()
     dungeon.roomCount = MIN_DUNGEON_ROOMS;
     dungeon.currentRoom = 2;
     DungeonRoom& room = dungeon.rooms[2];
-    for (uint8_t y = 0; y < ROOM_SIZE; y++)
-        for (uint8_t x = 0; x < ROOM_SIZE; x++)
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
             room.map.tiles[y][x] = TILE_FLOOR;
     room.npcSpawn.id = NPC_BERTRAM_RIDDLEMAN;
     room.npcSpawn.x = 9;
@@ -700,8 +720,8 @@ void test_themed_encounters_spawn_only_their_theme_monsters()
         DungeonRoomRuntime& runtime = dungeon.roomRuntime[1];
         room.encounterTheme = theme;
 
-        for (uint8_t y = 0; y < ROOM_SIZE; y++)
-            for (uint8_t x = 0; x < ROOM_SIZE; x++)
+        for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
+            for (uint8_t x = 0; x < ROOM_WIDTH; x++)
                 room.map.tiles[y][x] = TILE_FLOOR;
 
         room.map.tiles[3][3] = TILE_ENEMY_START;

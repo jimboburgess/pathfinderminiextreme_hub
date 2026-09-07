@@ -14,6 +14,7 @@
 #include "dungeon/furniture.h"
 #include "dungeon/npcs.h"
 #include "dungeon/riddlepuzzle.h"
+#include "dungeon/bellpuzzle.h"
 #include "dungeon/abilityresolver.h"
 #include "../audio/audio.h"
 #include "forest/forest.h"
@@ -145,8 +146,8 @@ bool canPlayerTraverseEnemy(
     beyondX = enemyX + moveX;
     beyondY = enemyY + moveY;
 
-    if (beyondX < 0 || beyondX >= ROOM_SIZE ||
-        beyondY < 0 || beyondY >= ROOM_SIZE ||
+    if (beyondX < 0 || beyondX >= ROOM_WIDTH ||
+        beyondY < 0 || beyondY >= ROOM_HEIGHT ||
         dungeon.rooms[dungeon.currentRoom].map.tiles[beyondY][beyondX] !=
             TILE_FLOOR)
     {
@@ -304,8 +305,8 @@ bool tryMovePlayer(Dungeon &dungeon)
     // Stay inside the room.
     //--------------------------------------------------
 
-    if (targetX < 0 || targetX >= ROOM_SIZE ||
-        targetY < 0 || targetY >= ROOM_SIZE)
+    if (targetX < 0 || targetX >= ROOM_WIDTH ||
+        targetY < 0 || targetY >= ROOM_HEIGHT)
     {
         playSound(SoundEffect::BUMP);
         return false;
@@ -326,7 +327,8 @@ bool tryMovePlayer(Dungeon &dungeon)
     if (targetEntity != nullptr && targetEntity != player &&
         targetEntity->type == ENTITY_PUZZLE_KEY)
     {
-        if (!collectCurrentRiddleKey(*targetEntity)) return false;
+        if (!collectCurrentRiddleKey(*targetEntity) &&
+            !collectCurrentBellKey(*targetEntity)) return false;
         targetEntity = nullptr;
     }
 
@@ -388,6 +390,7 @@ bool tryMovePlayer(Dungeon &dungeon)
 
         case TILE_FLOOR:
         case TILE_RUBBLE:
+        case TILE_BELL_LISTEN_RUNE:
         case TILE_BARREL:
         case TILE_CRATE:
         {
@@ -460,6 +463,7 @@ bool tryMovePlayer(Dungeon &dungeon)
 
             player->x = targetX;
             player->y = targetY;
+            handleCurrentBellListeningRuneEntry(*player, targetX, targetY);
 
             //--------------------------------------------------
             // Consume one square of movement.
@@ -497,6 +501,9 @@ bool tryMovePlayer(Dungeon &dungeon)
         case TILE_WALL:
         case TILE_PILLAR:
         case TILE_STATUE:
+        case TILE_BELL_LOW:
+        case TILE_BELL_MID:
+        case TILE_BELL_HIGH:
 
             playSound(SoundEffect::BUMP);
             return false;
@@ -528,7 +535,7 @@ bool tryMovePlayer(Dungeon &dungeon)
                 nextRoom = room.north;
                 doorDirection = DIR_NORTH;
             }
-            else if (targetY == ROOM_SIZE - 1)
+            else if (targetY == ROOM_HEIGHT - 1)
             {
                 nextRoom = room.south;
                 doorDirection = DIR_SOUTH;
@@ -538,7 +545,7 @@ bool tryMovePlayer(Dungeon &dungeon)
                 nextRoom = room.west;
                 doorDirection = DIR_WEST;
             }
-            else if (targetX == ROOM_SIZE - 1)
+            else if (targetX == ROOM_WIDTH - 1)
             {
                 nextRoom = room.east;
                 doorDirection = DIR_EAST;
@@ -547,6 +554,11 @@ bool tryMovePlayer(Dungeon &dungeon)
             if (nextRoom != 255)
             {
                 if (!tryUnlockCurrentRiddleExit(doorDirection))
+                {
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
+                if (!tryUnlockCurrentBellExit(doorDirection))
                 {
                     playSound(SoundEffect::BUMP);
                     return false;
@@ -568,11 +580,11 @@ bool tryMovePlayer(Dungeon &dungeon)
 
                 if (targetY == 0)
                     loadRoom(dungeon, ENTRY_SOUTH);
-                else if (targetY == ROOM_SIZE - 1)
+                else if (targetY == ROOM_HEIGHT - 1)
                     loadRoom(dungeon, ENTRY_NORTH);
                 else if (targetX == 0)
                     loadRoom(dungeon, ENTRY_EAST);
-                else if (targetX == ROOM_SIZE - 1)
+                else if (targetX == ROOM_WIDTH - 1)
                     loadRoom(dungeon, ENTRY_WEST);
 
                 // Repaint the destination map, otherwise the old player's

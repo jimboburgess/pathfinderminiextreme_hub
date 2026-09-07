@@ -167,6 +167,21 @@ void test_stop_sound_is_immediate_and_idempotent()
     TEST_ASSERT_FALSE(isSoundPlaying());
 }
 
+void test_runtime_tone_sequence_is_copied_and_non_blocking()
+{
+    resetAudioForTest();
+    const uint16_t frequencies[3] = {523, 659, 784};
+    TEST_ASSERT_TRUE(playToneSequence(frequencies, 3, 300, 160));
+    TEST_ASSERT_EQUAL_PTR(runtimeToneSequence, playback.sequence);
+    TEST_ASSERT_EQUAL(AudioCommandType::TONE, runtimeToneSequence[0].type);
+    TEST_ASSERT_EQUAL_UINT16(523, runtimeToneSequence[0].frequency);
+    TEST_ASSERT_EQUAL(AudioCommandType::PAUSE, runtimeToneSequence[1].type);
+    TEST_ASSERT_EQUAL_UINT16(659, runtimeToneSequence[2].frequency);
+    TEST_ASSERT_EQUAL_UINT16(784, runtimeToneSequence[4].frequency);
+    TEST_ASSERT_EQUAL(AudioCommandType::END, runtimeToneSequence[5].type);
+    TEST_ASSERT_TRUE(isSoundPlaying());
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -179,6 +194,7 @@ void setup()
     RUN_TEST(test_end_command_stops_playback);
     RUN_TEST(test_new_sound_interrupts_current_sequence);
     RUN_TEST(test_stop_sound_is_immediate_and_idempotent);
+    RUN_TEST(test_runtime_tone_sequence_is_copied_and_non_blocking);
     UNITY_END();
 }
 
