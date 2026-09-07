@@ -113,6 +113,12 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
         dungeon.rooms[roomIndex].completed =
             dungeon.rooms[roomIndex].bellPuzzle.progress == BELL_PUZZLE_COMPLETE;
     }
+    else if (isNumberTilePuzzleRoom(dungeon.rooms[roomIndex]))
+    {
+        dungeon.rooms[roomIndex].completed =
+            dungeon.rooms[roomIndex].numberPuzzle.progress ==
+                NUMBER_PUZZLE_COMPLETE;
+    }
     else
     {
         dungeon.rooms[roomIndex].completed = !hasLivingMonster;
@@ -526,9 +532,16 @@ void generateDungeon(Dungeon& dungeon)
         room.type = type;
         room.puzzleType = roomIndex == dungeon.riddleRoom
             ? PUZZLE_RIDDLEMAN
-            : (room.type == ROOM_PUZZLE &&
-               random(100) < BELL_ROOM_SELECTION_CHANCE_PERCENT
-                ? PUZZLE_BELLS : PUZZLE_NONE);
+            : PUZZLE_NONE;
+        if (room.type == ROOM_PUZZLE && roomIndex != dungeon.riddleRoom)
+        {
+            const uint8_t puzzleRoll = random(100);
+            if (puzzleRoll < BELL_ROOM_SELECTION_CHANCE_PERCENT)
+                room.puzzleType = PUZZLE_BELLS;
+            else if (puzzleRoll < BELL_ROOM_SELECTION_CHANCE_PERCENT +
+                                      NUMBER_TILE_ROOM_SELECTION_CHANCE_PERCENT)
+                room.puzzleType = PUZZLE_NUMBER_TILES;
+        }
         room.encounterTheme =
             (room.type == ROOM_COMBAT || room.type == ROOM_AMBUSH)
                 ? static_cast<EncounterTheme>(random(
@@ -557,6 +570,7 @@ void generateDungeon(Dungeon& dungeon)
             ? SHAPE_ENTRANCE
             : (dungeon.rooms[i].puzzleType == PUZZLE_RIDDLEMAN ||
                dungeon.rooms[i].puzzleType == PUZZLE_BELLS
+               || dungeon.rooms[i].puzzleType == PUZZLE_NUMBER_TILES
                 ? SHAPE_SQUARE : randomProductionRoomShape(dungeon.rooms[i]));
         generateRoom(dungeon.rooms[i]);
 
@@ -605,6 +619,31 @@ void generateDungeon(Dungeon& dungeon)
             {
                 continue;
             }
+        }
+
+        if (dungeon.rooms[i].puzzleType == PUZZLE_NUMBER_TILES)
+        {
+            Direction lockedDirection = dungeon.rooms[i].connections[0].direction;
+            const uint8_t currentDistance = getRoomDistanceFromEntrance(dungeon, i);
+            for (uint8_t c = 0; c < dungeon.rooms[i].connectionCount; ++c)
+            {
+                const RoomConnection& connection = dungeon.rooms[i].connections[c];
+                const uint8_t neighbor = getRoomNeighbor(
+                    dungeon.rooms[i], connection.direction);
+                if (neighbor != NO_ROOM &&
+                    getRoomDistanceFromEntrance(dungeon, neighbor) > currentDistance)
+                { lockedDirection = connection.direction; break; }
+            }
+            uint8_t numberRolls[128] = {};
+            for (uint8_t& roll : numberRolls)
+                roll = static_cast<uint8_t>(random(256));
+            if (!configureNumberTilePuzzleRoom(
+                    dungeon.rooms[i], lockedDirection,
+                    player.level > 0 ? player.level : 1,
+                    numberRolls, sizeof(numberRolls)))
+                dungeon.rooms[i].puzzleType = PUZZLE_NONE;
+            else
+                continue;
         }
 
         // Major blockers precede difficult terrain and runtime traps so every
@@ -667,6 +706,12 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
 
     resetRoomTurnState(runtime);
     runtime.bellEnteredCount = 0;
+    runtime.numberCrossingActive = false;
+    runtime.numberCurrentStep = 0;
+    runtime.numberPreviousDigit = room.numberPuzzle.seedA;
+    runtime.numberCurrentDigit = room.numberPuzzle.rule ==
+        NUMBER_RULE_PREVIOUS_PLUS_CURRENT_MOD_10
+            ? room.numberPuzzle.seedB : room.numberPuzzle.seedA;
 
     uint8_t entryX = ROOM_WIDTH / 2;
     uint8_t entryY = ROOM_HEIGHT / 2;
@@ -740,6 +785,10 @@ void resetDungeonRun(Dungeon& dungeon)
         runtime.playerSlot = NO_ENTITY_SLOT;
         runtime.initialized = false;
         runtime.bellEnteredCount = 0;
+        runtime.numberCrossingActive = false;
+        runtime.numberCurrentStep = 0;
+        runtime.numberPreviousDigit = 0;
+        runtime.numberCurrentDigit = 0;
 
         for (uint8_t entityIndex = 0;
              entityIndex < MAX_ENTITIES;
@@ -753,6 +802,7 @@ void resetDungeonRun(Dungeon& dungeon)
         dungeon.rooms[roomIndex].npcSpawn = DungeonNPCSpawn{};
         dungeon.rooms[roomIndex].puzzleType = PUZZLE_NONE;
         dungeon.rooms[roomIndex].bellPuzzle = BellPuzzleState{};
+        dungeon.rooms[roomIndex].numberPuzzle = NumberTilePuzzleState{};
         dungeon.rooms[roomIndex].north = NO_ROOM;
         dungeon.rooms[roomIndex].east = NO_ROOM;
         dungeon.rooms[roomIndex].south = NO_ROOM;

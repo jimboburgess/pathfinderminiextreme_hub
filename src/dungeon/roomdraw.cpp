@@ -10,6 +10,7 @@
 #include "graphics/elementalvisual.h"
 #include "traps.h"
 #include "fountain.h"
+#include "numbertilepuzzle.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -19,6 +20,44 @@ constexpr uint16_t COLOR_VOID = ST77XX_BLACK;
 
 namespace
 {
+void drawNumberTile(const DungeonRoom& room, int tileX, int tileY)
+{
+  const int x = tileX * TILE_SIZE;
+  const int y = tileY * TILE_SIZE;
+  const Entity* player = nullptr;
+  for (uint8_t i = 0; dungeon.entities != nullptr && i < dungeon.entityCount; ++i)
+    if (dungeon.entities[i].active && dungeon.entities[i].type == ENTITY_PLAYER)
+    { player = &dungeon.entities[i]; break; }
+  const NumberTileVisualState state =
+      getNumberTileVisualState(room, tileX, tileY, player);
+  const uint16_t background = state == NUMBER_TILE_FAILED ? 0x7800
+      : (state == NUMBER_TILE_SAFE_ACTIVE ? 0x03E0 : 0x3186);
+  const uint16_t border = state == NUMBER_TILE_FAILED ? 0xF800
+      : (state == NUMBER_TILE_SAFE_ACTIVE ? 0x07E0 : 0x7BEF);
+  tft.fillRect(x, y, TILE_SIZE, TILE_SIZE, background);
+  tft.drawRect(x, y, TILE_SIZE, TILE_SIZE, border);
+  tft.drawLine(x + 2, y + 2, x + 13, y + 2, border);
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_WHITE, background);
+  tft.setCursor(x + 5, y + 4);
+  const uint8_t digit = getNumberPuzzleDigitAt(room, tileX, tileY);
+  if (digit <= 9) tft.print(static_cast<unsigned>(digit));
+}
+
+void drawNumberCluePlaque(int tileX, int tileY)
+{
+  const int x = tileX * TILE_SIZE;
+  const int y = tileY * TILE_SIZE;
+  tft.drawRGBBitmap(x, y, dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                    TILE_SIZE, TILE_SIZE);
+  tft.fillRoundRect(x + 2, y + 3, 12, 10, 2, 0x7BEF);
+  tft.drawRoundRect(x + 2, y + 3, 12, 10, 2, 0xFFE0);
+  tft.setTextSize(1);
+  tft.setTextColor(0x0000, 0x7BEF);
+  tft.setCursor(x + 5, y + 5);
+  tft.print('?');
+}
+
 // Muted colors keep environmental clues readable at 16x16 without turning
 // them into trap icons. The confirmed marker below is intentionally brighter.
 constexpr uint16_t COLOR_CLUE_DARK = 0x39E7;
@@ -365,7 +404,11 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
     return;
   }
 
-  if (isHealingFountainTile(room, tileX, tileY))
+  if (room.map.tiles[tileY][tileX] == TILE_NUMBER_PUZZLE)
+    drawNumberTile(room, tileX, tileY);
+  else if (room.map.tiles[tileY][tileX] == TILE_NUMBER_CLUE_PLAQUE)
+    drawNumberCluePlaque(tileX, tileY);
+  else if (isHealingFountainTile(room, tileX, tileY))
     drawHealingFountainTile(room, tileX, tileY);
   else
     drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);

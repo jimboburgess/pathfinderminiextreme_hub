@@ -15,6 +15,7 @@
 #include "dungeon/npcs.h"
 #include "dungeon/riddlepuzzle.h"
 #include "dungeon/bellpuzzle.h"
+#include "dungeon/numbertilepuzzle.h"
 #include "dungeon/abilityresolver.h"
 #include "../audio/audio.h"
 #include "forest/forest.h"
@@ -391,9 +392,17 @@ bool tryMovePlayer(Dungeon &dungeon)
         case TILE_FLOOR:
         case TILE_RUBBLE:
         case TILE_BELL_LISTEN_RUNE:
+        case TILE_NUMBER_PUZZLE:
+        case TILE_NUMBER_CLUE_PLAQUE:
         case TILE_BARREL:
         case TILE_CRATE:
         {
+            if (tile == TILE_NUMBER_PUZZLE &&
+                !tryEnterCurrentNumberPuzzleTile(*player, targetX, targetY))
+            {
+                playSound(SoundEffect::BUMP);
+                return false;
+            }
             if (tile == TILE_BARREL || tile == TILE_CRATE)
             {
                 const int strengthTotal = rollDie(20) + getAbilityModifier(
@@ -464,6 +473,7 @@ bool tryMovePlayer(Dungeon &dungeon)
             player->x = targetX;
             player->y = targetY;
             handleCurrentBellListeningRuneEntry(*player, targetX, targetY);
+            handleCurrentNumberPuzzleMovement(*player, oldX, oldY);
 
             //--------------------------------------------------
             // Consume one square of movement.
@@ -559,6 +569,11 @@ bool tryMovePlayer(Dungeon &dungeon)
                     return false;
                 }
                 if (!tryUnlockCurrentBellExit(doorDirection))
+                {
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
+                if (!tryUnlockCurrentNumberPuzzleExit(doorDirection))
                 {
                     playSound(SoundEffect::BUMP);
                     return false;

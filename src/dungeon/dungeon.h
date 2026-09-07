@@ -14,6 +14,7 @@
 #include "fountain.h"
 #include "furniture.h"
 #include "bellpuzzle.h"
+#include "numbertilepuzzle.h"
 
 constexpr uint8_t ROOM_WIDTH = 15;
 constexpr uint8_t ROOM_HEIGHT = 14;
@@ -119,6 +120,7 @@ struct DungeonRoom {
     HealingFountain fountain;
     DungeonNPCSpawn npcSpawn;
     BellPuzzleState bellPuzzle;
+    NumberTilePuzzleState numberPuzzle;
 };
 
 
@@ -146,6 +148,10 @@ struct DungeonRoomRuntime
     bool initialized = false;
     // Only the currently matched prefix is retained; wrong input resets it.
     uint8_t bellEnteredCount = 0;
+    bool numberCrossingActive = false;
+    uint8_t numberCurrentStep = 0;
+    uint8_t numberPreviousDigit = 0;
+    uint8_t numberCurrentDigit = 0;
 };
 
 struct Dungeon {

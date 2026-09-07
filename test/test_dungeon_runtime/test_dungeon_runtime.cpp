@@ -319,6 +319,25 @@ bool isBellPuzzleRoom(const DungeonRoom& room)
         room.bellPuzzle.progress != BELL_PUZZLE_NONE;
 }
 
+bool configureNumberTilePuzzleRoom(
+    DungeonRoom& room, Direction direction, uint8_t level,
+    const uint8_t* rolls, uint16_t rollCount)
+{
+    (void)level;
+    (void)rolls;
+    (void)rollCount;
+    room.puzzleType = PUZZLE_NUMBER_TILES;
+    room.numberPuzzle.progress = NUMBER_PUZZLE_UNSOLVED;
+    room.numberPuzzle.lockedExitDirection = direction;
+    return true;
+}
+
+bool isNumberTilePuzzleRoom(const DungeonRoom& room)
+{
+    return room.puzzleType == PUZZLE_NUMBER_TILES &&
+        room.numberPuzzle.progress != NUMBER_PUZZLE_NONE;
+}
+
 #include "../../src/dungeon/dungeon.cpp"
 
 static void configureLoadedRoom(uint8_t roomIndex)

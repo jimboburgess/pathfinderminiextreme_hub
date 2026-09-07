@@ -40,13 +40,17 @@ enum TileType : uint8_t {
     TILE_BELL_LOW,
     TILE_BELL_MID,
     TILE_BELL_HIGH,
-    TILE_BELL_LISTEN_RUNE
+    TILE_BELL_LISTEN_RUNE,
+    TILE_NUMBER_PUZZLE,
+    TILE_NUMBER_CLUE_PLAQUE
   };
 
 inline bool isDungeonFloorTerrain(TileType tile)
 {
     return tile == TILE_FLOOR || tile == TILE_RUBBLE ||
-           tile == TILE_BELL_LISTEN_RUNE;
+           tile == TILE_BELL_LISTEN_RUNE ||
+           tile == TILE_NUMBER_PUZZLE ||
+           tile == TILE_NUMBER_CLUE_PLAQUE;
 }
 
 inline bool isWallLikeDungeonTile(TileType tile)

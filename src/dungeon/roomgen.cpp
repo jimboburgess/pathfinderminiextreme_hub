@@ -516,6 +516,8 @@ static bool isRoomGeometryWalkable(TileType tile) {
     case TILE_FLOOR:
     case TILE_RUBBLE:
     case TILE_BELL_LISTEN_RUNE:
+    case TILE_NUMBER_PUZZLE:
+    case TILE_NUMBER_CLUE_PLAQUE:
     case TILE_DOOR:
     case TILE_CHEST_SPAWN:
     case TILE_LOOT_SPAWN:

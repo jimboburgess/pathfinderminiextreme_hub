@@ -12,7 +12,8 @@ enum DungeonPuzzleType : uint8_t
 {
     PUZZLE_NONE,
     PUZZLE_RIDDLEMAN,
-    PUZZLE_BELLS
+    PUZZLE_BELLS,
+    PUZZLE_NUMBER_TILES
 };
 
 enum BellToneID : uint8_t
@@ -41,7 +42,8 @@ enum BellInputResult : uint8_t
 };
 
 constexpr uint8_t MAX_BELL_SEQUENCE = 7;
-constexpr uint8_t BELL_ROOM_SELECTION_CHANCE_PERCENT = 50;
+constexpr uint8_t BELL_ROOM_SELECTION_CHANCE_PERCENT = 45;
+constexpr uint8_t NUMBER_TILE_ROOM_SELECTION_CHANCE_PERCENT = 45;
 constexpr uint16_t BELL_LOW_FREQUENCY = 523;
 constexpr uint16_t BELL_MID_FREQUENCY = 659;
 constexpr uint16_t BELL_HIGH_FREQUENCY = 784;
