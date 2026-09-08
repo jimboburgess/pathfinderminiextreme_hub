@@ -80,7 +80,7 @@ void setUp()
 {
     dungeon = Dungeon{};
     dungeon.roomCount = 1;
-    dungeon.entities = dungeon.roomRuntime[0].entities;
+    dungeon.entities = dungeon.activeDungeonEntities;
     messageText = "";
     playedToneCount = 0;
 }

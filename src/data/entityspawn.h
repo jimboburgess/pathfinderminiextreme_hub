@@ -21,12 +21,21 @@ Entity* spawnMonster(
     uint8_t x,
     uint8_t y);
 
+// Applies only definition-derived monster state. It deliberately does not
+// roll HP or grant mutable starting inventory, so persistence inflation can
+// restore those values without consuming RNG.
+bool initializeMonsterDefinitionState(Entity& entity, MonsterID monsterID);
+
 Entity* spawnNPC(
     Entity* entities,
     uint8_t& entityCount,
     NPCID npcID,
     uint8_t x,
     uint8_t y);
+
+
+// Applies definition-derived NPC identity, team, and rendering state.
+bool initializeNPCDefinitionState(Entity& entity, NPCID npcID);
 
 void removeEntity(Entity& entity);
 

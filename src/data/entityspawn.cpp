@@ -75,27 +75,11 @@ Entity* spawnMonster(
     if (entity == nullptr)
         return nullptr;
 
-    entity->monsterID = monsterID;
-    entity->monster = monster;
-
-    entity->sprite = monster->sprite;
-
-    if (monsterID == MONSTER_GIANT_SPIDER ||
-        monsterID == MONSTER_SPECTATOR)
+    if (!initializeMonsterDefinitionState(*entity, monsterID))
     {
-        entity->spriteWidth = LRGSPRITE_W;
-        entity->spriteHeight = LRGSPRITE_H;
+        removeEntity(*entity);
+        return nullptr;
     }
-
-    entity->character.team = TEAM_MONSTER;
-    entity->character.state = STATE_ALIVE;
-    entity->character.creatureType = monster->creatureType;
-
-    entity->character.abilities = monster->abilities;
-    entity->character.speed = monster->speed;
-    entity->character.level = monster->casterLevel;
-    entity->character.magic.maxMP = monster->maxMP;
-    entity->character.magic.currentMP = monster->maxMP;
 
     // Monster consumables are normal inventory items. Only definitions that
     // explicitly configure a count receive them; all existing monsters retain
@@ -113,31 +97,45 @@ Entity* spawnMonster(
     entity->character.health.maxHP = maxHP;
     entity->character.health.currentHP = entity->character.health.maxHP;
 
-    // Put the creature's weapon in the matching slot.  Ranged monster
-    // scripts can then deliberately choose their ranged weapon instead of
-    // treating a bow as a melee attack.
-    entity->character.equipment.equipped[SLOT_MELEE_WEAPON] =
-        makeItemInstance(ITEM_NONE);
-    entity->character.equipment.equipped[SLOT_RANGED_WEAPON] =
-        makeItemInstance(ITEM_NONE);
-
-    const Weapon* weapon = getWeapon(monster->weapon);
-
-    if (weapon != nullptr && weapon->type == WEAPON_RANGED)
-    {
-        entity->character.equipment.equipped[SLOT_RANGED_WEAPON] =
-            makeItemInstance(monster->weapon);
-    }
-    else
-    {
-        entity->character.equipment.equipped[SLOT_MELEE_WEAPON] =
-            makeItemInstance(monster->weapon);
-    }
-
-    entity->character.equipment.equipped[SLOT_ARMOR] =
-        makeItemInstance(monster->armor);
-
     return entity;
+}
+
+bool initializeMonsterDefinitionState(Entity& entity, MonsterID monsterID)
+{
+    const Monster* monster = getMonster(monsterID);
+    if (monster == nullptr || monster->hitDice == 0) return false;
+
+    entity.monsterID = monsterID;
+    entity.monster = monster;
+    entity.sprite = monster->sprite;
+    entity.spriteWidth = SPRITE_W;
+    entity.spriteHeight = SPRITE_H;
+    if (monsterID == MONSTER_GIANT_SPIDER ||
+        monsterID == MONSTER_SPECTATOR)
+    {
+        entity.spriteWidth = LRGSPRITE_W;
+        entity.spriteHeight = LRGSPRITE_H;
+    }
+
+    entity.character.team = TEAM_MONSTER;
+    entity.character.state = STATE_ALIVE;
+    entity.character.creatureType = monster->creatureType;
+    entity.character.abilities = monster->abilities;
+    entity.character.speed = monster->speed;
+    entity.character.level = monster->casterLevel;
+    entity.character.magic.maxMP = monster->maxMP;
+    entity.character.magic.currentMP = monster->maxMP;
+
+    entity.character.equipment = EquipmentData{};
+    const Weapon* weapon = getWeapon(monster->weapon);
+    const EquipmentSlot weaponSlot = weapon != nullptr &&
+        weapon->type == WEAPON_RANGED
+            ? SLOT_RANGED_WEAPON : SLOT_MELEE_WEAPON;
+    entity.character.equipment.equipped[weaponSlot] =
+        makeItemInstance(monster->weapon);
+    entity.character.equipment.equipped[SLOT_ARMOR] =
+        makeItemInstance(monster->armor);
+    return true;
 }
 
 Entity* spawnNPC(
@@ -156,11 +154,20 @@ Entity* spawnNPC(
     if (entity == nullptr)
         return nullptr;
 
-    entity->npcID = npcID;
-    entity->sprite = definition->sprite;
-    entity->character.team = definition->team;
-    entity->character.state = STATE_ALIVE;
-    return entity;
+    return initializeNPCDefinitionState(*entity, npcID) ? entity : nullptr;
+}
+
+bool initializeNPCDefinitionState(Entity& entity, NPCID npcID)
+{
+    const NPCDefinition* definition = getNPCDefinition(npcID);
+    if (definition == nullptr) return false;
+    entity.npcID = npcID;
+    entity.sprite = definition->sprite;
+    entity.spriteWidth = SPRITE_W;
+    entity.spriteHeight = SPRITE_H;
+    entity.character.team = definition->team;
+    entity.character.state = STATE_ALIVE;
+    return true;
 }
 
 

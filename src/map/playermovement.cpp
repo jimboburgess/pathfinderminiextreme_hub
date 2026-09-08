@@ -592,15 +592,22 @@ bool tryMovePlayer(Dungeon &dungeon)
                 ::player = player->character;
 
                 dungeon.currentRoom = nextRoom;
-
+                bool roomLoaded = false;
                 if (targetY == 0)
-                    loadRoom(dungeon, ENTRY_SOUTH);
+                    roomLoaded = loadRoom(dungeon, ENTRY_SOUTH);
                 else if (targetY == ROOM_HEIGHT - 1)
-                    loadRoom(dungeon, ENTRY_NORTH);
+                    roomLoaded = loadRoom(dungeon, ENTRY_NORTH);
                 else if (targetX == 0)
-                    loadRoom(dungeon, ENTRY_EAST);
+                    roomLoaded = loadRoom(dungeon, ENTRY_EAST);
                 else if (targetX == ROOM_WIDTH - 1)
-                    loadRoom(dungeon, ENTRY_WEST);
+                    roomLoaded = loadRoom(dungeon, ENTRY_WEST);
+
+                if (!roomLoaded)
+                {
+                    setGameMessage("Could not leave room.");
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
 
                 // Repaint the destination map, otherwise the old player's
                 // transparent sprite can remain visible beneath the room.

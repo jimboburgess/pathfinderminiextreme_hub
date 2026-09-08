@@ -80,6 +80,18 @@ const Menu fountainMenu =
     sizeof(fountainMenuItems) / sizeof(fountainMenuItems[0])
 };
 
+}
+
+void clearInteractionEntityReferences()
+{
+    lockedChest = nullptr;
+    selectedFountain = nullptr;
+    selectedRiddleDoorDirection = DIR_NORTH;
+}
+
+namespace
+{
+
 Entity* getLockedChest()
 {
     return lockedChest != nullptr && lockedChest->active &&

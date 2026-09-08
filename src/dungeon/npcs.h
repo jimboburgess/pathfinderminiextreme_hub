@@ -44,8 +44,8 @@ enum RiddleRoomFlag : uint8_t
     RIDDLE_FLAG_CAT_JUST_CAUGHT = 1 << 4
 };
 
-// A generated-room blueprint. Once the room is first loaded, the NPC becomes
-// a normal persistent Entity in DungeonRoomRuntime.
+// A generated-room blueprint. While its room is active the NPC is a normal
+// Entity; inactive-room identity is stored as a compact PersistentEntity.
 struct DungeonNPCSpawn
 {
     NPCID id = NPC_NONE;

@@ -88,7 +88,7 @@ void setUp()
     dungeon = Dungeon{};
     dungeon.roomCount = 1;
     dungeon.currentRoom = 0;
-    dungeon.entities = dungeon.roomRuntime[0].entities;
+    dungeon.entities = dungeon.activeDungeonEntities;
     messageText = "";
 }
 void tearDown() {}

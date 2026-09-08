@@ -121,7 +121,6 @@ bool spawnBellKey(DungeonRoom& room)
     room.bellPuzzle.keyX = static_cast<int8_t>(keyX);
     room.bellPuzzle.keyY = static_cast<int8_t>(keyY);
     room.bellPuzzle.progress = BELL_PUZZLE_KEY_PRESENTED;
-    dungeon.roomRuntime[dungeon.currentRoom].entityCount = dungeon.entityCount;
     markTileDirty(keyX, keyY);
     return true;
 }

@@ -15,6 +15,7 @@
 #include "furniture.h"
 #include "bellpuzzle.h"
 #include "numbertilepuzzle.h"
+#include "entitypersistence.h"
 
 constexpr uint8_t ROOM_WIDTH = 15;
 constexpr uint8_t ROOM_HEIGHT = 14;
@@ -134,18 +135,55 @@ constexpr uint8_t MIDDLE_ROOM_COUNT = 3;
 constexpr uint8_t DUNGEON_RUBBLE_THEME_CHANCE_PERCENT = 70;
 constexpr uint8_t OPTIONAL_RUBBLE_ROOM_CHANCE_PERCENT = 60;
 constexpr uint8_t MAX_COMBATANTS = 16;
-constexpr uint8_t NO_ENTITY_SLOT = 255;
 
-// Mutable room occupants live separately from the generated room map.  The
-// active dungeon entity pointer below aliases one of these arrays, so there is
-// only one authoritative copy of monster HP, conditions, corpse loot, and
-// position for each room.
+struct CompactDungeonRoomEntityStorage
+{
+    PersistentEntity persistentEntities[MAX_ENTITIES];
+    // Stage 2 keeps transaction scratch inside the memory formerly reserved
+    // by the room's full Entity array. Stage 3 can replace this with one shared
+    // scratch buffer when the legacy compatibility member is removed.
+    PersistentEntity transactionScratch[MAX_ENTITIES];
+};
+
+union DungeonRoomEntityStorage
+{
+    // Inactive Stage 2 compatibility member. Normal runtime code never makes
+    // this member active; it preserves the old layout/fallback type until the
+    // compact path has been verified and Stage 3 removes it.
+    Entity legacyEntities[MAX_ENTITIES];
+    CompactDungeonRoomEntityStorage compact;
+
+    DungeonRoomEntityStorage() : compact{} {}
+    DungeonRoomEntityStorage(const DungeonRoomEntityStorage& other)
+        : compact(other.compact) {}
+    DungeonRoomEntityStorage(DungeonRoomEntityStorage&& other)
+        : compact(other.compact) {}
+    DungeonRoomEntityStorage& operator=(
+        const DungeonRoomEntityStorage& other)
+    {
+        compact = other.compact;
+        return *this;
+    }
+    DungeonRoomEntityStorage& operator=(DungeonRoomEntityStorage&& other)
+    {
+        compact = other.compact;
+        return *this;
+    }
+    ~DungeonRoomEntityStorage() { compact.~CompactDungeonRoomEntityStorage(); }
+};
+
+static_assert(sizeof(CompactDungeonRoomEntityStorage) <=
+              sizeof(Entity) * MAX_ENTITIES,
+              "Stage 2 compact and transaction storage must fit legacy room storage");
+
+// Room-owned occupants are compact while inactive. Full Entity objects exist
+// only in Dungeon::activeDungeonEntities for the currently loaded room.
 struct DungeonRoomRuntime
 {
-    Entity entities[MAX_ENTITIES];
-    uint8_t entityCount = 0;
-    uint8_t playerSlot = NO_ENTITY_SLOT;
+    DungeonRoomEntityStorage entityStorage;
+    uint8_t persistentEntityCount = 0;
     bool initialized = false;
+    bool persistenceReady = false;
     // Only the currently matched prefix is retained; wrong input resets it.
     uint8_t bellEnteredCount = 0;
     bool numberCrossingActive = false;
@@ -158,8 +196,11 @@ struct Dungeon {
     DungeonRoom rooms[MAX_ROOMS];
     DungeonRoomRuntime roomRuntime[MAX_ROOMS];
 
-    // Compatibility view of the currently loaded room.  This points directly
-    // into roomRuntime[currentRoom]; it is not a second entity collection.
+    // The only full dungeon Entity collection used by active gameplay.
+    Entity activeDungeonEntities[MAX_ENTITIES];
+
+    // Compatibility view used throughout combat/rendering/movement. It points
+    // to activeDungeonEntities whenever a dungeon room is loaded.
     Entity* entities = nullptr;
     uint8_t roomCount = 0;
     uint8_t currentRoom = 0;
@@ -194,8 +235,9 @@ DungeonRubblePlan createDungeonRubblePlan(
 void enterDungeon();
 void generateDungeon(Dungeon& dungeon);
 void generateRoom(DungeonRoom& room);
-void loadRoom(Dungeon& dungeon, RoomEntry entry);
-void suspendDungeonRun(Dungeon& dungeon);
+bool loadRoom(Dungeon& dungeon, RoomEntry entry);
+bool persistActiveDungeonRoom(Dungeon& dungeon);
+bool suspendDungeonRun(Dungeon& dungeon);
 void resetDungeonRun(Dungeon& dungeon);
 void updateCurrentDungeonRoomCompletion(Dungeon& dungeon);
 bool isDungeonRunComplete(const Dungeon& dungeon);

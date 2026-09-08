@@ -157,13 +157,11 @@ void test_runtime_entity_state_survives_room_view_changes()
     Dungeon dungeon{};
     DungeonRoomRuntime& room = dungeon.roomRuntime[3];
     Entity* bertram = spawnNPC(
-        room.entities, room.entityCount,
+        dungeon.activeDungeonEntities, dungeon.entityCount,
         NPC_BERTRAM_RIDDLEMAN, 9, 4);
     room.initialized = true;
 
-    dungeon.entities = dungeon.roomRuntime[1].entities;
-    dungeon.entities = room.entities;
-    dungeon.entityCount = room.entityCount;
+    dungeon.entities = dungeon.activeDungeonEntities;
 
     TEST_ASSERT_EQUAL_PTR(bertram, &dungeon.entities[0]);
     TEST_ASSERT_TRUE(dungeon.entities[0].active);

@@ -256,7 +256,6 @@ bool handleCurrentBertramRiddleResult(bool correct)
     room.npcSpawn.keyX = keyX;
     room.npcSpawn.keyY = keyY;
     room.npcSpawn.puzzleState = RIDDLE_ROOM_KEY_PRESENTED;
-    dungeon.roomRuntime[dungeon.currentRoom].entityCount = dungeon.entityCount;
     markTileDirty(keyX, keyY);
     setGameMessage("Correct.");
     return true;
@@ -449,7 +448,6 @@ bool startCurrentRiddleCatChase(uint8_t thresholdRandomValue)
     room.npcSpawn.catCatchAttempts = 0;
     room.npcSpawn.riddleFlags |= RIDDLE_FLAG_CAT_CHASE_ACTIVE;
     room.npcSpawn.riddleFlags &= static_cast<uint8_t>(~RIDDLE_FLAG_CAT_JUST_CAUGHT);
-    dungeon.roomRuntime[dungeon.currentRoom].entityCount = dungeon.entityCount;
     markTileDirty(catX, catY);
     return true;
 }

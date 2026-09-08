@@ -1222,18 +1222,23 @@ void menuActivate()
                     player = *currentCharacter;
             }
 
-            // Leaving an encounter is not combat victory: discard only the
-            // combat session, with no XP/loot/death side effects.
-            abortCombat();
-
             if (gameState == GAME_DUNGEON)
             {
                 updateCurrentDungeonRoomCompletion(dungeon);
-                suspendDungeonRun(dungeon);
+                if (!suspendDungeonRun(dungeon))
+                {
+                    setGameMessage("Could not leave room.");
+                    break;
+                }
 
                 // Final-encounter victory becomes a completed run only when
                 // the player has safely returned to town.
                 markDungeonCompletedOnTownReturn(dungeon);
+            }
+            else
+            {
+                // Leaving a non-dungeon encounter is not combat victory.
+                abortCombat();
             }
 
             gameState = GAME_TOWN;

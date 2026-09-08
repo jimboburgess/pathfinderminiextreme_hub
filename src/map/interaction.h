@@ -22,6 +22,10 @@ void pickLockedChest();
 void forceOpenLockedChest();
 void pickRiddlemanDoorLock();
 
+// Invalidates selections that point into the shared active dungeon entity
+// buffer before that buffer is reused for another room.
+void clearInteractionEntityReferences();
+
 // Healing-fountain actions are selected through the same contextual menu as
 // other dungeon interactables.
 void drinkFromFountain();

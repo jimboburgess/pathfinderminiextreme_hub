@@ -14,6 +14,9 @@
 #include "graphics/messagelog.h"
 #include "map/awareness.h"
 #include "map/mapeffects.h"
+#include "map/interaction.h"
+#include "input/inventorymenu.h"
+#include "input/menu.h"
 
 Dungeon dungeon;
 
@@ -72,10 +75,33 @@ RoomType selectMiddleRoomType()
     return ROOM_EMPTY;
 }
 
-void resetRoomTurnState(DungeonRoomRuntime& runtime)
+void clearActiveDungeonEntities(Dungeon& dungeon)
 {
-    for (uint8_t i = 0; i < runtime.entityCount; i++)
-        runtime.entities[i].turn = TurnState{};
+    for (uint8_t i = 0; i < MAX_ENTITIES; ++i)
+        dungeon.activeDungeonEntities[i] = Entity{};
+    dungeon.entityCount = 0;
+}
+
+void resetActiveRoomTurnState(Dungeon& dungeon)
+{
+    for (uint8_t i = 0; i < dungeon.entityCount; ++i)
+        dungeon.activeDungeonEntities[i].turn = TurnState{};
+}
+
+bool persistentMonsterIsLiving(const PersistentEntity& entity)
+{
+    return entity.type == ENTITY_MONSTER &&
+        (entity.flags & PERSISTENT_ENTITY_ACTIVE) != 0 &&
+        entity.payload.monster.state == STATE_ALIVE;
+}
+
+bool persistentTreasureChestIsEmpty(const PersistentEntity& entity)
+{
+    return entity.type == ENTITY_CHEST &&
+        (entity.flags & PERSISTENT_ENTITY_ACTIVE) != 0 &&
+        entity.payload.chest.loot.generated &&
+        entity.payload.chest.loot.itemCount == 0 &&
+        entity.payload.chest.loot.gold == 0;
 }
 
 void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
@@ -88,19 +114,32 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
     if (!runtime.initialized)
         return;
 
+    const bool roomIsActive = dungeon.loadedRoom == roomIndex &&
+        dungeon.entities == dungeon.activeDungeonEntities;
     bool hasLivingMonster = false;
-
-    for (uint8_t i = 0; i < runtime.entityCount; i++)
+    if (roomIsActive)
     {
-        const Entity& entity = runtime.entities[i];
-
-        if (entity.active && entity.type == ENTITY_MONSTER &&
-            entity.character.team == TEAM_MONSTER &&
-            entity.character.state == STATE_ALIVE)
+        for (uint8_t i = 0; i < dungeon.entityCount; ++i)
         {
-            hasLivingMonster = true;
-            break;
+            const Entity& entity = dungeon.entities[i];
+            if (entity.active && entity.type == ENTITY_MONSTER &&
+                entity.character.team == TEAM_MONSTER &&
+                entity.character.state == STATE_ALIVE)
+            {
+                hasLivingMonster = true;
+                break;
+            }
         }
+    }
+    else if (runtime.persistenceReady)
+    {
+        for (uint8_t i = 0; i < runtime.persistentEntityCount; ++i)
+            if (persistentMonsterIsLiving(
+                    runtime.entityStorage.compact.persistentEntities[i]))
+            {
+                hasLivingMonster = true;
+                break;
+            }
     }
 
     if (isRiddlemanPuzzleRoom(dungeon.rooms[roomIndex]))
@@ -126,54 +165,87 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
 
     if (roomIndex == dungeon.treasureRoom)
     {
-        for (uint8_t i = 0; i < runtime.entityCount; i++)
+        if (roomIsActive)
         {
-            const Entity& entity = runtime.entities[i];
-            if (entity.active && entity.type == ENTITY_CHEST &&
-                entity.loot.generated && entity.loot.itemCount == 0 &&
-                entity.loot.gold == 0)
+            for (uint8_t i = 0; i < dungeon.entityCount; ++i)
             {
-                dungeon.finalTreasureLooted = true;
+                const Entity& entity = dungeon.entities[i];
+                if (entity.active && entity.type == ENTITY_CHEST &&
+                    entity.loot.generated && entity.loot.itemCount == 0 &&
+                    entity.loot.gold == 0)
+                    dungeon.finalTreasureLooted = true;
             }
         }
+        else if (runtime.persistenceReady)
+            for (uint8_t i = 0; i < runtime.persistentEntityCount; ++i)
+                if (persistentTreasureChestIsEmpty(
+                        runtime.entityStorage.compact.persistentEntities[i]))
+                    dungeon.finalTreasureLooted = true;
     }
 
     if (roomIndex == dungeon.bossRoom)
         dungeon.finalEncounterCleared = !hasLivingMonster;
 }
 
-void detachLoadedDungeonPlayer(Dungeon& dungeon)
+bool packActiveEntities(
+    const Dungeon& dungeon, PersistentEntity destination[MAX_ENTITIES],
+    uint8_t& packedCount)
 {
-    if (dungeon.loadedRoom >= MAX_ROOMS || dungeon.entities == nullptr)
-        return;
-
-    DungeonRoomRuntime& runtime =
-        dungeon.roomRuntime[dungeon.loadedRoom];
-    runtime.entityCount = dungeon.entityCount;
-
-    Entity* playerEntity = nullptr;
-
-    if (runtime.playerSlot < runtime.entityCount)
+    packedCount = 0;
+    for (uint8_t i = 0; i < dungeon.entityCount; ++i)
     {
-        Entity& reservedPlayer = runtime.entities[runtime.playerSlot];
-
-        if (reservedPlayer.active && reservedPlayer.type == ENTITY_PLAYER)
-            playerEntity = &reservedPlayer;
+        const Entity& source = dungeon.activeDungeonEntities[i];
+        if (source.type == ENTITY_PLAYER)
+            continue;
+        if (source.type == ENTITY_NONE)
+        {
+            if (source.active) return false;
+            continue;
+        }
+        if (packedCount >= MAX_ENTITIES ||
+            !packPersistentEntity(source, destination[packedCount]))
+            return false;
+        ++packedCount;
     }
+    return true;
+}
 
-    // Defensive compatibility for a room created before the reserved-slot
-    // convention was established.
-    if (playerEntity == nullptr)
-        playerEntity = getPlayerEntity(runtime.entities, runtime.entityCount);
+bool validatePersistentRoom(const DungeonRoomRuntime& runtime)
+{
+    if (!runtime.persistenceReady ||
+        runtime.persistentEntityCount > MAX_ENTITIES)
+        return false;
+    Entity probe{};
+    for (uint8_t i = 0; i < runtime.persistentEntityCount; ++i)
+        if (!inflatePersistentEntity(
+                runtime.entityStorage.compact.persistentEntities[i], probe))
+            return false;
+    return true;
+}
 
+void copyActivePlayerToGlobal(Dungeon& dungeon)
+{
+    Entity* playerEntity = getPlayerEntity(
+        dungeon.activeDungeonEntities, dungeon.entityCount);
     if (playerEntity != nullptr)
-    {
         player = playerEntity->character;
-        *playerEntity = Entity{};
-    }
+}
 
-    resetRoomTurnState(runtime);
-    updateRoomCompletion(dungeon, dungeon.loadedRoom);
+bool inflateRoomEntities(Dungeon& dungeon, const DungeonRoomRuntime& runtime)
+{
+    clearActiveDungeonEntities(dungeon);
+    for (uint8_t i = 0; i < runtime.persistentEntityCount; ++i)
+    {
+        if (!inflatePersistentEntity(
+                runtime.entityStorage.compact.persistentEntities[i],
+                dungeon.activeDungeonEntities[i]))
+        {
+            clearActiveDungeonEntities(dungeon);
+            return false;
+        }
+        ++dungeon.entityCount;
+    }
+    return true;
 }
 
 void initializeRoomEntities(
@@ -181,17 +253,13 @@ void initializeRoomEntities(
     DungeonRoom& room,
     DungeonRoomRuntime& runtime)
 {
-    runtime.entityCount = 0;
-    runtime.playerSlot = NO_ENTITY_SLOT;
-
-    for (uint8_t i = 0; i < MAX_ENTITIES; i++)
-        runtime.entities[i] = Entity{};
-
-    dungeon.entityCount = 0;
+    clearActiveDungeonEntities(dungeon);
+    runtime.persistentEntityCount = 0;
+    runtime.persistenceReady = false;
     uint8_t themedSpawnIndex = 0;
 
     // Marker tiles are consumed exactly once for this dungeon run. Subsequent
-    // visits bind the same runtime array instead of reconstructing monsters.
+    // visits inflate the compact snapshot instead of regenerating occupants.
     for (int y = 0; y < ROOM_HEIGHT; y++)
     {
         for (int x = 0; x < ROOM_WIDTH; x++)
@@ -306,29 +374,16 @@ void initializeRoomEntities(
             static_cast<uint8_t>(room.npcSpawn.y));
     }
 
-    runtime.entityCount = dungeon.entityCount;
     runtime.initialized = true;
 }
 
 Entity* attachDungeonPlayer(
     Dungeon& dungeon,
-    DungeonRoomRuntime& runtime)
+    DungeonRoomRuntime&)
 {
-    if (runtime.playerSlot == NO_ENTITY_SLOT)
-    {
-        if (dungeon.entityCount >= MAX_ENTITIES)
-            return nullptr;
-
-        runtime.playerSlot = dungeon.entityCount++;
-    }
-
-    if (runtime.playerSlot >= MAX_ENTITIES)
+    if (dungeon.entityCount >= MAX_ENTITIES)
         return nullptr;
-
-    if (runtime.playerSlot >= dungeon.entityCount)
-        dungeon.entityCount = runtime.playerSlot + 1;
-
-    Entity& playerEntity = dungeon.entities[runtime.playerSlot];
+    Entity& playerEntity = dungeon.entities[dungeon.entityCount++];
     playerEntity = Entity{};
     playerEntity.active = true;
     playerEntity.type = ENTITY_PLAYER;
@@ -336,7 +391,6 @@ Entity* attachDungeonPlayer(
     playerEntity.sprite = getPlayerSprite(
         playerEntity.character.characterClass);
 
-    runtime.entityCount = dungeon.entityCount;
     return &playerEntity;
 }
 
@@ -445,8 +499,11 @@ void enterDungeon()
 
     if (resumingRun)
     {
-        dungeon.currentRoom = 0;
-        loadRoom(dungeon, ENTRY_START);
+        if (!loadRoom(dungeon, ENTRY_START))
+        {
+            setGameMessage("Could not resume dungeon.");
+            return;
+        }
     }
     else
     {
@@ -687,24 +744,97 @@ void generateDungeon(Dungeon& dungeon)
     loadRoom(dungeon, ENTRY_START);
 }
 
-void loadRoom(Dungeon& dungeon, RoomEntry entry)
+bool persistActiveDungeonRoom(Dungeon& dungeon)
+{
+    if (dungeon.loadedRoom >= dungeon.roomCount ||
+        dungeon.entities != dungeon.activeDungeonEntities)
+        return false;
+
+    DungeonRoomRuntime& runtime = dungeon.roomRuntime[dungeon.loadedRoom];
+    PersistentEntity* scratch =
+        runtime.entityStorage.compact.transactionScratch;
+    uint8_t packedCount = 0;
+
+    // Preflight before any combat/UI/player state changes. A representation
+    // failure therefore leaves the active room byte-for-byte available.
+    if (!packActiveEntities(dungeon, scratch, packedCount))
+        return false;
+
+    // Clear every known pointer into the shared buffer before it can be reused.
+    abortCombat();
+    closeInventoryMenu();
+    clearInteractionEntityReferences();
+    closeMenu();
+    copyActivePlayerToGlobal(dungeon);
+    resetActiveRoomTurnState(dungeon);
+
+    // abortCombat() removes combat-local Flat-Footed and resets TurnState.
+    // Repack that cleaned state before atomically committing the room snapshot.
+    if (!packActiveEntities(dungeon, scratch, packedCount))
+        return false;
+
+    updateRoomCompletion(dungeon, dungeon.loadedRoom);
+    for (uint8_t i = 0; i < packedCount; ++i)
+        runtime.entityStorage.compact.persistentEntities[i] = scratch[i];
+    for (uint8_t i = packedCount; i < MAX_ENTITIES; ++i)
+        runtime.entityStorage.compact.persistentEntities[i] =
+            PersistentEntity{};
+    runtime.persistentEntityCount = packedCount;
+    runtime.persistenceReady = true;
+    return true;
+}
+
+bool loadRoom(Dungeon& dungeon, RoomEntry entry)
 {
     if (dungeon.currentRoom >= dungeon.roomCount)
-        return;
+        return false;
+
+    const uint8_t targetRoom = dungeon.currentRoom;
+    const uint8_t previousRoom = dungeon.loadedRoom;
+    DungeonRoomRuntime& targetRuntime = dungeon.roomRuntime[targetRoom];
+
+    // Validate an existing destination before disturbing the current room.
+    if (targetRoom != previousRoom && targetRuntime.initialized &&
+        !validatePersistentRoom(targetRuntime))
+    {
+        if (previousRoom < dungeon.roomCount)
+            dungeon.currentRoom = previousRoom;
+        return false;
+    }
+
+    if (previousRoom < dungeon.roomCount &&
+        dungeon.entities == dungeon.activeDungeonEntities &&
+        !persistActiveDungeonRoom(dungeon))
+    {
+        dungeon.currentRoom = previousRoom;
+        return false;
+    }
+
+    // A same-room reload just created its first compact snapshot above.
+    if (targetRuntime.initialized && !validatePersistentRoom(targetRuntime))
+    {
+        dungeon.currentRoom = previousRoom;
+        return false;
+    }
+
     clearMapEffects();
-    detachLoadedDungeonPlayer(dungeon);
+    clearActiveDungeonEntities(dungeon);
+    dungeon.entities = dungeon.activeDungeonEntities;
+    dungeon.loadedRoom = NO_ROOM;
 
-    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
-    DungeonRoomRuntime& runtime =
-        dungeon.roomRuntime[dungeon.currentRoom];
-
-    dungeon.entities = runtime.entities;
-    dungeon.entityCount = runtime.entityCount;
+    DungeonRoom& room = dungeon.rooms[targetRoom];
+    DungeonRoomRuntime& runtime = dungeon.roomRuntime[targetRoom];
 
     if (!runtime.initialized)
         initializeRoomEntities(dungeon, room, runtime);
+    else if (!inflateRoomEntities(dungeon, runtime))
+    {
+        dungeon.entities = nullptr;
+        dungeon.currentRoom = previousRoom;
+        return false;
+    }
 
-    resetRoomTurnState(runtime);
+    resetActiveRoomTurnState(dungeon);
     runtime.bellEnteredCount = 0;
     runtime.numberCrossingActive = false;
     runtime.numberCurrentStep = 0;
@@ -733,33 +863,43 @@ void loadRoom(Dungeon& dungeon, RoomEntry entry)
         if (!findSafePlayerEntry(
                 dungeon, room, entryX, entryY, entryX, entryY))
         {
-            return;
+            dungeon.entities = nullptr;
+            dungeon.currentRoom = previousRoom;
+            clearActiveDungeonEntities(dungeon);
+            return false;
         }
     }
 
     Entity* playerEntity = attachDungeonPlayer(dungeon, runtime);
 
     if (playerEntity == nullptr)
-        return;
+    {
+        dungeon.entities = nullptr;
+        dungeon.currentRoom = previousRoom;
+        clearActiveDungeonEntities(dungeon);
+        return false;
+    }
 
     playerEntity->x = entryX;
     playerEntity->y = entryY;
 
     room.discovered = true;
-    dungeon.loadedRoom = dungeon.currentRoom;
-    runtime.entityCount = dungeon.entityCount;
+    dungeon.loadedRoom = targetRoom;
     resetAwarenessTimer();
+    return true;
 }
 
-void suspendDungeonRun(Dungeon& dungeon)
+bool suspendDungeonRun(Dungeon& dungeon)
 {
     if (!dungeon.runActive)
-        return;
+        return false;
 
-    // Remove the transient map copy of the player now, before town rest,
-    // shopping, or loading can change the authoritative global Character.
-    // Monsters and other room occupants remain exactly where they are.
-    detachLoadedDungeonPlayer(dungeon);
+    if (!persistActiveDungeonRoom(dungeon))
+        return false;
+    clearActiveDungeonEntities(dungeon);
+    dungeon.entities = nullptr;
+    dungeon.loadedRoom = NO_ROOM;
+    return true;
 }
 
 void resetDungeonRun(Dungeon& dungeon)
@@ -778,12 +918,14 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.finalTreasureLooted = false;
     dungeon.completed = false;
 
+    clearActiveDungeonEntities(dungeon);
+
     for (uint8_t roomIndex = 0; roomIndex < MAX_ROOMS; roomIndex++)
     {
         DungeonRoomRuntime& runtime = dungeon.roomRuntime[roomIndex];
-        runtime.entityCount = 0;
-        runtime.playerSlot = NO_ENTITY_SLOT;
+        runtime.persistentEntityCount = 0;
         runtime.initialized = false;
+        runtime.persistenceReady = false;
         runtime.bellEnteredCount = 0;
         runtime.numberCrossingActive = false;
         runtime.numberCurrentStep = 0;
@@ -794,7 +936,10 @@ void resetDungeonRun(Dungeon& dungeon)
              entityIndex < MAX_ENTITIES;
              entityIndex++)
         {
-            runtime.entities[entityIndex] = Entity{};
+            runtime.entityStorage.compact.persistentEntities[entityIndex] =
+                PersistentEntity{};
+            runtime.entityStorage.compact.transactionScratch[entityIndex] =
+                PersistentEntity{};
         }
 
         dungeon.rooms[roomIndex].discovered = false;
@@ -825,9 +970,6 @@ void updateCurrentDungeonRoomCompletion(Dungeon& dungeon)
     if (!dungeon.runActive || dungeon.loadedRoom >= dungeon.roomCount)
         return;
 
-    DungeonRoomRuntime& runtime =
-        dungeon.roomRuntime[dungeon.loadedRoom];
-    runtime.entityCount = dungeon.entityCount;
     updateRoomCompletion(dungeon, dungeon.loadedRoom);
 }
 

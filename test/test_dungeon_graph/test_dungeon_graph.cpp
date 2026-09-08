@@ -94,7 +94,7 @@ void test_graph_data_survives_normal_runtime_mutation()
 
     dungeon.rooms[3].completed = true;
     dungeon.roomRuntime[3].initialized = true;
-    dungeon.roomRuntime[3].entityCount = 1;
+    dungeon.roomRuntime[3].persistentEntityCount = 1;
 
     TEST_ASSERT_EQUAL_INT8(roomX, dungeon.rooms[3].dungeonX);
     TEST_ASSERT_EQUAL_INT8(roomY, dungeon.rooms[3].dungeonY);
