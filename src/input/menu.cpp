@@ -281,7 +281,7 @@ static void rebuildSpellMenu(const Character& character)
                 !isAbilitySupported(abilityID))
                 continue;
             spellMenuItems[spellMenu.itemCount++] =
-            { ability->name, "Cast this Divine spell.", MENU_CAST_ABILITY,
+            { ability->name, getAbilityDescription(abilityID), MENU_CAST_ABILITY,
               nullptr, MENU_CLASS_CLERIC, abilityID };
         }
         return;
@@ -307,7 +307,7 @@ static void rebuildSpellMenu(const Character& character)
         spellMenuItems[spellMenu.itemCount++] =
         {
             ability->name,
-            "Cast this known spell.",
+            getAbilityDescription(abilityID),
             MENU_CAST_ABILITY,
             nullptr,
             MENU_CLASS_ALL,
@@ -1402,32 +1402,32 @@ static void drawMenuWindow()
         MENU_BORDER);
 }
 
-static void drawMenuBody(const Menu* menu)
+static void drawWrappedMenuText(
+    const char* text,
+    int left,
+    int top,
+    int right,
+    int bottom)
 {
-    if (menu == nullptr || menu->bodyText == nullptr ||
-        menu->bodyText[0] == '\0' || menu->bodyHeight == 0) return;
+    if (text == nullptr || text[0] == '\0' || top >= bottom) return;
 
-    constexpr int BODY_CHARACTER_WIDTH = 6;
-    constexpr int BODY_LINE_HEIGHT = 8;
-    const int left = MENU_X + MENU_PADDING;
-    const int right = MENU_X + MENU_WIDTH - MENU_PADDING;
-    const int bottom = getMenuListY(menu);
+    constexpr int CHARACTER_WIDTH = 6;
+    constexpr int LINE_HEIGHT = 8;
     int x = left;
-    int y = MENU_Y + MENU_HEADER_HEIGHT + 5;
+    int y = top;
 
     tft.setTextColor(MENU_TEXT, MENU_BG);
     tft.setTextSize(1);
     tft.setTextWrap(false);
     tft.setCursor(x, y);
 
-    const char* text = menu->bodyText;
-    while (*text != '\0' && y + BODY_LINE_HEIGHT <= bottom)
+    while (*text != '\0' && y + LINE_HEIGHT <= bottom)
     {
         if (*text == '\n')
         {
             ++text;
             x = left;
-            y += BODY_LINE_HEIGHT;
+            y += LINE_HEIGHT;
             tft.setCursor(x, y);
             continue;
         }
@@ -1445,28 +1445,28 @@ static void drawMenuBody(const Menu* menu)
             ++wordLength;
         }
 
-        const int leadingSpace = x == left ? 0 : BODY_CHARACTER_WIDTH;
+        const int leadingSpace = x == left ? 0 : CHARACTER_WIDTH;
         if (x != left &&
-            x + leadingSpace + wordLength * BODY_CHARACTER_WIDTH > right)
+            x + leadingSpace + wordLength * CHARACTER_WIDTH > right)
         {
             x = left;
-            y += BODY_LINE_HEIGHT;
-            if (y + BODY_LINE_HEIGHT > bottom) break;
+            y += LINE_HEIGHT;
+            if (y + LINE_HEIGHT > bottom) break;
             tft.setCursor(x, y);
         }
         else if (leadingSpace != 0)
         {
             tft.write(' ');
-            x += BODY_CHARACTER_WIDTH;
+            x += CHARACTER_WIDTH;
         }
 
         for (uint16_t index = 0; index < wordLength; ++index)
         {
-            if (x + BODY_CHARACTER_WIDTH > right)
+            if (x + CHARACTER_WIDTH > right)
             {
                 x = left;
-                y += BODY_LINE_HEIGHT;
-                if (y + BODY_LINE_HEIGHT > bottom)
+                y += LINE_HEIGHT;
+                if (y + LINE_HEIGHT > bottom)
                 {
                     tft.setTextWrap(true);
                     return;
@@ -1474,13 +1474,26 @@ static void drawMenuBody(const Menu* menu)
                 tft.setCursor(x, y);
             }
             tft.write(static_cast<uint8_t>(word[index]));
-            x += BODY_CHARACTER_WIDTH;
+            x += CHARACTER_WIDTH;
         }
         text += wordLength;
     }
 
-    // Other menu descriptions retain their existing GFX wrapping behavior.
+    // Restore the display's normal wrapping state for non-menu drawing.
     tft.setTextWrap(true);
+}
+
+static void drawMenuBody(const Menu* menu)
+{
+    if (menu == nullptr || menu->bodyText == nullptr ||
+        menu->bodyText[0] == '\0' || menu->bodyHeight == 0) return;
+
+    drawWrappedMenuText(
+        menu->bodyText,
+        MENU_X + MENU_PADDING,
+        MENU_Y + MENU_HEADER_HEIGHT + 5,
+        MENU_X + MENU_WIDTH - MENU_PADDING,
+        getMenuListY(menu));
 }
 
 static void drawMenuItems()
@@ -1620,13 +1633,6 @@ static void drawDescription(const MenuItem* item)
     // Description text
     //--------------------------------------------------
 
-    tft.setTextColor(MENU_TEXT);
-    tft.setTextSize(1);
-
-    tft.setCursor(
-        MENU_X + MENU_PADDING,
-        descriptionY + 8);
-
     const Menu* menu = getCurrentMenu();
     const char* description = item->description;
 
@@ -1636,8 +1642,12 @@ static void drawDescription(const MenuItem* item)
         description = menu->statusText;
     }
 
-    if (description != nullptr)
-        tft.print(description);
+    drawWrappedMenuText(
+        description,
+        MENU_X + MENU_PADDING,
+        descriptionY + 6,
+        MENU_X + MENU_WIDTH - MENU_PADDING,
+        descriptionY + MENU_DESCRIPTION_HEIGHT - 2);
 }
 
 static void drawMenuSelection()

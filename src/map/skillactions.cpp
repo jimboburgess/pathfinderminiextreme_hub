@@ -393,8 +393,8 @@ bool canIgniteWeb(const Entity& entity)
     const ItemInstance& ranged =
         entity.character.equipment.equipped[SLOT_RANGED_WEAPON];
     return getWebEffectAffectingEntity(entity) != nullptr &&
-        (melee.weaponEnhancement == WEAPON_ENHANCEMENT_FLAMING ||
-         ranged.weaponEnhancement == WEAPON_ENHANCEMENT_FLAMING);
+        (hasWeaponProperty(melee, WEAPON_PROPERTY_FLAMING) ||
+         hasWeaponProperty(ranged, WEAPON_PROPERTY_FLAMING));
 }
 
 bool igniteWeb()

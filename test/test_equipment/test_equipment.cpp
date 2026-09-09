@@ -5,12 +5,15 @@
 #include "../../src/characters/conditions.h"
 #include "../../src/data/progression.h"
 #include "../../src/dungeon/combatpolicy.h"
+#include "../../src/dungeon/loot.h"
+#include "../../src/data/entities.h"
 #include "../../src/graphics/sprites.h"
 
 const uint16_t fighter16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t rogue16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t wizard16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t cleric16x16[SPRITE_W * SPRITE_H] = {};
+const uint16_t chestopenwithout[SPRITE_W * SPRITE_H] = {};
 
 int rollDice(int, int) { return 1; }
 static int controlledBaseAttackBonus = 0;
@@ -35,9 +38,13 @@ int getConditionAttackModifier(const Character&) {
 int getConditionArmorClassModifier(const Character&) {
     return controlledArmorClassModifier;
 }
+const Monster* getMonster(MonsterID) { return nullptr; }
+void markEntityFootprintDirty(const Entity&) {}
+void removeEntity(Entity& entity) { entity.active = false; }
 
 #include "../../src/characters/items.cpp"
 #include "../../src/characters/characters.cpp"
+#include "../../src/dungeon/loot.cpp"
 
 static Character makeTestCharacter()
 {
@@ -51,11 +58,11 @@ static Character makeTestCharacter()
 }
 
 static ItemInstance enhanced(ItemID id, int8_t bonus,
-                             WeaponEnhancement property)
+                              uint8_t properties)
 {
     ItemInstance item = makeItemInstance(id);
     item.enhancementBonus = bonus;
-    item.weaponEnhancement = property;
+    item.weaponProperties = properties;
     return item;
 }
 
@@ -63,9 +70,9 @@ void test_exact_instance_swap_preserves_every_field()
 {
     Character character = makeTestCharacter();
     ItemInstance incoming = enhanced(
-        ITEM_DAGGER, 1, WEAPON_ENHANCEMENT_FLAMING);
+        ITEM_DAGGER, 1, WEAPON_PROPERTY_FLAMING);
     ItemInstance outgoing = enhanced(
-        ITEM_LONGSWORD, 2, WEAPON_ENHANCEMENT_FROST);
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_FROST);
     character.equipment.equipped[SLOT_MELEE_WEAPON] = outgoing;
     TEST_ASSERT_TRUE(addItem(character, incoming));
 
@@ -92,7 +99,6 @@ void test_full_inventory_allows_one_for_one_swap()
     for (uint8_t i = 1; i < MAX_INVENTORY; i++)
     {
         ItemInstance filler = makeItemInstance(ITEM_DAGGER);
-        filler.enhancementBonus = static_cast<int8_t>(i);
         TEST_ASSERT_TRUE(addItem(character, filler));
     }
     TEST_ASSERT_EQUAL_UINT8(MAX_INVENTORY, character.inventory.itemCount);
@@ -106,7 +112,7 @@ void test_two_handed_and_shield_conflicts_are_atomic()
 {
     Character character = makeTestCharacter();
     ItemInstance greatsword = enhanced(
-        ITEM_GREATSWORD, 1, WEAPON_ENHANCEMENT_SHOCK);
+        ITEM_GREATSWORD, 1, WEAPON_PROPERTY_SHOCK);
     ItemInstance shield = makeItemInstance(ITEM_HEAVY_STEEL_SHIELD);
     character.equipment.equipped[SLOT_SHIELD] = shield;
     TEST_ASSERT_TRUE(addItem(character, greatsword));
@@ -130,13 +136,12 @@ void test_unequip_fails_safely_when_inventory_is_full()
 {
     Character character = makeTestCharacter();
     ItemInstance equipped = enhanced(
-        ITEM_LONGSWORD, 2, WEAPON_ENHANCEMENT_FLAMING);
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_FLAMING);
     character.equipment.equipped[SLOT_MELEE_WEAPON] = equipped;
 
     for (uint8_t i = 0; i < MAX_INVENTORY; i++)
     {
         ItemInstance filler = makeItemInstance(ITEM_DAGGER);
-        filler.enhancementBonus = static_cast<int8_t>(i + 1);
         TEST_ASSERT_TRUE(addItem(character, filler));
     }
 
@@ -159,13 +164,13 @@ void test_slot_filtering_and_enhancement_stats()
         makeItemInstance(ITEM_HEAVY_STEEL_SHIELD), SLOT_SHIELD));
 
     character.equipment.equipped[SLOT_MELEE_WEAPON] =
-        enhanced(ITEM_DAGGER, 1, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_DAGGER, 1, WEAPON_PROPERTY_NONE);
     character.equipment.equipped[SLOT_RANGED_WEAPON] =
-        enhanced(ITEM_SHORTBOW, 1, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_SHORTBOW, 1, WEAPON_PROPERTY_NONE);
     character.equipment.equipped[SLOT_ARMOR] =
-        enhanced(ITEM_CHAINMAIL, 1, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_CHAINMAIL, 1, WEAPON_PROPERTY_NONE);
     character.equipment.equipped[SLOT_SHIELD] =
-        enhanced(ITEM_HEAVY_STEEL_SHIELD, 1, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_HEAVY_STEEL_SHIELD, 1, WEAPON_PROPERTY_NONE);
     TEST_ASSERT_EQUAL(1, getMeleeAttackBonus(character));
     TEST_ASSERT_EQUAL(1, getRangedAttackBonus(character));
 
@@ -179,7 +184,7 @@ void test_ranged_touch_bonus_uses_bab_dex_and_generic_modifier_only()
     Character character = makeTestCharacter();
     character.abilities.dexterity = 16;
     character.equipment.equipped[SLOT_RANGED_WEAPON] =
-        enhanced(ITEM_SHORTBOW, 4, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_SHORTBOW, 4, WEAPON_PROPERTY_NONE);
     controlledBaseAttackBonus = 5;
     controlledAttackModifier = 2;
 
@@ -195,7 +200,7 @@ void test_melee_touch_bonus_uses_bab_str_and_generic_modifier_only()
     Character character = makeTestCharacter();
     character.abilities.strength = 18;
     character.equipment.equipped[SLOT_MELEE_WEAPON] =
-        enhanced(ITEM_LONGSWORD, 5, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_LONGSWORD, 5, WEAPON_PROPERTY_NONE);
     controlledBaseAttackBonus = 4;
     controlledAttackModifier = -1;
 
@@ -212,10 +217,10 @@ void test_touch_ac_ignores_armor_shield_and_untyped_ac_buffs()
     character.abilities.dexterity = 14;
     controlledArmorClassModifier = 3;
     character.equipment.equipped[SLOT_ARMOR] =
-        enhanced(ITEM_CHAINMAIL, 2, WEAPON_ENHANCEMENT_NONE);
+        enhanced(ITEM_CHAINMAIL, 2, WEAPON_PROPERTY_NONE);
     character.equipment.equipped[SLOT_SHIELD] =
         enhanced(ITEM_HEAVY_STEEL_SHIELD, 2,
-                 WEAPON_ENHANCEMENT_NONE);
+                  WEAPON_PROPERTY_NONE);
 
     TEST_ASSERT_EQUAL(12, getTouchArmorClass(character));
     TEST_ASSERT_TRUE(getArmorClass(character) >
@@ -461,6 +466,231 @@ void test_defeated_and_legacy_turned_monsters_are_lootable()
     TEST_ASSERT_TRUE(isLootable(character));
 }
 
+void test_masterwork_and_numeric_enhancement_bonuses()
+{
+    const ItemInstance masterwork = makeMasterworkWeapon(ITEM_LONGSWORD);
+    TEST_ASSERT_TRUE(hasWeaponProperty(
+        masterwork, WEAPON_PROPERTY_MASTERWORK));
+    TEST_ASSERT_EQUAL(1, getItemWeaponAttackBonus(masterwork));
+    TEST_ASSERT_EQUAL(0, getItemWeaponDamageBonus(masterwork));
+
+    ItemInstance magicMarkedMasterwork = makeMagicWeapon(
+        ITEM_LONGSWORD, 1, WEAPON_PROPERTY_NONE);
+    magicMarkedMasterwork.weaponProperties |= WEAPON_PROPERTY_MASTERWORK;
+    TEST_ASSERT_EQUAL(1, getItemWeaponAttackBonus(magicMarkedMasterwork));
+    TEST_ASSERT_EQUAL(1, getItemWeaponDamageBonus(magicMarkedMasterwork));
+    TEST_ASSERT_FALSE(isValidItemInstance(magicMarkedMasterwork));
+
+    const uint8_t bonuses[] = {1, 3, 5};
+    for (uint8_t bonus : bonuses)
+    {
+        const ItemInstance magic = makeMagicWeapon(
+            ITEM_LONGSWORD, bonus, WEAPON_PROPERTY_NONE);
+        TEST_ASSERT_EQUAL(bonus, getItemWeaponAttackBonus(magic));
+        TEST_ASSERT_EQUAL(bonus, getItemWeaponDamageBonus(magic));
+        TEST_ASSERT_EQUAL_UINT8(bonus,
+            getEffectiveEnhancementBonus(magic));
+        TEST_ASSERT_FALSE(hasWeaponProperty(
+            magic, WEAPON_PROPERTY_MASTERWORK));
+    }
+}
+
+void test_magic_properties_effective_bonus_and_elemental_dice()
+{
+    const ItemInstance flaming = makeMagicWeapon(
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_FLAMING);
+    const ItemInstance keen = makeMagicWeapon(
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_KEEN);
+    const ItemInstance plusTwoFlaming = makeMagicWeapon(
+        ITEM_LONGSWORD, 3, WEAPON_PROPERTY_FLAMING);
+    const ItemInstance flamingKeen = makeMagicWeapon(
+        ITEM_LONGSWORD, 4,
+        WEAPON_PROPERTY_FLAMING | WEAPON_PROPERTY_KEEN);
+
+    TEST_ASSERT_EQUAL_INT8(1, flaming.enhancementBonus);
+    TEST_ASSERT_EQUAL_UINT8(2, getEffectiveEnhancementBonus(flaming));
+    TEST_ASSERT_EQUAL_UINT8(2, getEffectiveEnhancementBonus(keen));
+    TEST_ASSERT_EQUAL_INT8(2, plusTwoFlaming.enhancementBonus);
+    TEST_ASSERT_EQUAL_UINT8(3,
+        getEffectiveEnhancementBonus(plusTwoFlaming));
+    TEST_ASSERT_EQUAL_INT8(2, flamingKeen.enhancementBonus);
+    TEST_ASSERT_EQUAL_UINT8(4, getEffectiveEnhancementBonus(flamingKeen));
+
+    TEST_ASSERT_EQUAL_UINT8(1,
+        getWeaponElementalDamageDice(flaming, DAMAGE_FIRE));
+    TEST_ASSERT_EQUAL_UINT8(0,
+        getWeaponElementalDamageDice(flaming, DAMAGE_COLD));
+    const ItemInstance frost = makeMagicWeapon(
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_FROST);
+    const ItemInstance shock = makeMagicWeapon(
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_SHOCK);
+    TEST_ASSERT_EQUAL_UINT8(1,
+        getWeaponElementalDamageDice(frost, DAMAGE_COLD));
+    TEST_ASSERT_EQUAL_UINT8(1,
+        getWeaponElementalDamageDice(shock, DAMAGE_ELECTRIC));
+}
+
+void test_keen_doubles_natural_range_once_with_improved_critical()
+{
+    Character character = makeTestCharacter();
+    const ItemInstance keenAxe = makeMagicWeapon(
+        ITEM_BATTLEAXE, 2, WEAPON_PROPERTY_KEEN);
+    const ItemInstance keenLongsword = makeMagicWeapon(
+        ITEM_LONGSWORD, 2, WEAPON_PROPERTY_KEEN);
+    const ItemInstance keenFalchion = makeMagicWeapon(
+        ITEM_FALCHION, 2, WEAPON_PROPERTY_KEEN);
+    TEST_ASSERT_EQUAL_UINT8(19, getWeaponCriticalThreatMinimum(
+        character, *getWeapon(ITEM_BATTLEAXE), &keenAxe));
+    TEST_ASSERT_EQUAL_UINT8(17, getWeaponCriticalThreatMinimum(
+        character, *getWeapon(ITEM_LONGSWORD), &keenLongsword));
+    TEST_ASSERT_EQUAL_UINT8(15, getWeaponCriticalThreatMinimum(
+        character, *getWeapon(ITEM_FALCHION), &keenFalchion));
+
+    character.characterClass = CLASS_FIGHTER;
+    character.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+    character.level = 10;
+    TEST_ASSERT_EQUAL_UINT8(17, getWeaponCriticalThreatMinimum(
+        character, *getWeapon(ITEM_LONGSWORD), &keenLongsword));
+
+    const ItemInstance attemptedKeenHammer = makeMagicWeapon(
+        ITEM_WARHAMMER, 2, WEAPON_PROPERTY_KEEN);
+    TEST_ASSERT_FALSE(hasWeaponProperty(
+        attemptedKeenHammer, WEAPON_PROPERTY_KEEN));
+    TEST_ASSERT_EQUAL_INT8(2, attemptedKeenHammer.enhancementBonus);
+    const ItemInstance attemptedKeenBow = makeMagicWeapon(
+        ITEM_SHORTBOW, 2, WEAPON_PROPERTY_KEEN);
+    TEST_ASSERT_FALSE(hasWeaponProperty(
+        attemptedKeenBow, WEAPON_PROPERTY_KEEN));
+}
+
+void test_enhancement_stacks_with_fighter_training()
+{
+    Character fighter = makeTestCharacter();
+    fighter.characterClass = CLASS_FIGHTER;
+    fighter.trainedWeaponGroup = WEAPON_GROUP_BLADES;
+    fighter.level = 5;
+    fighter.equipment.equipped[SLOT_MELEE_WEAPON] = makeMagicWeapon(
+        ITEM_LONGSWORD, 1, WEAPON_PROPERTY_NONE);
+    controlledBaseAttackBonus = 5;
+
+    TEST_ASSERT_EQUAL(8, getMeleeAttackBonus(fighter));
+    TEST_ASSERT_EQUAL(3, getFighterWeaponDamageBonus(
+        fighter, *getWeapon(ITEM_LONGSWORD)));
+    TEST_ASSERT_EQUAL(1, getItemWeaponDamageBonus(
+        fighter.equipment.equipped[SLOT_MELEE_WEAPON]));
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(6));
+    TEST_ASSERT_EQUAL_UINT8(2, getIterativeAttackCount(7));
+    controlledBaseAttackBonus = 0;
+}
+
+void test_generated_item_names_show_complete_quality()
+{
+    char name[48];
+    const ItemInstance item = makeMagicWeapon(
+        ITEM_LONGSWORD, 4,
+        WEAPON_PROPERTY_FLAMING | WEAPON_PROPERTY_KEEN);
+    formatItemInstanceName(item, name, sizeof(name));
+    TEST_ASSERT_EQUAL_STRING("+2 Flaming Keen Longsword", name);
+    const ItemInstance masterwork = makeMasterworkWeapon(ITEM_LONGSWORD);
+    formatItemInstanceName(masterwork, name, sizeof(name));
+    TEST_ASSERT_EQUAL_STRING("Masterwork Longsword", name);
+}
+
+static LootQuality highestEligibleQuality(uint8_t level, LootSource source)
+{
+    const LootQualityWeights& weights = getLootQualityWeights(level, source);
+    for (int quality = LOOT_QUALITY_COUNT - 1; quality >= 0; quality--)
+    {
+        if (weights.weights[quality] != 0)
+            return static_cast<LootQuality>(quality);
+    }
+    return LOOT_QUALITY_MUNDANE;
+}
+
+void test_loot_level_gating_and_unlocks()
+{
+    for (uint8_t source = 0; source < LOOT_SOURCE_COUNT; source++)
+    {
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MUNDANE,
+            highestEligibleQuality(1, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MUNDANE,
+            highestEligibleQuality(2, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MASTERWORK,
+            highestEligibleQuality(3, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MASTERWORK,
+            highestEligibleQuality(4, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MAGIC_1,
+            highestEligibleQuality(5, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MAGIC_2,
+            highestEligibleQuality(7, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MAGIC_2,
+            highestEligibleQuality(8, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MAGIC_3,
+            highestEligibleQuality(12, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MAGIC_4,
+            highestEligibleQuality(16, static_cast<LootSource>(source)));
+        TEST_ASSERT_EQUAL(LOOT_QUALITY_MAGIC_5,
+            highestEligibleQuality(20, static_cast<LootSource>(source)));
+    }
+}
+
+void test_loot_quality_rows_are_exact_percentages()
+{
+    const uint8_t representativeLevels[] = {1, 3, 4, 5, 7, 8, 12, 16, 20};
+    for (uint8_t level : representativeLevels)
+    {
+        for (uint8_t source = 0; source < LOOT_SOURCE_COUNT; source++)
+        {
+            const LootQualityWeights& weights = getLootQualityWeights(
+                level, static_cast<LootSource>(source));
+            uint16_t total = 0;
+            for (uint8_t quality = 0; quality < LOOT_QUALITY_COUNT; quality++)
+                total += weights.weights[quality];
+            TEST_ASSERT_EQUAL_UINT16(100, total);
+        }
+    }
+
+    TEST_ASSERT_EQUAL(LOOT_QUALITY_MUNDANE,
+        selectLootQuality(3, LOOT_SOURCE_NORMAL_MONSTER, 94));
+    TEST_ASSERT_EQUAL(LOOT_QUALITY_MASTERWORK,
+        selectLootQuality(3, LOOT_SOURCE_NORMAL_MONSTER, 95));
+    TEST_ASSERT_TRUE(getEquipmentDropChance(LOOT_SOURCE_NORMAL_MONSTER) <
+        getEquipmentDropChance(LOOT_SOURCE_CHEST));
+    TEST_ASSERT_TRUE(getEquipmentDropChance(LOOT_SOURCE_CHEST) <
+        getEquipmentDropChance(LOOT_SOURCE_BOSS));
+    TEST_ASSERT_TRUE(getEquipmentDropChance(LOOT_SOURCE_BOSS) <
+        getEquipmentDropChance(LOOT_SOURCE_FINAL_TREASURE));
+}
+
+void test_loot_builder_never_exceeds_effective_budget()
+{
+    for (uint8_t budget = 1; budget <= 5; budget++)
+    {
+        const LootQuality quality = static_cast<LootQuality>(
+            LOOT_QUALITY_MAGIC_1 + budget - 1);
+        const ItemInstance weapon = createLootEquipment(
+            ITEM_LONGSWORD, quality,
+            WEAPON_PROPERTY_FLAMING | WEAPON_PROPERTY_FROST |
+            WEAPON_PROPERTY_SHOCK | WEAPON_PROPERTY_KEEN);
+        TEST_ASSERT_EQUAL_UINT8(budget,
+            getEffectiveEnhancementBonus(weapon));
+        TEST_ASSERT_TRUE(weapon.enhancementBonus >= 1);
+        TEST_ASSERT_TRUE(weapon.enhancementBonus <= budget);
+        TEST_ASSERT_TRUE(isValidItemInstance(weapon));
+    }
+
+    const ItemInstance masterwork = createLootEquipment(
+        ITEM_LONGSWORD, LOOT_QUALITY_MASTERWORK);
+    TEST_ASSERT_EQUAL(1, getItemWeaponAttackBonus(masterwork));
+    TEST_ASSERT_EQUAL(0, getItemWeaponDamageBonus(masterwork));
+    TEST_ASSERT_EQUAL_UINT8(0, getEffectiveEnhancementBonus(masterwork));
+
+    const ItemInstance armor = createLootEquipment(
+        ITEM_CHAINMAIL, LOOT_QUALITY_MAGIC_3);
+    TEST_ASSERT_EQUAL_INT8(3, armor.enhancementBonus);
+    TEST_ASSERT_EQUAL_UINT8(0, armor.weaponProperties);
+}
+
 void setup()
 {
     delay(2000);
@@ -481,6 +711,14 @@ void setup()
     RUN_TEST(test_character_creation_primary_bonus_is_assigned_once);
     RUN_TEST(test_fighter_starting_weapon_mapping);
     RUN_TEST(test_defeated_and_legacy_turned_monsters_are_lootable);
+    RUN_TEST(test_masterwork_and_numeric_enhancement_bonuses);
+    RUN_TEST(test_magic_properties_effective_bonus_and_elemental_dice);
+    RUN_TEST(test_keen_doubles_natural_range_once_with_improved_critical);
+    RUN_TEST(test_enhancement_stacks_with_fighter_training);
+    RUN_TEST(test_generated_item_names_show_complete_quality);
+    RUN_TEST(test_loot_level_gating_and_unlocks);
+    RUN_TEST(test_loot_quality_rows_are_exact_percentages);
+    RUN_TEST(test_loot_builder_never_exceeds_effective_budget);
     UNITY_END();
 }
 

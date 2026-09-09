@@ -410,6 +410,87 @@ void test_scroll_learned_spell_survives_magic_restore()
     TEST_ASSERT_EQUAL_UINT8(5, loaded.magic.knownAbilityCount);
 }
 
+void test_every_arcane_and_divine_spell_has_a_description()
+{
+    uint8_t arcaneCount = 0;
+    uint8_t divineCount = 0;
+
+    for (int rawAbility = ABILITY_NONE + 1;
+         rawAbility < ABILITY_MAX;
+         rawAbility++)
+    {
+        AbilityID abilityID = static_cast<AbilityID>(rawAbility);
+        const Ability* ability = getAbility(abilityID);
+        TEST_ASSERT_NOT_NULL(ability);
+
+        if (ability->category != ABILITY_CATEGORY_SPELL ||
+            (ability->type != ABILITY_ARCANE &&
+             ability->type != ABILITY_DIVINE))
+        {
+            continue;
+        }
+
+        TEST_ASSERT_NOT_NULL(ability->description);
+        TEST_ASSERT_NOT_EQUAL('\0', ability->description[0]);
+        TEST_ASSERT_EQUAL_STRING(
+            ability->description, getAbilityDescription(abilityID));
+
+        if (ability->type == ABILITY_ARCANE)
+            arcaneCount++;
+        else
+            divineCount++;
+    }
+
+    TEST_ASSERT_GREATER_THAN_UINT8(0, arcaneCount);
+    TEST_ASSERT_GREATER_THAN_UINT8(0, divineCount);
+    TEST_ASSERT_EQUAL_UINT8(93, arcaneCount + divineCount);
+    TEST_ASSERT_EQUAL_STRING("", getAbilityDescription(ABILITY_NONE));
+}
+
+void test_filtered_known_spell_descriptions_follow_ability_ids()
+{
+    Character wizard = makeWizard(false);
+    wizard.magic.knownAbilities[0] = ABILITY_CHANNEL_ENERGY;
+    wizard.magic.knownAbilities[1] = ABILITY_MAGIC_MISSILE;
+    wizard.magic.knownAbilities[2] = ABILITY_POWER_ATTACK;
+    wizard.magic.knownAbilities[3] = ABILITY_GREASE;
+    wizard.magic.knownAbilities[4] = ABILITY_ACID_ARROW;
+    wizard.magic.knownAbilityCount = 5;
+
+    AbilityID filtered[3] = {};
+    uint8_t filteredCount = 0;
+    for (uint8_t index = 0;
+         index < wizard.magic.knownAbilityCount;
+         index++)
+    {
+        AbilityID abilityID = wizard.magic.knownAbilities[index];
+        const Ability* ability = getAbility(abilityID);
+        if (ability != nullptr &&
+            ability->category == ABILITY_CATEGORY_SPELL &&
+            ability->type == ABILITY_ARCANE)
+        {
+            filtered[filteredCount++] = abilityID;
+        }
+    }
+
+    TEST_ASSERT_EQUAL_UINT8(3, filteredCount);
+    TEST_ASSERT_EQUAL(ABILITY_MAGIC_MISSILE, filtered[0]);
+    TEST_ASSERT_EQUAL(ABILITY_GREASE, filtered[1]);
+    TEST_ASSERT_EQUAL(ABILITY_ACID_ARROW, filtered[2]);
+    TEST_ASSERT_EQUAL_STRING(
+        getAbility(ABILITY_MAGIC_MISSILE)->description,
+        getAbilityDescription(filtered[0]));
+    TEST_ASSERT_EQUAL_STRING(
+        getAbility(ABILITY_GREASE)->description,
+        getAbilityDescription(filtered[1]));
+    TEST_ASSERT_EQUAL_STRING(
+        getAbility(ABILITY_ACID_ARROW)->description,
+        getAbilityDescription(filtered[2]));
+    TEST_ASSERT_NOT_EQUAL(0, strcmp(
+        getAbilityDescription(filtered[0]),
+        getAbilityDescription(filtered[1])));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -428,6 +509,8 @@ void setup()
     RUN_TEST(test_full_spellbook_rejects_learning_without_consumption);
     RUN_TEST(test_invalid_scroll_and_failed_removal_do_not_change_character);
     RUN_TEST(test_scroll_learned_spell_survives_magic_restore);
+    RUN_TEST(test_every_arcane_and_divine_spell_has_a_description);
+    RUN_TEST(test_filtered_known_spell_descriptions_follow_ability_ids);
     UNITY_END();
 }
 

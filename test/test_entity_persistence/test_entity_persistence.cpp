@@ -100,8 +100,8 @@ void assertSlotEquals(const InventorySlot& expected,
     TEST_ASSERT_EQUAL(expected.item.itemID, actual.item.itemID);
     TEST_ASSERT_EQUAL_INT8(expected.item.enhancementBonus,
                            actual.item.enhancementBonus);
-    TEST_ASSERT_EQUAL(expected.item.weaponEnhancement,
-                      actual.item.weaponEnhancement);
+    TEST_ASSERT_EQUAL_UINT8(expected.item.weaponProperties,
+                            actual.item.weaponProperties);
     TEST_ASSERT_EQUAL_UINT8(expected.quantity, actual.quantity);
 }
 
@@ -293,13 +293,18 @@ void test_chest_round_trip_preserves_lock_open_and_remaining_loot()
     chest.opened = true;
     chest.loot.generated = true;
     chest.loot.gold = 12;
-    chest.loot.itemCount = 1;
+    chest.loot.itemCount = 2;
     chest.loot.slots[0] = makeSlot(ITEM_MANA_POTION, 2);
+    chest.loot.slots[1] = makeSlot(ITEM_LONGSWORD, 1);
+    chest.loot.slots[1].item.enhancementBonus = 2;
+    chest.loot.slots[1].item.weaponProperties =
+        WEAPON_PROPERTY_FLAMING | WEAPON_PROPERTY_KEEN;
     Entity restored = roundTrip(chest);
     TEST_ASSERT_TRUE(restored.locked);
     TEST_ASSERT_TRUE(restored.opened);
     TEST_ASSERT_EQUAL_UINT16(12, restored.loot.gold);
-    TEST_ASSERT_EQUAL_UINT8(1, restored.loot.itemCount);
+    TEST_ASSERT_EQUAL_UINT8(2, restored.loot.itemCount);
+    assertSlotEquals(chest.loot.slots[1], restored.loot.slots[1]);
     TEST_ASSERT_EQUAL_PTR(chestopenwith, restored.sprite);
 
     chest.locked = false;

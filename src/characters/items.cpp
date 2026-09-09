@@ -4,6 +4,9 @@
 
 #include "items.h"
 
+#include <cstdio>
+#include <cstring>
+
 #include "characters.h"
 #include "data/dice.h"
 
@@ -410,6 +413,221 @@ const Shield* getShield(ItemID item)
 		return nullptr;
 
 	return &shieldDatabase[itemInfo->effectIndex];
+}
+
+bool isManufacturedWeapon(ItemID itemID)
+{
+	return (itemID >= ITEM_CLUB && itemID <= ITEM_SLING) ||
+	       itemID == ITEM_SCYTHE;
+}
+
+bool isKeenEligibleWeapon(ItemID itemID)
+{
+	const Weapon* weapon = getWeapon(itemID);
+	return isManufacturedWeapon(itemID) && weapon != nullptr &&
+	       weapon->type == WEAPON_MELEE &&
+	       (weapon->damageType == DAMAGE_SLASHING ||
+	        weapon->damageType == DAMAGE_PIERCING);
+}
+
+namespace
+{
+uint8_t countMagicWeaponProperties(uint8_t properties)
+{
+	uint8_t count = 0;
+	properties &= WEAPON_MAGICAL_PROPERTY_MASK;
+	while (properties != 0)
+	{
+		count += properties & 1U;
+		properties >>= 1U;
+	}
+	return count;
+}
+
+void appendItemNamePart(char* buffer, size_t bufferSize, const char* part)
+{
+	if (buffer == nullptr || bufferSize == 0 || part == nullptr)
+		return;
+	const size_t used = strlen(buffer);
+	if (used < bufferSize - 1)
+		snprintf(buffer + used, bufferSize - used, "%s", part);
+}
+
+const char* getCompactItemBaseName(ItemID itemID, const char* normalName)
+{
+	switch (itemID)
+	{
+		case ITEM_COMPOSITE_LONGBOW: return "Comp Longbow";
+		case ITEM_LIGHT_CROSSBOW: return "Lt Crossbow";
+		case ITEM_HEAVY_CROSSBOW: return "Hv Crossbow";
+		case ITEM_LIGHT_WOODEN_SHIELD: return "Lt Wood Shield";
+		case ITEM_LIGHT_STEEL_SHIELD: return "Lt Steel Shield";
+		case ITEM_HEAVY_WOODEN_SHIELD: return "Hv Wood Shield";
+		case ITEM_HEAVY_STEEL_SHIELD: return "Hv Steel Shield";
+		default: return normalName;
+	}
+}
+}
+
+bool isValidItemInstance(const ItemInstance& item, bool allowNone)
+{
+	if (item.itemID == ITEM_NONE)
+	{
+		return allowNone && item.enhancementBonus == 0 &&
+		       item.weaponProperties == WEAPON_PROPERTY_NONE;
+	}
+
+	const Item* definition = getItem(item.itemID);
+	if (definition == nullptr || item.enhancementBonus < 0 ||
+	    item.enhancementBonus > 5 ||
+	    (item.weaponProperties & ~WEAPON_PROPERTY_MASK) != 0)
+	{
+		return false;
+	}
+
+	if (definition->type == ITEMTYPE_WEAPON)
+	{
+		if (!isManufacturedWeapon(item.itemID) &&
+		    item.weaponProperties != WEAPON_PROPERTY_NONE)
+			return false;
+		if (hasWeaponProperty(item, WEAPON_PROPERTY_MASTERWORK) &&
+		    item.enhancementBonus != 0)
+			return false;
+		if ((item.weaponProperties & WEAPON_MAGICAL_PROPERTY_MASK) != 0 &&
+		    item.enhancementBonus < 1)
+			return false;
+		if (hasWeaponProperty(item, WEAPON_PROPERTY_KEEN) &&
+		    !isKeenEligibleWeapon(item.itemID))
+			return false;
+		return getEffectiveEnhancementBonus(item) <= 5;
+	}
+
+	if (item.weaponProperties != WEAPON_PROPERTY_NONE)
+		return false;
+	return definition->type == ITEMTYPE_ARMOR ||
+	       definition->type == ITEMTYPE_SHIELD || item.enhancementBonus == 0;
+}
+
+ItemInstance makeMasterworkWeapon(ItemID itemID)
+{
+	ItemInstance item = makeItemInstance(itemID);
+	if (isManufacturedWeapon(itemID))
+		item.weaponProperties = WEAPON_PROPERTY_MASTERWORK;
+	return item;
+}
+
+ItemInstance makeMagicWeapon(ItemID itemID,
+	                         uint8_t effectiveEnhancement,
+	                         uint8_t desiredProperties)
+{
+	ItemInstance item = makeItemInstance(itemID);
+	if (!isManufacturedWeapon(itemID) || effectiveEnhancement == 0)
+		return item;
+
+	if (effectiveEnhancement > 5)
+		effectiveEnhancement = 5;
+	desiredProperties &= WEAPON_MAGICAL_PROPERTY_MASK;
+	if (!isKeenEligibleWeapon(itemID))
+		desiredProperties &= ~WEAPON_PROPERTY_KEEN;
+
+	const WeaponProperty propertyOrder[] =
+	{
+		WEAPON_PROPERTY_FLAMING,
+		WEAPON_PROPERTY_FROST,
+		WEAPON_PROPERTY_SHOCK,
+		WEAPON_PROPERTY_KEEN
+	};
+	const uint8_t maximumProperties = effectiveEnhancement - 1;
+	for (WeaponProperty property : propertyOrder)
+	{
+		if ((desiredProperties & property) != 0 &&
+		    countMagicWeaponProperties(item.weaponProperties) <
+		        maximumProperties)
+		{
+			item.weaponProperties |= property;
+		}
+	}
+
+	item.enhancementBonus = static_cast<int8_t>(
+		effectiveEnhancement -
+		countMagicWeaponProperties(item.weaponProperties));
+	return item;
+}
+
+uint8_t getEffectiveEnhancementBonus(const ItemInstance& item)
+{
+	const uint8_t numeric = item.enhancementBonus > 0
+		? static_cast<uint8_t>(item.enhancementBonus) : 0;
+	return numeric + countMagicWeaponProperties(item.weaponProperties);
+}
+
+int getItemWeaponAttackBonus(const ItemInstance& item)
+{
+	if (getWeapon(item.itemID) == nullptr)
+		return 0;
+	if (item.enhancementBonus > 0)
+		return item.enhancementBonus;
+	return hasWeaponProperty(item, WEAPON_PROPERTY_MASTERWORK) ? 1 : 0;
+}
+
+int getItemWeaponDamageBonus(const ItemInstance& item)
+{
+	return getWeapon(item.itemID) != nullptr && item.enhancementBonus > 0
+		? item.enhancementBonus : 0;
+}
+
+uint8_t getWeaponElementalDamageDice(const ItemInstance& item,
+	                                 DamageType damageType)
+{
+	switch (damageType)
+	{
+		case DAMAGE_FIRE:
+			return hasWeaponProperty(item, WEAPON_PROPERTY_FLAMING) ? 1 : 0;
+		case DAMAGE_COLD:
+			return hasWeaponProperty(item, WEAPON_PROPERTY_FROST) ? 1 : 0;
+		case DAMAGE_ELECTRIC:
+			return hasWeaponProperty(item, WEAPON_PROPERTY_SHOCK) ? 1 : 0;
+		default:
+			return 0;
+	}
+}
+
+void formatItemInstanceName(const ItemInstance& item,
+	                        char* buffer,
+	                        size_t bufferSize,
+	                        bool compact)
+{
+	if (buffer == nullptr || bufferSize == 0)
+		return;
+	buffer[0] = '\0';
+	const Item* definition = getItem(item.itemID);
+	if (definition == nullptr)
+	{
+		snprintf(buffer, bufferSize, "%s",
+		         item.itemID == ITEM_NONE ? "None" : "Unknown");
+		return;
+	}
+
+	if (hasWeaponProperty(item, WEAPON_PROPERTY_MASTERWORK))
+		appendItemNamePart(buffer, bufferSize, compact ? "MW " : "Masterwork ");
+	else if (item.enhancementBonus > 0)
+	{
+		char bonus[6];
+		snprintf(bonus, sizeof(bonus), "+%d ", item.enhancementBonus);
+		appendItemNamePart(buffer, bufferSize, bonus);
+	}
+
+	if (hasWeaponProperty(item, WEAPON_PROPERTY_FLAMING))
+		appendItemNamePart(buffer, bufferSize, compact ? "Flm " : "Flaming ");
+	if (hasWeaponProperty(item, WEAPON_PROPERTY_FROST))
+		appendItemNamePart(buffer, bufferSize, compact ? "Frst " : "Frost ");
+	if (hasWeaponProperty(item, WEAPON_PROPERTY_SHOCK))
+		appendItemNamePart(buffer, bufferSize, compact ? "Shk " : "Shock ");
+	if (hasWeaponProperty(item, WEAPON_PROPERTY_KEEN))
+		appendItemNamePart(buffer, bufferSize, "Keen ");
+	appendItemNamePart(buffer, bufferSize, compact
+		? getCompactItemBaseName(item.itemID, definition->name)
+		: definition->name);
 }
 
 const Scroll* getScroll(ItemID item)

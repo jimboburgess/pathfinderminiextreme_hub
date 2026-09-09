@@ -95,7 +95,7 @@ struct Combat
 
     AbilityID selectedAbility = ABILITY_NONE;
     bool selectedAbilityFromScroll = false;
-    ItemInstance selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    ItemInstance selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_PROPERTY_NONE };
     int8_t selectedAbilityX = -1;
     int8_t selectedAbilityY = -1;
     Direction selectedAbilityDirection = DIR_NORTH;

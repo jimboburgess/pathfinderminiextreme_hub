@@ -163,7 +163,9 @@ static void drawInventoryView()
 
         if (item != nullptr)
         {
-            drawText(5, y, item->name);
+            char name[48];
+            formatItemInstanceName(slot.item, name, sizeof(name));
+            drawText(5, y, name);
 
             if (slot.quantity > 1)
             {
@@ -214,16 +216,9 @@ static const ItemInstance* getCompatibleInventoryItem(EquipmentSlot slot,
 }
 
 static void formatEquipmentItem(const ItemInstance& item,
-                                char* buffer, size_t size)
+                                 char* buffer, size_t size)
 {
-    const Item* definition = getItem(item.itemID);
-    if (definition == nullptr)
-        snprintf(buffer, size, "None");
-    else if (item.enhancementBonus != 0)
-        snprintf(buffer, size, "%+d %s", item.enhancementBonus,
-                 definition->name);
-    else
-        snprintf(buffer, size, "%s", definition->name);
+    formatItemInstanceName(item, buffer, size, true);
 }
 
 static void drawEquipmentView()

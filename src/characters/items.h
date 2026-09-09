@@ -218,19 +218,30 @@ constexpr int MANA_POTION_RESTORE_AMOUNT = 4;
 // appended entry named so later item additions cannot accidentally shift it.
 constexpr uint16_t SCYTHE_WEAPON_EFFECT_INDEX = 33;
 
-enum WeaponEnhancement : uint8_t
+// Per-instance weapon quality.  These are flags so one generated weapon can
+// combine properties (for example Flaming + Keen) without adding ItemIDs.
+// Every magical special property currently costs +1 effective enhancement.
+enum WeaponProperty : uint8_t
 {
-    WEAPON_ENHANCEMENT_NONE,
-    WEAPON_ENHANCEMENT_FLAMING,
-    WEAPON_ENHANCEMENT_FROST,
-    WEAPON_ENHANCEMENT_SHOCK
+    WEAPON_PROPERTY_NONE       = 0,
+    WEAPON_PROPERTY_FLAMING    = 1 << 0,
+    WEAPON_PROPERTY_FROST      = 1 << 1,
+    WEAPON_PROPERTY_SHOCK      = 1 << 2,
+    WEAPON_PROPERTY_KEEN       = 1 << 3,
+    WEAPON_PROPERTY_MASTERWORK = 1 << 4
 };
+
+constexpr uint8_t WEAPON_MAGICAL_PROPERTY_MASK =
+    WEAPON_PROPERTY_FLAMING | WEAPON_PROPERTY_FROST |
+    WEAPON_PROPERTY_SHOCK | WEAPON_PROPERTY_KEEN;
+constexpr uint8_t WEAPON_PROPERTY_MASK =
+    WEAPON_MAGICAL_PROPERTY_MASK | WEAPON_PROPERTY_MASTERWORK;
 
 struct ItemInstance
 {
     ItemID itemID;
     int8_t enhancementBonus;
-    WeaponEnhancement weaponEnhancement;
+    uint8_t weaponProperties;
 };
 
 static_assert(sizeof(ItemInstance) == 3,
@@ -242,7 +253,7 @@ inline ItemInstance makeItemInstance(ItemID itemID)
     {
         itemID,
         0,
-        WEAPON_ENHANCEMENT_NONE
+        WEAPON_PROPERTY_NONE
     };
 
     return item;
@@ -253,7 +264,7 @@ inline bool operator==(const ItemInstance& left,
 {
     return left.itemID == right.itemID &&
            left.enhancementBonus == right.enhancementBonus &&
-           left.weaponEnhancement == right.weaponEnhancement;
+           left.weaponProperties == right.weaponProperties;
 }
 
 inline bool operator!=(const ItemInstance& left,
@@ -536,6 +547,34 @@ struct Weapon
 
     WeaponGroup group;
 };
+
+inline bool hasWeaponProperty(const ItemInstance& item,
+                              WeaponProperty property)
+{
+    return (item.weaponProperties & static_cast<uint8_t>(property)) != 0;
+}
+
+bool isManufacturedWeapon(ItemID itemID);
+bool isKeenEligibleWeapon(ItemID itemID);
+bool isValidItemInstance(const ItemInstance& item, bool allowNone = false);
+
+ItemInstance makeMasterworkWeapon(ItemID itemID);
+ItemInstance makeMagicWeapon(ItemID itemID,
+                             uint8_t effectiveEnhancement,
+                             uint8_t desiredProperties = WEAPON_PROPERTY_NONE);
+
+uint8_t getEffectiveEnhancementBonus(const ItemInstance& item);
+int getItemWeaponAttackBonus(const ItemInstance& item);
+int getItemWeaponDamageBonus(const ItemInstance& item);
+uint8_t getWeaponElementalDamageDice(const ItemInstance& item,
+                                     DamageType damageType);
+
+// Writes the complete generated name. Compact mode abbreviates only quality
+// words so the base weapon remains visible on the 240x240 inventory rows.
+void formatItemInstanceName(const ItemInstance& item,
+                            char* buffer,
+                            size_t bufferSize,
+                            bool compact = false);
 
 const char* getWeaponGroupName(WeaponGroup group);
 

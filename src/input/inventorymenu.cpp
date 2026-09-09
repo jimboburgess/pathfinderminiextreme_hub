@@ -41,7 +41,7 @@ struct InventoryMenuState
     uint8_t firstVisibleIndex = 0;
     char status[64] = "";
     bool choosingScrollAction = false;
-    ItemInstance scrollItem = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    ItemInstance scrollItem = { ITEM_NONE, 0, WEAPON_PROPERTY_NONE };
     uint8_t scrollAction = 0;
 };
 
@@ -537,7 +537,8 @@ void takeSelectedCorpseLoot()
         return;
     }
 
-    const Item* item = getItem(slot->item.itemID);
+    char itemName[48];
+    formatItemInstanceName(slot->item, itemName, sizeof(itemName));
 
     if (!takeCorpseLootItem(*corpse, inventoryMenu.cursorIndex,
                              *inventoryMenu.character))
@@ -548,8 +549,7 @@ void takeSelectedCorpseLoot()
     }
 
     char message[64];
-    snprintf(message, sizeof(message), "Took %s.",
-             item != nullptr ? item->name : "item");
+    snprintf(message, sizeof(message), "Took %s.", itemName);
     playSound(SoundEffect::ITEM_PICKUP);
     setInventoryStatus(message);
 
@@ -662,9 +662,12 @@ void drawInventoryRow(uint8_t row, uint8_t entryIndex)
         slot = &inventoryMenu.corpse->loot.slots[entryIndex];
     }
 
-    const Item* item =
-        slot != nullptr ? getItem(slot->item.itemID) : nullptr;
-    drawClippedText(item != nullptr ? item->name : "Unknown item", 26);
+    char itemName[48];
+    if (slot != nullptr)
+        formatItemInstanceName(slot->item, itemName, sizeof(itemName), true);
+    else
+        snprintf(itemName, sizeof(itemName), "Unknown item");
+    drawClippedText(itemName, 26);
 
     if (slot != nullptr && slot->quantity > 1)
     {
@@ -720,7 +723,7 @@ void closeInventoryMenu()
     inventoryMenu.cursorIndex = 0;
     inventoryMenu.firstVisibleIndex = 0;
     inventoryMenu.choosingScrollAction = false;
-    inventoryMenu.scrollItem = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    inventoryMenu.scrollItem = { ITEM_NONE, 0, WEAPON_PROPERTY_NONE };
     clearInventoryStatus();
 
     suppressMenuInputUntilRelease();

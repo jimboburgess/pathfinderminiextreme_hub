@@ -37,6 +37,29 @@ static const char* getEnergyTypeName(DamageType type)
     }
 }
 
+static int rollMitigatedWeaponEnergyDamage(const ItemInstance& weaponItem,
+                                           Character& target)
+{
+    const DamageType energyTypes[] =
+    {
+        DAMAGE_FIRE,
+        DAMAGE_COLD,
+        DAMAGE_ELECTRIC
+    };
+    int total = 0;
+    for (DamageType damageType : energyTypes)
+    {
+        const uint8_t dice = getWeaponElementalDamageDice(
+            weaponItem, damageType);
+        if (dice > 0)
+        {
+            total += applyEnergyMitigation(
+                target, static_cast<uint8_t>(damageType), rollDice(dice, 6));
+        }
+    }
+    return total;
+}
+
 static Entity* getPlayerCombatant()
 {
     return getActiveMapPlayer();
@@ -489,6 +512,17 @@ static uint8_t getParticipatingPlayerCount()
     return playerCount;
 }
 
+static uint8_t getCurrentLootCharacterLevel()
+{
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        const Entity* entity = combat.initiativeOrder[i];
+        if (entity != nullptr && isPlayerSideCharacter(*entity))
+            return entity->character.level > 0 ? entity->character.level : 1;
+    }
+    return player.level > 0 ? player.level : 1;
+}
+
 struct DefeatResult
 {
     uint32_t experiencePerCharacter = 0;
@@ -519,7 +553,7 @@ static DefeatResult finalizeDefeat(Entity& defeated)
     }
 
     defeated.character.state = STATE_DEAD;
-    generateCorpseLoot(defeated);
+    generateCorpseLoot(defeated, getCurrentLootCharacterLevel());
 
     // Only a hostile static monster definition carries a combat XP award.
     if (!isHostileMonsterForCombat(defeated))
@@ -2446,10 +2480,12 @@ void confirmPlayerAttack()
             removeFlatFooted(target);
     }
 
-    const Weapon* weapon =
-        (combat.attackType == COMBAT_ATTACK_MELEE)
-            ? getEquippedMeleeWeapon(player->character)
-            : getEquippedRangedWeapon(player->character);
+    const EquipmentSlot equippedWeaponSlot =
+        combat.attackType == COMBAT_ATTACK_MELEE
+            ? SLOT_MELEE_WEAPON : SLOT_RANGED_WEAPON;
+    const ItemInstance& weaponItem =
+        player->character.equipment.equipped[equippedWeaponSlot];
+    const Weapon* weapon = getWeapon(weaponItem.itemID);
 
     if (weapon == nullptr)
     {
@@ -2460,10 +2496,7 @@ void confirmPlayerAttack()
 
     if (!combat.iterativeAttackActive)
     {
-        const EquipmentSlot slot = combat.attackType == COMBAT_ATTACK_MELEE
-            ? SLOT_MELEE_WEAPON
-            : SLOT_RANGED_WEAPON;
-        const ItemID weaponID = player->character.equipment.equipped[slot].itemID;
+        const ItemID weaponID = weaponItem.itemID;
         const int bab = getBaseAttackBonus(
             player->character.characterClass, player->character.level);
 
@@ -2535,7 +2568,7 @@ void confirmPlayerAttack()
     bool criticalConfirmed = false;
 
     if (hit && dieRoll >= getWeaponCriticalThreatMinimum(
-            player->character, *weapon))
+            player->character, *weapon, &weaponItem))
     {
         if (fighterAutomaticallyConfirmsCritical(player->character, *weapon))
         {
@@ -2602,6 +2635,7 @@ void confirmPlayerAttack()
 
         combat.pendingDamage += getFighterWeaponDamageBonus(
             player->character, *weapon);
+        combat.pendingDamage += getItemWeaponDamageBonus(weaponItem);
         combat.pendingDamage += getActiveConditionModifiers(
             player->character).damageBonus;
 
@@ -2609,6 +2643,11 @@ void confirmPlayerAttack()
 
         if (criticalConfirmed)
             combat.pendingDamage *= weapon->criticalMultiplier;
+
+        // Energy dice are independent successful-hit damage and therefore are
+        // added after the physical critical multiplier.
+        combat.pendingDamage += rollMitigatedWeaponEnergyDamage(
+            weaponItem, target->character);
 
         combat.pendingSneakAttackDamage =
             rollSneakAttackDamage(*player, *target);
@@ -3177,7 +3216,7 @@ static bool consumeSelectedAbilityScroll(Entity& player)
 static void clearSelectedAbilityScroll()
 {
     combat.selectedAbilityFromScroll = false;
-    combat.selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_ENHANCEMENT_NONE };
+    combat.selectedAbilityScroll = { ITEM_NONE, 0, WEAPON_PROPERTY_NONE };
     combat.selectedAbilityDamageType = DAMAGE_NONE;
 }
 
@@ -3700,6 +3739,9 @@ void beginMonsterAttack(
     return;
 
     const ItemID weaponID = getEquippedItem(monster->character, weaponSlot);
+    const ItemInstance& weaponItem =
+        monster->character.equipment.equipped[weaponSlot];
+    const int itemAttackBonus = getItemWeaponAttackBonus(weaponItem);
 
     if (!combat.monsterIterativeAttackActive)
     {
@@ -3742,6 +3784,7 @@ void beginMonsterAttack(
         combat.monsterIterativeAttackCount > baseIteratives
             ? combat.monsterIterativeAttackCount - baseIteratives : 0);
     int total = dieRoll + iterativeBAB + abilityModifier +
+                itemAttackBonus +
                 getConditionAttackModifier(monster->character) +
                 rangePenalty;
 
@@ -3752,11 +3795,13 @@ void beginMonsterAttack(
         (dieRoll != 1 && total >= targetArmorClass);
     bool criticalConfirmed = false;
 
-    if (combat.monsterAttackHit && dieRoll >= weapon->criticalThreat)
+    if (combat.monsterAttackHit && dieRoll >= getWeaponCriticalThreatMinimum(
+            monster->character, *weapon, &weaponItem))
     {
         const int confirmationRoll = rollDie(20);
         const int confirmationTotal = confirmationRoll + iterativeBAB +
-            abilityModifier + getConditionAttackModifier(monster->character) +
+            abilityModifier + itemAttackBonus +
+            getConditionAttackModifier(monster->character) +
             rangePenalty;
         criticalConfirmed = confirmationRoll == 20 ||
             (confirmationRoll != 1 &&
@@ -3775,6 +3820,8 @@ void beginMonsterAttack(
         if (weapon->type == WEAPON_MELEE)
             combat.monsterPendingDamage += abilityModifier;
 
+        combat.monsterPendingDamage += getItemWeaponDamageBonus(weaponItem);
+
         combat.monsterPendingDamage += getActiveConditionModifiers(
             monster->character).damageBonus;
 
@@ -3783,6 +3830,9 @@ void beginMonsterAttack(
 
         if (criticalConfirmed)
             combat.monsterPendingDamage *= weapon->criticalMultiplier;
+
+        combat.monsterPendingDamage += rollMitigatedWeaponEnergyDamage(
+            weaponItem, target->character);
 
         combat.monsterPendingSneakAttackDamage =
             rollSneakAttackDamage(*monster, *target);

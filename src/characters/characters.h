@@ -226,7 +226,7 @@ struct InventorySlot
     {
         ITEM_NONE,
         0,
-        WEAPON_ENHANCEMENT_NONE
+        WEAPON_PROPERTY_NONE
     };
     uint8_t quantity = 0;
 };
@@ -335,7 +335,8 @@ int getFighterWeaponDamageBonus(const Character& character,
                                 const Weapon& weapon);
 int getFighterBonusMaxHP(const Character& character);
 uint8_t getWeaponCriticalThreatMinimum(const Character& character,
-                                       const Weapon& weapon);
+                                       const Weapon& weapon,
+                                       const ItemInstance* weaponItem = nullptr);
 bool fighterAutomaticallyConfirmsCritical(const Character& character,
                                            const Weapon& weapon);
 

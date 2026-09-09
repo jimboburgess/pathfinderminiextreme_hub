@@ -422,6 +422,9 @@ struct Ability
 {
     AbilityID id;
     const char* name;
+    // Static, gameplay-focused text shown by spell-selection UIs. The pointer
+    // lives only in the canonical definition; characters retain AbilityIDs.
+    const char* description;
 
     AbilityType type;
 
@@ -462,6 +465,8 @@ extern const Ability abilityDatabase[];
 const Ability* getAbility(AbilityID id);
 
 const char* getAbilityName(AbilityID id);
+
+const char* getAbilityDescription(AbilityID id);
 
 bool isValidAbility(AbilityID id);
 

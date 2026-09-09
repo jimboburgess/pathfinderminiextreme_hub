@@ -7,7 +7,9 @@
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 8;
+constexpr uint8_t SAVE_VERSION = 9;
+constexpr uint8_t WEAPON_PROPERTY_FLAGS_SAVE_VERSION = 9;
+constexpr uint8_t PREVIOUS_ITEM_PROPERTY_SAVE_VERSION = 8;
 constexpr uint8_t FIGHTER_WEAPON_GROUP_SAVE_VERSION = 7;
 constexpr uint8_t PREVIOUS_MAGIC_SAVE_VERSION = 6;
 constexpr uint8_t CURRENT_MP_SAVE_VERSION = 5;
@@ -289,15 +291,40 @@ bool isValidRawItemID(uint32_t rawItem, bool allowNone)
 
 bool isValidItemInstanceData(const ItemInstance& item, bool allowNone)
 {
-    if (item.itemID == ITEM_NONE)
-    {
-        return allowNone && item.enhancementBonus == 0 &&
-               item.weaponEnhancement == WEAPON_ENHANCEMENT_NONE;
-    }
+    return isValidItemInstance(item, allowNone);
+}
 
-    return isValidRawItemID(item.itemID, false) &&
-           item.weaponEnhancement >= WEAPON_ENHANCEMENT_NONE &&
-           item.weaponEnhancement <= WEAPON_ENHANCEMENT_SHOCK;
+void migrateLegacyWeaponProperty(ItemInstance& item)
+{
+    // Save versions 3-8 stored one enum: 0 none, 1 flaming, 2 frost, 3 shock.
+    // The first two values already match the new flags; only Shock moves.
+    if (item.weaponProperties == 3)
+        item.weaponProperties = WEAPON_PROPERTY_SHOCK;
+}
+
+void migrateLegacyItemProperties(EquipmentData& equipment,
+                                 InventoryData& inventory)
+{
+    for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
+        migrateLegacyWeaponProperty(equipment.equipped[i]);
+    const uint8_t count = inventory.itemCount < MAX_INVENTORY
+        ? inventory.itemCount : MAX_INVENTORY;
+    for (uint8_t i = 0; i < count; i++)
+        migrateLegacyWeaponProperty(inventory.slots[i].item);
+}
+
+void migrateLegacyItemProperties(EquipmentData& equipment)
+{
+    for (uint8_t i = 0; i < NUM_EQUIPMENT_SLOTS; i++)
+        migrateLegacyWeaponProperty(equipment.equipped[i]);
+}
+
+void migrateLegacyItemProperties(ItemInstanceInventoryData& inventory)
+{
+    const uint8_t count = inventory.itemCount < MAX_INVENTORY
+        ? inventory.itemCount : MAX_INVENTORY;
+    for (uint8_t i = 0; i < count; i++)
+        migrateLegacyWeaponProperty(inventory.slots[i].item);
 }
 
 bool isValidEquipment(const EquipmentData& equipment)
@@ -575,14 +602,20 @@ bool loadGame(Character& character)
             "player", &saved, sizeof(saved));
         preferences.end();
 
+        const bool legacyProperties =
+            saved.version == PREVIOUS_ITEM_PROPERTY_SAVE_VERSION;
         if (bytesRead != sizeof(saved) ||
             saved.magic != SAVE_MAGIC ||
-            saved.version != SAVE_VERSION ||
+            (saved.version != WEAPON_PROPERTY_FLAGS_SAVE_VERSION &&
+             !legacyProperties) ||
             !isValidSavedWeaponGroup(
                 saved.characterClass, saved.trainedWeaponGroup))
         {
             return false;
         }
+
+        if (legacyProperties)
+            migrateLegacyItemProperties(saved.equipment, saved.inventory);
 
         return restoreCharacter(
             character,
@@ -615,6 +648,8 @@ bool loadGame(Character& character)
             return false;
         }
 
+        migrateLegacyItemProperties(saved.equipment, saved.inventory);
+
         return restoreCharacter(
             character, saved.characterClass, saved.level, saved.xp,
             saved.abilities, saved.health, saved.equipment, saved.inventory,
@@ -630,6 +665,7 @@ bool loadGame(Character& character)
         if (bytesRead != sizeof(saved) || saved.magic != SAVE_MAGIC ||
             saved.version != PREVIOUS_MAGIC_SAVE_VERSION)
             return false;
+        migrateLegacyItemProperties(saved.equipment, saved.inventory);
         return restoreCharacter(character, saved.characterClass, saved.level,
             saved.xp, saved.abilities, saved.health, saved.equipment,
             saved.inventory, true, saved.currentMP, saved.knownAbilities,
@@ -649,6 +685,8 @@ bool loadGame(Character& character)
         {
             return false;
         }
+
+        migrateLegacyItemProperties(saved.equipment, saved.inventory);
 
         return restoreCharacter(
             character,
@@ -677,6 +715,8 @@ bool loadGame(Character& character)
             return false;
         }
 
+        migrateLegacyItemProperties(saved.equipment, saved.inventory);
+
         return restoreCharacter(
             character,
             saved.characterClass,
@@ -703,6 +743,9 @@ bool loadGame(Character& character)
         {
             return false;
         }
+
+        migrateLegacyItemProperties(saved.equipment);
+        migrateLegacyItemProperties(saved.inventory);
 
         InventoryData inventory = {};
 

@@ -343,7 +343,10 @@ bool tryInteractWithFacingEntity()
         if (!target->loot.generated)
         {
             target->opened = true;
-            generateChestLoot(*target, LOOT_CHEST_LARGE);
+            const LootSource source = dungeon.currentRoom == dungeon.treasureRoom
+                ? LOOT_SOURCE_FINAL_TREASURE : LOOT_SOURCE_CHEST;
+            generateChestLoot(*target, LOOT_CHEST_LARGE,
+                              playerEntity->character.level, source);
             target->sprite = chestopenwith;
             markEntityFootprintDirty(*target);
             setGameMessage("You open the chest.");
@@ -372,7 +375,7 @@ bool tryInteractWithFacingEntity()
 
     // The generator is idempotent. This also supports an older corpse that
     // entered STATE_DEAD before the loot system was added.
-    generateCorpseLoot(*target);
+    generateCorpseLoot(*target, playerEntity->character.level);
 
     uint16_t gold = takeCorpseGold(*target, playerEntity->character);
 

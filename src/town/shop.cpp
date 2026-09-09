@@ -12,18 +12,18 @@
 const Shop townShop =
 {
     {
-        { ITEM_DAGGER, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_MACE, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_LONGSWORD, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_SHORTBOW, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_LIGHT_CROSSBOW, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_LEATHER_ARMOR, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_CHAINMAIL, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_HEAVY_WOODEN_SHIELD, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_POTION_CURE_LIGHT_WOUNDS, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_MANA_POTION, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_THIEVES_TOOLS, 0, WEAPON_ENHANCEMENT_NONE },
-        { ITEM_CROWBAR, 0, WEAPON_ENHANCEMENT_NONE }
+        { ITEM_DAGGER, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_MACE, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_LONGSWORD, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_SHORTBOW, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_LIGHT_CROSSBOW, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_LEATHER_ARMOR, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_CHAINMAIL, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_HEAVY_WOODEN_SHIELD, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_POTION_CURE_LIGHT_WOUNDS, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_MANA_POTION, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_THIEVES_TOOLS, 0, WEAPON_PROPERTY_NONE },
+        { ITEM_CROWBAR, 0, WEAPON_PROPERTY_NONE }
     },
     MAX_SHOP_ITEMS
 };
@@ -162,18 +162,20 @@ void buildSellMenu()
         uint8_t menuIndex = sellMenu.itemCount++;
         sellInventoryIndices[menuIndex] = inventoryIndex;
         uint16_t sellPrice = item->value / 2;
+        char itemName[40];
+        formatItemInstanceName(slot.item, itemName, sizeof(itemName), true);
 
         if (slot.quantity > 1)
         {
             snprintf(sellLabels[menuIndex], sizeof(sellLabels[menuIndex]),
-                     "%.16s x%u %u gp", item->name,
+                     "%.16s x%u %u gp", itemName,
                      static_cast<unsigned>(slot.quantity),
                      static_cast<unsigned>(sellPrice));
         }
         else
         {
             snprintf(sellLabels[menuIndex], sizeof(sellLabels[menuIndex]),
-                     "%-20.20s %u gp", item->name,
+                     "%-20.20s %u gp", itemName,
                      static_cast<unsigned>(sellPrice));
         }
 

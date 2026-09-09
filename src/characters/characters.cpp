@@ -130,10 +130,15 @@ int getFighterBonusMaxHP(const Character& character)
 }
 
 uint8_t getWeaponCriticalThreatMinimum(const Character& character,
-                                       const Weapon& weapon)
+                                       const Weapon& weapon,
+                                       const ItemInstance* weaponItem)
 {
-    if (!isFighterTrainedWeapon(character, weapon) ||
-        !hasFighterFeature(character, FIGHTER_IMPROVED_CRITICAL))
+    const bool improvedCritical =
+        isFighterTrainedWeapon(character, weapon) &&
+        hasFighterFeature(character, FIGHTER_IMPROVED_CRITICAL);
+    const bool keen = weaponItem != nullptr &&
+        hasWeaponProperty(*weaponItem, WEAPON_PROPERTY_KEEN);
+    if (!improvedCritical && !keen)
     {
         return weapon.criticalThreat;
     }
@@ -468,7 +473,8 @@ int getMeleeAttackBonus(const Character& character)
     const ItemInstance& weapon =
         character.equipment.equipped[SLOT_MELEE_WEAPON];
     const Weapon* weaponData = getWeapon(weapon.itemID);
-    int weaponEnhancement = weaponData != nullptr ? weapon.enhancementBonus : 0;
+    int weaponEnhancement = weaponData != nullptr
+        ? getItemWeaponAttackBonus(weapon) : 0;
     int fighterBonus = weaponData != nullptr
         ? getFighterWeaponAttackBonus(character, *weaponData) : 0;
 
@@ -488,7 +494,8 @@ int getRangedAttackBonus(const Character& character)
     const ItemInstance& weapon =
         character.equipment.equipped[SLOT_RANGED_WEAPON];
     const Weapon* weaponData = getWeapon(weapon.itemID);
-    int weaponEnhancement = weaponData != nullptr ? weapon.enhancementBonus : 0;
+    int weaponEnhancement = weaponData != nullptr
+        ? getItemWeaponAttackBonus(weapon) : 0;
     int fighterBonus = weaponData != nullptr
         ? getFighterWeaponAttackBonus(character, *weaponData) : 0;
 
@@ -988,17 +995,9 @@ bool unequipItem(Character& character, EquipmentSlot slot)
     return true;
 }
 
-static bool isValidWeaponEnhancement(WeaponEnhancement enhancement)
-{
-    return enhancement >= WEAPON_ENHANCEMENT_NONE &&
-           enhancement <= WEAPON_ENHANCEMENT_SHOCK;
-}
-
 static bool isValidInventoryItem(const ItemInstance& item)
 {
-    return item.itemID > ITEM_NONE && item.itemID < ITEM_COUNT &&
-           getItem(item.itemID) != nullptr &&
-           isValidWeaponEnhancement(item.weaponEnhancement);
+    return isValidItemInstance(item);
 }
 
 static bool isStackableItem(const ItemInstance& item)
@@ -1340,15 +1339,8 @@ ItemID getEquippedItem(const Character& character, EquipmentSlot slot)
 const char* getEquippedItemName(const Character& character,
                                 EquipmentSlot slot)
 {
-    ItemID item = getEquippedItem(character, slot);
-
-    if (item == ITEM_NONE)
-        return "None";
-
-    const Item* itemInfo = getItem(item);
-
-    if (itemInfo == nullptr)
-        return "Unknown";
-
-    return itemInfo->name;
+    static char name[40];
+    formatItemInstanceName(character.equipment.equipped[slot],
+                           name, sizeof(name), true);
+    return name;
 }
