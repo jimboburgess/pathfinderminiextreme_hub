@@ -194,6 +194,40 @@ void test_damaged_caster_round_trip_reconstructs_static_magic()
     TEST_ASSERT_EQUAL_PTR(definition->sprite, restored.sprite);
 }
 
+void test_dedicated_boss_monster_ids_round_trip_through_persistence()
+{
+    static constexpr MonsterID bossIDs[] = {
+        MONSTER_GOBLIN_CHIEFTAIN,
+        MONSTER_GIANT_SPIDER_QUEEN};
+
+    for (MonsterID id : bossIDs)
+    {
+        Entity source = makeMonster(id, 7, 6);
+        source.character.health.maxHP = 40;
+        source.character.health.currentHP = 17;
+        source.character.magic.currentMP =
+            id == MONSTER_GIANT_SPIDER_QUEEN ? 2 : 0;
+
+        PersistentEntity packed{};
+        TEST_ASSERT_TRUE(packPersistentEntity(source, packed));
+        TEST_ASSERT_EQUAL(id, packed.payload.monster.monsterID);
+
+        Entity restored{};
+        TEST_ASSERT_TRUE(inflatePersistentEntity(packed, restored));
+        TEST_ASSERT_EQUAL(id, restored.monsterID);
+        TEST_ASSERT_EQUAL_PTR(getMonster(id), restored.monster);
+        TEST_ASSERT_EQUAL_INT(17, restored.character.health.currentHP);
+        TEST_ASSERT_EQUAL_INT(40, restored.character.health.maxHP);
+
+        if (id == MONSTER_GIANT_SPIDER_QUEEN)
+        {
+            TEST_ASSERT_EQUAL_UINT8(LRGSPRITE_W, restored.spriteWidth);
+            TEST_ASSERT_EQUAL_UINT8(LRGSPRITE_H, restored.spriteHeight);
+            TEST_ASSERT_EQUAL_INT(2, restored.character.magic.currentMP);
+        }
+    }
+}
+
 void test_conditions_round_trip_without_compaction()
 {
     Entity source = makeMonster(MONSTER_ZOMBIE);
@@ -400,6 +434,7 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_living_monster_round_trip_preserves_mutable_state);
     RUN_TEST(test_damaged_caster_round_trip_reconstructs_static_magic);
+    RUN_TEST(test_dedicated_boss_monster_ids_round_trip_through_persistence);
     RUN_TEST(test_conditions_round_trip_without_compaction);
     RUN_TEST(test_monster_item_capacity_is_general_and_overflow_fails_cleanly);
     RUN_TEST(test_dead_unlooted_and_looted_monsters_round_trip);

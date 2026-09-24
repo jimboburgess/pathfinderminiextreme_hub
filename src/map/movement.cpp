@@ -17,7 +17,8 @@ uint8_t calculateMovementCost(
     bool terrainCheckSucceeded,
     bool hasTerrainCheck)
 {
-    if (hasCondition(mover.character, CONDITION_WEBBED))
+    if (hasCondition(mover.character, CONDITION_GRAPPLED) ||
+        hasCondition(mover.character, CONDITION_WEBBED))
         return 0;
 
     uint8_t width = getEntityTileWidth(mover);
@@ -49,7 +50,8 @@ uint8_t calculateMovementCost(
             if (terrainCost > movementCost)
                 movementCost = terrainCost;
 
-            if (hasDifficultMapEffectAt(x, y) && movementCost < 2)
+            if (hasDifficultMapEffectForEntityAt(mover, x, y) &&
+                movementCost < 2)
                 movementCost = 2;
         }
     }
@@ -121,16 +123,19 @@ void spendMovementCost(Entity& mover, uint8_t resolvedCost)
 
 StandForMovementResult tryStandForMovement(
     Entity& mover,
-    bool spendMovementPoint)
+    bool inCombat)
 {
     if (!hasCondition(mover.character, CONDITION_PRONE))
         return STAND_NOT_PRONE;
 
-    if (spendMovementPoint && mover.turn.movementRemaining == 0)
+    if (inCombat && mover.turn.moveActionUsed)
         return STAND_NO_MOVEMENT;
 
-    if (spendMovementPoint)
-        mover.turn.movementRemaining--;
+    if (inCombat)
+    {
+        mover.turn.moveActionUsed = true;
+        mover.turn.movementRemaining = 0;
+    }
 
     removeCondition(mover.character, CONDITION_PRONE);
     return STAND_COMPLETED;

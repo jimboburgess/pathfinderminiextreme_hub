@@ -445,6 +445,7 @@ void tearDown()
 void test_suspend_keeps_character_and_room_runtime_state()
 {
     configureLoadedRoom(2);
+    dungeon.encounterTheme = ENCOUNTER_UNDEAD;
 
     suspendDungeonRun(dungeon);
 
@@ -463,6 +464,7 @@ void test_suspend_keeps_character_and_room_runtime_state()
         runtime.entityStorage.compact.persistentEntities[0]
             .payload.monster.currentHP);
     TEST_ASSERT_FALSE(dungeon.rooms[2].completed);
+    TEST_ASSERT_EQUAL(ENCOUNTER_UNDEAD, dungeon.encounterTheme);
 }
 
 void test_dead_unlooted_and_looted_state_survive_room_reload()
@@ -802,6 +804,49 @@ void test_new_run_generates_only_when_no_run_is_active()
     TEST_ASSERT_EQUAL(NPC_BERTRAM_RIDDLEMAN, riddleRoom.npcSpawn.id);
     TEST_ASSERT_EQUAL(RIDDLE_ROOM_UNSOLVED, riddleRoom.npcSpawn.puzzleState);
     TEST_ASSERT_TRUE(isValidRiddleAnswerOrder(riddleRoom.npcSpawn.riddle));
+    TEST_ASSERT_TRUE(dungeon.encounterTheme >= ENCOUNTER_GOBLIN &&
+                     dungeon.encounterTheme <= ENCOUNTER_SPIDER);
+    for (uint8_t roomIndex = 0;
+         roomIndex < dungeon.roomCount;
+         roomIndex++)
+    {
+        const DungeonRoom& room = dungeon.rooms[roomIndex];
+        TEST_ASSERT_EQUAL(
+            encounterThemeForRoom(room.type, dungeon.encounterTheme),
+            room.encounterTheme);
+    }
+}
+
+void test_encounter_theme_selection_and_room_inheritance_are_centralized()
+{
+    static constexpr EncounterTheme expected[] = {
+        ENCOUNTER_GOBLIN,
+        ENCOUNTER_UNDEAD,
+        ENCOUNTER_ABERRATION,
+        ENCOUNTER_SPIDER};
+
+    for (uint8_t roll = 0; roll < 8; roll++)
+    {
+        const EncounterTheme theme = selectDungeonEncounterTheme(roll);
+        TEST_ASSERT_EQUAL(expected[roll % 4], theme);
+        TEST_ASSERT_NOT_EQUAL(ENCOUNTER_NONE, theme);
+        TEST_ASSERT_NOT_EQUAL(0, strcmp("None", encounterThemeName(theme)));
+    }
+
+    for (EncounterTheme theme : expected)
+    {
+        TEST_ASSERT_EQUAL(theme, encounterThemeForRoom(ROOM_COMBAT, theme));
+        TEST_ASSERT_EQUAL(theme, encounterThemeForRoom(ROOM_AMBUSH, theme));
+        TEST_ASSERT_EQUAL(theme, encounterThemeForRoom(ROOM_BOSS, theme));
+        TEST_ASSERT_EQUAL(
+            ENCOUNTER_NONE, encounterThemeForRoom(ROOM_ENTRANCE, theme));
+        TEST_ASSERT_EQUAL(
+            ENCOUNTER_NONE, encounterThemeForRoom(ROOM_PUZZLE, theme));
+        TEST_ASSERT_EQUAL(
+            ENCOUNTER_NONE, encounterThemeForRoom(ROOM_EMPTY, theme));
+        TEST_ASSERT_EQUAL(
+            ENCOUNTER_NONE, encounterThemeForRoom(ROOM_TREASURE, theme));
+    }
 }
 
 void test_themed_encounters_spawn_only_their_theme_monsters()
@@ -809,7 +854,8 @@ void test_themed_encounters_spawn_only_their_theme_monsters()
     static constexpr EncounterTheme themes[] = {
         ENCOUNTER_GOBLIN,
         ENCOUNTER_UNDEAD,
-        ENCOUNTER_ABERRATION};
+        ENCOUNTER_ABERRATION,
+        ENCOUNTER_SPIDER};
 
     for (EncounterTheme theme : themes)
     {
@@ -838,11 +884,164 @@ void test_themed_encounters_spawn_only_their_theme_monsters()
             else if (theme == ENCOUNTER_UNDEAD)
                 TEST_ASSERT_TRUE(id == MONSTER_SKELETON || id == MONSTER_ZOMBIE ||
                     id == MONSTER_GHOUL || id == MONSTER_WIGHT);
-            else
+            else if (theme == ENCOUNTER_ABERRATION)
                 TEST_ASSERT_TRUE(id == MONSTER_GRAY_OOZE ||
                     id == MONSTER_VIOLET_FUNGUS || id == MONSTER_CHOKER ||
                     id == MONSTER_SPECTATOR);
+            else
+                TEST_ASSERT_EQUAL(MONSTER_GIANT_SPIDER, id);
         }
+    }
+}
+
+void test_themed_monster_pools_and_boss_mappings_are_exact()
+{
+    static constexpr EncounterTheme themes[] = {
+        ENCOUNTER_GOBLIN,
+        ENCOUNTER_UNDEAD,
+        ENCOUNTER_ABERRATION,
+        ENCOUNTER_SPIDER};
+    static constexpr MonsterID ordinary[][4] = {
+        {MONSTER_GOBLIN_SCIMITAR, MONSTER_GOBLIN_ARCHER,
+         MONSTER_BUGBEAR, MONSTER_GOBLIN_SCIMITAR},
+        {MONSTER_SKELETON, MONSTER_ZOMBIE,
+         MONSTER_GHOUL, MONSTER_WIGHT},
+        {MONSTER_GRAY_OOZE, MONSTER_VIOLET_FUNGUS,
+         MONSTER_CHOKER, MONSTER_SPECTATOR},
+        {MONSTER_GIANT_SPIDER, MONSTER_GIANT_SPIDER,
+         MONSTER_GIANT_SPIDER, MONSTER_GIANT_SPIDER}};
+    static constexpr MonsterID bosses[][3] = {
+        {MONSTER_GOBLIN_CHIEFTAIN, MONSTER_GOBLIN_SCIMITAR,
+         MONSTER_GOBLIN_ARCHER},
+        {MONSTER_SKELETON_MAGE, MONSTER_SKELETON,
+         MONSTER_SKELETON},
+        {MONSTER_SPECTATOR, MONSTER_CHOKER, MONSTER_GRAY_OOZE},
+        {MONSTER_GIANT_SPIDER_QUEEN,
+         MONSTER_GIANT_SPIDER, MONSTER_NONE}};
+
+    for (uint8_t themeIndex = 0; themeIndex < 4; themeIndex++)
+    {
+        for (uint8_t spawnIndex = 0; spawnIndex < 4; spawnIndex++)
+            TEST_ASSERT_EQUAL(
+                ordinary[themeIndex][spawnIndex],
+                getThemedMonster(themes[themeIndex], spawnIndex));
+
+        const uint8_t bossCount = getThemedBossMonsterCount(
+            themes[themeIndex]);
+        TEST_ASSERT_EQUAL_UINT8(themeIndex == 3 ? 2 : 3, bossCount);
+        for (uint8_t spawnIndex = 0; spawnIndex < bossCount; spawnIndex++)
+            TEST_ASSERT_EQUAL(
+                bosses[themeIndex][spawnIndex],
+                getThemedBossMonster(themes[themeIndex], spawnIndex));
+    }
+}
+
+void test_generic_boss_markers_spawn_the_complete_themed_encounter()
+{
+    static constexpr EncounterTheme themes[] = {
+        ENCOUNTER_GOBLIN,
+        ENCOUNTER_UNDEAD,
+        ENCOUNTER_ABERRATION,
+        ENCOUNTER_SPIDER};
+
+    for (EncounterTheme theme : themes)
+    {
+        resetDungeonRun(dungeon);
+        DungeonRoom& room = dungeon.rooms[1];
+        DungeonRoomRuntime& runtime = dungeon.roomRuntime[1];
+        room.type = ROOM_BOSS;
+        room.encounterTheme = theme;
+        for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
+            for (uint8_t x = 0; x < ROOM_WIDTH; x++)
+                room.map.tiles[y][x] = TILE_FLOOR;
+
+        room.map.tiles[2][3] = TILE_ENEMY_START;
+        room.map.tiles[5][7] = TILE_ENEMY_START;
+        if (getThemedBossMonsterCount(theme) == 3)
+            room.map.tiles[8][10] = TILE_ENEMY_START;
+        dungeon.entities = dungeon.activeDungeonEntities;
+
+        initializeRoomEntities(dungeon, room, runtime);
+
+        TEST_ASSERT_EQUAL_UINT8(
+            getThemedBossMonsterCount(theme), dungeon.entityCount);
+        for (uint8_t index = 0; index < dungeon.entityCount; index++)
+        {
+            const Entity& entity = dungeon.entities[index];
+            TEST_ASSERT_EQUAL(
+                getThemedBossMonster(theme, index), entity.monsterID);
+            const uint8_t footprint =
+                entity.monsterID == MONSTER_GIANT_SPIDER ||
+                entity.monsterID == MONSTER_GIANT_SPIDER_QUEEN ||
+                entity.monsterID == MONSTER_SPECTATOR ? 2 : 1;
+            TEST_ASSERT_TRUE(entity.x + footprint <= ROOM_WIDTH);
+            TEST_ASSERT_TRUE(entity.y + footprint <= ROOM_HEIGHT);
+        }
+    }
+}
+
+void test_room_changes_and_suspend_resume_preserve_encounter_theme()
+{
+    configureLoadedRoom(2);
+    dungeon.encounterTheme = ENCOUNTER_SPIDER;
+    dungeon.rooms[2].encounterTheme = ENCOUNTER_SPIDER;
+
+    for (uint8_t y = 0; y < ROOM_HEIGHT; y++)
+        for (uint8_t x = 0; x < ROOM_WIDTH; x++)
+            dungeon.rooms[3].map.tiles[y][x] = TILE_FLOOR;
+    dungeon.rooms[3].type = ROOM_EMPTY;
+    dungeon.currentRoom = 3;
+
+    TEST_ASSERT_TRUE(loadRoom(dungeon, ENTRY_START));
+    TEST_ASSERT_EQUAL(ENCOUNTER_SPIDER, dungeon.encounterTheme);
+    TEST_ASSERT_TRUE(suspendDungeonRun(dungeon));
+    TEST_ASSERT_EQUAL(ENCOUNTER_SPIDER, dungeon.encounterTheme);
+    TEST_ASSERT_TRUE(loadRoom(dungeon, ENTRY_START));
+    TEST_ASSERT_EQUAL(ENCOUNTER_SPIDER, dungeon.encounterTheme);
+}
+
+void test_all_themed_bosses_share_generic_completion_logic()
+{
+    static constexpr EncounterTheme themes[] = {
+        ENCOUNTER_GOBLIN,
+        ENCOUNTER_UNDEAD,
+        ENCOUNTER_ABERRATION,
+        ENCOUNTER_SPIDER};
+
+    for (EncounterTheme theme : themes)
+    {
+        resetDungeonRun(dungeon);
+        dungeon.runActive = true;
+        dungeon.encounterTheme = theme;
+        dungeon.roomCount = MIN_DUNGEON_ROOMS;
+        dungeon.bossRoom = MIN_DUNGEON_ROOMS - 2;
+        dungeon.treasureRoom = MIN_DUNGEON_ROOMS - 1;
+        dungeon.currentRoom = dungeon.bossRoom;
+        dungeon.loadedRoom = dungeon.bossRoom;
+        dungeon.entities = dungeon.activeDungeonEntities;
+        dungeon.entityCount = getThemedBossMonsterCount(theme);
+        dungeon.roomRuntime[dungeon.bossRoom].initialized = true;
+
+        for (uint8_t index = 0; index < dungeon.entityCount; index++)
+        {
+            Entity& entity = dungeon.entities[index];
+            entity = Entity{};
+            entity.active = true;
+            entity.type = ENTITY_MONSTER;
+            TEST_ASSERT_TRUE(initializeMonsterDefinitionState(
+                entity, getThemedBossMonster(theme, index)));
+            entity.character.state = index + 1 == dungeon.entityCount
+                ? STATE_ALIVE : STATE_DEAD;
+        }
+
+        updateCurrentDungeonRoomCompletion(dungeon);
+        TEST_ASSERT_FALSE(dungeon.finalEncounterCleared);
+        dungeon.entities[dungeon.entityCount - 1].character.state = STATE_DEAD;
+        updateCurrentDungeonRoomCompletion(dungeon);
+        TEST_ASSERT_TRUE(dungeon.finalEncounterCleared);
+        TEST_ASSERT_FALSE(isDungeonRunComplete(dungeon));
+        dungeon.finalTreasureLooted = true;
+        TEST_ASSERT_TRUE(isDungeonRunComplete(dungeon));
     }
 }
 
@@ -906,6 +1105,7 @@ void test_reset_discards_runtime_run_without_touching_player()
     TEST_ASSERT_NULL(dungeon.entities);
     TEST_ASSERT_EQUAL_UINT8(NO_ROOM, dungeon.loadedRoom);
     TEST_ASSERT_FALSE(dungeon.roomRuntime[1].initialized);
+    TEST_ASSERT_EQUAL(ENCOUNTER_NONE, dungeon.encounterTheme);
     TEST_ASSERT_EQUAL_INT(5, player.health.currentHP);
     TEST_ASSERT_EQUAL_INT(1, player.magic.currentMP);
 }
@@ -1262,7 +1462,12 @@ void setup()
     RUN_TEST(test_rubble_plan_is_dungeon_scoped_and_selects_some_middle_rooms);
     RUN_TEST(test_only_unfinished_runs_are_resumable);
     RUN_TEST(test_new_run_generates_only_when_no_run_is_active);
+    RUN_TEST(test_encounter_theme_selection_and_room_inheritance_are_centralized);
     RUN_TEST(test_themed_encounters_spawn_only_their_theme_monsters);
+    RUN_TEST(test_themed_monster_pools_and_boss_mappings_are_exact);
+    RUN_TEST(test_generic_boss_markers_spawn_the_complete_themed_encounter);
+    RUN_TEST(test_room_changes_and_suspend_resume_preserve_encounter_theme);
+    RUN_TEST(test_all_themed_bosses_share_generic_completion_logic);
     RUN_TEST(test_final_encounter_must_be_fully_defeated_before_completion);
     RUN_TEST(test_reset_discards_runtime_run_without_touching_player);
     RUN_TEST(test_starting_new_run_clears_old_runtime_before_generation);

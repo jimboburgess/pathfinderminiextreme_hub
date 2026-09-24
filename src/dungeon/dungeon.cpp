@@ -20,8 +20,40 @@
 
 Dungeon dungeon;
 
-namespace
+const char* encounterThemeName(EncounterTheme theme)
 {
+    switch (theme)
+    {
+        case ENCOUNTER_GOBLIN:     return "Goblin";
+        case ENCOUNTER_UNDEAD:     return "Undead";
+        case ENCOUNTER_ABERRATION: return "Aberration";
+        case ENCOUNTER_SPIDER:     return "Spider";
+        case ENCOUNTER_NONE:
+        default:                   return "None";
+    }
+}
+
+EncounterTheme selectDungeonEncounterTheme(uint8_t roll)
+{
+    return static_cast<EncounterTheme>(
+        ENCOUNTER_GOBLIN + roll % 4);
+}
+
+EncounterTheme rollDungeonEncounterTheme()
+{
+    return selectDungeonEncounterTheme(static_cast<uint8_t>(random(4)));
+}
+
+EncounterTheme encounterThemeForRoom(
+    RoomType roomType,
+    EncounterTheme dungeonTheme)
+{
+    return roomType == ROOM_COMBAT || roomType == ROOM_AMBUSH ||
+           roomType == ROOM_BOSS
+        ? dungeonTheme
+        : ENCOUNTER_NONE;
+}
+
 MonsterID getThemedMonster(EncounterTheme theme, uint8_t spawnIndex)
 {
     switch (theme)
@@ -55,11 +87,60 @@ MonsterID getThemedMonster(EncounterTheme theme, uint8_t spawnIndex)
             return monsters[spawnIndex % 4];
         }
 
+        case ENCOUNTER_SPIDER:
+            return MONSTER_GIANT_SPIDER;
+
         case ENCOUNTER_NONE:
         default:
             return MONSTER_GOBLIN_SCIMITAR;
     }
 }
+
+MonsterID getThemedBossMonster(EncounterTheme theme, uint8_t spawnIndex)
+{
+    switch (theme)
+    {
+        case ENCOUNTER_GOBLIN:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_GOBLIN_CHIEFTAIN,
+                MONSTER_GOBLIN_SCIMITAR,
+                MONSTER_GOBLIN_ARCHER};
+            return monsters[spawnIndex % 3];
+        }
+
+        case ENCOUNTER_ABERRATION:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_SPECTATOR,
+                MONSTER_CHOKER,
+                MONSTER_GRAY_OOZE};
+            return monsters[spawnIndex % 3];
+        }
+
+        case ENCOUNTER_SPIDER:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_GIANT_SPIDER_QUEEN,
+                MONSTER_GIANT_SPIDER};
+            return monsters[spawnIndex % 2];
+        }
+
+        case ENCOUNTER_UNDEAD:
+        case ENCOUNTER_NONE:
+        default:
+        {
+            static constexpr MonsterID monsters[] = {
+                MONSTER_SKELETON_MAGE,
+                MONSTER_SKELETON,
+                MONSTER_SKELETON};
+            return monsters[spawnIndex % 3];
+        }
+    }
+}
+
+namespace
+{
 
 RoomType selectMiddleRoomType()
 {
@@ -267,16 +348,22 @@ void initializeRoomEntities(
             switch (room.map.tiles[y][x])
             {
                 case TILE_ENEMY_START:
+                {
+                    const MonsterID monsterID = room.type == ROOM_BOSS
+                        ? getThemedBossMonster(
+                            room.encounterTheme, themedSpawnIndex)
+                        : getThemedMonster(
+                            room.encounterTheme, themedSpawnIndex);
+                    themedSpawnIndex++;
                     spawnMonster(
                         dungeon.entities,
                         dungeon.entityCount,
-                        getThemedMonster(
-                            room.encounterTheme,
-                            themedSpawnIndex++),
+                        monsterID,
                         x,
                         y);
                     room.map.tiles[y][x] = TILE_FLOOR;
                     break;
+                }
 
                 case TILE_GIANT_SPIDER_START:
                     spawnMonster(
@@ -564,6 +651,10 @@ void generateDungeon(Dungeon& dungeon)
     if (dungeon.riddleRoom == NO_ROOM)
         return;
 
+    dungeon.encounterTheme = rollDungeonEncounterTheme();
+    Serial.print("Dungeon theme: ");
+    Serial.println(encounterThemeName(dungeon.encounterTheme));
+
     dungeon.hasRubbleTheme =
         random(100) < DUNGEON_RUBBLE_THEME_CHANCE_PERCENT;
     bool rubbleRooms[MAX_ROOMS] = {};
@@ -599,23 +690,22 @@ void generateDungeon(Dungeon& dungeon)
                                       NUMBER_TILE_ROOM_SELECTION_CHANCE_PERCENT)
                 room.puzzleType = PUZZLE_NUMBER_TILES;
         }
-        room.encounterTheme =
-            (room.type == ROOM_COMBAT || room.type == ROOM_AMBUSH)
-                ? static_cast<EncounterTheme>(random(
-                    ENCOUNTER_GOBLIN,
-                    ENCOUNTER_ABERRATION + 1))
-                : ENCOUNTER_NONE;
+        room.encounterTheme = encounterThemeForRoom(
+            room.type, dungeon.encounterTheme);
     }
 
     if (dungeon.hasRubbleTheme && !ordinaryRubbleSelected &&
         firstOrdinaryRoom != NO_ROOM)
         rubbleRooms[firstOrdinaryRoom] = true;
 
-    dungeon.rooms[0].encounterTheme = ENCOUNTER_NONE;
+    dungeon.rooms[0].encounterTheme = encounterThemeForRoom(
+        ROOM_ENTRANCE, dungeon.encounterTheme);
     dungeon.rooms[dungeon.bossRoom].type = ROOM_BOSS;
-    dungeon.rooms[dungeon.bossRoom].encounterTheme = ENCOUNTER_NONE;
+    dungeon.rooms[dungeon.bossRoom].encounterTheme = encounterThemeForRoom(
+        ROOM_BOSS, dungeon.encounterTheme);
     dungeon.rooms[dungeon.treasureRoom].type = ROOM_TREASURE;
-    dungeon.rooms[dungeon.treasureRoom].encounterTheme = ENCOUNTER_NONE;
+    dungeon.rooms[dungeon.treasureRoom].encounterTheme = encounterThemeForRoom(
+        ROOM_TREASURE, dungeon.encounterTheme);
 
     dungeon.rooms[0].discovered = true;
 
@@ -913,6 +1003,7 @@ void resetDungeonRun(Dungeon& dungeon)
     dungeon.bossRoom = NO_ROOM;
     dungeon.treasureRoom = NO_ROOM;
     dungeon.riddleRoom = NO_ROOM;
+    dungeon.encounterTheme = ENCOUNTER_NONE;
     dungeon.hasRubbleTheme = false;
     dungeon.finalEncounterCleared = false;
     dungeon.finalTreasureLooted = false;
@@ -946,6 +1037,7 @@ void resetDungeonRun(Dungeon& dungeon)
         dungeon.rooms[roomIndex].completed = false;
         dungeon.rooms[roomIndex].npcSpawn = DungeonNPCSpawn{};
         dungeon.rooms[roomIndex].puzzleType = PUZZLE_NONE;
+        dungeon.rooms[roomIndex].encounterTheme = ENCOUNTER_NONE;
         dungeon.rooms[roomIndex].bellPuzzle = BellPuzzleState{};
         dungeon.rooms[roomIndex].numberPuzzle = NumberTilePuzzleState{};
         dungeon.rooms[roomIndex].north = NO_ROOM;

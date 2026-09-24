@@ -28,7 +28,8 @@ bool canSee(const Entity& entity)
 bool isImmuneToWeb(const Entity& entity)
 {
     return entity.type == ENTITY_MONSTER &&
-           entity.monsterID == MONSTER_GIANT_SPIDER;
+           (entity.monsterID == MONSTER_GIANT_SPIDER ||
+            entity.monsterID == MONSTER_GIANT_SPIDER_QUEEN);
 }
 
 bool isUndeadCreature(const Entity& entity)

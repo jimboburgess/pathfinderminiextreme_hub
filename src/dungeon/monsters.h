@@ -99,8 +99,18 @@ enum MonsterID
     // Appended so existing serialized MonsterIDs remain stable.
     MONSTER_SKELETON_MAGE,
 
+    // Dedicated themed bosses. Keep new IDs appended for persistence safety.
+    MONSTER_GOBLIN_CHIEFTAIN,
+    MONSTER_GIANT_SPIDER_QUEEN,
+
     MONSTER_COUNT
 };
+
+static_assert(MONSTER_SKELETON_MAGE == 13,
+              "Existing serialized MonsterID values must remain stable.");
+static_assert(MONSTER_GOBLIN_CHIEFTAIN == MONSTER_SKELETON_MAGE + 1 &&
+              MONSTER_GIANT_SPIDER_QUEEN == MONSTER_GOBLIN_CHIEFTAIN + 1,
+              "New MonsterIDs must remain appended.");
 
 enum MonsterScript
 {
@@ -196,6 +206,18 @@ struct Monster
     // Appended so older aggregate initializers remain aligned and default to
     // stationary until an explicit exploration behavior is assigned.
     MonsterIdleBehavior idleBehavior;
+
+    // Metadata only; normal MonsterScript behavior remains authoritative.
+    // Omitted aggregate fields default ordinary monsters to false.
+    bool isBoss;
+
+    // Compact, definition-driven tuning for natural monster abilities. Web
+    // uses Constitution and HD, then adds this bonus to its captured save DC.
+    int8_t abilitySaveDCBonus;
+
+    // Zero means no Web plan, one preserves the ordinary spider's single
+    // target-centered cast, and higher values allow broader repeat coverage.
+    uint8_t webCastPriority;
 };
 
 const Monster* getMonster(MonsterID id);

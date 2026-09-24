@@ -181,7 +181,10 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_BEAST,
         { ABILITY_MELEE_ATTACK, ABILITY_POISON, ABILITY_WEB, ABILITY_NONE }, SCRIPT_MELEE,
         { 12, 3 }, 4, 2, CREATURE_MONSTER, false, 0, 0, 4, 6,
-        IDLE_HIDE
+        IDLE_HIDE,
+        false,
+        0,
+        1
     },
 
     {
@@ -250,12 +253,14 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_2,
         CR_FOUR,
         LOOT_ABERRATION,
-        { ABILITY_MAGIC_MISSILE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SPELLCASTER,
+        { ABILITY_BANE, ABILITY_RAY_OF_ENFEEBLEMENT,
+          ABILITY_MAGIC_MISSILE, ABILITY_NONE }, SCRIPT_SPELLCASTER,
         { 0, 0 },
         6,
         4,
         CREATURE_BEHOLDER, false, 0, 0, 6, 2,
-        IDLE_STATIONARY
+        IDLE_STATIONARY,
+        true
     },
 
     {
@@ -274,9 +279,10 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         ITEM_NATURAL_ARMOR_3,
         CR_TWO,
         LOOT_SKELETON_MAGE,
-        { ABILITY_COLOR_SPRAY, ABILITY_GREASE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_CONTROL_SPELLCASTER,
+        { ABILITY_COLOR_SPRAY, ABILITY_GREASE,
+          ABILITY_MAGIC_MISSILE, ABILITY_NONE }, SCRIPT_CONTROL_SPELLCASTER,
         { 0, 0 },
-        // Both current spells cost 2 MP, allowing four casts before melee fallback.
+        // Current spells cost 2 MP, allowing four casts before melee fallback.
         8,
         3,
         CREATURE_SKELETON,
@@ -285,7 +291,52 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         2,
         5,
         1,
-        IDLE_STATIONARY
+        IDLE_STATIONARY,
+        true
+    },
+
+    //======================================================
+    // Dedicated themed bosses (appended MonsterIDs)
+    //======================================================
+    {
+        "Goblin Chieftain",
+        bugbear16x16,
+        {16,16,14,10,11,12},
+        4,
+        4,
+        18,
+        5,5,2,
+        6,
+        ITEM_SCIMITAR,
+        ITEM_HIDE_ARMOR,
+        CR_THREE,
+        LOOT_BOSS,
+        { ABILITY_BATTLE_CRY, ABILITY_MELEE_ATTACK,
+          ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
+        { 0, 0 }, 0, 0, CREATURE_GOBLIN, false, 0, 0, 4, 3,
+        IDLE_PATROL,
+        true
+    },
+
+    {
+        "Spider Queen",
+        giantspider32x32,
+        {17,17,16,0,12,4},
+        5,
+        4,
+        17,
+        6,6,3,
+        8,
+        ITEM_BITE,
+        ITEM_NATURAL_ARMOR_3,
+        CR_THREE,
+        LOOT_BOSS,
+        { ABILITY_MELEE_ATTACK, ABILITY_POISON, ABILITY_WEB, ABILITY_NONE }, SCRIPT_MELEE,
+        { 14, 4 }, 12, 5, CREATURE_MONSTER, false, 0, 0, 6, 8,
+        IDLE_HIDE,
+        true,
+        1,
+        3
     },
 };
 

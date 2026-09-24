@@ -94,7 +94,7 @@ static bool generateEntrance(DungeonRoom &room);
 static void generateCombat(DungeonRoom &room);
 static void generatePuzzle(DungeonRoom &room);
 static void generateAmbush(DungeonRoom &room);
-static void generateBoss(DungeonRoom &room);
+static bool generateBoss(DungeonRoom &room);
 static void generateTreasure(DungeonRoom &room);
 
 
@@ -1757,6 +1757,23 @@ static bool isReservedContentTile(
     }
   }
 
+  // Spider encounters can place only 2x2 creatures, and Aberration encounters
+  // can place a 2x2 Spectator. Reserve a conservative 2x2 footprint around
+  // each generic encounter anchor so later markers, furniture, pillars, and
+  // rubble cannot occupy the unmarked tiles beneath a large creature.
+  if (room.encounterTheme == ENCOUNTER_SPIDER ||
+      room.encounterTheme == ENCOUNTER_ABERRATION) {
+    for (int markerY = 1; markerY < ROOM_HEIGHT - 1; markerY++) {
+      for (int markerX = 1; markerX < ROOM_WIDTH - 1; markerX++) {
+        if (room.map.tiles[markerY][markerX] == TILE_ENEMY_START &&
+            x >= markerX && x < markerX + 2 &&
+            y >= markerY && y < markerY + 2) {
+          return true;
+        }
+      }
+    }
+  }
+
   return false;
 }
 
@@ -2311,9 +2328,14 @@ bool placeGiantSpiderEncounter(DungeonRoom &room) {
 static void generateCombat(DungeonRoom &room) {
   const int centerX = ROOM_WIDTH / 2;
   const int centerY = ROOM_HEIGHT / 2;
+  const uint8_t footprint =
+      room.encounterTheme == ENCOUNTER_SPIDER ||
+      room.encounterTheme == ENCOUNTER_ABERRATION ? 2 : 1;
   // A direct encounter occupies central connected floor rather than corners.
-  placeContentMarkerNear(room, TILE_ENEMY_START, centerX - 2, centerY);
-  placeContentMarkerNear(room, TILE_ENEMY_START, centerX + 2, centerY);
+  placeContentMarkerNear(
+      room, TILE_ENEMY_START, centerX - 2, centerY, footprint, footprint);
+  placeContentMarkerNear(
+      room, TILE_ENEMY_START, centerX + 2, centerY, footprint, footprint);
 }
 
 
@@ -2325,22 +2347,44 @@ static void generatePuzzle(DungeonRoom &room) {
 }
 
 static void generateAmbush(DungeonRoom &room) {
+  const uint8_t footprint =
+      room.encounterTheme == ENCOUNTER_SPIDER ||
+      room.encounterTheme == ENCOUNTER_ABERRATION ? 2 : 1;
   // Favor the far side/periphery, leaving the central entry area clear.
   placeContentMarkerNear(
-      room, TILE_ENEMY_START, ROOM_WIDTH - 3, 3);
+      room, TILE_ENEMY_START, ROOM_WIDTH - 3, 3, footprint, footprint);
   placeContentMarkerNear(
-      room, TILE_ENEMY_START, ROOM_WIDTH - 3, ROOM_HEIGHT - 3);
+      room, TILE_ENEMY_START, ROOM_WIDTH - 3, ROOM_HEIGHT - 3,
+      footprint, footprint);
 }
 
-static void generateBoss(DungeonRoom &room) {
+static bool generateBoss(DungeonRoom &room) {
   const int centerX = ROOM_WIDTH / 2;
+  const uint8_t monsterCount = getThemedBossMonsterCount(
+      room.encounterTheme);
+  const uint8_t footprint =
+      room.encounterTheme == ENCOUNTER_SPIDER ||
+      room.encounterTheme == ENCOUNTER_ABERRATION ? 2 : 1;
+  static constexpr int8_t preferredX[] = {
+      0, -4, 4};
+  static constexpr int8_t preferredY[] = {
+      2, 5, 5};
 
-  // The final encounter deliberately replaces normal random population:
-  // Skeleton Mage with two existing longsword Skeleton guards.
-  placeContentMarkerNear(room, TILE_SKELETON_START, 2, 2);
-  placeContentMarkerNear(room, TILE_SKELETON_MAGE_START, centerX, 2);
-  placeContentMarkerNear(
-      room, TILE_SKELETON_START, ROOM_WIDTH - 3, 2);
+  // Generic anchors keep geometry independent from species. Room loading maps
+  // their stable row-major order through the themed boss encounter definition.
+  for (uint8_t index = 0; index < monsterCount; index++) {
+    if (!placeContentMarkerNear(
+          room,
+          TILE_ENEMY_START,
+          centerX + preferredX[index],
+          preferredY[index],
+          footprint,
+          footprint)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 static void generateTreasure(DungeonRoom &room) {
@@ -2389,7 +2433,13 @@ void generateRoom(DungeonRoom &room) {
       break;
 
     case ROOM_BOSS:
-      generateBoss(room);
+      if (!generateBoss(room)) {
+        // Preserve the selected shape whenever it can safely hold the complete
+        // encounter. A full room is the deterministic capacity fallback.
+        room.shape = SHAPE_SQUARE;
+        if (buildRoomGeometry(room, room.shape))
+          generateBoss(room);
+      }
       break;
 
     case ROOM_TREASURE:

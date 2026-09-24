@@ -3,7 +3,9 @@
 
 #include "../../src/data/entities.h"
 #include "../../src/dungeon/abilityresolver.h"
+#include "../../src/dungeon/battlecry.h"
 #include "../../src/dungeon/combat.h"
+#include "../../src/dungeon/monsterscripts.h"
 #include "../../src/map/mapeffects.h"
 #include "../../src/map/movement.h"
 #include "../../src/data/game.h"
@@ -18,6 +20,7 @@ static int controlledRangedTouchBonus = 0;
 static int controlledMeleeTouchBonus = 0;
 static int controlledTouchArmorClass = 10;
 static uint8_t damageApplicationCount = 0;
+static DamageType lastDamageType = DAMAGE_NONE;
 static uint8_t saveRollCount = 0;
 static uint8_t dirtyTileMarkCount = 0;
 static bool controlledBaseTerrainDifficult = false;
@@ -224,14 +227,15 @@ bool isBertramRiddleman(const Entity& entity)
         entity.npcID == NPC_BERTRAM_RIDDLEMAN;
 }
 
-uint8_t getEntityTileWidth(const Entity&)
+uint8_t getEntityTileWidth(const Entity& entity)
 {
-    return 1;
+    return entity.monsterID == MONSTER_GIANT_SPIDER ||
+           entity.monsterID == MONSTER_GIANT_SPIDER_QUEEN ? 2 : 1;
 }
 
-uint8_t getEntityTileHeight(const Entity&)
+uint8_t getEntityTileHeight(const Entity& entity)
 {
-    return 1;
+    return getEntityTileWidth(entity);
 }
 
 bool entityOccupiesTile(const Entity& entity, int tileX, int tileY)
@@ -253,7 +257,7 @@ void markTileDirty(int, int)
 CombatDamageResult applyCombatDamage(
     Entity& target,
     int damage,
-    DamageType)
+    DamageType damageType)
 {
     CombatDamageResult result;
 
@@ -264,6 +268,7 @@ CombatDamageResult applyCombatDamage(
     }
 
     damageApplicationCount++;
+    lastDamageType = damageType;
     target.character.health.currentHP -= damage;
     updateConditionsAfterDamage(target.character, damage);
     result.applied = true;
@@ -354,6 +359,7 @@ static void resetResolverControls()
     controlledMeleeTouchBonus = 0;
     controlledTouchArmorClass = 10;
     damageApplicationCount = 0;
+    lastDamageType = DAMAGE_NONE;
     saveRollCount = 0;
     dirtyTileMarkCount = 0;
     dirtyTileCount = 0;
@@ -787,6 +793,166 @@ void test_monster_magic_missile_uses_the_same_resolver()
     TEST_ASSERT_EQUAL_UINT8(1, damageApplicationCount);
 }
 
+void test_battle_cry_definition_and_recipient_filtering()
+{
+    resetResolverControls();
+    TEST_ASSERT_EQUAL_INT(
+        ABILITY_BLADE_BARRIER + 1, ABILITY_BATTLE_CRY);
+    const Ability* ability = getAbility(ABILITY_BATTLE_CRY);
+    TEST_ASSERT_NOT_NULL(ability);
+    TEST_ASSERT_EQUAL_STRING("Battle Cry", ability->name);
+    TEST_ASSERT_EQUAL_STRING(
+        "Nearby goblins gain +1 attack and damage for 2 rounds.",
+        ability->description);
+    TEST_ASSERT_EQUAL(ABILITY_CATEGORY_MONSTER, ability->category);
+    TEST_ASSERT_EQUAL(ACTION_STANDARD, ability->action);
+    TEST_ASSERT_EQUAL_UINT8(3, ability->rangeTiles);
+    TEST_ASSERT_EQUAL(EFFECT_BUFF_ATTACK, ability->effects[0].effect);
+    TEST_ASSERT_EQUAL(EFFECT_BUFF_DAMAGE, ability->effects[1].effect);
+    TEST_ASSERT_EQUAL(
+        CONDITION_BATTLE_CRY, ability->effects[0].conditionType);
+    TEST_ASSERT_EQUAL_INT(2, ability->effects[0].duration);
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_BATTLE_CRY));
+
+    Entity chieftain;
+    Entity goblin;
+    Entity archer;
+    Entity nonGoblin;
+    Entity playerGoblin;
+    initializeEntity(chieftain, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(goblin, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(archer, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(nonGoblin, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(playerGoblin, ENTITY_PLAYER, TEAM_PLAYER);
+    chieftain.monsterID = MONSTER_GOBLIN_CHIEFTAIN;
+    goblin.monsterID = MONSTER_GOBLIN_SCIMITAR;
+    archer.monsterID = MONSTER_GOBLIN_ARCHER;
+    nonGoblin.character.creatureType = CREATURE_SKELETON;
+    playerGoblin.character.creatureType = CREATURE_GOBLIN;
+
+    controlledDistance = 0;
+    TEST_ASSERT_TRUE(isBattleCryEligibleRecipient(chieftain, chieftain));
+    TEST_ASSERT_TRUE(applyBattleCryCondition(chieftain, chieftain));
+    TEST_ASSERT_EQUAL_INT(
+        1, getConditionAttackModifier(chieftain.character));
+    TEST_ASSERT_EQUAL_INT(
+        1, getConditionDamageModifier(chieftain.character));
+
+    controlledDistance = 3;
+    TEST_ASSERT_TRUE(isBattleCryEligibleRecipient(chieftain, goblin));
+    TEST_ASSERT_TRUE(isBattleCryEligibleRecipient(chieftain, archer));
+    TEST_ASSERT_TRUE(applyBattleCryCondition(chieftain, goblin));
+    TEST_ASSERT_TRUE(applyBattleCryCondition(chieftain, archer));
+    TEST_ASSERT_EQUAL_INT(1, getConditionAttackModifier(goblin.character));
+    TEST_ASSERT_EQUAL_INT(1, getConditionDamageModifier(goblin.character));
+    TEST_ASSERT_EQUAL_INT(1, getConditionAttackModifier(archer.character));
+    TEST_ASSERT_EQUAL_INT(1, getConditionDamageModifier(archer.character));
+    TEST_ASSERT_FALSE(isBattleCryEligibleRecipient(chieftain, nonGoblin));
+    TEST_ASSERT_FALSE(isBattleCryEligibleRecipient(chieftain, playerGoblin));
+
+    controlledDistance = 4;
+    TEST_ASSERT_FALSE(isBattleCryEligibleRecipient(chieftain, goblin));
+    controlledDistance = 3;
+    goblin.character.state = STATE_DEAD;
+    TEST_ASSERT_FALSE(isBattleCryEligibleRecipient(chieftain, goblin));
+}
+
+void test_battle_cry_once_per_combat_policy_is_ability_driven()
+{
+    Entity chieftain;
+    initializeEntity(chieftain, ENTITY_MONSTER, TEAM_MONSTER);
+    Monster chieftainDefinition = {};
+    chieftainDefinition.specialAbilities[0] = ABILITY_BATTLE_CRY;
+    chieftain.monster = &chieftainDefinition;
+
+    TEST_ASSERT_TRUE(shouldUseBattleCry(chieftain, true));
+    chieftain.turn.oncePerCombatAbilityUsed = true;
+    TEST_ASSERT_FALSE(shouldUseBattleCry(chieftain, true));
+    chieftain.turn.oncePerCombatAbilityUsed = false;
+    chieftain.turn.standardActionUsed = true;
+    TEST_ASSERT_FALSE(shouldUseBattleCry(chieftain, true));
+
+    chieftain.turn.standardActionUsed = false;
+    chieftainDefinition.specialAbilities[0] = ABILITY_MELEE_ATTACK;
+    TEST_ASSERT_FALSE(shouldUseBattleCry(chieftain, true));
+}
+
+void test_battle_cry_weapon_modifier_does_not_increase_spell_damage()
+{
+    resetResolverControls();
+    Entity caster;
+    Entity player;
+    initializeEntity(caster, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(player, ENTITY_PLAYER, TEAM_PLAYER);
+    caster.character.level = 4;
+    caster.character.magic.currentMP = 2;
+    caster.character.magic.maxMP = 2;
+    TEST_ASSERT_TRUE(applyBattleCryCondition(caster, caster));
+    TEST_ASSERT_EQUAL_INT(1, getConditionDamageModifier(caster.character));
+
+    AbilityResolution result = resolveAbility(
+        caster, &player, ABILITY_MAGIC_MISSILE);
+
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    TEST_ASSERT_EQUAL_INT(8, result.damage);
+    TEST_ASSERT_EQUAL_INT(12, player.character.health.currentHP);
+}
+
+void test_monster_spell_policy_skips_redundant_control_effects()
+{
+    const Ability* bane = getAbility(ABILITY_BANE);
+    const Ability* ray = getAbility(ABILITY_RAY_OF_ENFEEBLEMENT);
+    const Ability* missile = getAbility(ABILITY_MAGIC_MISSILE);
+    TEST_ASSERT_NOT_NULL(bane);
+    TEST_ASSERT_NOT_NULL(ray);
+    TEST_ASSERT_NOT_NULL(missile);
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_BANE));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_RAY_OF_ENFEEBLEMENT));
+    TEST_ASSERT_TRUE(isAbilitySupported(ABILITY_MAGIC_MISSILE));
+
+    Character target = {};
+    target.state = STATE_ALIVE;
+    TEST_ASSERT_FALSE(isMonsterControlAbilityRedundant(*bane, target));
+    TEST_ASSERT_FALSE(isMonsterControlAbilityRedundant(*ray, target));
+    TEST_ASSERT_FALSE(isMonsterControlAbilityRedundant(*missile, target));
+
+    target.conditions.count = 1;
+    target.conditions.conditions[0].type = CONDITION_BANE;
+    TEST_ASSERT_TRUE(isMonsterControlAbilityRedundant(*bane, target));
+    TEST_ASSERT_FALSE(isMonsterControlAbilityRedundant(*ray, target));
+
+    target.conditions.conditions[0].type = CONDITION_PARALYZED;
+    TEST_ASSERT_TRUE(isMonsterControlAbilityRedundant(*bane, target));
+    TEST_ASSERT_TRUE(isMonsterControlAbilityRedundant(*ray, target));
+    TEST_ASSERT_FALSE(isMonsterControlAbilityRedundant(*missile, target));
+}
+
+void test_control_map_effect_policy_rejects_overlap()
+{
+    TEST_ASSERT_TRUE(shouldPlaceControlMapEffectAtTarget(false));
+    TEST_ASSERT_FALSE(shouldPlaceControlMapEffectAtTarget(true));
+}
+
+void test_exhausted_monster_spell_validation_is_transactional()
+{
+    resetResolverControls();
+    Entity caster;
+    Entity player;
+    initializeEntity(caster, ENTITY_MONSTER, TEAM_MONSTER);
+    initializeEntity(player, ENTITY_PLAYER, TEAM_PLAYER);
+    caster.character.level = 4;
+    caster.character.magic.currentMP = 0;
+    caster.character.magic.maxMP = 6;
+    const int startingHP = player.character.health.currentHP;
+
+    TEST_ASSERT_EQUAL(
+        ABILITY_RESULT_NOT_ENOUGH_MP,
+        validateAbility(caster, &player, ABILITY_MAGIC_MISSILE));
+    TEST_ASSERT_EQUAL_INT(startingHP, player.character.health.currentHP);
+    TEST_ASSERT_EQUAL_INT(0, caster.character.magic.currentMP);
+    TEST_ASSERT_FALSE(caster.turn.standardActionUsed);
+}
+
 void test_grease_cast_creates_area_and_trips_initial_occupant()
 {
     resetResolverControls();
@@ -991,9 +1157,26 @@ void test_entering_grease_saves_once_and_prone_stands_without_moving()
         monster.character, CONDITION_PRONE));
     TEST_ASSERT_TRUE(hasCondition(
         monster.character, CONDITION_BLESSED));
-    TEST_ASSERT_EQUAL_UINT8(2, monster.turn.movementRemaining);
+    TEST_ASSERT_EQUAL_UINT8(0, monster.turn.movementRemaining);
+    TEST_ASSERT_TRUE(monster.turn.moveActionUsed);
+    TEST_ASSERT_FALSE(monster.turn.standardActionUsed);
     TEST_ASSERT_EQUAL_UINT8(oldX, monster.x);
     TEST_ASSERT_EQUAL_UINT8(oldY, monster.y);
+
+    TEST_ASSERT_TRUE(addCondition(
+        monster.character, CONDITION_PRONE, 0, 0));
+    monster.turn.moveActionUsed = true;
+    monster.turn.movementRemaining = 3;
+    TEST_ASSERT_EQUAL(
+        STAND_NO_MOVEMENT, tryStandForMovement(monster, true));
+    TEST_ASSERT_TRUE(hasCondition(monster.character, CONDITION_PRONE));
+
+    monster.turn.moveActionUsed = false;
+    TEST_ASSERT_EQUAL(
+        STAND_COMPLETED, tryStandForMovement(monster, false));
+    TEST_ASSERT_FALSE(hasCondition(monster.character, CONDITION_PRONE));
+    TEST_ASSERT_FALSE(monster.turn.moveActionUsed);
+    TEST_ASSERT_EQUAL_UINT8(3, monster.turn.movementRemaining);
 }
 
 void test_web_is_combat_duration_and_traps_non_spiders_on_failed_reflex()
@@ -1016,14 +1199,14 @@ void test_web_is_combat_duration_and_traps_non_spiders_on_failed_reflex()
     TEST_ASSERT_EQUAL_UINT8(2, web->level);
     TEST_ASSERT_EQUAL(MAP_EFFECT_WEB, web->mapEffectType);
     TEST_ASSERT_EQUAL_UINT8(1, web->areaRadiusTiles);
-    TEST_ASSERT_EQUAL(CONDITION_WEBBED, web->effects[0].conditionType);
+    TEST_ASSERT_EQUAL(CONDITION_GRAPPLED, web->effects[0].conditionType);
 
     AbilityResolution result = resolveAbilityAt(
         wizard, 3, 3, ABILITY_WEB);
     TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
     TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WEB, 2, 2));
     TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WEB, 4, 4));
-    TEST_ASSERT_TRUE(hasCondition(monster.character, CONDITION_WEBBED));
+    TEST_ASSERT_TRUE(hasCondition(monster.character, CONDITION_GRAPPLED));
     TEST_ASSERT_EQUAL_UINT8(0, monster.turn.movementRemaining);
     TEST_ASSERT_EQUAL_UINT8(0, getMovementCost(monster, 3, 3));
 
@@ -1032,7 +1215,7 @@ void test_web_is_combat_duration_and_traps_non_spiders_on_failed_reflex()
     TEST_ASSERT_TRUE(hasMapEffectAt(MAP_EFFECT_WEB, 3, 3));
     clearMapEffects();
     TEST_ASSERT_FALSE(hasMapEffectAt(MAP_EFFECT_WEB, 3, 3));
-    TEST_ASSERT_FALSE(hasCondition(monster.character, CONDITION_WEBBED));
+    TEST_ASSERT_FALSE(hasCondition(monster.character, CONDITION_GRAPPLED));
 }
 
 void test_spider_ignores_web_and_successful_entry_save_allows_movement()
@@ -1048,7 +1231,7 @@ void test_spider_ignores_web_and_successful_entry_save_allows_movement()
     effect.expiresWithCombat = true;
     effect.saveType = SAVE_REFLEX;
     effect.saveDC = 20;
-    effect.conditionType = CONDITION_WEBBED;
+    effect.conditionType = CONDITION_GRAPPLED;
     TEST_ASSERT_NOT_NULL(addMapEffect(effect));
 
     Entity spider;
@@ -1057,7 +1240,16 @@ void test_spider_ignores_web_and_successful_entry_save_allows_movement()
     spider.x = 5;
     spider.y = 5;
     TEST_ASSERT_EQUAL(CONDITION_NONE, handleEnteredTile(spider, 5, 5));
-    TEST_ASSERT_FALSE(hasCondition(spider.character, CONDITION_WEBBED));
+    TEST_ASSERT_FALSE(hasCondition(spider.character, CONDITION_GRAPPLED));
+    TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
+
+    Entity queen;
+    initializeEntity(queen, ENTITY_MONSTER, TEAM_MONSTER);
+    queen.monsterID = MONSTER_GIANT_SPIDER_QUEEN;
+    queen.x = 5;
+    queen.y = 5;
+    TEST_ASSERT_EQUAL(CONDITION_NONE, handleEnteredTile(queen, 5, 5));
+    TEST_ASSERT_FALSE(hasCondition(queen.character, CONDITION_GRAPPLED));
     TEST_ASSERT_EQUAL_UINT8(0, saveRollCount);
 
     Entity creature;
@@ -1066,9 +1258,175 @@ void test_spider_ignores_web_and_successful_entry_save_allows_movement()
     creature.y = 5;
     controlledSaveRoll = 20;
     TEST_ASSERT_EQUAL(CONDITION_NONE, handleEnteredTile(creature, 5, 5));
-    TEST_ASSERT_FALSE(hasCondition(creature.character, CONDITION_WEBBED));
+    TEST_ASSERT_FALSE(hasCondition(creature.character, CONDITION_GRAPPLED));
     TEST_ASSERT_EQUAL_UINT8(1, saveRollCount);
-    TEST_ASSERT_EQUAL_UINT8(1, getMovementCost(creature, 5, 5));
+    TEST_ASSERT_EQUAL_UINT8(2, getMovementCost(creature, 5, 5));
+}
+
+void test_monster_web_dc_is_definition_derived_and_captured()
+{
+    resetResolverControls();
+    Monster normal{};
+    normal.hitDice = 2;
+    normal.abilitySaveDCBonus = 0;
+    Monster queen{};
+    queen.hitDice = 5;
+    queen.abilitySaveDCBonus = 1;
+
+    Entity caster;
+    initializeEntity(caster, ENTITY_MONSTER, TEAM_MONSTER);
+    caster.character.abilities.constitution = 12;
+    caster.monster = &normal;
+    TEST_ASSERT_EQUAL_INT(12,
+        getMonsterAbilitySaveDC(caster, ABILITY_WEB));
+
+    caster.character.abilities.constitution = 16;
+    caster.monster = &queen;
+    TEST_ASSERT_EQUAL_INT(16,
+        getMonsterAbilitySaveDC(caster, ABILITY_WEB));
+    TEST_ASSERT_EQUAL_INT(4,
+        getMonsterAbilitySaveDC(caster, ABILITY_WEB) - 12);
+
+    activeTestEntityCount = 2;
+    activeTestEntities[0] = caster;
+    activeTestEntities[0].x = 0;
+    activeTestEntities[0].y = 0;
+    activeTestEntities[1] = Entity{};
+    initializeEntity(activeTestEntities[1], ENTITY_PLAYER, TEAM_PLAYER);
+    activeTestEntities[1].x = 3;
+    activeTestEntities[1].y = 3;
+    controlledSaveRoll = 1;
+    AbilityResolution result = resolveAbilityAt(
+        activeTestEntities[0], 3, 3, ABILITY_WEB);
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_SUCCESS, result.result);
+    const MapEffect* created = getMapEffectAt(3, 3);
+    TEST_ASSERT_NOT_NULL(created);
+    TEST_ASSERT_EQUAL_INT(16, created->saveDC);
+    TEST_ASSERT_TRUE(hasCondition(
+        activeTestEntities[1].character, CONDITION_GRAPPLED));
+}
+
+void test_web_cover_counts_only_tiles_on_the_attack_line()
+{
+    resetResolverControls();
+    Entity attacker;
+    Entity target;
+    initializeEntity(attacker, ENTITY_PLAYER, TEAM_PLAYER);
+    initializeEntity(target, ENTITY_MONSTER, TEAM_MONSTER);
+    attacker.x = 0; attacker.y = 2;
+    target.x = 2; target.y = 2;
+
+    MapEffect web;
+    web.active = true;
+    web.type = MAP_EFFECT_WEB;
+    web.x = 1; web.y = 2;
+    web.expiresWithCombat = true;
+    web.tileCount = 1;
+    web.tiles[0].x = 1; web.tiles[0].y = 2;
+    TEST_ASSERT_NOT_NULL(addMapEffect(web));
+    TEST_ASSERT_EQUAL(COVER_PARTIAL, getCoverBetween(attacker, target));
+    TEST_ASSERT_EQUAL_INT(4, getCoverArmorClassBonus(COVER_PARTIAL));
+    TEST_ASSERT_EQUAL_INT(2,
+        getCoverSavingThrowBonus(COVER_PARTIAL, SAVE_REFLEX));
+    TEST_ASSERT_EQUAL_INT(0,
+        getCoverSavingThrowBonus(COVER_PARTIAL, SAVE_FORTITUDE));
+    TEST_ASSERT_EQUAL_INT(0,
+        getCoverSavingThrowBonus(COVER_PARTIAL, SAVE_WILL));
+
+    clearMapEffects();
+    target.x = 5;
+    web.tileCount = 4;
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        web.tiles[i].x = i + 1;
+        web.tiles[i].y = 2;
+    }
+    TEST_ASSERT_NOT_NULL(addMapEffect(web));
+    TEST_ASSERT_EQUAL(COVER_TOTAL, getCoverBetween(attacker, target));
+    TEST_ASSERT_EQUAL(ABILITY_RESULT_NO_LINE_OF_SIGHT,
+        validateAbility(attacker, &target, ABILITY_MAGIC_MISSILE));
+
+    clearMapEffects();
+    web.tileCount = 3;
+    for (uint8_t i = 0; i < 3; i++)
+    {
+        web.tiles[i].x = i + 1;
+        web.tiles[i].y = 2;
+    }
+    TEST_ASSERT_NOT_NULL(addMapEffect(web));
+    TEST_ASSERT_EQUAL(COVER_PARTIAL, getCoverBetween(attacker, target));
+    clearMapEffects();
+    web.tileCount = 1;
+    web.tiles[0].x = 2; web.tiles[0].y = 3;
+    TEST_ASSERT_NOT_NULL(addMapEffect(web));
+    TEST_ASSERT_EQUAL(COVER_NONE, getCoverBetween(attacker, target));
+}
+
+void test_burning_web_uses_typed_damage_once_and_releases_grapple()
+{
+    resetResolverControls();
+    activeTestEntityCount = 1;
+    Entity& queen = activeTestEntities[0];
+    initializeEntity(queen, ENTITY_MONSTER, TEAM_MONSTER);
+    queen.monsterID = MONSTER_GIANT_SPIDER_QUEEN;
+    queen.x = 2; queen.y = 2;
+    TEST_ASSERT_TRUE(addCondition(
+        queen.character, CONDITION_GRAPPLED, 0, 0));
+
+    MapEffect web;
+    web.active = true;
+    web.type = MAP_EFFECT_WEB;
+    web.x = 2; web.y = 2;
+    web.expiresWithCombat = true;
+    web.tileCount = 4;
+    web.tiles[0].x = 2; web.tiles[0].y = 2;
+    web.tiles[1].x = 3; web.tiles[1].y = 2;
+    web.tiles[2].x = 2; web.tiles[2].y = 3;
+    web.tiles[3].x = 3; web.tiles[3].y = 3;
+    TEST_ASSERT_NOT_NULL(addMapEffect(web));
+
+    AreaFlashTile fireTiles[4] = {
+        {2, 2}, {3, 2}, {2, 3}, {3, 3} };
+    const WebBurnResult result = burnWebAtTiles(fireTiles, 4);
+    TEST_ASSERT_EQUAL_UINT8(4, result.tilesCleared);
+    TEST_ASSERT_EQUAL_UINT8(1, result.creaturesDamaged);
+    TEST_ASSERT_EQUAL_UINT8(1, damageApplicationCount);
+    TEST_ASSERT_EQUAL(DAMAGE_FIRE, lastDamageType);
+    TEST_ASSERT_FALSE(hasMapEffectAt(MAP_EFFECT_WEB, 2, 2));
+    TEST_ASSERT_FALSE(hasCondition(
+        queen.character, CONDITION_GRAPPLED));
+    TEST_ASSERT_GREATER_THAN_UINT8(0, dirtyTileMarkCount);
+}
+
+void test_web_escape_uses_stored_dc_and_is_not_a_free_retry_loop()
+{
+    resetResolverControls();
+    activeTestEntityCount = 1;
+    Entity& creature = activeTestEntities[0];
+    initializeEntity(creature, ENTITY_MONSTER, TEAM_MONSTER);
+    creature.x = 4; creature.y = 4;
+    TEST_ASSERT_TRUE(addCondition(
+        creature.character, CONDITION_GRAPPLED, 0, 0));
+    MapEffect web;
+    web.active = true; web.type = MAP_EFFECT_WEB;
+    web.x = 4; web.y = 4; web.expiresWithCombat = true;
+    web.saveDC = 16;
+    TEST_ASSERT_NOT_NULL(addMapEffect(web));
+    TEST_ASSERT_FALSE(attemptEscapeWeb(creature, 15));
+    TEST_ASSERT_TRUE(hasCondition(
+        creature.character, CONDITION_GRAPPLED));
+    TEST_ASSERT_TRUE(attemptEscapeWeb(creature, 16));
+    TEST_ASSERT_FALSE(canAttemptEscapeWeb(creature));
+}
+
+void test_queen_web_priority_expands_coverage_without_changing_normal_spider()
+{
+    TEST_ASSERT_TRUE(shouldUseWebCoverage(1, false, 9, false));
+    TEST_ASSERT_FALSE(shouldUseWebCoverage(1, true, 6, false));
+    TEST_ASSERT_TRUE(shouldUseWebCoverage(3, true, 6, false));
+    TEST_ASSERT_FALSE(shouldUseWebCoverage(3, true, 3, false));
+    TEST_ASSERT_FALSE(shouldUseWebCoverage(3, false, 9, true));
+    TEST_ASSERT_FALSE(shouldUseWebCoverage(0, false, 9, false));
 }
 
 void test_color_spray_metadata_and_shared_cone_geometry()
@@ -2090,12 +2448,12 @@ void test_bertram_is_rejected_directly_and_skipped_by_areas()
     web.type = MAP_EFFECT_WEB;
     web.x = 4;
     web.y = 4;
-    web.conditionType = CONDITION_WEBBED;
+    web.conditionType = CONDITION_GRAPPLED;
     web.saveType = SAVE_REFLEX;
     web.saveDC = 99;
     TEST_ASSERT_EQUAL_UINT8(
         0, applyMapEffectToEntity(web, bertram).conditionsApplied);
-    TEST_ASSERT_FALSE(hasCondition(bertram.character, CONDITION_WEBBED));
+    TEST_ASSERT_FALSE(hasCondition(bertram.character, CONDITION_GRAPPLED));
 }
 
 void setup()
@@ -2119,6 +2477,12 @@ void setup()
     RUN_TEST(test_invalid_friendly_dead_and_used_action_targets_are_rejected);
     RUN_TEST(test_duration_effect_is_rejected_without_state_changes);
     RUN_TEST(test_monster_magic_missile_uses_the_same_resolver);
+    RUN_TEST(test_battle_cry_definition_and_recipient_filtering);
+    RUN_TEST(test_battle_cry_once_per_combat_policy_is_ability_driven);
+    RUN_TEST(test_battle_cry_weapon_modifier_does_not_increase_spell_damage);
+    RUN_TEST(test_monster_spell_policy_skips_redundant_control_effects);
+    RUN_TEST(test_control_map_effect_policy_rejects_overlap);
+    RUN_TEST(test_exhausted_monster_spell_validation_is_transactional);
     RUN_TEST(test_grease_cast_creates_area_and_trips_initial_occupant);
     RUN_TEST(test_grease_successful_reflex_save_resists_but_spends_cast);
     RUN_TEST(test_invalid_grease_casts_are_transactional);
@@ -2126,6 +2490,11 @@ void setup()
     RUN_TEST(test_entering_grease_saves_once_and_prone_stands_without_moving);
     RUN_TEST(test_web_is_combat_duration_and_traps_non_spiders_on_failed_reflex);
     RUN_TEST(test_spider_ignores_web_and_successful_entry_save_allows_movement);
+    RUN_TEST(test_monster_web_dc_is_definition_derived_and_captured);
+    RUN_TEST(test_web_cover_counts_only_tiles_on_the_attack_line);
+    RUN_TEST(test_burning_web_uses_typed_damage_once_and_releases_grapple);
+    RUN_TEST(test_web_escape_uses_stored_dc_and_is_not_a_free_retry_loop);
+    RUN_TEST(test_queen_web_priority_expands_coverage_without_changing_normal_spider);
     RUN_TEST(test_color_spray_metadata_and_shared_cone_geometry);
     RUN_TEST(test_color_spray_failed_saves_use_effective_hd_tiers);
     RUN_TEST(test_color_spray_save_wall_team_and_area_filters_are_shared);

@@ -771,16 +771,88 @@ void test_oversized_encounter_templates_now_place_two_monsters()
         TEST_ASSERT_EQUAL_UINT16(2, countTiles(room, TILE_ENEMY_START));
     }
 
-    // The boss template has exactly two Skeleton guards and one Skeleton Mage.
+    // Boss geometry now uses generic encounter anchors; entity initialization
+    // resolves their species from the room's dungeon-wide theme.
     DungeonRoom boss{};
     boss.type = ROOM_BOSS;
+    boss.encounterTheme = ENCOUNTER_UNDEAD;
     boss.shape = SHAPE_SQUARE;
     addHorizontalTestConnections(boss);
     generateRoom(boss);
-    TEST_ASSERT_EQUAL_UINT16(0, countTiles(boss, TILE_ENEMY_START));
-    TEST_ASSERT_EQUAL_UINT16(2, countTiles(boss, TILE_SKELETON_START));
-    TEST_ASSERT_EQUAL_UINT16(
-        1, countTiles(boss, TILE_SKELETON_MAGE_START));
+    TEST_ASSERT_EQUAL_UINT16(3, countTiles(boss, TILE_ENEMY_START));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(boss, TILE_SKELETON_START));
+    TEST_ASSERT_EQUAL_UINT16(0, countTiles(boss, TILE_SKELETON_MAGE_START));
+}
+
+void test_all_themed_boss_markers_are_generic_bounded_and_non_overlapping()
+{
+    static constexpr EncounterTheme themes[] = {
+        ENCOUNTER_GOBLIN,
+        ENCOUNTER_UNDEAD,
+        ENCOUNTER_ABERRATION,
+        ENCOUNTER_SPIDER};
+    static constexpr RoomShape shapes[] = {
+        SHAPE_SQUARE,
+        SHAPE_SMALL_RECTANGLE,
+        SHAPE_L,
+        SHAPE_CAVE};
+
+    for (EncounterTheme theme : themes)
+    {
+        for (RoomShape shape : shapes)
+        {
+            DungeonRoom boss{};
+            boss.type = ROOM_BOSS;
+            boss.encounterTheme = theme;
+            boss.shape = shape;
+            TEST_ASSERT_TRUE(addRoomConnection(
+                boss, DIR_WEST, 0, ROOM_CONNECTION_MIN + 2));
+            generateRoom(boss);
+
+            const uint8_t expectedCount =
+                getThemedBossMonsterCount(theme);
+            const uint8_t footprint = theme == ENCOUNTER_ABERRATION ||
+                                      theme == ENCOUNTER_SPIDER ? 2 : 1;
+            TEST_ASSERT_EQUAL_UINT16(
+                expectedCount, countTiles(boss, TILE_ENEMY_START));
+            TEST_ASSERT_EQUAL_UINT16(
+                0, countTiles(boss, TILE_SKELETON_START));
+            TEST_ASSERT_EQUAL_UINT16(
+                0, countTiles(boss, TILE_SKELETON_MAGE_START));
+
+            for (uint8_t markerY = 1;
+                 markerY < ROOM_HEIGHT - 1;
+                 markerY++)
+            {
+                for (uint8_t markerX = 1;
+                     markerX < ROOM_WIDTH - 1;
+                     markerX++)
+                {
+                    if (boss.map.tiles[markerY][markerX] != TILE_ENEMY_START)
+                        continue;
+
+                    TEST_ASSERT_TRUE(
+                        markerX + footprint <= ROOM_WIDTH - 1);
+                    TEST_ASSERT_TRUE(
+                        markerY + footprint <= ROOM_HEIGHT - 1);
+                    for (uint8_t y = markerY;
+                         y < markerY + footprint;
+                         y++)
+                    {
+                        for (uint8_t x = markerX;
+                             x < markerX + footprint;
+                             x++)
+                        {
+                            const bool anchor =
+                                x == markerX && y == markerY;
+                            TEST_ASSERT_TRUE(anchor ||
+                                boss.map.tiles[y][x] == TILE_FLOOR);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void test_empty_room_has_no_encounter_markers()
@@ -1271,6 +1343,7 @@ void setup()
     RUN_TEST(test_invalid_winding_corridor_requests_fall_back_safely);
     RUN_TEST(test_winding_room_content_markers_remain_on_connected_interior_floor);
     RUN_TEST(test_oversized_encounter_templates_now_place_two_monsters);
+    RUN_TEST(test_all_themed_boss_markers_are_generic_bounded_and_non_overlapping);
     RUN_TEST(test_empty_room_has_no_encounter_markers);
     RUN_TEST(test_combat_and_ambush_markers_use_distinct_placement_biases);
     RUN_TEST(test_cave_parameter_selection_and_eligibility_are_bounded);

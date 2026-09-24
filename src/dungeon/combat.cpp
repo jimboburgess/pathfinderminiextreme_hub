@@ -202,7 +202,8 @@ static bool isValidRangedTarget(const Entity* player, const Entity* target)
     int targetX = 0;
     int targetY = 0;
 
-    return getVisibleTargetTile(player, target, targetX, targetY);
+    return getVisibleTargetTile(player, target, targetX, targetY) &&
+           getCoverBetween(*player, *target) != COVER_TOTAL;
 }
 
 static bool isPlayerSideCharacter(const Entity& entity)
@@ -261,7 +262,8 @@ static bool isValidAbilitySelectionTarget(
         return getEntityGridDistance(*caster, *target) <=
                    ability->rangeTiles &&
                hasLineOfSightBetweenFootprintsAt(
-                   *caster, caster->x, caster->y, *target);
+                   *caster, caster->x, caster->y, *target) &&
+               getCoverBetween(*caster, *target) != COVER_TOTAL;
     }
 
     return true;
@@ -277,12 +279,14 @@ static bool isValidGroundAbilitySelection(
            isInsideActiveMap(targetX, targetY) &&
            getEntityGridDistanceToTile(
                *caster, targetX, targetY) <= ability->rangeTiles &&
-           hasLineOfSightFromFootprintAt(
-               *caster,
+            hasLineOfSightFromFootprintAt(
+                *caster,
                caster->x,
                caster->y,
                targetX,
-               targetY);
+                targetY) &&
+            getCoverFromEntityToTile(*caster, targetX, targetY) !=
+                COVER_TOTAL;
 }
 
 static bool selectNextGroundAbilityTarget(bool forward)
@@ -1463,9 +1467,14 @@ void startCombat()
 
     clearMapEffects();
     combat.active = true;
-    playSound(SoundEffect::DUNGEON_THEME);
 
     findCombatants();
+    resetCombatAbilityUsage(
+        combat.initiativeOrder, combat.combatantCount);
+    playSound(combatRosterHasBoss(
+                  combat.initiativeOrder, combat.combatantCount)
+              ? SoundEffect::BOSS_THEME
+              : SoundEffect::DUNGEON_THEME);
     rollInitiative();
     sortInitiative();
     applyFlatFootedToCombatants();
@@ -1736,7 +1745,8 @@ void resetActions(Entity* entity)
 void announceTurn(Entity* entity)
 {
     entity->turn.movementRemaining =
-        hasCondition(entity->character, CONDITION_WEBBED)
+        (hasCondition(entity->character, CONDITION_GRAPPLED) ||
+         hasCondition(entity->character, CONDITION_WEBBED))
             ? 0
             : getEffectiveSpeed(entity->character);
     entity->turn.bonusAttacksRemaining =
@@ -2561,8 +2571,12 @@ void confirmPlayerAttack()
     int attackBonus = normalAttackBonus + powerAttackPenalty +
         iterativePenalty;
     int total = dieRoll + attackBonus + rangePenalty;
+    const int coverBonus = combat.attackType == COMBAT_ATTACK_RANGED
+        ? getCoverArmorClassBonus(getCoverBetween(*player, *target))
+        : 0;
     const int targetArmorClass = getArmorClass(
-        target->character, target->turn.fullDefense ? 4 : 0);
+        target->character,
+        (target->turn.fullDefense ? 4 : 0) + coverBonus);
     bool hit = (dieRoll == 20) ||
                (dieRoll != 1 && total >= targetArmorClass);
     bool criticalConfirmed = false;
@@ -2636,8 +2650,7 @@ void confirmPlayerAttack()
         combat.pendingDamage += getFighterWeaponDamageBonus(
             player->character, *weapon);
         combat.pendingDamage += getItemWeaponDamageBonus(weaponItem);
-        combat.pendingDamage += getActiveConditionModifiers(
-            player->character).damageBonus;
+        combat.pendingDamage += getConditionDamageModifier(player->character);
 
         combat.pendingDamage = std::max(1, combat.pendingDamage);
 
@@ -3788,8 +3801,12 @@ void beginMonsterAttack(
                 getConditionAttackModifier(monster->character) +
                 rangePenalty;
 
+    const int coverBonus = attackType == COMBAT_ATTACK_RANGED
+        ? getCoverArmorClassBonus(getCoverBetween(*monster, *target))
+        : 0;
     const int targetArmorClass = getArmorClass(
-        target->character, target->turn.fullDefense ? 4 : 0);
+        target->character,
+        (target->turn.fullDefense ? 4 : 0) + coverBonus);
 
     combat.monsterAttackHit = (dieRoll == 20) ||
         (dieRoll != 1 && total >= targetArmorClass);
@@ -3822,8 +3839,8 @@ void beginMonsterAttack(
 
         combat.monsterPendingDamage += getItemWeaponDamageBonus(weaponItem);
 
-        combat.monsterPendingDamage += getActiveConditionModifiers(
-            monster->character).damageBonus;
+        combat.monsterPendingDamage += getConditionDamageModifier(
+            monster->character);
 
         combat.monsterPendingDamage = std::max(
             1, combat.monsterPendingDamage);

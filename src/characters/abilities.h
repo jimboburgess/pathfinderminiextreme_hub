@@ -168,6 +168,8 @@ enum AbilityID
     ABILITY_PROTECTION_FROM_ENERGY_ARCANE,
     ABILITY_ACID_FOG,
     ABILITY_BLADE_BARRIER,
+    // Appended so existing persisted AbilityID values remain stable.
+    ABILITY_BATTLE_CRY,
 
     ABILITY_MAX
 };

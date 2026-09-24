@@ -28,6 +28,8 @@ struct TurnState
     bool delayTurn;
     bool moveActionUsed = false;
     bool powerAttackActive = false;
+    // Transient encounter state; reset when a new combat roster is built.
+    bool oncePerCombatAbilityUsed = false;
 
 };
 

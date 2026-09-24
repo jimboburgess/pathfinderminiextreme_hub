@@ -50,11 +50,8 @@ bool handlePlayerStandAttempt(Entity& player, bool& handled)
     setGameMessage("You stand up.");
     markEntityFootprintDirty(player);
 
-    if (combat.active && player.turn.movementRemaining == 0)
-    {
-        player.turn.moveActionUsed = true;
+    if (combat.active)
         checkEndPlayerTurn();
-    }
 
     return true;
 }
@@ -85,8 +82,8 @@ void finishPlayerMovement(
 
     if (enteredCondition == CONDITION_PRONE)
         setGameMessage("You fall prone!");
-    else if (enteredCondition == CONDITION_WEBBED)
-        setGameMessage("Caught in the web!");
+    else if (enteredCondition == CONDITION_GRAPPLED)
+        setGameMessage("You are grappled by the web!");
 }
 
 uint8_t resolvePlayerMovementAttemptCost(

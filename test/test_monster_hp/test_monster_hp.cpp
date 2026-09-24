@@ -150,9 +150,15 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL(IDLE_WANDER, zombie.idleBehavior);
 
     const Monster& spectator = monsterDatabase[MONSTER_SPECTATOR];
+    TEST_ASSERT_EQUAL(ABILITY_BANE, spectator.specialAbilities[0]);
     TEST_ASSERT_EQUAL(
-        ABILITY_MAGIC_MISSILE, spectator.specialAbilities[0]);
+        ABILITY_RAY_OF_ENFEEBLEMENT, spectator.specialAbilities[1]);
+    TEST_ASSERT_EQUAL(
+        ABILITY_MAGIC_MISSILE, spectator.specialAbilities[2]);
+    TEST_ASSERT_EQUAL(ABILITY_NONE, spectator.specialAbilities[3]);
     TEST_ASSERT_EQUAL(SCRIPT_SPELLCASTER, spectator.script);
+    TEST_ASSERT_TRUE(spectator.isBoss);
+    TEST_ASSERT_EQUAL(CR_FOUR, spectator.challengeRating);
     TEST_ASSERT_EQUAL_UINT8(6, spectator.maxMP);
     TEST_ASSERT_EQUAL_UINT8(4, spectator.casterLevel);
     TEST_ASSERT_EQUAL(CREATURE_BEHOLDER, spectator.creatureType);
@@ -161,6 +167,8 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL(ABILITY_WEB, spider.specialAbilities[2]);
     TEST_ASSERT_EQUAL_UINT8(4, spider.maxMP);
     TEST_ASSERT_EQUAL_UINT8(2, spider.casterLevel);
+    TEST_ASSERT_EQUAL_INT8(0, spider.abilitySaveDCBonus);
+    TEST_ASSERT_EQUAL_UINT8(1, spider.webCastPriority);
 
     const Monster& skeletonMage = monsterDatabase[MONSTER_SKELETON_MAGE];
     TEST_ASSERT_EQUAL_STRING("Skeleton Mage", skeletonMage.name);
@@ -176,7 +184,13 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL(ITEM_NATURAL_ARMOR_3, skeletonMage.armor);
     TEST_ASSERT_EQUAL(ABILITY_COLOR_SPRAY, skeletonMage.specialAbilities[0]);
     TEST_ASSERT_EQUAL(ABILITY_GREASE, skeletonMage.specialAbilities[1]);
-    TEST_ASSERT_EQUAL(SCRIPT_SPELLCASTER, skeletonMage.script);
+    TEST_ASSERT_EQUAL(
+        ABILITY_MAGIC_MISSILE, skeletonMage.specialAbilities[2]);
+    TEST_ASSERT_EQUAL(ABILITY_NONE, skeletonMage.specialAbilities[3]);
+    TEST_ASSERT_EQUAL(SCRIPT_CONTROL_SPELLCASTER, skeletonMage.script);
+    TEST_ASSERT_EQUAL(IDLE_STATIONARY, skeletonMage.idleBehavior);
+    TEST_ASSERT_TRUE(skeletonMage.isBoss);
+    TEST_ASSERT_EQUAL(CR_TWO, skeletonMage.challengeRating);
     TEST_ASSERT_EQUAL_UINT8(8, skeletonMage.maxMP);
     TEST_ASSERT_EQUAL_UINT8(3, skeletonMage.casterLevel);
     TEST_ASSERT_EQUAL(CREATURE_SKELETON, skeletonMage.creatureType);
@@ -210,6 +224,101 @@ void test_monster_idle_behaviors_match_exploration_roles()
         monsterDatabase[MONSTER_SPECTATOR].idleBehavior);
     TEST_ASSERT_EQUAL(IDLE_STATIONARY,
         monsterDatabase[MONSTER_SKELETON_MAGE].idleBehavior);
+}
+
+void test_dedicated_boss_ids_and_definitions_are_appended_and_complete()
+{
+    TEST_ASSERT_EQUAL_INT(
+        MONSTER_SKELETON_MAGE + 1, MONSTER_GOBLIN_CHIEFTAIN);
+    TEST_ASSERT_EQUAL_INT(
+        MONSTER_GOBLIN_CHIEFTAIN + 1, MONSTER_GIANT_SPIDER_QUEEN);
+    TEST_ASSERT_EQUAL_INT(
+        MONSTER_GIANT_SPIDER_QUEEN + 1, MONSTER_COUNT);
+
+    const Monster* chieftain = getMonster(MONSTER_GOBLIN_CHIEFTAIN);
+    TEST_ASSERT_NOT_NULL(chieftain);
+    TEST_ASSERT_EQUAL_STRING("Goblin Chieftain", chieftain->name);
+    TEST_ASSERT_EQUAL(SCRIPT_MELEE, chieftain->script);
+    TEST_ASSERT_EQUAL(IDLE_PATROL, chieftain->idleBehavior);
+    TEST_ASSERT_EQUAL(CREATURE_GOBLIN, chieftain->creatureType);
+    TEST_ASSERT_EQUAL(CR_THREE, chieftain->challengeRating);
+    TEST_ASSERT_EQUAL(ITEM_SCIMITAR, chieftain->weapon);
+    TEST_ASSERT_EQUAL(ITEM_HIDE_ARMOR, chieftain->armor);
+    TEST_ASSERT_EQUAL_INT8(4, chieftain->perceptionBonus);
+    TEST_ASSERT_EQUAL_INT8(3, chieftain->stealthBonus);
+    TEST_ASSERT_TRUE(chieftain->isBoss);
+    TEST_ASSERT_EQUAL(
+        ABILITY_BATTLE_CRY, chieftain->specialAbilities[0]);
+    TEST_ASSERT_TRUE(monsterHasSpecialAbility(
+        *chieftain, ABILITY_MELEE_ATTACK));
+    TEST_ASSERT_FALSE(monsterHasSpecialAbility(
+        monsterDatabase[MONSTER_GOBLIN_SCIMITAR], ABILITY_BATTLE_CRY));
+    TEST_ASSERT_FALSE(monsterHasSpecialAbility(
+        monsterDatabase[MONSTER_GOBLIN_ARCHER], ABILITY_BATTLE_CRY));
+
+    const Monster* queen = getMonster(MONSTER_GIANT_SPIDER_QUEEN);
+    const Monster* spider = getMonster(MONSTER_GIANT_SPIDER);
+    TEST_ASSERT_NOT_NULL(queen);
+    TEST_ASSERT_NOT_NULL(spider);
+    TEST_ASSERT_EQUAL_STRING("Spider Queen", queen->name);
+    TEST_ASSERT_EQUAL_PTR(giantspider32x32, queen->sprite);
+    TEST_ASSERT_EQUAL(SCRIPT_MELEE, queen->script);
+    TEST_ASSERT_EQUAL(IDLE_HIDE, queen->idleBehavior);
+    TEST_ASSERT_EQUAL(CREATURE_MONSTER, queen->creatureType);
+    TEST_ASSERT_EQUAL(CR_THREE, queen->challengeRating);
+    TEST_ASSERT_EQUAL(ITEM_BITE, queen->weapon);
+    TEST_ASSERT_TRUE(monsterHasSpecialAbility(*queen, ABILITY_MELEE_ATTACK));
+    TEST_ASSERT_TRUE(monsterHasSpecialAbility(*queen, ABILITY_POISON));
+    TEST_ASSERT_TRUE(monsterHasSpecialAbility(*queen, ABILITY_WEB));
+    TEST_ASSERT_TRUE(queen->poison.saveDC > spider->poison.saveDC);
+    TEST_ASSERT_TRUE(queen->poison.rounds > spider->poison.rounds);
+    TEST_ASSERT_TRUE(queen->stealthBonus > spider->stealthBonus);
+    TEST_ASSERT_EQUAL_INT8(6, queen->perceptionBonus);
+    TEST_ASSERT_EQUAL_INT8(8, queen->stealthBonus);
+    TEST_ASSERT_TRUE(queen->isBoss);
+    TEST_ASSERT_EQUAL_INT8(1, queen->abilitySaveDCBonus);
+    TEST_ASSERT_EQUAL_UINT8(3, queen->webCastPriority);
+    TEST_ASSERT_EQUAL_UINT8(12, queen->maxMP);
+
+    const int spiderWebDC = 10 +
+        getAbilityModifier(spider->abilities.constitution) +
+        spider->hitDice / 2 + spider->abilitySaveDCBonus;
+    const int queenWebDC = 10 +
+        getAbilityModifier(queen->abilities.constitution) +
+        queen->hitDice / 2 + queen->abilitySaveDCBonus;
+    TEST_ASSERT_EQUAL_INT(12, spiderWebDC);
+    TEST_ASSERT_EQUAL_INT(16, queenWebDC);
+    TEST_ASSERT_EQUAL_INT(4, queenWebDC - spiderWebDC);
+
+    for (uint8_t id = MONSTER_GOBLIN_SCIMITAR; id < MONSTER_COUNT; id++)
+    {
+        const bool expectedBoss = id == MONSTER_GOBLIN_CHIEFTAIN ||
+                                  id == MONSTER_GIANT_SPIDER_QUEEN ||
+                                  id == MONSTER_SKELETON_MAGE ||
+                                  id == MONSTER_SPECTATOR;
+        TEST_ASSERT_EQUAL(expectedBoss, monsterDatabase[id].isBoss);
+    }
+}
+
+void test_spider_queen_spawns_with_large_footprint_and_normal_monster_state()
+{
+    Entity entities[MAX_ENTITIES] = {};
+    uint8_t entityCount = 0;
+    const Monster* definition = getMonster(MONSTER_GIANT_SPIDER_QUEEN);
+    TEST_ASSERT_NOT_NULL(definition);
+    useHitPointRoll(30);
+
+    Entity* queen = spawnMonster(
+        entities, entityCount, MONSTER_GIANT_SPIDER_QUEEN, 10, 9);
+
+    TEST_ASSERT_NOT_NULL(queen);
+    TEST_ASSERT_EQUAL(MONSTER_GIANT_SPIDER_QUEEN, queen->monsterID);
+    TEST_ASSERT_EQUAL_PTR(definition, queen->monster);
+    TEST_ASSERT_EQUAL_UINT8(LRGSPRITE_W, queen->spriteWidth);
+    TEST_ASSERT_EQUAL_UINT8(LRGSPRITE_H, queen->spriteHeight);
+    TEST_ASSERT_EQUAL_UINT8(5, lastHitDieCount);
+    TEST_ASSERT_EQUAL_UINT16(45, queen->character.health.maxHP);
+    TEST_ASSERT_EQUAL_INT(12, queen->character.magic.maxMP);
 }
 
 void test_reused_entity_gets_one_fresh_monster_hp_roll()
@@ -359,6 +468,8 @@ void setup()
     RUN_TEST(test_low_constitution_hp_never_wraps);
     RUN_TEST(test_zombie_database_fields_and_id_lookup_are_aligned);
     RUN_TEST(test_monster_idle_behaviors_match_exploration_roles);
+    RUN_TEST(test_dedicated_boss_ids_and_definitions_are_appended_and_complete);
+    RUN_TEST(test_spider_queen_spawns_with_large_footprint_and_normal_monster_state);
     RUN_TEST(test_reused_entity_gets_one_fresh_monster_hp_roll);
     RUN_TEST(test_spellcaster_spawn_receives_definition_mp_pool);
     RUN_TEST(test_skeleton_mage_spawns_from_normal_monster_data);

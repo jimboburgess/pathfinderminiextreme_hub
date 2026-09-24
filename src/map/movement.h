@@ -72,11 +72,11 @@ void spendMovementCost(
 void spendMovementCost(Entity& mover, uint8_t resolvedCost);
 
 // Automatic stand-up is shared by player and monster movement. In combat it
-// costs one movement point and consumes the movement input without changing
-// position; outside combat it simply consumes the input.
+// consumes the move action without changing position; outside combat it
+// simply consumes the movement input.
 StandForMovementResult tryStandForMovement(
     Entity& mover,
-    bool spendMovementPoint);
+    bool inCombat);
 
 // Shared post-commit terrain hook. It runs exactly once for each successful
 // movement step, never once per display/update frame.

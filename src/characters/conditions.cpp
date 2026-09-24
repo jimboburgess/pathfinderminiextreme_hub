@@ -21,6 +21,10 @@ ConditionModifiers getLegacyModifiers(ConditionType type, int value)
         case CONDITION_BUFF_SAVE: modifiers.saveBonus = value; break;
         case CONDITION_POISONED: modifiers.attackBonus = -value; break;
         case CONDITION_BLINDED: modifiers.attackBonus = -2; modifiers.acBonus = -2; break;
+        case CONDITION_GRAPPLED:
+            modifiers.attackBonus = -2;
+            modifiers.dexBonus = -4;
+            break;
         default: break;
     }
     return modifiers;
@@ -546,6 +550,11 @@ int getConditionAttackModifier(const Character& character)
     return getActiveConditionModifiers(character).attackBonus;
 }
 
+int getConditionDamageModifier(const Character& character)
+{
+    return getActiveConditionModifiers(character).damageBonus;
+}
+
 ConditionModifiers getActiveConditionModifiers(const Character& character)
 {
     ConditionModifiers modifiers;
@@ -585,7 +594,8 @@ int getConditionSaveModifier(const Character& character)
 const char* getActionAffectingConditionMessage(const Character& character)
 {
     const bool prone = hasCondition(character, CONDITION_PRONE);
-    const bool webbed = hasCondition(character, CONDITION_WEBBED);
+    const bool webbed = hasCondition(character, CONDITION_GRAPPLED) ||
+        hasCondition(character, CONDITION_WEBBED);
 
     if (prone && webbed)
         return "You are prone and stuck in the web.";

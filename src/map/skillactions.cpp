@@ -336,8 +336,7 @@ bool useSkill(Skill skill)
         case SKILL_ACROBATICS:
         {
             const MapEffect* web = getWebEffectAffectingEntity(*player);
-            if (!hasCondition(player->character, CONDITION_WEBBED) ||
-                web == nullptr)
+            if (!canAttemptEscapeWeb(*player) || web == nullptr)
             {
                 setGameMessage("No Acrobatics action available.");
                 return false;
@@ -348,10 +347,9 @@ bool useSkill(Skill skill)
 
             const int total = rollDie(20) +
                 getSkillBonus(player->character, SKILL_ACROBATICS);
-            if (total >= web->saveDC)
+            if (attemptEscapeWeb(*player, total))
             {
-                removeCondition(player->character, CONDITION_WEBBED);
-                setGameMessage("You escape the web.");
+                setGameMessage("You break free of the web.");
             }
             else
             {
@@ -368,7 +366,7 @@ bool useSkill(Skill skill)
 
 bool canCutFreeFromWeb(const Entity& entity)
 {
-    return hasCondition(entity.character, CONDITION_WEBBED) &&
+    return hasCondition(entity.character, CONDITION_GRAPPLED) &&
         (getEquippedMeleeWeapon(entity.character) != nullptr ||
          getEquippedRangedWeapon(entity.character) != nullptr);
 }
@@ -380,7 +378,7 @@ bool cutFreeFromWeb()
         !canUseStandardSkillAction(*player))
         return false;
 
-    removeCondition(player->character, CONDITION_WEBBED);
+    removeCondition(player->character, CONDITION_GRAPPLED);
     setGameMessage("You cut yourself free.");
     spendStandardSkillAction(*player);
     return true;
@@ -408,17 +406,8 @@ bool igniteWeb()
     if (web == nullptr)
         return false;
 
-    uint8_t count = 0;
-    Entity* entities = getActiveMapEntities(count);
-    for (uint8_t i = 0; entities != nullptr && i < count; i++)
-    {
-        if (mapEffectAffectsEntityAt(
-                *web, entities[i], entities[i].x, entities[i].y))
-            applyEnvironmentalDamage(entities[i], rollDice(2, 4));
-    }
-
-    removeWebEffect(*web);
-    setGameMessage("The webs burn away!");
+    burnWebEffect(*web);
+    setGameMessage("The web burns away!");
     spendStandardSkillAction(*player);
     return true;
 }

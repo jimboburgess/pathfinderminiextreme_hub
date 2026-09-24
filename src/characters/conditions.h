@@ -53,6 +53,13 @@ enum ConditionType
     // Movement
     CONDITION_PRONE,
 
+    // Appended so existing persisted ConditionType values remain stable.
+    CONDITION_BATTLE_CRY,
+
+    // Appended for numeric stability. Web now uses the generic grappled state;
+    // CONDITION_WEBBED remains reserved for older persisted values.
+    CONDITION_GRAPPLED,
+
     CONDITION_MAX
 };
 
@@ -217,6 +224,7 @@ ConditionTurnResult processConditionsAtTurnStart(Character& character);
 bool canCharacterAct(const Character& character);
 
 int getConditionAttackModifier(const Character& character);
+int getConditionDamageModifier(const Character& character);
 int getConditionArmorClassModifier(const Character& character);
 int getConditionSaveModifier(const Character& character);
 ConditionModifiers getActiveConditionModifiers(const Character& character);

@@ -111,6 +111,7 @@ bool initializeMonsterDefinitionState(Entity& entity, MonsterID monsterID)
     entity.spriteWidth = SPRITE_W;
     entity.spriteHeight = SPRITE_H;
     if (monsterID == MONSTER_GIANT_SPIDER ||
+        monsterID == MONSTER_GIANT_SPIDER_QUEEN ||
         monsterID == MONSTER_SPECTATOR)
     {
         entity.spriteWidth = LRGSPRITE_W;

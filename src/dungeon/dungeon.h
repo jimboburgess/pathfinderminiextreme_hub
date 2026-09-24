@@ -42,7 +42,8 @@ enum EncounterTheme : uint8_t {
     ENCOUNTER_NONE,
     ENCOUNTER_GOBLIN,
     ENCOUNTER_UNDEAD,
-    ENCOUNTER_ABERRATION
+    ENCOUNTER_ABERRATION,
+    ENCOUNTER_SPIDER
 };
 
 enum RoomShape : uint8_t {
@@ -210,6 +211,9 @@ struct Dungeon {
     uint8_t entityCount = 0;
     uint8_t loadedRoom = NO_ROOM;
     bool runActive = false;
+    // Rolled once per new run and copied to every combat, ambush, and boss
+    // room. This is separate from the loot system's DungeonTheme.
+    EncounterTheme encounterTheme = ENCOUNTER_NONE;
     // Rolled once when a new dungeon is generated. Room terrain itself stores
     // the selected room/patch layout for the lifetime of the run.
     bool hasRubbleTheme = false;
@@ -227,6 +231,18 @@ struct DungeonRubblePlan
 extern Dungeon dungeon;
 
 const char* roomTypeName(RoomType type);
+const char* encounterThemeName(EncounterTheme theme);
+EncounterTheme selectDungeonEncounterTheme(uint8_t roll);
+EncounterTheme rollDungeonEncounterTheme();
+EncounterTheme encounterThemeForRoom(
+    RoomType roomType,
+    EncounterTheme dungeonTheme);
+MonsterID getThemedMonster(EncounterTheme theme, uint8_t spawnIndex);
+MonsterID getThemedBossMonster(EncounterTheme theme, uint8_t spawnIndex);
+constexpr uint8_t getThemedBossMonsterCount(EncounterTheme theme)
+{
+    return theme == ENCOUNTER_SPIDER ? 2 : 3;
+}
 DungeonRubblePlan createDungeonRubblePlan(
     uint8_t themeRoll,
     uint8_t guaranteedMiddleRoomRoll,

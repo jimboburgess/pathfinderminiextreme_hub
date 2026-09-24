@@ -239,6 +239,43 @@ void test_combat_start_enemy_count_matches_living_roster()
         2, countLivingHostilesInCombatRoster(roster, count));
 }
 
+void test_combat_music_policy_uses_generic_boss_metadata()
+{
+    Monster ordinary = {};
+    Monster boss = {};
+    boss.isBoss = true;
+
+    Entity entities[3] = {
+        makeEntity(ENTITY_PLAYER, TEAM_PLAYER),
+        makeEntity(ENTITY_MONSTER, TEAM_MONSTER),
+        makeEntity(ENTITY_MONSTER, TEAM_MONSTER)};
+    entities[1].monster = &ordinary;
+    entities[2].monster = &boss;
+    Entity* roster[] = {&entities[0], &entities[1]};
+
+    TEST_ASSERT_FALSE(combatRosterHasBoss(roster, 2));
+    roster[1] = &entities[2];
+    TEST_ASSERT_TRUE(combatRosterHasBoss(roster, 2));
+
+    entities[2].character.state = STATE_DEAD;
+    TEST_ASSERT_FALSE(combatRosterHasBoss(roster, 2));
+}
+
+void test_new_combat_resets_once_per_combat_ability_usage()
+{
+    Entity entities[2] = {
+        makeEntity(ENTITY_PLAYER, TEAM_PLAYER),
+        makeEntity(ENTITY_MONSTER, TEAM_MONSTER)};
+    entities[0].turn.oncePerCombatAbilityUsed = true;
+    entities[1].turn.oncePerCombatAbilityUsed = true;
+    Entity* roster[] = {&entities[0], &entities[1]};
+
+    resetCombatAbilityUsage(roster, 2);
+
+    TEST_ASSERT_FALSE(entities[0].turn.oncePerCombatAbilityUsed);
+    TEST_ASSERT_FALSE(entities[1].turn.oncePerCombatAbilityUsed);
+}
+
 void test_reinforcement_waits_until_following_round()
 {
     Entity monster = makeEntity(ENTITY_MONSTER, TEAM_MONSTER);
@@ -347,6 +384,8 @@ void setup()
     RUN_TEST(test_second_monster_detection_establishes_combat_after_ambush_kill);
     RUN_TEST(test_flat_footed_condition_preserves_existing_sneak_attack_rule);
     RUN_TEST(test_combat_start_enemy_count_matches_living_roster);
+    RUN_TEST(test_combat_music_policy_uses_generic_boss_metadata);
+    RUN_TEST(test_new_combat_resets_once_per_combat_ability_usage);
     RUN_TEST(test_reinforcement_waits_until_following_round);
     RUN_TEST(test_neutral_and_unaware_hostiles_are_not_initial_combatants);
     RUN_TEST(test_pathfinder_iterative_attack_progression);

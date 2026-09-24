@@ -126,6 +126,7 @@ bool isTileInDirectionalAbilityArea(
 // Shared player/monster saving-throw helpers. No natural-1/natural-20 rule is
 // added here because the existing game does not define one for saves.
 int getAbilitySaveDC(const Entity& caster, const Ability& ability);
+int getMonsterAbilitySaveDC(const Entity& caster, AbilityID abilityID);
 int getAbilitySaveBonus(const Character& target, SaveType saveType);
 AbilitySavingThrow resolveAbilitySavingThrow(
     const Entity& caster,
@@ -137,7 +138,8 @@ AbilitySavingThrow resolveAbilitySavingThrow(
 AbilitySavingThrow resolveSavingThrow(
     const Character& target,
     SaveType saveType,
-    int dc);
+    int dc,
+    int circumstanceBonus = 0);
 
 bool canPayAbilityCost(
     const Character& caster,
@@ -147,6 +149,16 @@ void payAbilityCost(
     Character& caster,
     const Ability& ability,
     AbilityCastSource source);
+
+// Applies the modifier condition encoded by a canonical ability definition
+// without spending an action or resource. Multi-target monster abilities use
+// this after performing their own family/radius selection once.
+bool applyAbilityModifierCondition(
+    const Entity& caster,
+    Character& target,
+    AbilityID abilityID,
+    ConditionType* appliedCondition = nullptr,
+    int* appliedDuration = nullptr);
 
 // Performs every legality check without changing either entity.
 AbilityResult validateAbility(

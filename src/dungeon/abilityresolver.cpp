@@ -114,6 +114,40 @@ bool isTimedDamageEffect(AbilityEffect effect)
     return effect == EFFECT_DAMAGE_OVER_TIME;
 }
 
+bool abilityDealsDamageType(
+    const Ability& ability, DamageType damageType)
+{
+    for (uint8_t i = 0; i < ability.effectCount; i++)
+    {
+        if ((ability.effects[i].effect == EFFECT_DAMAGE ||
+             ability.effects[i].effect == EFFECT_DAMAGE_OVER_TIME) &&
+            ability.effects[i].damageType == damageType)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void burnWebUnderEntity(const Entity& entity)
+{
+    AreaFlashTile tiles[MAX_MAP_EFFECT_TILES];
+    uint8_t tileCount = 0;
+    for (uint8_t y = 0; y < getEntityTileHeight(entity); y++)
+    {
+        for (uint8_t x = 0; x < getEntityTileWidth(entity); x++)
+        {
+            if (tileCount < MAX_MAP_EFFECT_TILES)
+            {
+                tiles[tileCount++] = {
+                    static_cast<int8_t>(entity.x + x),
+                    static_cast<int8_t>(entity.y + y) };
+            }
+        }
+    }
+    burnWebAtTiles(tiles, tileCount);
+}
+
 bool hasTargetedTimedDamageProfile(const Ability& ability)
 {
     if (ability.effectCount < 2 || ability.target != TARGET_ENEMY ||
@@ -837,6 +871,9 @@ AbilityResolution resolveEnvironmentalAbility(
 
 int getAbilitySaveDC(const Entity& caster, const Ability& ability)
 {
+    if (caster.monster != nullptr && ability.id == ABILITY_WEB)
+        return getMonsterAbilitySaveDC(caster, ability.id);
+
     int castingModifier = 0;
 
     switch (ability.type)
@@ -861,6 +898,27 @@ int getAbilitySaveDC(const Entity& caster, const Ability& ability)
     }
 
     return 10 + ability.level + castingModifier;
+}
+
+int getMonsterAbilitySaveDC(const Entity& caster, AbilityID abilityID)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr || caster.monster == nullptr)
+        return ability != nullptr ? getAbilitySaveDC(caster, *ability) : 0;
+
+    if (abilityID == ABILITY_WEB)
+    {
+        // Web is a natural spider ability: Constitution supplies the relevant
+        // modifier and half HD provides its level component. Definitions may
+        // add a compact bonus without coupling the resolver to MonsterIDs.
+        return 10 +
+            getAbilityModifier(
+                caster.character, ABILITY_CONSTITUTION) +
+            caster.monster->hitDice / 2 +
+            caster.monster->abilitySaveDCBonus;
+    }
+
+    return getAbilitySaveDC(caster, *ability);
 }
 
 int getAbilitySaveBonus(const Character& target, SaveType saveType)
@@ -888,16 +946,20 @@ AbilitySavingThrow resolveAbilitySavingThrow(
     const Entity& target,
     const Ability& ability)
 {
+    const int coverBonus = getCoverSavingThrowBonus(
+        getCoverBetween(caster, target), ability.saveType);
     return resolveSavingThrow(
         target.character,
         ability.saveType,
-        getAbilitySaveDC(caster, ability));
+        getAbilitySaveDC(caster, ability),
+        coverBonus);
 }
 
 AbilitySavingThrow resolveSavingThrow(
     const Character& target,
     SaveType saveType,
-    int dc)
+    int dc,
+    int circumstanceBonus)
 {
     AbilitySavingThrow savingThrow;
 
@@ -905,7 +967,8 @@ AbilitySavingThrow resolveSavingThrow(
         return savingThrow;
 
     savingThrow.roll = rollDie(20);
-    savingThrow.bonus = getAbilitySaveBonus(target, saveType);
+    savingThrow.bonus = getAbilitySaveBonus(target, saveType) +
+        circumstanceBonus;
     savingThrow.total = savingThrow.roll + savingThrow.bonus;
     savingThrow.dc = dc;
     savingThrow.result = savingThrow.total >= dc
@@ -931,6 +994,44 @@ void payAbilityCost(
 {
     if (source == AbilityCastSource::NORMAL)
         caster.magic.currentMP -= ability.mpCost;
+}
+
+bool applyAbilityModifierCondition(
+    const Entity& caster,
+    Character& target,
+    AbilityID abilityID,
+    ConditionType* appliedCondition,
+    int* appliedDuration)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr ||
+        getSupportedEffectKind(*ability) != SUPPORTED_EFFECT_CONDITION)
+    {
+        return false;
+    }
+
+    const ConditionType conditionType = getModifierCondition(*ability);
+    if (conditionType == CONDITION_NONE)
+        return false;
+
+    ConditionModifiers modifiers;
+    int duration = 0;
+    for (uint8_t i = 0; i < ability->effectCount; i++)
+    {
+        const AbilityEffectData& effect = ability->effects[i];
+        addModifierEffect(modifiers, effect, caster);
+        if (effect.duration > duration)
+            duration = effect.duration;
+    }
+
+    if (!addCondition(target, conditionType, modifiers, duration))
+        return false;
+
+    if (appliedCondition != nullptr)
+        *appliedCondition = conditionType;
+    if (appliedDuration != nullptr)
+        *appliedDuration = duration;
+    return true;
 }
 
 AbilityResult validateAbility(
@@ -1010,6 +1111,9 @@ AbilityResult validateAbility(
         {
             return ABILITY_RESULT_NO_LINE_OF_SIGHT;
         }
+
+        if (getCoverBetween(caster, *resolvedTarget) == COVER_TOTAL)
+            return ABILITY_RESULT_NO_LINE_OF_SIGHT;
     }
 
     if (ability->delivery == DELIVERY_TOUCH &&
@@ -1083,7 +1187,9 @@ AbilityResolution resolveAbility(
         resolution.attackRoll.total = resolution.attackRoll.roll +
                                       resolution.attackRoll.bonus;
         resolution.attackRoll.targetAC =
-            getTouchArmorClass(resolvedTarget->character);
+            getTouchArmorClass(resolvedTarget->character) +
+            getCoverArmorClassBonus(
+                getCoverBetween(caster, *resolvedTarget));
         resolution.attackRoll.hit = resolution.attackRoll.roll == 20 ||
             (resolution.attackRoll.roll != 1 &&
              resolution.attackRoll.total >= resolution.attackRoll.targetAC);
@@ -1147,6 +1253,11 @@ AbilityResolution resolveAbility(
                     resolvedTarget->x, resolvedTarget->y);
         }
 
+        if (energyInteraction == EnergyInteraction::DAMAGE &&
+            abilityDealsDamageType(*ability, DAMAGE_FIRE))
+        {
+            burnWebUnderEntity(*resolvedTarget);
+        }
         payAbilityCost(caster.character, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
@@ -1189,6 +1300,8 @@ AbilityResolution resolveAbility(
                 }
             }
         }
+        if (abilityDealsDamageType(*ability, DAMAGE_FIRE))
+            burnWebUnderEntity(*resolvedTarget);
         payAbilityCost(caster.character, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
@@ -1238,30 +1351,16 @@ AbilityResolution resolveAbility(
     else if (resolution.savingThrow.result != SAVE_RESULT_SUCCESS &&
              effectKind == SUPPORTED_EFFECT_CONDITION)
     {
-        const ConditionType conditionType = getModifierCondition(*ability);
-        ConditionModifiers modifiers;
-        int duration = 0;
-
-        for (uint8_t i = 0; i < ability->effectCount; i++)
-        {
-            const AbilityEffectData& modifierEffect = ability->effects[i];
-            addModifierEffect(modifiers, modifierEffect, caster);
-            if (modifierEffect.duration > duration)
-                duration = modifierEffect.duration;
-        }
-
-        if (!addCondition(
+        if (!applyAbilityModifierCondition(
+                caster,
                 resolvedTarget->character,
-                conditionType,
-                modifiers,
-                duration))
+                ability->id,
+                &resolution.conditionApplied,
+                &resolution.conditionDuration))
         {
             resolution.result = ABILITY_RESULT_CONDITION_LIMIT;
             return resolution;
         }
-
-        resolution.conditionApplied = conditionType;
-        resolution.conditionDuration = duration;
         playAbilityImpactFlash(IMPACT_BUFF, DAMAGE_NONE,
                                resolvedTarget->x, resolvedTarget->y);
     }
@@ -1308,6 +1407,12 @@ AbilityResolution resolveAbility(
         resolution.conditionDuration = effect.duration;
         playAbilityImpactFlash(IMPACT_BUFF, selectedDamageType,
                                resolvedTarget->x, resolvedTarget->y);
+    }
+
+    if (abilityDealsDamageType(*ability, DAMAGE_FIRE) &&
+        resolvedTarget != nullptr)
+    {
+        burnWebUnderEntity(*resolvedTarget);
     }
 
     // Resource and action costs occur only after all validation and effect
@@ -1375,6 +1480,9 @@ AbilityResult validateAbilityAt(
         return ABILITY_RESULT_NO_LINE_OF_SIGHT;
     }
 
+    if (getCoverFromEntityToTile(caster, targetX, targetY) == COVER_TOTAL)
+        return ABILITY_RESULT_NO_LINE_OF_SIGHT;
+
     if (hasSupportedMapEffect(*ability) && !hasMapEffectCapacity())
         return ABILITY_RESULT_MAP_EFFECT_LIMIT;
 
@@ -1417,9 +1525,15 @@ AbilityResolution resolveAbilityAt(
                 !isCombatEntityType(target.type) ||
                 target.character.state != STATE_ALIVE ||
                 getEntityGridDistanceToTile(target, targetX, targetY) > ability->areaRadiusTiles ||
-                !hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, target.x, target.y))
+                !hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, target.x, target.y) ||
+                getCoverFromEntityToTile(target, targetX, targetY) == COVER_TOTAL)
                 continue;
-            AbilitySavingThrow save = resolveAbilitySavingThrow(caster, target, *ability);
+            const int coverBonus = getCoverSavingThrowBonus(
+                getCoverFromEntityToTile(target, targetX, targetY),
+                ability->saveType);
+            AbilitySavingThrow save = resolveSavingThrow(
+                target.character, ability->saveType,
+                getAbilitySaveDC(caster, *ability), coverBonus);
             resolution.savingThrow = save;
             int damage = fullDamage;
             if (save.result == SAVE_RESULT_SUCCESS)
@@ -1437,6 +1551,8 @@ AbilityResolution resolveAbilityAt(
             }
             applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
         }
+        if (ability->effects[0].damageType == DAMAGE_FIRE)
+            burnWebAtTiles(flashTiles, flashTileCount);
         payAbilityCost(caster.character, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
@@ -1580,7 +1696,8 @@ AbilityResolution resolveAbilityInDirection(
             if (!target.active || isBertramRiddleman(target) ||
                 !isCombatEntityType(target.type) ||
                 target.character.state != STATE_ALIVE ||
-                !entityIsInDirectionalArea(caster, target, *ability, direction))
+                !entityIsInDirectionalArea(caster, target, *ability, direction) ||
+                getCoverBetween(caster, target) == COVER_TOTAL)
                 continue;
 
             AbilitySavingThrow save = resolveAbilitySavingThrow(caster, target, *ability);
@@ -1603,6 +1720,8 @@ AbilityResolution resolveAbilityInDirection(
             }
             applyAreaSecondaryCondition(*ability, caster, target, save, resolution);
         }
+        if (ability->effects[0].damageType == DAMAGE_FIRE)
+            burnWebAtTiles(flashTiles, flashTileCount);
         payAbilityCost(caster.character, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;

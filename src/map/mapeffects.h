@@ -6,6 +6,14 @@
 #include "characters/abilities.h"
 
 struct Entity;
+struct AreaFlashTile;
+
+enum CoverLevel : uint8_t
+{
+    COVER_NONE,
+    COVER_PARTIAL,
+    COVER_TOTAL
+};
 
 constexpr uint8_t MAX_MAP_EFFECTS = 8;
 constexpr uint8_t MAX_MAP_EFFECT_TILES = 25;
@@ -57,6 +65,13 @@ struct MapEffectTriggerResult
     bool targetDefeated = false;
 };
 
+struct WebBurnResult
+{
+    uint8_t tilesCleared = 0;
+    uint8_t creaturesDamaged = 0;
+    int16_t damageApplied = 0;
+};
+
 extern MapEffect activeMapEffects[MAX_MAP_EFFECTS];
 
 bool hasMapEffectCapacity();
@@ -75,6 +90,16 @@ bool mapEffectAffectsEntityAt(
 const MapEffect* getMapEffectAt(int x, int y);
 bool hasMapEffectAt(MapEffectType type, int x, int y);
 bool hasDifficultMapEffectAt(int x, int y);
+bool hasDifficultMapEffectForEntityAt(
+    const Entity& entity, int x, int y);
+
+// Generic relative cover hooks. Web is the first map-effect contributor;
+// callers do not need to know which terrain/effect supplied the cover.
+CoverLevel getCoverBetween(const Entity& attacker, const Entity& target);
+CoverLevel getCoverFromEntityToTile(
+    const Entity& attacker, int targetX, int targetY);
+int getCoverArmorClassBonus(CoverLevel cover);
+int getCoverSavingThrowBonus(CoverLevel cover, SaveType saveType);
 
 MapEffectTriggerResult applyMapEffectToEntity(
     const MapEffect& effect,
@@ -87,6 +112,11 @@ MapEffectTriggerResult handleStartingTurnMapEffects(Entity& entity);
 
 void markMapEffectTilesDirty(const MapEffect& effect);
 const MapEffect* getWebEffectAffectingEntity(const Entity& entity);
+bool canAttemptEscapeWeb(const Entity& entity);
+bool attemptEscapeWeb(Entity& entity, int acrobaticsTotal);
 bool removeWebEffect(MapEffect& effect);
+WebBurnResult burnWebAtTiles(
+    const AreaFlashTile* tiles, uint8_t tileCount);
+WebBurnResult burnWebEffect(MapEffect& effect);
 
 #endif // PATHFINDERMINIEXTREME_025_MAP_EFFECTS_H

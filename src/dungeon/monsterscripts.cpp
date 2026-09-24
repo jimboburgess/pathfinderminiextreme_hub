@@ -6,6 +6,7 @@
 
 #include "map/activemap.h"
 #include "abilityresolver.h"
+#include "battlecry.h"
 #include "characters/conditions.h"
 #include "characters/items.h"
 #include "dungeon.h"
@@ -16,6 +17,7 @@
 #include "combat.h"
 #include "data/entityspawn.h"
 #include "data/entitytraits.h"
+#include "data/dice.h"
 #include "data/game.h"
 #include "graphics/display.h"
 #include "audio/audio.h"
@@ -28,6 +30,8 @@ constexpr uint16_t PATH_NODE_COUNT =
     PATH_MAP_WIDTH * PATH_MAP_HEIGHT;
 constexpr uint8_t CONTROL_CASTER_LOW_HP_PERCENT = 40;
 constexpr int CONTROL_CASTER_PREFERRED_DISTANCE = 3;
+constexpr int SPELLCASTER_MINIMUM_DISTANCE = 3;
+constexpr int SPELLCASTER_PREFERRED_DISTANCE = 4;
 
 struct PathNode
 {
@@ -215,6 +219,12 @@ static const Ability* getValidMonsterAbility(
         if (ability == nullptr || !isAbilitySupported(ability->id))
             continue;
 
+        if (enemy != nullptr &&
+            isMonsterControlAbilityRedundant(*ability, enemy->character))
+        {
+            continue;
+        }
+
         Entity* target = getMonsterAbilityTarget(
             monster, enemy, *ability);
 
@@ -238,7 +248,46 @@ static bool canPerformRangedAttack(
            target->active &&
            target->character.state == STATE_ALIVE &&
            hasLineOfSightBetweenFootprintsAt(
-               *monster, monster->x, monster->y, *target);
+               *monster, monster->x, monster->y, *target) &&
+           getCoverBetween(*monster, *target) != COVER_TOTAL;
+}
+
+static uint8_t countNewWebTilesAt(int centerX, int centerY)
+{
+    uint8_t count = 0;
+    for (int y = centerY - 1; y <= centerY + 1; y++)
+    {
+        for (int x = centerX - 1; x <= centerX + 1; x++)
+        {
+            if (isInsideActiveMap(x, y) &&
+                !isTileBlockingSight(getActiveMapTile(x, y)) &&
+                !hasMapEffectAt(MAP_EFFECT_WEB, x, y))
+            {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+static bool tryMonsterEscapeWeb(Entity* monster)
+{
+    if (monster == nullptr || !canAttemptEscapeWeb(*monster) ||
+        monster->turn.standardActionUsed)
+    {
+        return false;
+    }
+
+    const int total = rollDie(20) +
+        getSkillBonus(monster->character, SKILL_ACROBATICS);
+    const bool escaped = attemptEscapeWeb(*monster, total);
+    char message[48];
+    snprintf(message, sizeof(message), escaped
+        ? "%s breaks free of the web."
+        : "%s struggles in the web.", getEntityName(monster));
+    setGameMessage(message);
+    monster->turn.standardActionUsed = true;
+    return true;
 }
 
 static bool canTakePathStep(
@@ -468,8 +517,8 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
             sizeof(message),
             enteredCondition == CONDITION_PRONE
                 ? "%s falls prone!"
-                : enteredCondition == CONDITION_WEBBED
-                    ? "%s is caught in the web!"
+                : enteredCondition == CONDITION_GRAPPLED
+                    ? "%s is grappled by the web!"
                     : "%s moves.",
             getEntityName(monster));
         setGameMessage(message);
@@ -481,6 +530,53 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
 static bool isControlSpellcaster(const Entity* monster)
 {
     return getMonsterScript(monster) == SCRIPT_CONTROL_SPELLCASTER;
+}
+
+static bool hasEligibleBattleCryRecipient(const Entity& chieftain)
+{
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        if (isBattleCryEligibleRecipient(chieftain, entities[i]))
+            return true;
+    }
+    return false;
+}
+
+static bool tryBattleCry(Entity* chieftain)
+{
+    if (chieftain == nullptr ||
+        !monsterDefinitionHasBattleCry(chieftain->monster) ||
+        !canCharacterAct(chieftain->character))
+        return false;
+
+    const bool hasRecipient = hasEligibleBattleCryRecipient(*chieftain);
+    if (!shouldUseBattleCry(*chieftain, hasRecipient) ||
+        !isBattleCryEligibleRecipient(*chieftain, *chieftain) ||
+        !applyBattleCryCondition(*chieftain, *chieftain))
+    {
+        return false;
+    }
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        Entity& recipient = entities[i];
+        if (&recipient != chieftain &&
+            isBattleCryEligibleRecipient(*chieftain, recipient))
+        {
+            applyBattleCryCondition(*chieftain, recipient);
+        }
+    }
+
+    chieftain->turn.oncePerCombatAbilityUsed = true;
+    chieftain->turn.standardActionUsed = true;
+    setGameMessage("Goblin Chieftain lets out a battle cry!");
+    playSound(SoundEffect::GOBLIN_ALERT);
+    markEntityFootprintDirty(*chieftain);
+    return true;
 }
 
 static bool isControlTargetImpaired(const Entity& target)
@@ -547,8 +643,22 @@ static AbilityResult getControlGreaseValidation(
     const Entity& target)
 {
     const Ability* ability = getControlAbility(&monster, ABILITY_GREASE);
+    if (!shouldPlaceControlMapEffectAtTarget(
+            hasMapEffectAt(MAP_EFFECT_GREASE, target.x, target.y)))
+        return ABILITY_RESULT_INVALID_TARGET;
     return ability != nullptr
         ? validateAbilityAt(monster, target.x, target.y, ability->id)
+        : ABILITY_RESULT_UNSUPPORTED;
+}
+
+static AbilityResult getControlTargetAbilityValidation(
+    const Entity& monster,
+    const Entity& target,
+    AbilityID abilityID)
+{
+    const Ability* ability = getControlAbility(&monster, abilityID);
+    return ability != nullptr
+        ? validateAbility(monster, &target, ability->id)
         : ABILITY_RESULT_UNSUPPORTED;
 }
 
@@ -572,19 +682,32 @@ static bool canControlPrepareAbility(
 
 static bool hasControlSpellPlan(const Entity& monster, const Entity& target)
 {
+    const bool targetImpaired = isControlTargetImpaired(target);
     Direction direction = DIR_NORTH;
     const Ability* colorSpray = getControlAbility(
         &monster, ABILITY_COLOR_SPRAY);
 
-    if (findControlColorSprayDirection(monster, target, direction) &&
+    if (!targetImpaired &&
+        findControlColorSprayDirection(monster, target, direction) &&
         canControlPrepareAbility(monster, colorSpray))
     {
         return true;
     }
 
     const Ability* grease = getControlAbility(&monster, ABILITY_GREASE);
-    return canControlCastGrease(monster, target) &&
-           canControlPrepareAbility(monster, grease);
+    if (!targetImpaired && canControlCastGrease(monster, target) &&
+        canControlPrepareAbility(monster, grease))
+    {
+        return true;
+    }
+
+    const Ability* magicMissile = getControlAbility(
+        &monster, ABILITY_MAGIC_MISSILE);
+    const AbilityResult magicMissileResult = getControlTargetAbilityValidation(
+        monster, target, ABILITY_MAGIC_MISSILE);
+    return (magicMissileResult == ABILITY_RESULT_SUCCESS ||
+            magicMissileResult == ABILITY_RESULT_NOT_ENOUGH_MP) &&
+           canControlPrepareAbility(monster, magicMissile);
 }
 
 static bool hasControlPotion(const Entity& monster, ItemID item)
@@ -681,6 +804,29 @@ static bool tryControlGrease(Entity& monster, Entity& target)
     return true;
 }
 
+static bool tryControlTargetAbility(
+    Entity& monster,
+    Entity& target,
+    AbilityID abilityID)
+{
+    const Ability* ability = getControlAbility(&monster, abilityID);
+    if (ability == nullptr ||
+        monster.character.magic.currentMP < ability->mpCost ||
+        getControlTargetAbilityValidation(monster, target, abilityID) !=
+            ABILITY_RESULT_SUCCESS)
+    {
+        return false;
+    }
+
+    AbilityResolution resolution = resolveAbility(
+        monster, &target, abilityID);
+    if (resolution.result != ABILITY_RESULT_SUCCESS)
+        return false;
+
+    presentAbilityResolution(monster, target, abilityID, resolution);
+    return true;
+}
+
 static bool moveControlCasterToSpellDistance(Entity* monster)
 {
     Entity* target = chooseTarget(monster);
@@ -704,18 +850,16 @@ static bool isControlCasterReadyForAction(Entity* monster)
     if (monster == nullptr || target == nullptr)
         return true;
 
-    if (isControlTargetImpaired(*target))
-        return isAdjacent(monster, target);
-
-    if (isAdjacent(monster, target))
-        return false;
-
-    return hasControlSpellPlan(*monster, *target);
+    const bool hasSpellPlan = hasControlSpellPlan(*monster, *target);
+    return isAdjacent(monster, target) ? !hasSpellPlan : hasSpellPlan;
 }
 }
 
 void runMonsterScript(Entity* monster)
 {
+    if (tryMonsterEscapeWeb(monster))
+        return;
+
     if (monster == nullptr || monster->monster == nullptr ||
         !monster->active || !canCharacterAct(monster->character))
         return;
@@ -751,18 +895,21 @@ void runMonsterScript(Entity* monster)
 
 void runMeleeScript(Entity* monster)
 {
+    if (tryBattleCry(monster))
+        return;
+
     Entity* target = chooseTarget(monster);
     const Ability* web = getAbility(ABILITY_WEB);
 
-    if (monster != nullptr && target != nullptr &&
-        isImmuneToWeb(*monster) && web != nullptr &&
+    int webTargetX = 0;
+    int webTargetY = 0;
+    if (monster != nullptr && target != nullptr && web != nullptr &&
         monster->character.magic.currentMP >= web->mpCost &&
-        !hasMapEffectAt(MAP_EFFECT_WEB, target->x, target->y) &&
-        validateAbilityAt(*monster, target->x, target->y, web->id) ==
-            ABILITY_RESULT_SUCCESS)
+        findUsefulMonsterWebTarget(
+            *monster, *target, webTargetX, webTargetY))
     {
         AbilityResolution resolution = resolveAbilityAt(
-            *monster, target->x, target->y, web->id);
+            *monster, webTargetX, webTargetY, web->id);
         if (resolution.result == ABILITY_RESULT_SUCCESS)
         {
             presentGroundAbilityResolution(*monster, web->id, resolution);
@@ -771,6 +918,77 @@ void runMeleeScript(Entity* monster)
     }
 
     performStandardAction(monster);
+}
+
+bool findUsefulMonsterWebTarget(
+    const Entity& monster,
+    const Entity& target,
+    int& targetX,
+    int& targetY)
+{
+    if (monster.monster == nullptr ||
+        monster.monster->webCastPriority == 0 ||
+        !monsterHasSpecialAbility(*monster.monster, ABILITY_WEB) ||
+        !isImmuneToWeb(monster))
+    {
+        return false;
+    }
+
+    const Ability* web = getAbility(ABILITY_WEB);
+    if (web == nullptr)
+        return false;
+
+    if (monster.monster->webCastPriority == 1)
+    {
+        targetX = target.x;
+        targetY = target.y;
+        return shouldUseWebCoverage(
+                   monster.monster->webCastPriority,
+                   hasMapEffectAt(MAP_EFFECT_WEB, targetX, targetY),
+                   countNewWebTilesAt(targetX, targetY),
+                   false) &&
+            validateAbilityAt(monster, targetX, targetY, web->id) ==
+                ABILITY_RESULT_SUCCESS;
+    }
+
+    // A grappled adjacent victim is a better bite opportunity. Otherwise the
+    // Queen considers distinct centers around the victim and chooses the one
+    // that adds the most new battlefield coverage.
+    if (isAdjacent(&monster, &target) &&
+        hasCondition(target.character, CONDITION_GRAPPLED))
+    {
+        return false;
+    }
+
+    static const int8_t offsets[][2] =
+    {
+        { 0, 0 }, { 0,-2 }, { 2, 0 }, { 0, 2 }, {-2, 0 },
+        { 2,-2 }, { 2, 2 }, {-2, 2 }, {-2,-2 }
+    };
+    uint8_t bestCoverage = 0;
+    for (const auto& offset : offsets)
+    {
+        const int candidateX = target.x + offset[0];
+        const int candidateY = target.y + offset[1];
+        const uint8_t coverage = countNewWebTilesAt(
+            candidateX, candidateY);
+        if (!shouldUseWebCoverage(
+                monster.monster->webCastPriority,
+                hasMapEffectAt(MAP_EFFECT_WEB, target.x, target.y),
+                coverage,
+                false) ||
+            coverage <= bestCoverage ||
+            validateAbilityAt(monster, candidateX, candidateY, web->id) !=
+                ABILITY_RESULT_SUCCESS)
+        {
+            continue;
+        }
+
+        bestCoverage = coverage;
+        targetX = candidateX;
+        targetY = candidateY;
+    }
+    return bestCoverage > 0;
 }
 
 void runRangedScript(Entity* monster)
@@ -845,13 +1063,8 @@ void runControlSpellcasterScript(Entity* monster)
         return;
     }
 
-    // Priority 2: exploit an already-controlled player with the equipped
-    // melee weapon instead of spending another control spell.
-    if (isControlTargetImpaired(*target))
-    {
-        performStandardAction(monster);
-        return;
-    }
+    // Avoid spending another control spell on an already-impaired target.
+    const bool targetImpaired = isControlTargetImpaired(*target);
 
     // Priority 3: after the movement phase has tried to retreat, use the
     // short control cone when its exact shared geometry includes the player.
@@ -859,7 +1072,7 @@ void runControlSpellcasterScript(Entity* monster)
     const Ability* colorSpray = getControlAbility(
         monster, ABILITY_COLOR_SPRAY);
 
-    if (colorSpray != nullptr &&
+    if (!targetImpaired && colorSpray != nullptr &&
         findControlColorSprayDirection(*monster, *target, direction))
     {
         if (monster->character.magic.currentMP < colorSpray->mpCost)
@@ -876,7 +1089,8 @@ void runControlSpellcasterScript(Entity* monster)
     // Priority 4: Grease controls a standing target outside the useful cone.
     const Ability* grease = getControlAbility(monster, ABILITY_GREASE);
 
-    if (grease != nullptr && canControlCastGrease(*monster, *target))
+    if (!targetImpaired && grease != nullptr &&
+        canControlCastGrease(*monster, *target))
     {
         if (monster->character.magic.currentMP < grease->mpCost)
         {
@@ -887,6 +1101,27 @@ void runControlSpellcasterScript(Entity* monster)
 
         if (tryControlGrease(*monster, *target))
             return;
+    }
+
+    // Priority 5: preserve pressure when control is redundant or unavailable.
+    const Ability* magicMissile = getControlAbility(
+        monster, ABILITY_MAGIC_MISSILE);
+    if (magicMissile != nullptr)
+    {
+        const AbilityResult validation = getControlTargetAbilityValidation(
+            *monster, *target, ABILITY_MAGIC_MISSILE);
+        if (validation == ABILITY_RESULT_NOT_ENOUGH_MP &&
+            hasControlPotion(*monster, ITEM_MANA_POTION))
+        {
+            useControlManaPotion(*monster);
+            return;
+        }
+
+        if (tryControlTargetAbility(
+                *monster, *target, ABILITY_MAGIC_MISSILE))
+        {
+            return;
+        }
     }
 
     // If retreat was impossible or spells are unavailable, the normal melee
@@ -1045,7 +1280,7 @@ static bool moveMonsterForAbility(Entity* monster)
     return findRangedPathStep(
                monster,
                target,
-               ability->rangeTiles,
+               SPELLCASTER_PREFERRED_DISTANCE,
                nextX,
                nextY) &&
            moveMonsterTo(monster, nextX, nextY);
@@ -1058,12 +1293,20 @@ bool isMonsterReadyForAction(Entity* monster)
     if (monster == nullptr || monster->monster == nullptr || target == nullptr)
         return true;
 
+    if (monsterDefinitionHasBattleCry(monster->monster) &&
+        shouldUseBattleCry(
+            *monster, hasEligibleBattleCryRecipient(*monster)))
+    {
+        return true;
+    }
+
     const Ability* web = getAbility(ABILITY_WEB);
-    if (isImmuneToWeb(*monster) && web != nullptr &&
+    int webTargetX = 0;
+    int webTargetY = 0;
+    if (web != nullptr &&
         monster->character.magic.currentMP >= web->mpCost &&
-        !hasMapEffectAt(MAP_EFFECT_WEB, target->x, target->y) &&
-        validateAbilityAt(*monster, target->x, target->y, web->id) ==
-            ABILITY_RESULT_SUCCESS)
+        findUsefulMonsterWebTarget(
+            *monster, *target, webTargetX, webTargetY))
     {
         return true;
     }
@@ -1080,7 +1323,12 @@ bool isMonsterReadyForAction(Entity* monster)
     if (getMonsterScript(monster) == SCRIPT_SPELLCASTER)
     {
         if (getValidMonsterAbility(monster, target) != nullptr)
-            return true;
+        {
+            return footprintDistanceAt(
+                       *monster, monster->x, monster->y,
+                       *target, target->x, target->y) >=
+                   SPELLCASTER_MINIMUM_DISTANCE;
+        }
 
         // Out of MP or unable to establish a cast: become ready for the
         // existing melee fallback only after closing to adjacency.
@@ -1127,13 +1375,12 @@ void performMovementPhase(Entity* monster)
     if (isControlSpellcaster(monster))
     {
         Entity* target = chooseTarget(monster);
+        const bool hasSpellPlan = target != nullptr &&
+            hasControlSpellPlan(*monster, *target);
 
-        if (target != nullptr && isControlTargetImpaired(*target))
-            moveMonsterTowardsPlayer(monster);
-        else if (target != nullptr && isAdjacent(monster, target))
+        if (target != nullptr && isAdjacent(monster, target) && hasSpellPlan)
             moveControlCasterToSpellDistance(monster);
-        else if (target != nullptr &&
-                 !hasControlSpellPlan(*monster, *target))
+        else if (target != nullptr && !hasSpellPlan)
             moveMonsterTowardsPlayer(monster);
         else
             moveControlCasterToSpellDistance(monster);

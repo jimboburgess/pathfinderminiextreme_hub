@@ -29,9 +29,9 @@ bool isDifficultMapEffect(MapEffectType type)
     switch (type)
     {
         case MAP_EFFECT_GREASE:
+        case MAP_EFFECT_WEB:
             return true;
 
-        case MAP_EFFECT_WEB:
         case MAP_EFFECT_WALL_OF_FIRE:
         case MAP_EFFECT_ACID_FOG:
         case MAP_EFFECT_BLADE_BARRIER:
@@ -57,6 +57,73 @@ void addTriggerResult(
 
     if (total.conditionApplied == CONDITION_NONE)
         total.conditionApplied = addition.conditionApplied;
+}
+
+bool isWebAt(int x, int y)
+{
+    return hasMapEffectAt(MAP_EFFECT_WEB, x, y);
+}
+
+uint8_t countWebTilesOnLine(
+    int startX, int startY, int endX, int endY)
+{
+    int currentX = startX;
+    int currentY = startY;
+    const int deltaX = abs(endX - startX);
+    const int deltaY = abs(endY - startY);
+    const int stepX = startX < endX ? 1 : -1;
+    const int stepY = startY < endY ? 1 : -1;
+    int error = deltaX - deltaY;
+    uint8_t webTiles = 0;
+
+    while (true)
+    {
+        if (!(currentX == startX && currentY == startY) &&
+            !(currentX == endX && currentY == endY) &&
+            isWebAt(currentX, currentY))
+        {
+            webTiles++;
+        }
+
+        if (currentX == endX && currentY == endY)
+            return webTiles;
+
+        const int doubledError = error * 2;
+        if (doubledError > -deltaY)
+        {
+            error -= deltaY;
+            currentX += stepX;
+        }
+        if (doubledError < deltaX)
+        {
+            error += deltaX;
+            currentY += stepY;
+        }
+    }
+}
+
+CoverLevel coverForWebCount(uint8_t webTiles)
+{
+    if (webTiles >= 4)
+        return COVER_TOTAL;
+    if (webTiles >= 1)
+        return COVER_PARTIAL;
+    return COVER_NONE;
+}
+
+bool tileIsIgnited(
+    int x, int y, const AreaFlashTile* tiles, uint8_t tileCount)
+{
+    for (uint8_t i = 0; i < tileCount; i++)
+        if (tiles[i].x == x && tiles[i].y == y)
+            return true;
+    return false;
+}
+
+bool mapEffectEntityOccupiesTile(const Entity& entity, int x, int y)
+{
+    return x >= entity.x && x < entity.x + getEntityTileWidth(entity) &&
+           y >= entity.y && y < entity.y + getEntityTileHeight(entity);
 }
 }
 
@@ -117,7 +184,10 @@ void clearMapEffects()
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
     for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        removeCondition(entities[i].character, CONDITION_GRAPPLED);
         removeCondition(entities[i].character, CONDITION_WEBBED);
+    }
 }
 
 void tickMapEffects()
@@ -222,6 +292,84 @@ bool hasDifficultMapEffectAt(int x, int y)
     return false;
 }
 
+bool hasDifficultMapEffectForEntityAt(
+    const Entity& entity, int x, int y)
+{
+    for (uint8_t i = 0; i < MAX_MAP_EFFECTS; i++)
+    {
+        const MapEffect& effect = activeMapEffects[i];
+        if (!isDifficultMapEffect(effect.type) ||
+            !mapEffectAffectsTile(effect, x, y))
+        {
+            continue;
+        }
+
+        if (effect.type == MAP_EFFECT_WEB && isImmuneToWeb(entity))
+            continue;
+        return true;
+    }
+    return false;
+}
+
+CoverLevel getCoverBetween(const Entity& attacker, const Entity& target)
+{
+    uint8_t bestWebCount = UINT8_MAX;
+    for (uint8_t attackerY = 0;
+         attackerY < getEntityTileHeight(attacker); attackerY++)
+    {
+        for (uint8_t attackerX = 0;
+             attackerX < getEntityTileWidth(attacker); attackerX++)
+        {
+            for (uint8_t targetY = 0;
+                 targetY < getEntityTileHeight(target); targetY++)
+            {
+                for (uint8_t targetX = 0;
+                     targetX < getEntityTileWidth(target); targetX++)
+                {
+                    const uint8_t count = countWebTilesOnLine(
+                        attacker.x + attackerX, attacker.y + attackerY,
+                        target.x + targetX, target.y + targetY);
+                    if (count < bestWebCount)
+                        bestWebCount = count;
+                }
+            }
+        }
+    }
+    return coverForWebCount(
+        bestWebCount == UINT8_MAX ? 0 : bestWebCount);
+}
+
+CoverLevel getCoverFromEntityToTile(
+    const Entity& attacker, int targetX, int targetY)
+{
+    uint8_t bestWebCount = UINT8_MAX;
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(attacker); offsetY++)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(attacker); offsetX++)
+        {
+            const uint8_t count = countWebTilesOnLine(
+                attacker.x + offsetX, attacker.y + offsetY,
+                targetX, targetY);
+            if (count < bestWebCount)
+                bestWebCount = count;
+        }
+    }
+    return coverForWebCount(
+        bestWebCount == UINT8_MAX ? 0 : bestWebCount);
+}
+
+int getCoverArmorClassBonus(CoverLevel cover)
+{
+    return cover == COVER_PARTIAL ? 4 : 0;
+}
+
+int getCoverSavingThrowBonus(CoverLevel cover, SaveType saveType)
+{
+    return cover == COVER_PARTIAL && saveType == SAVE_REFLEX ? 2 : 0;
+}
+
 MapEffectTriggerResult applyMapEffectToEntity(
     const MapEffect& effect,
     Entity& entity)
@@ -244,7 +392,10 @@ MapEffectTriggerResult applyMapEffectToEntity(
     if (effect.saveType != SAVE_NONE)
     {
         AbilitySavingThrow savingThrow = resolveSavingThrow(
-            entity.character, effect.saveType, effect.saveDC);
+            entity.character, effect.saveType, effect.saveDC,
+            getCoverSavingThrowBonus(
+                getCoverFromEntityToTile(entity, effect.x, effect.y),
+                effect.saveType));
         result.savesAttempted = 1;
 
         if (savingThrow.result == SAVE_RESULT_SUCCESS)
@@ -310,6 +461,24 @@ const MapEffect* getWebEffectAffectingEntity(const Entity& entity)
     return nullptr;
 }
 
+bool canAttemptEscapeWeb(const Entity& entity)
+{
+    return entity.active && entity.character.state == STATE_ALIVE &&
+        hasCondition(entity.character, CONDITION_GRAPPLED) &&
+        getWebEffectAffectingEntity(entity) != nullptr;
+}
+
+bool attemptEscapeWeb(Entity& entity, int acrobaticsTotal)
+{
+    const MapEffect* web = getWebEffectAffectingEntity(entity);
+    if (!canAttemptEscapeWeb(entity) || web == nullptr ||
+        acrobaticsTotal < web->saveDC)
+    {
+        return false;
+    }
+    return removeCondition(entity.character, CONDITION_GRAPPLED);
+}
+
 bool removeWebEffect(MapEffect& effect)
 {
     if (!effect.active || effect.type != MAP_EFFECT_WEB)
@@ -321,9 +490,146 @@ bool removeWebEffect(MapEffect& effect)
     for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
     {
         if (getWebEffectAffectingEntity(entities[i]) == nullptr)
+        {
+            removeCondition(entities[i].character, CONDITION_GRAPPLED);
             removeCondition(entities[i].character, CONDITION_WEBBED);
+        }
     }
     return true;
+}
+
+WebBurnResult burnWebAtTiles(
+    const AreaFlashTile* tiles, uint8_t tileCount)
+{
+    WebBurnResult result;
+    if (tiles == nullptr || tileCount == 0)
+        return result;
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    bool shouldDamage[MAX_ENTITIES]{};
+
+    for (uint8_t effectIndex = 0;
+         effectIndex < MAX_MAP_EFFECTS; effectIndex++)
+    {
+        MapEffect& effect = activeMapEffects[effectIndex];
+        if (!effect.active || effect.type != MAP_EFFECT_WEB)
+            continue;
+
+        MapEffectTile sourceTiles[MAX_MAP_EFFECT_TILES];
+        uint8_t sourceCount = 0;
+        if (effect.tileCount > 0)
+        {
+            sourceCount = effect.tileCount;
+            for (uint8_t i = 0; i < sourceCount; i++)
+                sourceTiles[i] = effect.tiles[i];
+        }
+        else
+        {
+            for (int y = effect.y - effect.radius;
+                 y <= effect.y + effect.radius; y++)
+            {
+                for (int x = effect.x - effect.radius;
+                     x <= effect.x + effect.radius; x++)
+                {
+                    if (sourceCount < MAX_MAP_EFFECT_TILES &&
+                        isInsideActiveMap(x, y))
+                    {
+                        sourceTiles[sourceCount].x =
+                            static_cast<int8_t>(x);
+                        sourceTiles[sourceCount].y =
+                            static_cast<int8_t>(y);
+                        sourceCount++;
+                    }
+                }
+            }
+        }
+
+        uint8_t remainingCount = 0;
+        for (uint8_t i = 0; i < sourceCount; i++)
+        {
+            const int x = sourceTiles[i].x;
+            const int y = sourceTiles[i].y;
+            if (!tileIsIgnited(x, y, tiles, tileCount))
+            {
+                effect.tiles[remainingCount++] = sourceTiles[i];
+                continue;
+            }
+
+            result.tilesCleared++;
+            markTileDirty(x, y);
+            for (uint8_t entityIndex = 0;
+                 entities != nullptr && entityIndex < entityCount;
+                 entityIndex++)
+            {
+                const Entity& entity = entities[entityIndex];
+                if (entity.active && entity.character.state == STATE_ALIVE &&
+                    mapEffectEntityOccupiesTile(entity, x, y))
+                {
+                    shouldDamage[entityIndex] = true;
+                }
+            }
+        }
+
+        effect.tileCount = remainingCount;
+        effect.radius = 0;
+        if (remainingCount == 0)
+            effect = MapEffect{};
+    }
+
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        if (shouldDamage[i] && entities[i].active &&
+            entities[i].character.state == STATE_ALIVE)
+        {
+            const CombatDamageResult damage = applyCombatDamage(
+                entities[i], rollDice(2, 4), DAMAGE_FIRE);
+            if (damage.applied)
+            {
+                result.creaturesDamaged++;
+                result.damageApplied += damage.damageApplied;
+            }
+        }
+
+        if (getWebEffectAffectingEntity(entities[i]) == nullptr)
+            removeCondition(entities[i].character, CONDITION_GRAPPLED);
+    }
+
+    return result;
+}
+
+WebBurnResult burnWebEffect(MapEffect& effect)
+{
+    AreaFlashTile tiles[MAX_MAP_EFFECT_TILES];
+    uint8_t tileCount = 0;
+    if (!effect.active || effect.type != MAP_EFFECT_WEB)
+        return WebBurnResult{};
+
+    if (effect.tileCount > 0)
+    {
+        tileCount = effect.tileCount;
+        for (uint8_t i = 0; i < tileCount; i++)
+            tiles[i] = { effect.tiles[i].x, effect.tiles[i].y };
+    }
+    else
+    {
+        for (int y = effect.y - effect.radius;
+             y <= effect.y + effect.radius; y++)
+        {
+            for (int x = effect.x - effect.radius;
+                 x <= effect.x + effect.radius; x++)
+            {
+                if (tileCount < MAX_MAP_EFFECT_TILES &&
+                    isInsideActiveMap(x, y))
+                {
+                    tiles[tileCount++] = {
+                        static_cast<int8_t>(x),
+                        static_cast<int8_t>(y) };
+                }
+            }
+        }
+    }
+    return burnWebAtTiles(tiles, tileCount);
 }
 
 MapEffectTriggerResult handleEnteredMapEffects(

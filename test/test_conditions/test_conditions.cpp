@@ -167,6 +167,39 @@ void test_modifier_bundle_aggregates_and_expires_together()
     TEST_ASSERT_EQUAL_INT(0, getActiveConditionModifiers(character).attackBonus);
 }
 
+void test_battle_cry_condition_refreshes_without_stacking()
+{
+    Character goblin = {};
+    goblin.state = STATE_ALIVE;
+    ConditionModifiers battleCry;
+    battleCry.attackBonus = 1;
+    battleCry.damageBonus = 1;
+
+    TEST_ASSERT_TRUE(addCondition(
+        goblin, CONDITION_BATTLE_CRY, battleCry, 2));
+    TEST_ASSERT_EQUAL_UINT8(1, goblin.conditions.count);
+    TEST_ASSERT_EQUAL_INT(1, getConditionAttackModifier(goblin));
+    TEST_ASSERT_EQUAL_INT(1, getConditionDamageModifier(goblin));
+    TEST_ASSERT_EQUAL_INT(
+        2, getCondition(goblin, CONDITION_BATTLE_CRY)->roundsRemaining);
+
+    tickConditions(goblin);
+    TEST_ASSERT_EQUAL_INT(
+        1, getCondition(goblin, CONDITION_BATTLE_CRY)->roundsRemaining);
+    TEST_ASSERT_TRUE(addCondition(
+        goblin, CONDITION_BATTLE_CRY, battleCry, 2));
+    TEST_ASSERT_EQUAL_UINT8(1, goblin.conditions.count);
+    TEST_ASSERT_EQUAL_INT(1, getConditionAttackModifier(goblin));
+    TEST_ASSERT_EQUAL_INT(1, getConditionDamageModifier(goblin));
+    TEST_ASSERT_EQUAL_INT(
+        2, getCondition(goblin, CONDITION_BATTLE_CRY)->roundsRemaining);
+
+    tickConditions(goblin);
+    TEST_ASSERT_TRUE(hasCondition(goblin, CONDITION_BATTLE_CRY));
+    tickConditions(goblin);
+    TEST_ASSERT_FALSE(hasCondition(goblin, CONDITION_BATTLE_CRY));
+}
+
 void test_timed_damage_ticks_once_per_remaining_round()
 {
     Character character = {};
@@ -376,14 +409,17 @@ void test_frightened_for_one_round_prevents_exactly_one_turn()
     TEST_ASSERT_TRUE(canCharacterAct(character));
 }
 
-void test_webbed_blocks_movement_without_blocking_standard_actions()
+void test_grappled_is_persistent_and_applies_generic_penalties()
 {
     Character character = {};
     character.state = STATE_ALIVE;
-    TEST_ASSERT_TRUE(addCondition(character, CONDITION_WEBBED, 0, 0));
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_GRAPPLED, 0, 0));
     TEST_ASSERT_TRUE(canCharacterAct(character));
+    TEST_ASSERT_EQUAL_INT(-2, getConditionAttackModifier(character));
+    TEST_ASSERT_EQUAL_INT(-4,
+        getActiveConditionModifiers(character).dexBonus);
     tickConditions(character);
-    TEST_ASSERT_TRUE(hasCondition(character, CONDITION_WEBBED));
+    TEST_ASSERT_TRUE(hasCondition(character, CONDITION_GRAPPLED));
 }
 
 void test_action_affecting_turn_message_is_centralized()
@@ -396,7 +432,7 @@ void test_action_affecting_turn_message_is_centralized()
         "You are prone.",
         getActionAffectingConditionMessage(character));
 
-    TEST_ASSERT_TRUE(addCondition(character, CONDITION_WEBBED, 0, 0));
+    TEST_ASSERT_TRUE(addCondition(character, CONDITION_GRAPPLED, 0, 0));
     TEST_ASSERT_EQUAL_STRING(
         "You are prone and stuck in the web.",
         getActionAffectingConditionMessage(character));
@@ -490,6 +526,7 @@ void setup()
     RUN_TEST(test_tick_removes_timed_conditions_only);
     RUN_TEST(test_condition_queries);
     RUN_TEST(test_modifier_bundle_aggregates_and_expires_together);
+    RUN_TEST(test_battle_cry_condition_refreshes_without_stacking);
     RUN_TEST(test_timed_damage_ticks_once_per_remaining_round);
     RUN_TEST(test_same_timed_damage_source_refreshes_instead_of_stacking);
     RUN_TEST(test_energy_resistance_uses_highest_same_type_and_expires);
@@ -499,7 +536,7 @@ void setup()
     RUN_TEST(test_sleep_immunity_and_damage_waking_are_generic);
     RUN_TEST(test_sleep_duration_prevents_each_intended_turn);
     RUN_TEST(test_frightened_for_one_round_prevents_exactly_one_turn);
-    RUN_TEST(test_webbed_blocks_movement_without_blocking_standard_actions);
+    RUN_TEST(test_grappled_is_persistent_and_applies_generic_penalties);
     RUN_TEST(test_action_affecting_turn_message_is_centralized);
     RUN_TEST(test_condition_capacity_failure_is_safe);
     RUN_TEST(test_poison_ticks_at_turn_start_and_expires);

@@ -128,6 +128,40 @@ inline uint8_t countLivingHostilesInCombatRoster(
     return enemyCount;
 }
 
+inline bool combatRosterHasBoss(
+    Entity* const roster[],
+    uint8_t rosterCount)
+{
+    if (roster == nullptr)
+        return false;
+
+    for (uint8_t i = 0; i < rosterCount; i++)
+    {
+        const Entity* entity = roster[i];
+        if (entity != nullptr && isLivingHostileForCombat(*entity) &&
+            entity->monster != nullptr && entity->monster->isBoss)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline void resetCombatAbilityUsage(
+    Entity* const roster[],
+    uint8_t rosterCount)
+{
+    if (roster == nullptr)
+        return;
+
+    for (uint8_t i = 0; i < rosterCount; i++)
+    {
+        if (roster[i] != nullptr)
+            roster[i]->turn.oncePerCombatAbilityUsed = false;
+    }
+}
+
 inline bool shouldContinueCombatAfterOpeningAttack(
     bool wasAmbush,
     bool targetDefeated,
