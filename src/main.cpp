@@ -3,6 +3,7 @@
 #include <SPI.h>
 #include "config.h"
 #include "data/game.h"
+#include "data/settings.h"
 #include "audio/audio.h"
 #include "characters/characters.h"
 #include "dungeon/combat.h"
@@ -22,9 +23,24 @@
 
 #include "input/buttons.h"
 
+#if defined(PFME_HARDWARE_DIAGNOSTICS)
+static void printHardwareMemoryDiagnostics()
+{
+    Serial.println("Pathfinder Mini hardware diagnostics:");
+    Serial.printf("  Flash: %u bytes\n", ESP.getFlashChipSize());
+    Serial.printf("  PSRAM found: %s\n", psramFound() ? "yes" : "no");
+    Serial.printf("  PSRAM total: %u bytes\n", ESP.getPsramSize());
+    Serial.printf("  PSRAM free: %u bytes\n", ESP.getFreePsram());
+}
+#endif
+
 void setup()
 {
     Serial.begin(115200);
+
+#if defined(PFME_HARDWARE_DIAGNOSTICS)
+    printHardwareMemoryDiagnostics();
+#endif
 
     // Turn on backlight
     pinMode(TFT_BL, OUTPUT);
@@ -44,6 +60,7 @@ void setup()
 
     // Initialize audio
     initAudio();
+    loadGameSettings();
 
     // Seed random number generator
     randomSeed(esp_random());

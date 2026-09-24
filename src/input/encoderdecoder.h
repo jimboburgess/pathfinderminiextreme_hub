@@ -19,6 +19,11 @@ constexpr int8_t QUADRATURE_CLOCKWISE_STEP = 1;
 constexpr int8_t QUADRATURE_COUNTERCLOCKWISE_STEP = -1;
 constexpr int8_t QUADRATURE_TRANSITIONS_PER_DETENT = 4;
 
+inline int8_t applyEncoderRotationInversion(int8_t step, bool inverted)
+{
+    return inverted ? static_cast<int8_t>(-step) : step;
+}
+
 inline uint8_t getQuadraturePhase(bool clkHigh, bool dtHigh)
 {
     return static_cast<uint8_t>(

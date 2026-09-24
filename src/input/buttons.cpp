@@ -23,6 +23,7 @@
 #include "town/town.h"
 #include "town/shop.h"
 #include "data/savegame.h"
+#include "data/settings.h"
 #include "input/inventorymenu.h"
 #include "input/encoderdecoder.h"
 
@@ -210,10 +211,12 @@ bool encoderButtonLongPressed()
 
 EncoderDirection readEncoder()
 {
-    const int8_t step = updateQuadratureDecoder(
-        encoderDecoder,
-        digitalRead(ENCODER_CLK) == HIGH,
-        digitalRead(ENCODER_DT) == HIGH);
+    const int8_t step = applyEncoderRotationInversion(
+        updateQuadratureDecoder(
+            encoderDecoder,
+            digitalRead(ENCODER_CLK) == HIGH,
+            digitalRead(ENCODER_DT) == HIGH),
+        isEncoderRotationInverted());
 
     if (step == QUADRATURE_CLOCKWISE_STEP)
         return ENCODER_CLOCKWISE;

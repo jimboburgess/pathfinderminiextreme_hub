@@ -3,7 +3,9 @@
 //
 
 #include "menu.h"
+#include <cstring>
 #include "data/game.h"
+#include "data/settings.h"
 #include "graphics/display.h"
 #include "input/buttons.h"
 #include "audio/audio.h"
@@ -505,6 +507,37 @@ const Menu characterMenu =
 
 //
 //--------------------------------------------------
+// Options Menu
+//--------------------------------------------------
+//
+
+const MenuItem optionsMenuItems[] =
+{
+    {
+        "Mute Audio",
+        "Mute or enable game audio.",
+        MENU_TOGGLE_AUDIO,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Invert Encoder Rotation",
+        "Reverse the encoder's rotation direction.",
+        MENU_TOGGLE_ENCODER_ROTATION,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
+const Menu optionsMenu =
+{
+    "Options",
+    optionsMenuItems,
+    sizeof(optionsMenuItems) / sizeof(MenuItem)
+};
+
+//
+//--------------------------------------------------
 // Game Menu
 //--------------------------------------------------
 //
@@ -519,13 +552,6 @@ const MenuItem gameMenuItems[] =
         MENU_CLASS_ALL
     },
     {
-        "Toggle Audio",
-        "Mute or enable game audio.",
-        MENU_TOGGLE_AUDIO,
-        nullptr,
-        MENU_CLASS_ALL
-    },
-    {
         "Save Game",
         "Save your progress.",
         MENU_SAVE_GAME,
@@ -536,7 +562,7 @@ const MenuItem gameMenuItems[] =
         "Options",
         "Game settings.",
         MENU_OPTIONS,
-        nullptr,
+        &optionsMenu,
         MENU_CLASS_ALL
     },
     {
@@ -1251,7 +1277,21 @@ void menuActivate()
 
         case MENU_TOGGLE_AUDIO:
             setAudioMuted(!isAudioMuted());
+            saveGameSettings();
+            menuState.redrawType = MENU_REDRAW_VISIBLE_ITEMS;
+            needsRedraw = true;
             setGameMessage(isAudioMuted() ? "Audio muted." : "Audio enabled.");
+            break;
+
+        case MENU_TOGGLE_ENCODER_ROTATION:
+            setEncoderRotationInverted(!isEncoderRotationInverted());
+            saveGameSettings();
+            menuState.redrawType = MENU_REDRAW_VISIBLE_ITEMS;
+            needsRedraw = true;
+            setGameMessage(
+                isEncoderRotationInverted()
+                    ? "Encoder rotation inverted."
+                    : "Encoder rotation normal.");
             break;
 
         case MENU_DUNGEON_RESUME:
@@ -1578,6 +1618,24 @@ static void drawMenuItem(uint8_t row, bool highlighted)
         y + 3);
 
     tft.print(item->title);
+
+    const char* optionState = nullptr;
+    if (item->action == MENU_TOGGLE_AUDIO)
+        optionState = isAudioMuted() ? "On" : "Off";
+    else if (item->action == MENU_TOGGLE_ENCODER_ROTATION)
+        optionState = isEncoderRotationInverted() ? "On" : "Off";
+
+    if (optionState != nullptr)
+    {
+        constexpr int CHARACTER_WIDTH = 6;
+        const int optionWidth = static_cast<int>(
+            std::strlen(optionState)) * CHARACTER_WIDTH;
+
+        tft.setCursor(
+            MENU_X + MENU_WIDTH - MENU_PADDING - optionWidth,
+            y + 3);
+        tft.print(optionState);
+    }
 }
 
 static void drawMenuList()
@@ -1917,7 +1975,6 @@ bool isMenuItemVisible(MenuAction action)
             return gameState == GAME_FOREST || gameState == GAME_DUNGEON;
 
         case MENU_SAVE_GAME:
-        case MENU_OPTIONS:
         case MENU_EXIT_TITLE:
             return false;
 

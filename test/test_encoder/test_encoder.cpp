@@ -93,6 +93,37 @@ void test_decoder_initialization_never_emits_a_phantom_step()
     TEST_ASSERT_EQUAL_UINT8(0x00, decoder.previousPhase);
 }
 
+void test_rotation_inversion_preserves_default_direction()
+{
+    TEST_ASSERT_EQUAL_INT8(
+        QUADRATURE_CLOCKWISE_STEP,
+        applyEncoderRotationInversion(
+            QUADRATURE_CLOCKWISE_STEP,
+            false));
+    TEST_ASSERT_EQUAL_INT8(
+        QUADRATURE_COUNTERCLOCKWISE_STEP,
+        applyEncoderRotationInversion(
+            QUADRATURE_COUNTERCLOCKWISE_STEP,
+            false));
+}
+
+void test_rotation_inversion_reverses_only_movement()
+{
+    TEST_ASSERT_EQUAL_INT8(
+        QUADRATURE_COUNTERCLOCKWISE_STEP,
+        applyEncoderRotationInversion(
+            QUADRATURE_CLOCKWISE_STEP,
+            true));
+    TEST_ASSERT_EQUAL_INT8(
+        QUADRATURE_CLOCKWISE_STEP,
+        applyEncoderRotationInversion(
+            QUADRATURE_COUNTERCLOCKWISE_STEP,
+            true));
+    TEST_ASSERT_EQUAL_INT8(
+        QUADRATURE_NO_STEP,
+        applyEncoderRotationInversion(QUADRATURE_NO_STEP, true));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -101,6 +132,8 @@ void setup()
     RUN_TEST(test_reversed_contact_bounce_cancels_before_detent);
     RUN_TEST(test_invalid_two_bit_transition_discards_partial_detent);
     RUN_TEST(test_decoder_initialization_never_emits_a_phantom_step);
+    RUN_TEST(test_rotation_inversion_preserves_default_direction);
+    RUN_TEST(test_rotation_inversion_reverses_only_movement);
     UNITY_END();
 }
 
