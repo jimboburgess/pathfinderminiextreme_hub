@@ -44,6 +44,8 @@ Entity* spawnEntity(
     entity->active = true;
 
     entity->type = type;
+    if (type == ENTITY_PLAYER)
+        entity->ownerPlayerID = SINGLE_PLAYER_ID;
 
     entity->x = x;
     entity->y = y;
@@ -252,6 +254,46 @@ const Entity* getPlayerEntity(
     }
 
     return nullptr;
+}
+
+Entity* getPlayerEntityByOwner(
+    Entity entities[],
+    uint8_t entityCount,
+    PlayerID ownerPlayerID)
+{
+    for (uint8_t i = 0; i < entityCount; ++i)
+        if (entities[i].active && isPlayerEntity(entities[i]) &&
+            entities[i].ownerPlayerID == ownerPlayerID)
+            return &entities[i];
+    return nullptr;
+}
+
+const Entity* getPlayerEntityByOwner(
+    const Entity entities[],
+    uint8_t entityCount,
+    PlayerID ownerPlayerID)
+{
+    for (uint8_t i = 0; i < entityCount; ++i)
+        if (entities[i].active && isPlayerEntity(entities[i]) &&
+            entities[i].ownerPlayerID == ownerPlayerID)
+            return &entities[i];
+    return nullptr;
+}
+
+bool isPlayerEntity(const Entity& entity)
+{
+    return entity.type == ENTITY_PLAYER;
+}
+
+bool isLocalPlayerEntity(const Entity& entity, PlayerID localPlayerID)
+{
+    return isPlayerEntity(entity) &&
+           entity.ownerPlayerID == localPlayerID;
+}
+
+PlayerID getOwningPlayerID(const Entity& entity)
+{
+    return isPlayerEntity(entity) ? entity.ownerPlayerID : INVALID_PLAYER_ID;
 }
 
 void clearEntities(

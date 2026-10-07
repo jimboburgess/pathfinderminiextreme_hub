@@ -20,6 +20,7 @@
 #include "dungeon/bellpuzzle.h"
 #include "dungeon/furniture.h"
 #include "dungeon/numbertilepuzzle.h"
+#include "dungeon/brazierpuzzle.h"
 #include "audio/audio.h"
 #include "graphics/messagelog.h"
 #include "graphics/display.h"
@@ -296,6 +297,9 @@ bool tryInteractWithFacingEntity()
         if (strikeCurrentBellAt(targetX, targetY))
             return true;
 
+        if (interactWithCurrentBrazierPuzzleAt(targetX, targetY))
+            return true;
+
         if (interactWithCurrentNumberPuzzleClue(targetX, targetY))
             return true;
 
@@ -333,6 +337,14 @@ bool tryInteractWithFacingEntity()
 
     if (target->type == ENTITY_CHEST)
     {
+        if (gameState == GAME_DUNGEON &&
+            isCurrentBrazierPuzzleRewardAt(targetX, targetY) &&
+            isCurrentBrazierPuzzleRewardSealed())
+        {
+            setGameMessage("The chest is sealed by the braziers.");
+            return true;
+        }
+
         if (target->locked)
         {
             lockedChest = target;
@@ -345,7 +357,10 @@ bool tryInteractWithFacingEntity()
             target->opened = true;
             const LootSource source = dungeon.currentRoom == dungeon.treasureRoom
                 ? LOOT_SOURCE_FINAL_TREASURE : LOOT_SOURCE_CHEST;
-            generateChestLoot(*target, LOOT_CHEST_LARGE,
+            const LootTableID chestSize = gameState == GAME_DUNGEON &&
+                isCurrentBrazierPuzzleRewardAt(targetX, targetY)
+                    ? LOOT_CHEST_MEDIUM : LOOT_CHEST_LARGE;
+            generateChestLoot(*target, chestSize,
                               playerEntity->character.level, source);
             target->sprite = chestopenwith;
             markEntityFootprintDirty(*target);

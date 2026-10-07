@@ -75,6 +75,7 @@ extern const uint16_t dungeonSpikes16x16[16 * 16];
 extern const uint16_t dungeonPillar16x16[16 * 16];
 extern const uint16_t dungeonStatue16x16[16 * 16];
 extern const uint16_t dungeonBrazier16x16[16 * 16];
+extern const uint16_t dungeonBrazierUnlit16x16[16 * 16];
 extern const uint16_t dungeonCrate16x16[16 * 16];
 extern const uint16_t dungeonBarrel16x16[16 * 16];
 extern const uint16_t bellLow16x16[16 * 16];

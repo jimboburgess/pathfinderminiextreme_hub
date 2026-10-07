@@ -66,6 +66,7 @@ enum class SoundEffect : uint8_t
 
     // World
     TRAP,
+    BRAZIER_IGNITE,
     SECRET_FOUND,
     QUEST_COMPLETE,
 

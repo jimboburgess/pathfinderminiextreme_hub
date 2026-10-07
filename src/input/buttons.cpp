@@ -500,6 +500,10 @@ void handleTownButtons() {
                     openCharacterSheet();
                     break;
 
+                case TOWN_HOME_MULTIPLAYER:
+                    openMultiplayerMenu();
+                    break;
+
                 case TOWN_HOME_BACK:
                     closeTownHome();
                     break;

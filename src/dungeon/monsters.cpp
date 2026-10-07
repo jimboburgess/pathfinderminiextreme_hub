@@ -300,7 +300,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
     //======================================================
     {
         "Goblin Chieftain",
-        bugbear16x16,
+        goblinChieftain16x16,
         {16,16,14,10,11,12},
         4,
         4,
@@ -320,7 +320,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
 
     {
         "Spider Queen",
-        giantspider32x32,
+        spiderQueen32x32,
         {17,17,16,0,12,4},
         5,
         4,

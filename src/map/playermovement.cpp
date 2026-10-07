@@ -16,6 +16,7 @@
 #include "dungeon/riddlepuzzle.h"
 #include "dungeon/bellpuzzle.h"
 #include "dungeon/numbertilepuzzle.h"
+#include "dungeon/brazierpuzzle.h"
 #include "dungeon/abilityresolver.h"
 #include "../audio/audio.h"
 #include "forest/forest.h"
@@ -107,8 +108,19 @@ uint8_t resolvePlayerMovementAttemptCost(
         player, targetX, targetY, TILE_RUBBLE, succeeded);
 }
 
-bool resolveBrazierMovementAttempt(Entity& player)
+bool resolveBrazierMovementAttempt(Entity& player, int targetX, int targetY)
 {
+    if (gameState == GAME_DUNGEON && dungeon.currentRoom < dungeon.roomCount)
+    {
+        const DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+        if (getBrazierPuzzleIndexAt(room, targetX, targetY) >= 0 &&
+            !isBrazierPuzzleLitAt(room, targetX, targetY))
+        {
+            playSound(SoundEffect::BUMP);
+            setGameMessage("The cold brazier blocks the way.");
+            return false;
+        }
+    }
     const AbilitySavingThrow savingThrow = resolveSavingThrow(
         player.character, SAVE_REFLEX, BRAZIER_REFLEX_DC);
     if (savingThrow.result == SAVE_RESULT_SUCCESS)
@@ -516,7 +528,7 @@ bool tryMovePlayer(Dungeon &dungeon)
             return false;
 
         case TILE_BRAZIER:
-            return resolveBrazierMovementAttempt(*player);
+            return resolveBrazierMovementAttempt(*player, targetX, targetY);
 
         //--------------------------------------------------
         // Door
@@ -571,6 +583,11 @@ bool tryMovePlayer(Dungeon &dungeon)
                     return false;
                 }
                 if (!tryUnlockCurrentNumberPuzzleExit(doorDirection))
+                {
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
+                if (!tryUnlockCurrentBrazierPuzzleExit(doorDirection))
                 {
                     playSound(SoundEffect::BUMP);
                     return false;

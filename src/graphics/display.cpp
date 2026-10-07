@@ -324,6 +324,11 @@ void drawTownScreen()
         tft.print("Character Sheet");
 
         tft.setCursor(20, 155);
+        tft.print(getTownHomeSelection() == TOWN_HOME_MULTIPLAYER
+            ? "> " : "  ");
+        tft.print("Multiplayer");
+
+        tft.setCursor(20, 185);
         tft.print(getTownHomeSelection() == TOWN_HOME_BACK ? "> " : "  ");
         tft.print("Back");
 

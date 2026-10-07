@@ -1,5 +1,7 @@
 HERE ARE FILES FOR CREATING A SIMPLE PATHFINDER BASED GAME.
 
+Multiplayer Stage 1 architecture and audit: `docs/multiplayer-stage1.md`
+
 IT RUNS ON AN ESP32-S3-ZERO ON A 240 X 240 TFT SCREEN.
 
 AS ON 7/6/20206 IT IS PROGRAMMED TO RUN ON two BUTTONS, and an ec11 encoder

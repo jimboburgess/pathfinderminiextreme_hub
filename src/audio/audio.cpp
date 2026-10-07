@@ -355,6 +355,13 @@ constexpr AudioCommand trapSound[] =
     audioEnd()
 };
 
+constexpr AudioCommand brazierIgniteSound[] =
+{
+    audioNoise(300, 1400, 5, 60, AudioDuty::DUTY_25),
+    audioSweep(350, 1600, 150, AudioDuty::DUTY_50),
+    audioEnd()
+};
+
 constexpr AudioCommand secretFoundSound[] =
 {
     audioTone(900, 40, AudioDuty::DUTY_25),
@@ -475,6 +482,8 @@ const AudioCommand* getSoundSequence(SoundEffect sound)
             return levelUpSound;
         case SoundEffect::TRAP:
             return trapSound;
+        case SoundEffect::BRAZIER_IGNITE:
+            return brazierIgniteSound;
         case SoundEffect::SECRET_FOUND:
             return secretFoundSound;
         case SoundEffect::QUEST_COMPLETE:

@@ -15,6 +15,7 @@
 #include "furniture.h"
 #include "bellpuzzle.h"
 #include "numbertilepuzzle.h"
+#include "brazierpuzzle.h"
 #include "entitypersistence.h"
 
 constexpr uint8_t ROOM_WIDTH = 15;
@@ -123,6 +124,7 @@ struct DungeonRoom {
     DungeonNPCSpawn npcSpawn;
     BellPuzzleState bellPuzzle;
     NumberTilePuzzleState numberPuzzle;
+    BrazierPuzzleState brazierPuzzle;
 };
 
 

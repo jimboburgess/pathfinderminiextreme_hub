@@ -11,6 +11,7 @@
 #include "traps.h"
 #include "fountain.h"
 #include "numbertilepuzzle.h"
+#include "brazierpuzzle.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -410,6 +411,16 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
     drawNumberCluePlaque(tileX, tileY);
   else if (isHealingFountainTile(room, tileX, tileY))
     drawHealingFountainTile(room, tileX, tileY);
+  else if (room.map.tiles[tileY][tileX] == TILE_BRAZIER &&
+           getBrazierPuzzleIndexAt(room, tileX, tileY) >= 0)
+  {
+    tft.drawRGBBitmap(tileX * TILE_SIZE, tileY * TILE_SIZE,
+                      dungeonFloorTiles[(tileX * 13 + tileY * 5) % 3],
+                      TILE_SIZE, TILE_SIZE);
+    drawSpriteTransparent(
+        tileX * TILE_SIZE, tileY * TILE_SIZE,
+        getBrazierSpriteForRoomTile(room, tileX, tileY));
+  }
   else
     drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);
   drawSuspicionClue(tileX, tileY, getSuspicionAt(room, tileX, tileY));

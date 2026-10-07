@@ -377,6 +377,27 @@ bool isNumberTilePuzzleRoom(const DungeonRoom& room)
         room.numberPuzzle.progress != NUMBER_PUZZLE_NONE;
 }
 
+bool configureBrazierPuzzleRoom(
+    DungeonRoom& room, Direction direction,
+    const uint8_t* rolls, uint8_t rollCount)
+{
+    (void)rolls;
+    (void)rollCount;
+    room.puzzleType = PUZZLE_BRAZIERS;
+    room.brazierPuzzle.brazierCount = 4;
+    room.brazierPuzzle.litMask = 0b0101;
+    room.brazierPuzzle.progress = BRAZIER_PUZZLE_UNSOLVED;
+    room.brazierPuzzle.lockedExitDirection = direction;
+    return true;
+}
+
+bool isBrazierPuzzleRoom(const DungeonRoom& room)
+{
+    return room.puzzleType == PUZZLE_BRAZIERS &&
+        room.brazierPuzzle.progress != BRAZIER_PUZZLE_NONE;
+}
+
+#include "../../src/dungeon/puzzleroom.cpp"
 #include "../../src/dungeon/dungeon.cpp"
 
 static void configureLoadedRoom(uint8_t roomIndex)
@@ -803,7 +824,26 @@ void test_new_run_generates_only_when_no_run_is_active()
     TEST_ASSERT_EQUAL(ROOM_PUZZLE, riddleRoom.type);
     TEST_ASSERT_EQUAL(NPC_BERTRAM_RIDDLEMAN, riddleRoom.npcSpawn.id);
     TEST_ASSERT_EQUAL(RIDDLE_ROOM_UNSOLVED, riddleRoom.npcSpawn.puzzleState);
+    TEST_ASSERT_EQUAL(PUZZLE_RIDDLEMAN, riddleRoom.puzzleType);
+    TEST_ASSERT_EQUAL(BELL_PUZZLE_NONE, riddleRoom.bellPuzzle.progress);
+    TEST_ASSERT_EQUAL(NUMBER_PUZZLE_NONE, riddleRoom.numberPuzzle.progress);
+    TEST_ASSERT_EQUAL(BRAZIER_PUZZLE_NONE,
+                      riddleRoom.brazierPuzzle.progress);
+    TEST_ASSERT_EQUAL_UINT8(
+        dungeon.bossRoom,
+        getRoomNeighbor(
+            riddleRoom,
+            static_cast<Direction>(riddleRoom.npcSpawn.lockedExitDirection)));
     TEST_ASSERT_TRUE(isValidRiddleAnswerOrder(riddleRoom.npcSpawn.riddle));
+    uint8_t bertramRoomCount = 0;
+    for (uint8_t roomIndex = 0; roomIndex < dungeon.roomCount; ++roomIndex)
+    {
+        const DungeonRoom& room = dungeon.rooms[roomIndex];
+        if (room.puzzleType == PUZZLE_RIDDLEMAN ||
+            room.npcSpawn.id == NPC_BERTRAM_RIDDLEMAN)
+            ++bertramRoomCount;
+    }
+    TEST_ASSERT_EQUAL_UINT8(1, bertramRoomCount);
     TEST_ASSERT_TRUE(dungeon.encounterTheme >= ENCOUNTER_GOBLIN &&
                      dungeon.encounterTheme <= ENCOUNTER_SPIDER);
     for (uint8_t roomIndex = 0;

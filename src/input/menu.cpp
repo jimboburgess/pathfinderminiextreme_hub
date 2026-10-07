@@ -22,6 +22,7 @@
 #include "input/riddlemenu.h"
 #include "town/shop.h"
 #include "data/progression.h"
+#include "multiplayer/multiplayer_session.h"
 
 MenuState menuState =
 {
@@ -538,6 +539,165 @@ const Menu optionsMenu =
 
 //
 //--------------------------------------------------
+// Multiplayer Menus
+//--------------------------------------------------
+//
+
+namespace
+{
+char nearbyPlayerTitles[MAX_NEARBY_ADVENTURERS][32] = {};
+char nearbyPlayerDescriptions[MAX_NEARBY_ADVENTURERS][64] = {};
+MenuItem nearbyPlayerItems[MAX_NEARBY_ADVENTURERS] = {};
+uint8_t nearbyPlayerLookup[MAX_NEARBY_ADVENTURERS] = {};
+char multiplayerStatusBody[128] = {};
+
+const char* networkClassName(uint8_t characterClass)
+{
+    switch (static_cast<CharacterClass>(characterClass))
+    {
+        case CLASS_FIGHTER: return "Fighter";
+        case CLASS_ROGUE: return "Rogue";
+        case CLASS_WIZARD: return "Wizard";
+        case CLASS_CLERIC: return "Cleric";
+    }
+    return "Unknown";
+}
+}
+
+Menu nearbyPlayersMenu =
+{
+    "Nearby Adventurers",
+    nearbyPlayerItems,
+    0
+};
+
+const MenuItem multiplayerStatusItems[] =
+{
+    {
+        "Back",
+        "Return to multiplayer options.",
+        MENU_MULTIPLAYER_BACK,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
+Menu multiplayerStatusMenu =
+{
+    "Multiplayer Status",
+    multiplayerStatusItems,
+    sizeof(multiplayerStatusItems) / sizeof(MenuItem),
+    nullptr,
+    nullptr,
+    multiplayerStatusBody,
+    64
+};
+
+const MenuItem multiplayerMenuItems[] =
+{
+    {
+        "Host Game",
+        "Create a nearby ESP-NOW party.",
+        MENU_MULTIPLAYER_HOST,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Nearby Players",
+        "Find nearby adventurers hosting parties.",
+        MENU_MULTIPLAYER_NEARBY,
+        &nearbyPlayersMenu,
+        MENU_CLASS_ALL
+    },
+    {
+        "Leave Party",
+        "Leave or close the current party.",
+        MENU_MULTIPLAYER_LEAVE,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Multiplayer Status",
+        "View local session and connection status.",
+        MENU_MULTIPLAYER_STATUS,
+        &multiplayerStatusMenu,
+        MENU_CLASS_ALL
+    }
+};
+
+const Menu multiplayerMenu =
+{
+    "Multiplayer",
+    multiplayerMenuItems,
+    sizeof(multiplayerMenuItems) / sizeof(MenuItem)
+};
+
+static void rebuildNearbyPlayersMenu()
+{
+    nearbyPlayersMenu.itemCount = 0;
+    const uint8_t nearbyCount = multiplayerSession.getNearbyCount();
+    for (uint8_t nearbyIndex = 0;
+         nearbyIndex < nearbyCount &&
+         nearbyPlayersMenu.itemCount < MAX_NEARBY_ADVENTURERS;
+         ++nearbyIndex)
+    {
+        const NearbyAdventurer* adventurer =
+            multiplayerSession.getNearby(nearbyIndex);
+        if (adventurer == nullptr || !adventurer->acceptingPlayers) continue;
+
+        const uint8_t itemIndex = nearbyPlayersMenu.itemCount++;
+        snprintf(nearbyPlayerTitles[itemIndex],
+                 sizeof(nearbyPlayerTitles[itemIndex]),
+                 "%s  Lv %u",
+                 adventurer->profile.displayName,
+                 adventurer->profile.level);
+        snprintf(nearbyPlayerDescriptions[itemIndex],
+                 sizeof(nearbyPlayerDescriptions[itemIndex]),
+                 "%s - %s",
+                 networkClassName(adventurer->profile.characterClass),
+                 multiplayerAvailabilityName(adventurer->availability));
+        nearbyPlayerLookup[itemIndex] = nearbyIndex;
+        nearbyPlayerItems[itemIndex] = {
+            nearbyPlayerTitles[itemIndex],
+            nearbyPlayerDescriptions[itemIndex],
+            MENU_MULTIPLAYER_JOIN_PLAYER,
+            nullptr,
+            MENU_CLASS_ALL,
+            ABILITY_NONE
+        };
+    }
+
+    if (nearbyPlayersMenu.itemCount == 0)
+    {
+        snprintf(nearbyPlayerTitles[0], sizeof(nearbyPlayerTitles[0]),
+                 "No hosts found");
+        snprintf(nearbyPlayerDescriptions[0],
+                 sizeof(nearbyPlayerDescriptions[0]),
+                 "Nearby hosts appear automatically.");
+        nearbyPlayerItems[0] = {
+            nearbyPlayerTitles[0],
+            nearbyPlayerDescriptions[0],
+            MENU_NONE,
+            nullptr,
+            MENU_CLASS_ALL,
+            ABILITY_NONE
+        };
+        nearbyPlayersMenu.itemCount = 1;
+    }
+}
+
+static void rebuildMultiplayerStatusMenu()
+{
+    snprintf(multiplayerStatusBody, sizeof(multiplayerStatusBody),
+             "%s\nPlayers: %u/%u\n%s",
+             multiplayerSessionStateName(multiplayerSession.getState()),
+             multiplayerSession.getConnectedPlayerCount(),
+             MAX_MULTIPLAYER_PLAYERS,
+             multiplayerSession.getStatusText());
+}
+
+//
+//--------------------------------------------------
 // Game Menu
 //--------------------------------------------------
 //
@@ -556,6 +716,13 @@ const MenuItem gameMenuItems[] =
         "Save your progress.",
         MENU_SAVE_GAME,
         nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Multiplayer",
+        "Host or join a nearby local party.",
+        MENU_MULTIPLAYER,
+        &multiplayerMenu,
         MENU_CLASS_ALL
     },
     {
@@ -849,6 +1016,11 @@ void openMenu(const Menu* menu)
     needsRedraw = true;     // <-- add this
 }
 
+void openMultiplayerMenu()
+{
+    openMenu(&multiplayerMenu);
+}
+
 void openResistEnergyMenu()
 {
     openMenu(&resistEnergyMenu);
@@ -995,6 +1167,11 @@ void menuActivate()
                 return;
             }
         }
+
+        if (item->action == MENU_MULTIPLAYER_NEARBY)
+            rebuildNearbyPlayersMenu();
+        else if (item->action == MENU_MULTIPLAYER_STATUS)
+            rebuildMultiplayerStatusMenu();
 
         pushMenu(item->child);
         return;
@@ -1292,6 +1469,32 @@ void menuActivate()
                 isEncoderRotationInverted()
                     ? "Encoder rotation inverted."
                     : "Encoder rotation normal.");
+            break;
+
+        case MENU_MULTIPLAYER_HOST:
+            closeMenu();
+            if (!multiplayerSession.hostSession(millis()))
+                setGameMessage("Unable to host multiplayer.");
+            break;
+
+        case MENU_MULTIPLAYER_JOIN_PLAYER:
+        {
+            const uint8_t selected = menuState.cursorIndex;
+            const bool requested = selected < nearbyPlayersMenu.itemCount &&
+                multiplayerSession.joinNearby(
+                    nearbyPlayerLookup[selected], millis());
+            closeMenu();
+            if (!requested) setGameMessage("Unable to join that party.");
+            break;
+        }
+
+        case MENU_MULTIPLAYER_LEAVE:
+            closeMenu();
+            multiplayerSession.leaveSession();
+            break;
+
+        case MENU_MULTIPLAYER_BACK:
+            menuCancel();
             break;
 
         case MENU_DUNGEON_RESUME:
@@ -1977,6 +2180,17 @@ bool isMenuItemVisible(MenuAction action)
         case MENU_SAVE_GAME:
         case MENU_EXIT_TITLE:
             return false;
+
+        case MENU_MULTIPLAYER_HOST:
+        case MENU_MULTIPLAYER_NEARBY:
+            return gameState == GAME_TOWN &&
+                   multiplayerSession.isTransportReady() &&
+                   !multiplayerSession.isActive() &&
+                   !multiplayerSession.isJoining();
+
+        case MENU_MULTIPLAYER_LEAVE:
+            return multiplayerSession.isActive() ||
+                   multiplayerSession.isJoining();
 
         default:
             return true;

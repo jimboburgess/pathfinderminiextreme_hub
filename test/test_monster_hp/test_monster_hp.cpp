@@ -8,6 +8,7 @@
 // data and spawning rather than linking the production bitmap assets.
 const uint16_t goblinSprite16x16r1[SPRITE_W * SPRITE_H] = {};
 const uint16_t goblinSprite16x16r2[SPRITE_W * SPRITE_H] = {};
+const uint16_t goblinChieftain16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t goblinArcher16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t bugbear16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t skeleton16x16[SPRITE_W * SPRITE_H] = {};
@@ -17,6 +18,7 @@ const uint16_t ghoul16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t wight16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t choker16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t giantspider32x32[LRGSPRITE_W * LRGSPRITE_H] = {};
+const uint16_t spiderQueen32x32[LRGSPRITE_W * LRGSPRITE_H] = {};
 const uint16_t spectator32x32[LRGSPRITE_W * LRGSPRITE_H] = {};
 const uint16_t grayOoze16x16[SPRITE_W * SPRITE_H] = {};
 const uint16_t violetFungus16x16[SPRITE_W * SPRITE_H] = {};
@@ -236,8 +238,12 @@ void test_dedicated_boss_ids_and_definitions_are_appended_and_complete()
         MONSTER_GIANT_SPIDER_QUEEN + 1, MONSTER_COUNT);
 
     const Monster* chieftain = getMonster(MONSTER_GOBLIN_CHIEFTAIN);
+    const Monster* goblin = getMonster(MONSTER_GOBLIN_SCIMITAR);
     TEST_ASSERT_NOT_NULL(chieftain);
+    TEST_ASSERT_NOT_NULL(goblin);
     TEST_ASSERT_EQUAL_STRING("Goblin Chieftain", chieftain->name);
+    TEST_ASSERT_EQUAL_PTR(goblinChieftain16x16, chieftain->sprite);
+    TEST_ASSERT_TRUE(chieftain->sprite != goblin->sprite);
     TEST_ASSERT_EQUAL(SCRIPT_MELEE, chieftain->script);
     TEST_ASSERT_EQUAL(IDLE_PATROL, chieftain->idleBehavior);
     TEST_ASSERT_EQUAL(CREATURE_GOBLIN, chieftain->creatureType);
@@ -261,7 +267,8 @@ void test_dedicated_boss_ids_and_definitions_are_appended_and_complete()
     TEST_ASSERT_NOT_NULL(queen);
     TEST_ASSERT_NOT_NULL(spider);
     TEST_ASSERT_EQUAL_STRING("Spider Queen", queen->name);
-    TEST_ASSERT_EQUAL_PTR(giantspider32x32, queen->sprite);
+    TEST_ASSERT_EQUAL_PTR(spiderQueen32x32, queen->sprite);
+    TEST_ASSERT_TRUE(queen->sprite != spider->sprite);
     TEST_ASSERT_EQUAL(SCRIPT_MELEE, queen->script);
     TEST_ASSERT_EQUAL(IDLE_HIDE, queen->idleBehavior);
     TEST_ASSERT_EQUAL(CREATURE_MONSTER, queen->creatureType);

@@ -20,6 +20,7 @@
 #include "graphics/sprites.h"
 #include "forest/forest.h"
 #include "town/town.h"
+#include "multiplayer/multiplayer_runtime.h"
 
 #include "input/buttons.h"
 
@@ -65,6 +66,10 @@ void setup()
     // Seed random number generator
     randomSeed(esp_random());
 
+    // ESP-NOW runs in station mode without joining a router. Failure leaves
+    // all existing single-player systems available.
+    initializeMultiplayerRuntime();
+
     // No dungeon run exists until the player chooses Explore Dungeon.
     resetDungeonRun(dungeon);
 
@@ -83,6 +88,8 @@ void setup()
 
 void loop()
 {
+    updateMultiplayerRuntime();
+
     handleButtons();
 
     updateAwareness();

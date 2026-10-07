@@ -11,6 +11,7 @@
 #include "dungeon/npcs.h"
 #include "dungeon/turns.h"
 #include "graphics/sprites.h"
+#include "multiplayer/multiplayer_types.h"
 
 //==================================================
 // Entities
@@ -39,6 +40,10 @@ struct LootData
 struct Entity
 {
     EntityType type;
+
+    // TEAM_PLAYER identifies allegiance, not which handheld controls this
+    // entity. Multiplayer gameplay uses this compact owner independently.
+    PlayerID ownerPlayerID = INVALID_PLAYER_ID;
 
     uint8_t x;
     uint8_t y;

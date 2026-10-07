@@ -112,6 +112,15 @@ enum MenuAction
     MENU_OPTIONS,
     MENU_EXIT_TITLE,
 
+    // Local ESP-NOW multiplayer
+    MENU_MULTIPLAYER,
+    MENU_MULTIPLAYER_HOST,
+    MENU_MULTIPLAYER_NEARBY,
+    MENU_MULTIPLAYER_JOIN_PLAYER,
+    MENU_MULTIPLAYER_LEAVE,
+    MENU_MULTIPLAYER_STATUS,
+    MENU_MULTIPLAYER_BACK,
+
     // Town dungeon entry
     MENU_DUNGEON_RESUME,
     MENU_DUNGEON_START_NEW,
@@ -214,6 +223,7 @@ bool isMenuItemEnabled(MenuAction action);
 //--------------------------------------------------
 
 void openMenu(const Menu* menu);
+void openMultiplayerMenu();
 void openResistEnergyMenu();
 bool pushMenu(const Menu* menu);
 void closeMenu();

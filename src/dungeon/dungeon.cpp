@@ -7,6 +7,7 @@
 #include "roomgen.h"
 #include "dungeongraph.h"
 #include "riddlepuzzle.h"
+#include "puzzleroom.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "combat.h"
@@ -144,16 +145,29 @@ namespace
 
 RoomType selectMiddleRoomType()
 {
-    const uint8_t roll = random(100);
+    return selectMiddleRoomTypeFromRoll(static_cast<uint8_t>(random(100)));
+}
 
-    if (roll < 30)
-        return ROOM_COMBAT;
-    if (roll < 60)
-        return ROOM_AMBUSH;
-    if (roll < 90)
-        return ROOM_PUZZLE;
-
-    return ROOM_EMPTY;
+Direction selectPuzzleLockedExitDirection(
+    const Dungeon& dungeon, uint8_t roomIndex)
+{
+    const DungeonRoom& room = dungeon.rooms[roomIndex];
+    Direction lockedDirection = room.connectionCount > 0
+        ? room.connections[0].direction : DIR_NORTH;
+    const uint8_t currentDistance = getRoomDistanceFromEntrance(
+        dungeon, roomIndex);
+    for (uint8_t index = 0; index < room.connectionCount; ++index)
+    {
+        const RoomConnection& connection = room.connections[index];
+        const uint8_t neighbor = getRoomNeighbor(room, connection.direction);
+        if (neighbor != NO_ROOM &&
+            getRoomDistanceFromEntrance(dungeon, neighbor) > currentDistance)
+        {
+            lockedDirection = connection.direction;
+            break;
+        }
+    }
+    return lockedDirection;
 }
 
 void clearActiveDungeonEntities(Dungeon& dungeon)
@@ -223,21 +237,11 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
             }
     }
 
-    if (isRiddlemanPuzzleRoom(dungeon.rooms[roomIndex]))
+    if (dungeon.rooms[roomIndex].type == ROOM_PUZZLE &&
+        dungeon.rooms[roomIndex].puzzleType != PUZZLE_NONE)
     {
-        dungeon.rooms[roomIndex].completed =
-            dungeon.rooms[roomIndex].npcSpawn.puzzleState == RIDDLE_ROOM_COMPLETE;
-    }
-    else if (isBellPuzzleRoom(dungeon.rooms[roomIndex]))
-    {
-        dungeon.rooms[roomIndex].completed =
-            dungeon.rooms[roomIndex].bellPuzzle.progress == BELL_PUZZLE_COMPLETE;
-    }
-    else if (isNumberTilePuzzleRoom(dungeon.rooms[roomIndex]))
-    {
-        dungeon.rooms[roomIndex].completed =
-            dungeon.rooms[roomIndex].numberPuzzle.progress ==
-                NUMBER_PUZZLE_COMPLETE;
+        dungeon.rooms[roomIndex].completed = isDungeonPuzzleComplete(
+            dungeon.rooms[roomIndex]);
     }
     else
     {
@@ -474,6 +478,7 @@ Entity* attachDungeonPlayer(
     playerEntity = Entity{};
     playerEntity.active = true;
     playerEntity.type = ENTITY_PLAYER;
+    playerEntity.ownerPlayerID = SINGLE_PLAYER_ID;
     playerEntity.character = player;
     playerEntity.sprite = getPlayerSprite(
         playerEntity.character.characterClass);
@@ -681,15 +686,6 @@ void generateDungeon(Dungeon& dungeon)
         room.puzzleType = roomIndex == dungeon.riddleRoom
             ? PUZZLE_RIDDLEMAN
             : PUZZLE_NONE;
-        if (room.type == ROOM_PUZZLE && roomIndex != dungeon.riddleRoom)
-        {
-            const uint8_t puzzleRoll = random(100);
-            if (puzzleRoll < BELL_ROOM_SELECTION_CHANCE_PERCENT)
-                room.puzzleType = PUZZLE_BELLS;
-            else if (puzzleRoll < BELL_ROOM_SELECTION_CHANCE_PERCENT +
-                                      NUMBER_TILE_ROOM_SELECTION_CHANCE_PERCENT)
-                room.puzzleType = PUZZLE_NUMBER_TILES;
-        }
         room.encounterTheme = encounterThemeForRoom(
             room.type, dungeon.encounterTheme);
     }
@@ -715,14 +711,14 @@ void generateDungeon(Dungeon& dungeon)
         populateRoomConnections(dungeon.rooms[i]);
         dungeon.rooms[i].shape = dungeon.rooms[i].type == ROOM_ENTRANCE
             ? SHAPE_ENTRANCE
-            : (dungeon.rooms[i].puzzleType == PUZZLE_RIDDLEMAN ||
-               dungeon.rooms[i].puzzleType == PUZZLE_BELLS
-               || dungeon.rooms[i].puzzleType == PUZZLE_NUMBER_TILES
+            : (dungeon.rooms[i].type == ROOM_PUZZLE
                 ? SHAPE_SQUARE : randomProductionRoomShape(dungeon.rooms[i]));
         generateRoom(dungeon.rooms[i]);
 
         if (i == dungeon.riddleRoom)
         {
+            resetDungeonPuzzleBlueprints(dungeon.rooms[i]);
+            dungeon.rooms[i].puzzleType = PUZZLE_RIDDLEMAN;
             const uint8_t shuffleRolls[3] = {
                 static_cast<uint8_t>(random(256)),
                 static_cast<uint8_t>(random(256)),
@@ -737,60 +733,21 @@ void generateDungeon(Dungeon& dungeon)
             continue;
         }
 
-        if (dungeon.rooms[i].puzzleType == PUZZLE_BELLS)
+        if (dungeon.rooms[i].type == ROOM_PUZZLE)
         {
-            Direction lockedDirection = dungeon.rooms[i].connections[0].direction;
-            const uint8_t currentDistance = getRoomDistanceFromEntrance(dungeon, i);
-            for (uint8_t c = 0; c < dungeon.rooms[i].connectionCount; ++c)
-            {
-                const RoomConnection& connection = dungeon.rooms[i].connections[c];
-                const uint8_t neighbor = getRoomNeighbor(dungeon.rooms[i], connection.direction);
-                if (neighbor != NO_ROOM &&
-                    getRoomDistanceFromEntrance(dungeon, neighbor) > currentDistance)
-                {
-                    lockedDirection = connection.direction;
-                    break;
-                }
-            }
-            uint8_t sequenceRolls[MAX_BELL_SEQUENCE * 8] = {};
-            for (uint8_t& roll : sequenceRolls)
+            uint8_t puzzleRolls[PUZZLE_GENERATION_ROLL_COUNT] = {};
+            for (uint8_t& roll : puzzleRolls)
                 roll = static_cast<uint8_t>(random(256));
-            if (!configureBellPuzzleRoom(
-                    dungeon.rooms[i], lockedDirection,
-                    player.level > 0 ? player.level : 1,
-                    sequenceRolls, sizeof(sequenceRolls)))
-            {
-                dungeon.rooms[i].puzzleType = PUZZLE_NONE;
-            }
-            else
-            {
-                continue;
-            }
-        }
-
-        if (dungeon.rooms[i].puzzleType == PUZZLE_NUMBER_TILES)
-        {
-            Direction lockedDirection = dungeon.rooms[i].connections[0].direction;
-            const uint8_t currentDistance = getRoomDistanceFromEntrance(dungeon, i);
-            for (uint8_t c = 0; c < dungeon.rooms[i].connectionCount; ++c)
-            {
-                const RoomConnection& connection = dungeon.rooms[i].connections[c];
-                const uint8_t neighbor = getRoomNeighbor(
-                    dungeon.rooms[i], connection.direction);
-                if (neighbor != NO_ROOM &&
-                    getRoomDistanceFromEntrance(dungeon, neighbor) > currentDistance)
-                { lockedDirection = connection.direction; break; }
-            }
-            uint8_t numberRolls[128] = {};
-            for (uint8_t& roll : numberRolls)
-                roll = static_cast<uint8_t>(random(256));
-            if (!configureNumberTilePuzzleRoom(
-                    dungeon.rooms[i], lockedDirection,
-                    player.level > 0 ? player.level : 1,
-                    numberRolls, sizeof(numberRolls)))
-                dungeon.rooms[i].puzzleType = PUZZLE_NONE;
-            else
-                continue;
+            const DungeonPuzzleType preferred = selectRandomPuzzleType(
+                static_cast<uint8_t>(random(100)));
+            configureRotatingPuzzleRoom(
+                dungeon.rooms[i], preferred,
+                selectPuzzleLockedExitDirection(dungeon, i),
+                player.level > 0 ? player.level : 1,
+                puzzleRolls, sizeof(puzzleRolls));
+            // Successful puzzles own all room content. A failed dispatcher has
+            // already converted the still-connected square into ROOM_EMPTY.
+            continue;
         }
 
         // Major blockers precede difficult terrain and runtime traps so every
@@ -1040,6 +997,7 @@ void resetDungeonRun(Dungeon& dungeon)
         dungeon.rooms[roomIndex].encounterTheme = ENCOUNTER_NONE;
         dungeon.rooms[roomIndex].bellPuzzle = BellPuzzleState{};
         dungeon.rooms[roomIndex].numberPuzzle = NumberTilePuzzleState{};
+        dungeon.rooms[roomIndex].brazierPuzzle = BrazierPuzzleState{};
         dungeon.rooms[roomIndex].north = NO_ROOM;
         dungeon.rooms[roomIndex].east = NO_ROOM;
         dungeon.rooms[roomIndex].south = NO_ROOM;

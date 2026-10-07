@@ -57,6 +57,20 @@ const Entity* getPlayerEntity(
     const Entity entities[],
     uint8_t entityCount);
 
+Entity* getPlayerEntityByOwner(
+    Entity entities[],
+    uint8_t entityCount,
+    PlayerID ownerPlayerID);
+
+const Entity* getPlayerEntityByOwner(
+    const Entity entities[],
+    uint8_t entityCount,
+    PlayerID ownerPlayerID);
+
+bool isPlayerEntity(const Entity& entity);
+bool isLocalPlayerEntity(const Entity& entity, PlayerID localPlayerID);
+PlayerID getOwningPlayerID(const Entity& entity);
+
 const char* getEntityName(const Entity* entity);
 
 void clearEntities(

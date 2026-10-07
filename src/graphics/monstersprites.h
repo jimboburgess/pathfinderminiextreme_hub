@@ -9,6 +9,7 @@
 
 extern const uint16_t goblinSprite16x16r1[SPRITE_W * SPRITE_H];
 extern const uint16_t goblinSprite16x16r2[SPRITE_W * SPRITE_H];
+extern const uint16_t goblinChieftain16x16[SPRITE_W * SPRITE_H];
 
 extern const uint16_t goblinArcher16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t bugbear16x16[SPRITE_W * SPRITE_H];
@@ -22,6 +23,7 @@ extern const uint16_t wight16x16[SPRITE_W * SPRITE_H];
 extern const uint16_t choker16x16[SPRITE_W * SPRITE_H];
 
 extern const uint16_t giantspider32x32[LRGSPRITE_W * LRGSPRITE_H];
+extern const uint16_t spiderQueen32x32[LRGSPRITE_W * LRGSPRITE_H];
 extern const uint16_t spectator32x32[LRGSPRITE_W * LRGSPRITE_H];
 
 extern const uint16_t grayOoze16x16[SPRITE_W * SPRITE_H];
