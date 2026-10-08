@@ -21,6 +21,7 @@
 #include "forest/forest.h"
 #include "town/town.h"
 #include "multiplayer/multiplayer_runtime.h"
+#include "multiplayer/multiplayer_activity.h"
 
 #include "input/buttons.h"
 
@@ -92,10 +93,13 @@ void loop()
 
     handleButtons();
 
-    updateAwareness();
-    updateElementalTrapCharges();
+    if (!isMultiplayerExplorationActive())
+    {
+        updateAwareness();
+        updateElementalTrapCharges();
+        updateMonsterIdleBehavior();
+    }
     updateElementalVisualEffect();
-    updateMonsterIdleBehavior();
 
     if (combat.active)
     {

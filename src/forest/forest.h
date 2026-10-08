@@ -14,6 +14,8 @@ constexpr uint8_t FOREST_WIDTH  = 15;
 constexpr uint8_t FOREST_HEIGHT = 14;
 
 TileType getForestTile(int x, int y);
+bool setForestTileAuthoritative(int x, int y, TileType tile);
+void beginAuthoritativeForest();
 
 
 void enterForest();

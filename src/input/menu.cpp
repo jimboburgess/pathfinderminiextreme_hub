@@ -23,6 +23,7 @@
 #include "town/shop.h"
 #include "data/progression.h"
 #include "multiplayer/multiplayer_session.h"
+#include "multiplayer/multiplayer_activity.h"
 
 MenuState menuState =
 {
@@ -550,6 +551,7 @@ char nearbyPlayerDescriptions[MAX_NEARBY_ADVENTURERS][64] = {};
 MenuItem nearbyPlayerItems[MAX_NEARBY_ADVENTURERS] = {};
 uint8_t nearbyPlayerLookup[MAX_NEARBY_ADVENTURERS] = {};
 char multiplayerStatusBody[128] = {};
+char multiplayerTravelBody[96] = {};
 
 const char* networkClassName(uint8_t characterClass)
 {
@@ -584,26 +586,26 @@ const MenuItem multiplayerStatusItems[] =
 
 Menu multiplayerStatusMenu =
 {
-    "Multiplayer Status",
+    "Party Status",
     multiplayerStatusItems,
     sizeof(multiplayerStatusItems) / sizeof(MenuItem),
     nullptr,
     nullptr,
     multiplayerStatusBody,
-    64
+    112
 };
 
 const MenuItem multiplayerMenuItems[] =
 {
     {
-        "Host Game",
+        "Host Party",
         "Create a nearby ESP-NOW party.",
         MENU_MULTIPLAYER_HOST,
         nullptr,
         MENU_CLASS_ALL
     },
     {
-        "Nearby Players",
+        "Nearby Adventurers",
         "Find nearby adventurers hosting parties.",
         MENU_MULTIPLAYER_NEARBY,
         &nearbyPlayersMenu,
@@ -617,8 +619,8 @@ const MenuItem multiplayerMenuItems[] =
         MENU_CLASS_ALL
     },
     {
-        "Multiplayer Status",
-        "View local session and connection status.",
+        "Party Status",
+        "View party members and their locations.",
         MENU_MULTIPLAYER_STATUS,
         &multiplayerStatusMenu,
         MENU_CLASS_ALL
@@ -627,9 +629,42 @@ const MenuItem multiplayerMenuItems[] =
 
 const Menu multiplayerMenu =
 {
-    "Multiplayer",
+    "Bulletin Board",
     multiplayerMenuItems,
-    sizeof(multiplayerMenuItems) / sizeof(MenuItem)
+    sizeof(multiplayerMenuItems) / sizeof(MenuItem),
+    nullptr,
+    nullptr,
+    "Find other adventurers.",
+    30
+};
+
+const MenuItem multiplayerTravelItems[] =
+{
+    {
+        "Join",
+        "Travel with the party host.",
+        MENU_MULTIPLAYER_TRAVEL_JOIN,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "Stay in Town",
+        "Remain connected to the party.",
+        MENU_MULTIPLAYER_TRAVEL_DECLINE,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
+const Menu multiplayerTravelMenu =
+{
+    "Party Travel",
+    multiplayerTravelItems,
+    sizeof(multiplayerTravelItems) / sizeof(MenuItem),
+    nullptr,
+    nullptr,
+    multiplayerTravelBody,
+    58
 };
 
 static void rebuildNearbyPlayersMenu()
@@ -688,12 +723,24 @@ static void rebuildNearbyPlayersMenu()
 
 static void rebuildMultiplayerStatusMenu()
 {
-    snprintf(multiplayerStatusBody, sizeof(multiplayerStatusBody),
-             "%s\nPlayers: %u/%u\n%s",
-             multiplayerSessionStateName(multiplayerSession.getState()),
-             multiplayerSession.getConnectedPlayerCount(),
-             MAX_MULTIPLAYER_PLAYERS,
-             multiplayerSession.getStatusText());
+    size_t used = snprintf(multiplayerStatusBody,
+                           sizeof(multiplayerStatusBody),
+                           "Party: %u/%u\n",
+                           multiplayerSession.getConnectedPlayerCount(),
+                           MAX_MULTIPLAYER_PLAYERS);
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    {
+        const SessionMember* member = multiplayerSession.getMember(playerID);
+        if (member == nullptr || used >= sizeof(multiplayerStatusBody)) continue;
+        used += snprintf(multiplayerStatusBody + used,
+                         sizeof(multiplayerStatusBody) - used,
+                         "%s %s%s %s\n",
+                         member->profile.displayName,
+                         networkClassName(member->profile.characterClass),
+                         playerID == HOST_PLAYER_ID ? " HOST" : "",
+                         multiplayerMemberLocationName(
+                             getMultiplayerMemberLocation(playerID)));
+    }
 }
 
 //
@@ -716,13 +763,6 @@ const MenuItem gameMenuItems[] =
         "Save your progress.",
         MENU_SAVE_GAME,
         nullptr,
-        MENU_CLASS_ALL
-    },
-    {
-        "Multiplayer",
-        "Host or join a nearby local party.",
-        MENU_MULTIPLAYER,
-        &multiplayerMenu,
         MENU_CLASS_ALL
     },
     {
@@ -1018,7 +1058,20 @@ void openMenu(const Menu* menu)
 
 void openMultiplayerMenu()
 {
+    rebuildMultiplayerStatusMenu();
     openMenu(&multiplayerMenu);
+}
+
+void openMultiplayerTravelInviteMenu()
+{
+    const MultiplayerActivityType activityType =
+        getPendingMultiplayerTravelType();
+    snprintf(multiplayerTravelBody, sizeof(multiplayerTravelBody),
+             "%s is entering %s.\nJoin them?",
+             getPendingMultiplayerTravelHostName(),
+             activityType == MultiplayerActivityType::DUNGEON
+                ? "a Dungeon" : "the Forest");
+    openMenu(&multiplayerTravelMenu);
 }
 
 void openResistEnergyMenu()
@@ -1405,6 +1458,13 @@ void menuActivate()
 
             closeMenu();
 
+            if (isMultiplayerExplorationActive() ||
+                isMultiplayerActivityLoading())
+            {
+                leaveMultiplayerActivity();
+                break;
+            }
+
             // Town owns the persistent player character. Preserve changes
             // made to the map entity before returning home to rest or save.
             {
@@ -1497,9 +1557,21 @@ void menuActivate()
             menuCancel();
             break;
 
+        case MENU_MULTIPLAYER_TRAVEL_JOIN:
+            closeMenu();
+            acceptPendingMultiplayerTravel();
+            break;
+
+        case MENU_MULTIPLAYER_TRAVEL_DECLINE:
+            closeMenu();
+            declinePendingMultiplayerTravel();
+            break;
+
         case MENU_DUNGEON_RESUME:
             closeMenu();
-            enterDungeon();
+            if (!requestMultiplayerTravel(
+                    MultiplayerActivityType::DUNGEON))
+                enterDungeon();
             break;
 
         case MENU_DUNGEON_START_NEW_NO:
@@ -1511,7 +1583,9 @@ void menuActivate()
         case MENU_DUNGEON_START_NEW_YES:
             closeMenu();
             resetDungeonRun(dungeon);
-            enterDungeon();
+            if (!requestMultiplayerTravel(
+                    MultiplayerActivityType::DUNGEON))
+                enterDungeon();
             break;
 
         case MENU_DUNGEON_BACK:
@@ -2041,6 +2115,28 @@ bool isMenuItemVisible(MenuAction action)
 
     if (character == nullptr)
         return false;
+
+    if (isMultiplayerExplorationActive())
+    {
+        switch (action)
+        {
+            case MENU_NONE:
+            case MENU_CHARACTER:
+            case MENU_CHARACTER_SHEET:
+            case MENU_INVENTORY:
+            case MENU_EQUIPMENT:
+            case MENU_SKILLS:
+            case MENU_QUESTS:
+            case MENU_GAME:
+            case MENU_RETURN_TO_TOWN:
+            case MENU_OPTIONS:
+            case MENU_TOGGLE_AUDIO:
+            case MENU_TOGGLE_ENCODER_ROTATION:
+                break;
+            default:
+                return false;
+        }
+    }
 
     switch (action)
     {

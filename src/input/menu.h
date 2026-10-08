@@ -120,6 +120,8 @@ enum MenuAction
     MENU_MULTIPLAYER_LEAVE,
     MENU_MULTIPLAYER_STATUS,
     MENU_MULTIPLAYER_BACK,
+    MENU_MULTIPLAYER_TRAVEL_JOIN,
+    MENU_MULTIPLAYER_TRAVEL_DECLINE,
 
     // Town dungeon entry
     MENU_DUNGEON_RESUME,
@@ -224,6 +226,7 @@ bool isMenuItemEnabled(MenuAction action);
 
 void openMenu(const Menu* menu);
 void openMultiplayerMenu();
+void openMultiplayerTravelInviteMenu();
 void openResistEnergyMenu();
 bool pushMenu(const Menu* menu);
 void closeMenu();

@@ -26,10 +26,11 @@
 #include "data/entityspawn.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
+#include "multiplayer/multiplayer_activity.h"
 
 extern Adafruit_ST7789 tft;
 
-static bool tryMoveForestPlayer();
+static bool tryMoveForestPlayer(Entity* player, Direction direction);
 
 namespace
 {
@@ -258,16 +259,41 @@ bool tryPlayerAcrobaticsTraversal(
 
 bool tryMovePlayer(Dungeon &dungeon)
 {
+    bool multiplayerMoved = false;
+    if (handleMultiplayerLocalMove(
+            static_cast<uint8_t>(moveDirection), multiplayerMoved))
+        return multiplayerMoved;
+
+    bool roomChanged = false;
+    return tryMovePlayerAuthoritative(
+        dungeon, SINGLE_PLAYER_ID, moveDirection, true, roomChanged);
+}
+
+bool tryMovePlayerAuthoritative(
+    Dungeon& dungeon,
+    PlayerID ownerPlayerID,
+    Direction direction,
+    bool allowRoomTransition,
+    bool& roomChanged)
+{
+    roomChanged = false;
     if (gameState == GAME_FOREST)
-        return tryMoveForestPlayer();
+    {
+        Entity* forestPlayer = getPlayerEntityByOwner(
+            forestEntities, forestEntityCount, ownerPlayerID);
+        if (forestPlayer == nullptr && ownerPlayerID == SINGLE_PLAYER_ID)
+            forestPlayer = getPlayerEntity(forestEntities, forestEntityCount);
+        return tryMoveForestPlayer(forestPlayer, direction);
+    }
 
     //--------------------------------------------------
     // Find the player.
     //--------------------------------------------------
 
-    Entity* player = getPlayerEntity(
-        dungeon.entities,
-        dungeon.entityCount);
+    Entity* player = getPlayerEntityByOwner(
+        dungeon.entities, dungeon.entityCount, ownerPlayerID);
+    if (player == nullptr && ownerPlayerID == SINGLE_PLAYER_ID)
+        player = getPlayerEntity(dungeon.entities, dungeon.entityCount);
 
     if (player == nullptr)
         return false;
@@ -286,13 +312,13 @@ bool tryMovePlayer(Dungeon &dungeon)
 
     int oldX = player->x;
     int oldY = player->y;
-    Direction oldDirection = moveDirection;
+    Direction oldDirection = direction;
 
     int targetX =
-        player->x + directionOffsets[moveDirection].dx;
+        player->x + directionOffsets[direction].dx;
 
     int targetY =
-        player->y + directionOffsets[moveDirection].dy;
+        player->y + directionOffsets[direction].dy;
 
     if (combat.active &&
         (!combat.waitingForPlayer ||
@@ -334,6 +360,28 @@ bool tryMovePlayer(Dungeon &dungeon)
         targetX,
         targetY);
 
+    if (isMultiplayerExplorationActive())
+    {
+        if (targetEntity != nullptr && targetEntity != player)
+        {
+            setGameMessage(targetEntity->type == ENTITY_MONSTER
+                ? "Multiplayer combat arrives in Stage 3."
+                : "That interaction is unavailable in multiplayer.");
+            playSound(SoundEffect::BUMP);
+            return false;
+        }
+
+        const bool ordinaryTerrain = tile == TILE_FLOOR || tile == TILE_RUBBLE;
+        const bool safeDoor = tile == TILE_DOOR && allowRoomTransition;
+        if ((!ordinaryTerrain && !safeDoor) ||
+            (ordinaryTerrain && getTrapAt(room, targetX, targetY) != nullptr))
+        {
+            setGameMessage("That interaction is unavailable in multiplayer.");
+            playSound(SoundEffect::BUMP);
+            return false;
+        }
+    }
+
     if (targetEntity != nullptr && targetEntity != player &&
         targetEntity->type == ENTITY_PUZZLE_KEY)
     {
@@ -366,6 +414,12 @@ bool tryMovePlayer(Dungeon &dungeon)
         targetEntity->type == ENTITY_MONSTER &&
         targetEntity->character.state == STATE_ALIVE)
     {
+        if (isMultiplayerExplorationActive())
+        {
+            setGameMessage("Multiplayer combat arrives in Stage 3.");
+            playSound(SoundEffect::BUMP);
+            return false;
+        }
         if (!targetEntity->revealedToPlayer)
         {
             targetEntity->revealedToPlayer = true;
@@ -381,8 +435,15 @@ bool tryMovePlayer(Dungeon &dungeon)
             oldX,
             oldY,
             oldDirection,
-            directionOffsets[moveDirection].dx,
-            directionOffsets[moveDirection].dy);
+            directionOffsets[direction].dx,
+            directionOffsets[direction].dy);
+    }
+
+    if (targetEntity != nullptr && targetEntity != player &&
+        targetEntity->type == ENTITY_PLAYER)
+    {
+        playSound(SoundEffect::BUMP);
+        return false;
     }
 
     if (targetEntity != nullptr && targetEntity != player &&
@@ -421,8 +482,8 @@ bool tryMovePlayer(Dungeon &dungeon)
                     *player,
                     targetX,
                     targetY,
-                    directionOffsets[moveDirection].dx,
-                    directionOffsets[moveDirection].dy,
+                    directionOffsets[direction].dx,
+                    directionOffsets[direction].dy,
                     strengthTotal);
 
                 if (pushResult != FURNITURE_PUSH_SUCCEEDED)
@@ -443,8 +504,8 @@ bool tryMovePlayer(Dungeon &dungeon)
                     : "You push the barrel.");
                 markTileDirty(targetX, targetY);
                 markTileDirty(
-                    targetX + directionOffsets[moveDirection].dx,
-                    targetY + directionOffsets[moveDirection].dy);
+                    targetX + directionOffsets[direction].dx,
+                    targetY + directionOffsets[direction].dy);
                 tile = TILE_FLOOR;
             }
 
@@ -503,12 +564,12 @@ bool tryMovePlayer(Dungeon &dungeon)
                 oldY + directionOffsets[oldDirection].dy);
 
             markTileDirty(
-                player->x + directionOffsets[moveDirection].dx,
-                player->y + directionOffsets[moveDirection].dy);
+                player->x + directionOffsets[direction].dx,
+                player->y + directionOffsets[direction].dy);
 
             // This detector reads the active map, so the dungeon now uses
             // the same range and line-of-sight rules as the forest.
-            checkForCombat();
+            if (!isMultiplayerExplorationActive()) checkForCombat();
 
             return true;
         }
@@ -536,6 +597,11 @@ bool tryMovePlayer(Dungeon &dungeon)
 
         case TILE_DOOR:
         {
+            if (!allowRoomTransition)
+            {
+                playSound(SoundEffect::BUMP);
+                return false;
+            }
             // Leaving the room while combat owns the current entity list
             // would discard its combatants. Forest exploration has no room
             // transition escape route, so keep dungeon combat locked to the
@@ -629,6 +695,8 @@ bool tryMovePlayer(Dungeon &dungeon)
                 redrawType = REDRAW_FULL;
                 needsRedraw = true;
 
+                roomChanged = true;
+
                 return true;
             }
 
@@ -646,23 +714,8 @@ bool tryMovePlayer(Dungeon &dungeon)
     return false;
 }
 
-static bool tryMoveForestPlayer()
+static bool tryMoveForestPlayer(Entity* player, Direction direction)
 {
-    Entity* player = nullptr;
-
-    if (gameState == GAME_FOREST)
-    {
-        player = getPlayerEntity(
-            forestEntities,
-            forestEntityCount);
-    }
-    else if (gameState == GAME_DUNGEON)
-    {
-        player = getPlayerEntity(
-            dungeon.entities,
-            dungeon.entityCount);
-    }
-
     if (player == nullptr)
         return false;
 
@@ -677,22 +730,22 @@ static bool tryMoveForestPlayer()
     //--------------------------------------------------
 
     markTileDirty(
-        player->x + directionOffsets[previousMoveDirection].dx,
-        player->y + directionOffsets[previousMoveDirection].dy);
+        player->x + directionOffsets[direction].dx,
+        player->y + directionOffsets[direction].dy);
 
     markTileDirty(
-        player->x + directionOffsets[moveDirection].dx,
-        player->y + directionOffsets[moveDirection].dy);
+        player->x + directionOffsets[direction].dx,
+        player->y + directionOffsets[direction].dy);
 
     int oldX = player->x;
     int oldY = player->y;
-    Direction oldDirection = moveDirection;
+    Direction oldDirection = direction;
 
     int targetX =
-        player->x + directionOffsets[moveDirection].dx;
+        player->x + directionOffsets[direction].dx;
 
     int targetY =
-        player->y + directionOffsets[moveDirection].dy;
+        player->y + directionOffsets[direction].dy;
 
     if (combat.active &&
         (!combat.waitingForPlayer ||
@@ -781,8 +834,8 @@ static bool tryMoveForestPlayer()
         oldY + directionOffsets[oldDirection].dy);
 
     markTileDirty(
-        player->x + directionOffsets[moveDirection].dx,
-        player->y + directionOffsets[moveDirection].dy);
+        player->x + directionOffsets[direction].dx,
+        player->y + directionOffsets[direction].dy);
 
     Serial.print("Player moved to: ");
     Serial.print(player->x);
@@ -793,7 +846,7 @@ static bool tryMoveForestPlayer()
     // Enter combat if enemies are nearby.
     //--------------------------------------------------
 
-    checkForCombat();
+    if (!isMultiplayerExplorationActive()) checkForCombat();
 
     return true;
 }
@@ -830,7 +883,7 @@ bool canPlayerMoveTo(int x, int y)
     y);
 
     if (entity != nullptr &&
-        entity->type == ENTITY_MONSTER)
+        (entity->type == ENTITY_MONSTER || entity->type == ENTITY_PLAYER))
     {
         return false;
     }

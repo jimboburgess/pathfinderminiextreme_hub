@@ -240,6 +240,20 @@ bool MultiplayerSession::sendGameplayPacketToHost(
                         packetType, payload, payloadSize, flags);
 }
 
+bool MultiplayerSession::sendGameplayPacketToPlayer(
+    PlayerID playerID,
+    NetworkPacketType packetType,
+    const uint8_t* payload,
+    size_t payloadSize,
+    uint8_t flags)
+{
+    return isHost() && isValidPlayerID(playerID) &&
+           playerID != HOST_PLAYER_ID && isGameplayPacketType(packetType) &&
+           members[playerID].member.occupied &&
+           sendPacketTo(members[playerID].address, packetType,
+                        payload, payloadSize, flags);
+}
+
 bool MultiplayerSession::broadcastAuthoritativeGameplayPacket(
     NetworkPacketType packetType,
     const uint8_t* payload,

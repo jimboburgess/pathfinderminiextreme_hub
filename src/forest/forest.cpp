@@ -135,6 +135,26 @@ TileType getForestTile(int x, int y){
     return forestMap[y][x];
 }
 
+bool setForestTileAuthoritative(int x, int y, TileType tile)
+{
+    if (x < 0 || x >= FOREST_WIDTH || y < 0 || y >= FOREST_HEIGHT)
+        return false;
+    forestMap[y][x] = tile;
+    return true;
+}
+
+void beginAuthoritativeForest()
+{
+    abortCombat();
+    clearMapEffects();
+    clearEntities(forestEntities, forestEntityCount);
+    gameState = GAME_FOREST;
+    resetAwarenessTimer();
+    backgroundNeedsRedraw = true;
+    redrawType = REDRAW_FULL;
+    needsRedraw = true;
+}
+
 static void initForest()
 {
     clearMapEffects();

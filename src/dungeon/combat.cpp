@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "map/activemap.h"
+#include "multiplayer/multiplayer_activity.h"
 #include "abilityresolver.h"
 #include "combatpolicy.h"
 #include "loot.h"
@@ -1458,6 +1459,11 @@ bool isPlayerTurn()
 
 void startCombat()
 {
+    if (isMultiplayerExplorationActive())
+    {
+        setGameMessage("Multiplayer combat arrives in Stage 3.");
+        return;
+    }
     Entity* player = getActiveMapPlayer();
     if (player == nullptr || player->character.health.currentHP <= 0 ||
         player->character.state != STATE_ALIVE)

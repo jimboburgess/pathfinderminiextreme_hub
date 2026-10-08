@@ -7,6 +7,7 @@
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "map/movement.h"
+#include "multiplayer/multiplayer_session.h"
 
 namespace
 {
@@ -39,9 +40,14 @@ Entity* getActiveMapPlayer()
     uint8_t entityCount = 0;
     Entity* entities = getActiveMapEntities(entityCount);
 
-    return entities != nullptr
-        ? getPlayerEntity(entities, entityCount)
-        : nullptr;
+    if (entities == nullptr) return nullptr;
+    if (multiplayerSession.isActive())
+    {
+        Entity* local = getPlayerEntityByOwner(
+            entities, entityCount, multiplayerSession.getLocalPlayerID());
+        if (local != nullptr) return local;
+    }
+    return getPlayerEntity(entities, entityCount);
 }
 
 int getActiveMapWidth()

@@ -8,6 +8,7 @@
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
 #include "multiplayer_session.h"
+#include "multiplayer_activity.h"
 
 namespace
 {
@@ -34,16 +35,15 @@ void initializeMultiplayerRuntime()
 {
     refreshLocalProfile();
     multiplayerSession.begin();
+    initializeMultiplayerActivity();
 }
 
 void updateMultiplayerRuntime()
 {
     refreshLocalProfile();
     multiplayerSession.update(millis(), currentAvailability());
+    updateMultiplayerActivity(millis());
 
-    // Stage 1 still has one player entity, so the legacy lookup is safe here.
-    // Stage 2 will replace it with an owner-aware local-player lookup once
-    // remote player entities are instantiated on the active map.
     Entity* localPlayerEntity = getActiveMapPlayer();
     if (localPlayerEntity != nullptr)
         localPlayerEntity->ownerPlayerID =

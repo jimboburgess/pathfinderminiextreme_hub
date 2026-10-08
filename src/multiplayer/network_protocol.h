@@ -6,7 +6,7 @@
 
 #include "multiplayer_types.h"
 
-constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 1;
+constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 2;
 constexpr uint16_t MULTIPLAYER_PACKET_MAGIC = 0x504D;
 constexpr size_t ESPNOW_MAX_PACKET_SIZE = 250;
 constexpr size_t NETWORK_PACKET_HEADER_SIZE = 14;
@@ -17,13 +17,18 @@ constexpr uint8_t NETWORK_CHARACTER_CLASS_COUNT = 4;
 constexpr uint16_t DUNGEON_GENERATION_VERSION = 1;
 constexpr size_t NETWORK_PLAYER_PROFILE_SIZE = 22;
 constexpr size_t DISCOVERY_BEACON_PAYLOAD_SIZE = 24;
-constexpr size_t PLAYER_MOVE_REQUEST_PAYLOAD_SIZE = 3;
-constexpr size_t PLAYER_POSITION_PAYLOAD_SIZE = 6;
-constexpr size_t PLAYER_ROOM_CHANGE_PAYLOAD_SIZE = 7;
+constexpr size_t NETWORK_CHARACTER_STATE_SIZE = 30;
+constexpr size_t PLAYER_MOVE_REQUEST_PAYLOAD_SIZE = 7;
+constexpr size_t PLAYER_POSITION_PAYLOAD_SIZE = 11;
+constexpr size_t PLAYER_ROOM_CHANGE_PAYLOAD_SIZE = 11;
+constexpr size_t SNAPSHOT_CHUNK_DATA_SIZE = 200;
+constexpr uint8_t MAX_SNAPSHOT_CHUNKS = 4;
+constexpr uint8_t NETWORK_NO_ROOM = UINT8_MAX;
+constexpr uint8_t NETWORK_MAX_DUNGEON_ROOMS = 12;
 
 static_assert(NETWORK_PACKET_HEADER_SIZE == 14,
               "Network header wire size changed unexpectedly");
-static_assert(PLAYER_POSITION_PAYLOAD_SIZE <= 8,
+static_assert(PLAYER_POSITION_PAYLOAD_SIZE <= 12,
               "Authoritative movement updates must remain very small");
 
 enum class NetworkPacketType : uint8_t
@@ -36,9 +41,25 @@ enum class NetworkPacketType : uint8_t
     PLAYER_LEFT,
     HEARTBEAT,
 
+    TRAVEL_INVITE,
+    TRAVEL_ACCEPT,
+    TRAVEL_DECLINE,
+    ACTIVITY_PREPARE,
+    ACTIVITY_READY,
+    ACTIVITY_START,
+    ACTIVITY_LEAVE,
+    ACTIVITY_END,
+
     DUNGEON_BEGIN = 16,
-    DUNGEON_STATE,
-    ROOM_STATE,
+    DUNGEON_GRAPH,
+    SNAPSHOT_CHUNK,
+    FOREST_BEGIN,
+    PLAYER_CHARACTER_STATE,
+    PLAYER_SPAWN,
+    PLAYER_DESPAWN,
+    ROOM_TRANSITION,
+    ROOM_READY,
+    ACK,
 
     PLAYER_MOVE_REQUEST = 32,
     PLAYER_POSITION,
@@ -100,6 +121,30 @@ enum class DungeonSyncMode : uint8_t
     AUTHORITATIVE_GRAPH_AND_ROOM_STATE = 1
 };
 
+enum class MultiplayerActivityType : uint8_t
+{
+    NONE,
+    FOREST,
+    DUNGEON
+};
+
+enum class MultiplayerMemberLocation : uint8_t
+{
+    TOWN,
+    CONNECTING,
+    FOREST,
+    DUNGEON,
+    DISCONNECTED
+};
+
+enum class SnapshotType : uint8_t
+{
+    DUNGEON_GRAPH = 1,
+    FOREST_STATE,
+    DUNGEON_ROOM,
+    DUNGEON_ROOM_DETAIL
+};
+
 struct NetworkPacketHeader
 {
     uint16_t magic = MULTIPLAYER_PACKET_MAGIC;
@@ -157,32 +202,123 @@ struct PlayerLeftPayload
 
 struct DungeonBeginPayload
 {
+    uint32_t activityID = 0;
     DungeonSyncMode syncMode =
         DungeonSyncMode::AUTHORITATIVE_GRAPH_AND_ROOM_STATE;
     uint16_t generationVersion = DUNGEON_GENERATION_VERSION;
     uint32_t generationSeed = 0;
     uint8_t roomCount = 0;
+    uint8_t entranceRoom = 0;
+    uint16_t snapshotEpoch = 0;
+};
+
+struct NetworkCharacterState
+{
+    PlayerID playerID = INVALID_PLAYER_ID;
+    char displayName[NETWORK_PLAYER_NAME_SIZE] = {};
+    uint8_t characterClass = 0;
+    uint8_t level = 0;
+    int16_t currentHP = 0;
+    int16_t maxHP = 0;
+    uint8_t abilityScores[6] = {};
+    uint8_t speed = 0;
+};
+
+struct TravelInvitePayload
+{
+    uint32_t activityID = 0;
+    MultiplayerActivityType activityType = MultiplayerActivityType::NONE;
+    PlayerID hostPlayerID = HOST_PLAYER_ID;
+};
+
+struct TravelResponsePayload
+{
+    uint32_t activityID = 0;
+    NetworkCharacterState character{};
+};
+
+struct ActivityPreparePayload
+{
+    uint32_t activityID = 0;
+    MultiplayerActivityType activityType = MultiplayerActivityType::NONE;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    uint16_t snapshotEpoch = 0;
+    uint8_t participantMask = 0;
+    uint8_t graphChunkCount = 0;
+    uint8_t detailChunkCount = 0;
+    uint8_t worldChunkCount = 0;
+};
+
+struct ActivityReadyPayload
+{
+    uint32_t activityID = 0;
+    uint16_t snapshotEpoch = 0;
+};
+
+struct ActivityMemberPayload
+{
+    uint32_t activityID = 0;
+    PlayerID playerID = INVALID_PLAYER_ID;
+};
+
+struct PlayerSpawnPayload
+{
+    uint32_t activityID = 0;
+    PlayerID playerID = INVALID_PLAYER_ID;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    uint8_t x = 0;
+    uint8_t y = 0;
+};
+
+struct PlayerCharacterStatePayload
+{
+    uint32_t activityID = 0;
+    NetworkCharacterState character{};
+};
+
+struct SnapshotChunkPayload
+{
+    uint32_t activityID = 0;
+    SnapshotType snapshotType = SnapshotType::FOREST_STATE;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    uint16_t snapshotEpoch = 0;
+    uint8_t chunkIndex = 0;
+    uint8_t totalChunks = 0;
+    uint8_t payloadLength = 0;
+    uint8_t payload[SNAPSHOT_CHUNK_DATA_SIZE] = {};
+};
+
+struct RoomTransitionPayload
+{
+    uint32_t activityID = 0;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    uint8_t entryDirection = 0;
+    uint16_t snapshotEpoch = 0;
 };
 
 struct PlayerMoveRequestPayload
 {
+    uint32_t activityID = 0;
     uint8_t direction = 0;
     uint16_t clientMovementSequence = 0;
 };
 
 struct PlayerPositionPayload
 {
+    uint32_t activityID = 0;
     PlayerID playerID = INVALID_PLAYER_ID;
-    uint8_t roomID = 0;
+    uint8_t roomID = NETWORK_NO_ROOM;
     uint8_t x = 0;
     uint8_t y = 0;
+    uint8_t facing = 0;
     uint16_t movementSequence = 0;
 };
 
 struct PlayerRoomChangePayload
 {
+    uint32_t activityID = 0;
     PlayerID playerID = INVALID_PLAYER_ID;
-    uint8_t roomID = 0;
+    uint8_t roomID = NETWORK_NO_ROOM;
     uint8_t entryDirection = 0;
     uint8_t x = 0;
     uint8_t y = 0;
@@ -270,6 +406,46 @@ bool decodePlayerLeft(
     const uint8_t* data,
     size_t size,
     PlayerLeftPayload& payload);
+bool encodeTravelInvite(const TravelInvitePayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeTravelInvite(const uint8_t* data, size_t size,
+    TravelInvitePayload& payload);
+bool encodeTravelResponse(const TravelResponsePayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeTravelResponse(const uint8_t* data, size_t size,
+    TravelResponsePayload& payload);
+bool encodeActivityPrepare(const ActivityPreparePayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeActivityPrepare(const uint8_t* data, size_t size,
+    ActivityPreparePayload& payload);
+bool encodeActivityReady(const ActivityReadyPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeActivityReady(const uint8_t* data, size_t size,
+    ActivityReadyPayload& payload);
+bool encodeActivityMember(const ActivityMemberPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeActivityMember(const uint8_t* data, size_t size,
+    ActivityMemberPayload& payload);
+bool encodeNetworkCharacterState(const NetworkCharacterState& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeNetworkCharacterState(const uint8_t* data, size_t size,
+    NetworkCharacterState& payload);
+bool encodePlayerCharacterState(const PlayerCharacterStatePayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodePlayerCharacterState(const uint8_t* data, size_t size,
+    PlayerCharacterStatePayload& payload);
+bool encodePlayerSpawn(const PlayerSpawnPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodePlayerSpawn(const uint8_t* data, size_t size,
+    PlayerSpawnPayload& payload);
+bool encodeSnapshotChunk(const SnapshotChunkPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeSnapshotChunk(const uint8_t* data, size_t size,
+    SnapshotChunkPayload& payload);
+bool encodeRoomTransition(const RoomTransitionPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeRoomTransition(const uint8_t* data, size_t size,
+    RoomTransitionPayload& payload);
 bool encodeDungeonBegin(
     const DungeonBeginPayload& payload,
     uint8_t* destination,

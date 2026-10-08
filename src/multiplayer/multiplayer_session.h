@@ -68,6 +68,12 @@ public:
         const uint8_t* payload,
         size_t payloadSize,
         uint8_t flags = NETWORK_FLAG_NONE);
+    bool sendGameplayPacketToPlayer(
+        PlayerID playerID,
+        NetworkPacketType packetType,
+        const uint8_t* payload,
+        size_t payloadSize,
+        uint8_t flags = NETWORK_FLAG_NONE);
     bool broadcastAuthoritativeGameplayPacket(
         NetworkPacketType packetType,
         const uint8_t* payload,

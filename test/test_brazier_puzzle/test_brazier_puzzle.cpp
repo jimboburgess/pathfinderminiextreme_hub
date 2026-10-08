@@ -9,11 +9,11 @@ Dungeon dungeon{};
 
 static_assert(sizeof(BrazierPuzzleState) == 8, "Brazier state grew");
 static_assert(sizeof(DungeonRoom) == 768, "Unexpected persistent room size");
-static_assert(sizeof(DungeonRoomRuntime) == 16072,
+static_assert(sizeof(DungeonRoomRuntime) == 16136,
               "Brazier puzzle must not grow room runtime state");
 static_assert(sizeof(DungeonFurnitureInstance) == 6,
               "Brazier puzzle must not grow furniture instances");
-static_assert(sizeof(Entity) == 1004,
+static_assert(sizeof(Entity) == 1008,
               "Brazier puzzle must not grow Entity");
 
 namespace

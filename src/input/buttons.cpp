@@ -21,6 +21,7 @@
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "town/town.h"
+#include "multiplayer/multiplayer_activity.h"
 #include "town/shop.h"
 #include "data/savegame.h"
 #include "data/settings.h"
@@ -500,7 +501,7 @@ void handleTownButtons() {
                     openCharacterSheet();
                     break;
 
-                case TOWN_HOME_MULTIPLAYER:
+                case TOWN_HOME_BULLETIN_BOARD:
                     openMultiplayerMenu();
                     break;
 
@@ -543,7 +544,9 @@ void handleTownButtons() {
         switch (townSelection)
         {
             case TOWN_FOREST:
-                enterForest();
+                if (!requestMultiplayerTravel(
+                        MultiplayerActivityType::FOREST))
+                    enterForest();
                 break;
 
             case TOWN_STAY_HOME:
@@ -553,7 +556,8 @@ void handleTownButtons() {
             case TOWN_DUNGEON:
                 if (hasResumableDungeon(dungeon))
                     openDungeonEntryMenu();
-                else
+                else if (!requestMultiplayerTravel(
+                             MultiplayerActivityType::DUNGEON))
                     enterDungeon();
                 break;
 
@@ -788,6 +792,15 @@ void handleMapButtons()
     //--------------------------------------------------
     if (buttonAPressed())
     {
+            if (isMultiplayerExplorationActive())
+            {
+                setGameMessage(
+                    "World interactions are paused in multiplayer.");
+                openMenu(&mainMenu);
+                menuState.redrawType = MENU_REDRAW_FULL;
+                return;
+            }
+
             Entity* activePlayer = getActiveMapPlayer();
             if (activePlayer != nullptr &&
                 (activePlayer->character.health.currentHP <= 0 ||
