@@ -501,10 +501,6 @@ void handleTownButtons() {
                     openCharacterSheet();
                     break;
 
-                case TOWN_HOME_BULLETIN_BOARD:
-                    openMultiplayerMenu();
-                    break;
-
                 case TOWN_HOME_BACK:
                     closeTownHome();
                     break;
@@ -563,6 +559,10 @@ void handleTownButtons() {
 
             case TOWN_SHOP:
                 openTownShop();
+                break;
+
+            case TOWN_BULLETIN_BOARD:
+                openMultiplayerMenu();
                 break;
         }
     }

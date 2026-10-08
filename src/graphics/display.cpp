@@ -324,11 +324,6 @@ void drawTownScreen()
         tft.print("Character Sheet");
 
         tft.setCursor(20, 155);
-        tft.print(getTownHomeSelection() == TOWN_HOME_BULLETIN_BOARD
-            ? "> " : "  ");
-        tft.print("Bulletin Board");
-
-        tft.setCursor(20, 185);
         tft.print(getTownHomeSelection() == TOWN_HOME_BACK ? "> " : "  ");
         tft.print("Back");
 
@@ -361,13 +356,17 @@ void drawTownScreen()
     tft.print("Shop");
 
     tft.setCursor(20, 150);
+    tft.print(townSelection == TOWN_BULLETIN_BOARD ? "> " : "  ");
+    tft.print("Bulletin Board");
+
+    tft.setCursor(20, 180);
     tft.print(townSelection == TOWN_STAY_HOME ? "> " : "  ");
     tft.print("Stay Home");
 
     if (townSelection == TOWN_STAY_HOME)
     {
         tft.setTextSize(1);
-        tft.setCursor(18, 205);
+        tft.setCursor(18, 215);
         tft.print("\"It's dangerous out there.\"");
     }
 }
