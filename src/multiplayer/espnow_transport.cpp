@@ -11,8 +11,8 @@
 
 namespace
 {
-// Six frames cover JOIN_ACCEPT, the full four-player roster, and a coincident
-// beacon while remaining bounded in already-constrained internal RAM.
+// Activity snapshots are paced one acknowledged frame at a time. Six slots
+// still cover control traffic without spending another full frame per slot.
 constexpr uint8_t RECEIVE_QUEUE_LENGTH = 6;
 constexpr uint8_t BROADCAST_ADDRESS_BYTES[6] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -22,6 +22,17 @@ uint8_t receiveQueueStorage[
     RECEIVE_QUEUE_LENGTH * sizeof(ReceivedNetworkFrame)] = {};
 QueueHandle_t receiveQueue = nullptr;
 volatile uint32_t droppedReceiveCount = 0;
+volatile uint32_t immediateSendFailureCount = 0;
+volatile uint32_t sendCompletionSuccessCount = 0;
+volatile uint32_t sendCompletionFailureCount = 0;
+
+void onEspNowSend(const uint8_t*, esp_now_send_status_t status)
+{
+    if (status == ESP_NOW_SEND_SUCCESS)
+        ++sendCompletionSuccessCount;
+    else
+        ++sendCompletionFailureCount;
+}
 
 void onEspNowReceive(
     const uint8_t* senderAddress,
@@ -75,6 +86,11 @@ bool EspNowTransport::begin()
         esp_now_deinit();
         return false;
     }
+    if (esp_now_register_send_cb(onEspNowSend) != ESP_OK)
+    {
+        esp_now_deinit();
+        return false;
+    }
 
     uint8_t rawAddress[6] = {};
     if (esp_wifi_get_mac(WIFI_IF_STA, rawAddress) != ESP_OK)
@@ -113,10 +129,12 @@ bool EspNowTransport::sendTo(
         size > ESPNOW_MAX_PACKET_SIZE || !addPeer(destination))
         return false;
 
-    return esp_now_send(
+    const esp_err_t result = esp_now_send(
         destination.bytes,
         data,
-        static_cast<int>(size)) == ESP_OK;
+        static_cast<int>(size));
+    if (result != ESP_OK) ++immediateSendFailureCount;
+    return result == ESP_OK;
 }
 
 bool EspNowTransport::receive(ReceivedNetworkFrame& frame)
@@ -152,4 +170,24 @@ TransportAddress EspNowTransport::getLocalAddress() const
 uint32_t EspNowTransport::getDroppedReceiveCount() const
 {
     return droppedReceiveCount;
+}
+
+uint32_t EspNowTransport::getImmediateSendFailureCount() const
+{
+    return immediateSendFailureCount;
+}
+
+uint32_t EspNowTransport::getSendCompletionSuccessCount() const
+{
+    return sendCompletionSuccessCount;
+}
+
+uint32_t EspNowTransport::getSendCompletionFailureCount() const
+{
+    return sendCompletionFailureCount;
+}
+
+uint8_t EspNowTransport::getReceiveQueueCapacity() const
+{
+    return RECEIVE_QUEUE_LENGTH;
 }

@@ -41,7 +41,23 @@ bool acceptSnapshotChunk(
     uint8_t expectedRoomID,
     uint16_t expectedEpoch,
     uint8_t expectedChunkCount);
+bool isDuplicateSnapshotChunk(
+    const BoundedSnapshotReceiver& receiver,
+    const SnapshotChunkPayload& chunk);
 bool isSnapshotComplete(const BoundedSnapshotReceiver& receiver);
+bool activityAcksMatch(
+    const ActivityAckPayload& expected,
+    const ActivityAckPayload& received);
+bool isDuplicateTravelInvitation(
+    uint32_t currentActivityID,
+    MultiplayerActivityType currentType,
+    bool pending,
+    bool accepted,
+    bool declined,
+    const TravelInvitePayload& incoming);
+bool shouldResetActivitySnapshot(
+    uint16_t currentEpoch,
+    uint16_t incomingEpoch);
 
 void initializeMultiplayerActivity();
 void updateMultiplayerActivity(uint32_t now);

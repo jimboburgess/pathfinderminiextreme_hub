@@ -25,6 +25,8 @@
 #include "graphics/tiles.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
+#include "multiplayer/multiplayer_activity.h"
+#include "multiplayer/multiplayer_session.h"
 #include "town/town.h"
 
 
@@ -298,6 +300,21 @@ void drawTownScreen()
     if (isCharacterSheetVisible())
     {
         drawCharacterSheet();
+        return;
+    }
+
+    if (multiplayerSession.isClient() && isMultiplayerActivityLoading() &&
+        isLocalActivityParticipant())
+    {
+        tft.fillScreen(ST77XX_BLACK);
+        tft.setTextColor(ST77XX_WHITE);
+        tft.setTextSize(2);
+        tft.setCursor(28, 78);
+        tft.print(getMultiplayerActivityType() == MultiplayerActivityType::DUNGEON
+            ? "Joining Dungeon..." : "Joining Forest...");
+        tft.setTextSize(1);
+        tft.setCursor(66, 125);
+        tft.print("Receiving area...");
         return;
     }
 

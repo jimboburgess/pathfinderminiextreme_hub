@@ -10,7 +10,7 @@ The Bulletin Board uses the existing menu stack and presents `Host Party`, `Near
 
 When the host selects Forest or Dungeon with connected party members, the host sends a session-scoped travel invitation. Clients explicitly choose Join or Stay in Town. A decline does not leave the party. Accepted clients receive the authoritative activity preparation data, report ready, and wait for the host's activity-start event before movement is enabled.
 
-Travel responses, activity preparation/start/end, character state, spawn/despawn, snapshots, and room transitions use bounded retries or repeated idempotent events. Movement requests and positions are latest-wins events and are not retransmitted indefinitely.
+Travel responses, activity preparation/start/end, character state, spawn/despawn, snapshots, and room transitions use bounded retries or repeated idempotent events. Duplicate travel invitations for the same activity are invisible and never reopen the prompt. Movement requests and positions are latest-wins events and are not retransmitted indefinitely.
 
 ## Forest Synchronization
 
@@ -29,7 +29,11 @@ Only the active room is inflated. Inactive rooms retain the existing compact dun
 
 ## Snapshot Protocol
 
-Each snapshot chunk carries its snapshot type, activity ID, room ID, epoch, chunk index, total chunk count, payload length, and at most 200 payload bytes. The receiver uses one fixed 384-byte workspace. It rejects wrong activities, room IDs, epochs, chunk counts, out-of-range indexes, oversized data, malformed intermediate chunks, and conflicting duplicates. Identical duplicates are idempotent. An incomplete transfer never starts gameplay; the host retries the bounded bundle and fails that participant safely after the retry limit.
+Each snapshot chunk carries its snapshot type, activity ID, room ID, epoch, chunk index, total chunk count, payload length, and at most 200 payload bytes. The receiver uses one fixed 384-byte workspace. It rejects wrong activities, room IDs, epochs, chunk counts, out-of-range indexes, oversized data, malformed intermediate chunks, and conflicting duplicates. Identical duplicates are idempotent.
+
+Activity loading uses application-level stop-and-wait reliability. Only one important synchronization frame is in flight across the activity. The client validates and acknowledges `ACTIVITY_PREPARE`, area/transition begin, each character state, each snapshot chunk, and each player spawn. An ACK identifies the activity, epoch, packet type, snapshot type, room, player/item index, and chunk index. A lost frame or lost ACK causes only that item to be regenerated and resent. Duplicate chunks are acknowledged again without changing accepted state. `ACTIVITY_START` is repeated and acknowledged idempotently. Transfers use bounded per-item retries plus a 30-second overall loading timeout.
+
+The ESP-NOW MAC send callback records delivery success/failure for diagnostics but does not replace application ACKs. The receive queue remains six frames because pacing limits synchronization to one in-flight application frame; increasing it would spend roughly another full ESP-NOW frame of internal RAM per slot without addressing the original burst behavior.
 
 No PSRAM allocation was added. There is no full Dungeon duplicate, all-room expansion, dynamic network `String`, giant packet array, or permanent retransmission cache.
 
@@ -53,7 +57,26 @@ Player entities block each other. The first valid host-authoritative move wins; 
 
 ## Memory Strategy
 
-Stage 2 adds one 384-byte receive/scratch buffer plus compact participant state. Packet payloads are stack-local and never exceed ESP-NOW limits. No Stage 2 allocation uses PSRAM. Exact final firmware RAM and flash figures are recorded in the implementation handoff after a clean PlatformIO build.
+Stage 2 adds one 384-byte receive/scratch buffer plus compact participant and reliable-transfer cursors. It does not retain transmitted frame copies: retries regenerate the current packet from authoritative state. Packet payloads are stack-local and never exceed ESP-NOW limits. No Stage 2 allocation uses PSRAM. Exact final firmware RAM and flash figures are recorded in the implementation handoff after a clean PlatformIO build.
+
+## Hardware Reliability Correction
+
+Initial two-device testing exposed two related problems. Repeated `TRAVEL_INVITE` packets reopened the same menu, resetting its cursor and repainting the display. The client now recognizes the same activity/type while pending, accepted, or declined and ignores the duplicate. Travel responses retry independently, so invitation reliability no longer depends on reopening the prompt.
+
+The original loader transmitted roughly a dozen preparation, character, graph, room, world, and spawn packets immediately into a six-frame receive queue. `esp_now_send()` returning `ESP_OK` only confirmed local submission, so a dropped queued frame left the client incomplete until another full burst repeated the failure. Loading now uses the stop-and-wait protocol described above. `MULTIPLAYER_DEBUG=1` prints receive drops, immediate send failures, MAC completion success/failure, reliable retries, duplicate/rejected chunks, transfer identities, and explicit client load blockers.
+
+### Two-Device Reliability Retest
+
+1. Build the same protocol-version firmware for both devices; optionally enable `MULTIPLAYER_DEBUG=1` on both.
+2. Host on Device A, join from Device B, and verify both remain listed in Party Status.
+3. Select Explore Dungeon on A and leave B's invitation visible for at least five host retries.
+4. Rotate B's cursor to `Stay in Town` and back; verify the cursor stays in place and the prompt never flashes or grows the menu stack.
+5. Select Join on B and verify one stable `Joining Dungeon... / Receiving area...` display.
+6. Observe A sending one reliable item at a time and B acknowledging prepare, begin, character states, graph/detail/world chunks, and spawns.
+7. Temporarily increase distance or briefly shield one device to induce a retry; verify only the current item repeats and duplicate chunks are acknowledged safely.
+8. Verify B changes to the dungeon map, both devices show the same entrance room, and both player entities are visible on distinct tiles.
+9. Verify Party Status reports both players in Dungeon and movement still works in both directions.
+10. If loading is deliberately made to fail for over 30 seconds, verify B returns to Town, remains in the party, and A reports that B could not load the dungeon.
 
 ## Two-Device Hardware Test
 

@@ -37,11 +37,16 @@ namespace
 {
 constexpr uint32_t INVITE_RETRY_MS = 750;
 constexpr uint32_t INVITE_TIMEOUT_MS = 8000;
-constexpr uint32_t SNAPSHOT_RETRY_MS = 600;
-constexpr uint8_t SNAPSHOT_RETRY_LIMIT = 8;
+constexpr uint32_t TRAVEL_RESPONSE_RETRY_MS = 750;
+constexpr uint32_t TRAVEL_RESPONSE_TIMEOUT_MS = 10000;
+constexpr uint32_t RELIABLE_ACK_TIMEOUT_MS = 180;
+constexpr uint32_t RELIABLE_SEND_GAP_MS = 15;
+constexpr uint32_t ACTIVITY_LOAD_TIMEOUT_MS = 30000;
+constexpr uint8_t RELIABLE_RETRY_LIMIT = 12;
 constexpr uint32_t READY_RETRY_MS = 500;
 constexpr uint32_t START_REPEAT_MS = 700;
 constexpr uint8_t START_REPEAT_COUNT = 4;
+constexpr uint32_t DEBUG_SUMMARY_INTERVAL_MS = 5000;
 constexpr uint8_t WORLD_SNAPSHOT_VERSION = 1;
 constexpr uint8_t DUNGEON_GRAPH_VERSION = 1;
 constexpr uint8_t WORLD_ENTITY_RECORD_SIZE = 10;
@@ -54,6 +59,18 @@ enum class ActivityPhase : uint8_t
     ACTIVE
 };
 
+enum class SyncStage : uint8_t
+{
+    PREPARE,
+    BEGIN,
+    CHARACTERS,
+    GRAPH,
+    DETAIL,
+    WORLD,
+    SPAWNS,
+    COMPLETE
+};
+
 struct Participant
 {
     bool invited = false;
@@ -63,11 +80,16 @@ struct Participant
     bool characterReceived = false;
     bool spawnReceived = false;
     bool hasMoveSequence = false;
+    bool startAcked = false;
     uint16_t lastMoveSequence = 0;
     NetworkCharacterState character{};
     PlayerSpawnPayload spawn{};
-    uint8_t syncAttempts = 0;
-    uint32_t lastSyncAt = 0;
+    SyncStage syncStage = SyncStage::PREPARE;
+    uint8_t syncItem = 0;
+    uint8_t retryCount = 0;
+    bool awaitingAck = false;
+    uint32_t lastSendAt = 0;
+    ActivityAckPayload expectedAck{};
 };
 
 struct ActivityRuntime
@@ -85,19 +107,31 @@ struct ActivityRuntime
     uint32_t lastInviteAt = 0;
     uint32_t lastReadyAt = 0;
     uint32_t lastStartAt = 0;
+    uint32_t lastReliableSendAt = 0;
+    uint32_t travelResponseStartedAt = 0;
+    uint32_t lastTravelResponseAt = 0;
+    uint32_t lastLoadDebugAt = 0;
+    uint32_t lastDebugSummaryAt = 0;
     uint8_t startRepeatsRemaining = 0;
+    PlayerID nextTransferPlayer = 1;
     bool pendingInvite = false;
     bool pendingInviteAccepted = false;
     bool pendingInviteDeclined = false;
     bool graphApplied = false;
     bool detailApplied = false;
     bool worldApplied = false;
+    bool beginReceived = false;
     uint8_t expectedGraphChunks = 0;
     uint8_t expectedDetailChunks = 0;
     uint8_t expectedWorldChunks = 0;
     char pendingHostName[NETWORK_PLAYER_NAME_SIZE] = {};
     Participant participants[MAX_MULTIPLAYER_PLAYERS] = {};
     BoundedSnapshotReceiver snapshotReceiver{};
+#if MULTIPLAYER_DEBUG
+    uint8_t snapshotRetries = 0;
+    uint8_t snapshotChunkDuplicates = 0;
+    uint8_t snapshotChunkRejects = 0;
+#endif
 };
 
 ActivityRuntime runtime;
@@ -948,44 +982,6 @@ uint8_t chunkCountForSize(size_t size)
         (size + SNAPSHOT_CHUNK_DATA_SIZE - 1) / SNAPSHOT_CHUNK_DATA_SIZE);
 }
 
-bool sendSnapshot(
-    PlayerID destination,
-    SnapshotType snapshotType,
-    uint8_t roomID,
-    uint16_t epoch,
-    const uint8_t* data,
-    size_t dataSize)
-{
-    const uint8_t totalChunks = chunkCountForSize(dataSize);
-    if (totalChunks == 0 || totalChunks > MAX_SNAPSHOT_CHUNKS) return false;
-    for (uint8_t chunkIndex = 0; chunkIndex < totalChunks; ++chunkIndex)
-    {
-        SnapshotChunkPayload chunk{};
-        chunk.activityID = runtime.activityID;
-        chunk.snapshotType = snapshotType;
-        chunk.roomID = roomID;
-        chunk.snapshotEpoch = epoch;
-        chunk.chunkIndex = chunkIndex;
-        chunk.totalChunks = totalChunks;
-        const size_t offset = chunkIndex * SNAPSHOT_CHUNK_DATA_SIZE;
-        const size_t remaining = dataSize - offset;
-        chunk.payloadLength = static_cast<uint8_t>(
-            remaining > SNAPSHOT_CHUNK_DATA_SIZE
-                ? SNAPSHOT_CHUNK_DATA_SIZE : remaining);
-        memcpy(chunk.payload, data + offset, chunk.payloadLength);
-        uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
-        size_t size = 0;
-        uint8_t flags = NETWORK_FLAG_CONTROL_EVENT;
-        if (chunkIndex == 0) flags |= NETWORK_FLAG_SNAPSHOT_BEGIN;
-        if (chunkIndex + 1 == totalChunks) flags |= NETWORK_FLAG_SNAPSHOT_END;
-        if (!encodeSnapshotChunk(chunk, bytes, sizeof(bytes), size) ||
-            !sendToPlayer(destination, NetworkPacketType::SNAPSHOT_CHUNK,
-                          bytes, size, flags))
-            return false;
-    }
-    return true;
-}
-
 bool buildGraphSnapshot(size_t& size)
 {
     size = 0;
@@ -1004,112 +1000,292 @@ bool buildRoomDetailSnapshot(size_t& size)
 {
     size = 0;
     return encodeRoomDetailSnapshot(runtime.snapshotReceiver.data,
-                                    sizeof(runtime.snapshotReceiver.data), size);
+                                     sizeof(runtime.snapshotReceiver.data), size);
 }
 
-bool sendSyncBundle(PlayerID destination)
+ActivityAckPayload controlAck(NetworkPacketType packetType, uint8_t itemIndex = 0)
 {
-    size_t graphSize = 0;
-    size_t detailSize = 0;
-    size_t worldSize = 0;
-    const bool needsGraph = runtime.type == MultiplayerActivityType::DUNGEON &&
-                            runtime.snapshotEpoch == 1;
-    if (needsGraph && !buildGraphSnapshot(graphSize)) return false;
-    if (runtime.type == MultiplayerActivityType::DUNGEON &&
-        !buildRoomDetailSnapshot(detailSize)) return false;
-    if (!buildWorldSnapshot(worldSize)) return false;
+    ActivityAckPayload ack{};
+    ack.activityID = runtime.activityID;
+    ack.snapshotEpoch = runtime.snapshotEpoch;
+    ack.packetType = packetType;
+    ack.itemIndex = itemIndex;
+    return ack;
+}
 
-    ActivityPreparePayload prepare{};
-    prepare.activityID = runtime.activityID;
-    prepare.activityType = runtime.type;
-    prepare.roomID = getCurrentRoomID();
-    prepare.snapshotEpoch = runtime.snapshotEpoch;
-    prepare.participantMask = runtime.participantMask;
-    prepare.graphChunkCount = needsGraph ? chunkCountForSize(graphSize) : 0;
-    prepare.detailChunkCount = runtime.type == MultiplayerActivityType::DUNGEON
-        ? chunkCountForSize(detailSize) : 0;
-    prepare.worldChunkCount = chunkCountForSize(worldSize);
+bool findParticipantAtOrAfter(PlayerID start, PlayerID& result)
+{
+    for (PlayerID playerID = start; playerID < MAX_MULTIPLAYER_PLAYERS;
+         ++playerID)
+    {
+        if (isParticipant(playerID))
+        {
+            result = playerID;
+            return true;
+        }
+    }
+    return false;
+}
+
+void normalizeSyncStage(Participant& participant)
+{
+    for (;;)
+    {
+        if (participant.syncStage == SyncStage::CHARACTERS ||
+            participant.syncStage == SyncStage::SPAWNS)
+        {
+            PlayerID playerID = INVALID_PLAYER_ID;
+            if (findParticipantAtOrAfter(participant.syncItem, playerID))
+            {
+                participant.syncItem = playerID;
+                return;
+            }
+            participant.syncStage = participant.syncStage == SyncStage::CHARACTERS
+                ? SyncStage::GRAPH : SyncStage::COMPLETE;
+            participant.syncItem = 0;
+            continue;
+        }
+        if (participant.syncStage == SyncStage::GRAPH &&
+            (runtime.type != MultiplayerActivityType::DUNGEON ||
+             runtime.snapshotEpoch != 1))
+        {
+            participant.syncStage = SyncStage::DETAIL;
+            participant.syncItem = 0;
+            continue;
+        }
+        if (participant.syncStage == SyncStage::DETAIL &&
+            runtime.type != MultiplayerActivityType::DUNGEON)
+        {
+            participant.syncStage = SyncStage::WORLD;
+            participant.syncItem = 0;
+            continue;
+        }
+        return;
+    }
+}
+
+bool snapshotForStage(
+    SyncStage stage,
+    SnapshotType& type,
+    uint8_t& roomID,
+    size_t& size)
+{
+    roomID = NETWORK_NO_ROOM;
+    if (stage == SyncStage::GRAPH)
+    {
+        type = SnapshotType::DUNGEON_GRAPH;
+        return buildGraphSnapshot(size);
+    }
+    if (stage == SyncStage::DETAIL)
+    {
+        type = SnapshotType::DUNGEON_ROOM_DETAIL;
+        roomID = getCurrentRoomID();
+        return buildRoomDetailSnapshot(size);
+    }
+    type = runtime.type == MultiplayerActivityType::FOREST
+        ? SnapshotType::FOREST_STATE : SnapshotType::DUNGEON_ROOM;
+    roomID = getCurrentRoomID();
+    return buildWorldSnapshot(size);
+}
+
+bool sendReliablePacket(
+    PlayerID destination,
+    NetworkPacketType packetType,
+    const uint8_t* payload,
+    size_t payloadSize,
+    const ActivityAckPayload& expectedAck,
+    uint8_t flags = NETWORK_FLAG_CONTROL_EVENT)
+{
+    if (!sendToPlayer(destination, packetType, payload, payloadSize, flags))
+        return false;
+    Participant& participant = runtime.participants[destination];
+    participant.expectedAck = expectedAck;
+    participant.awaitingAck = true;
+    participant.lastSendAt = millis();
+    runtime.lastReliableSendAt = participant.lastSendAt;
+    return true;
+}
+
+bool sendReliableSnapshotChunk(PlayerID destination, Participant& participant)
+{
+    SnapshotType type = SnapshotType::FOREST_STATE;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    size_t dataSize = 0;
+    if (!snapshotForStage(participant.syncStage, type, roomID, dataSize))
+        return false;
+    const uint8_t totalChunks = chunkCountForSize(dataSize);
+    if (totalChunks == 0 || totalChunks > MAX_SNAPSHOT_CHUNKS ||
+        participant.syncItem >= totalChunks) return false;
+
+    SnapshotChunkPayload chunk{};
+    chunk.activityID = runtime.activityID;
+    chunk.snapshotType = type;
+    chunk.roomID = roomID;
+    chunk.snapshotEpoch = runtime.snapshotEpoch;
+    chunk.chunkIndex = participant.syncItem;
+    chunk.totalChunks = totalChunks;
+    const size_t offset = chunk.chunkIndex * SNAPSHOT_CHUNK_DATA_SIZE;
+    const size_t remaining = dataSize - offset;
+    chunk.payloadLength = static_cast<uint8_t>(
+        remaining > SNAPSHOT_CHUNK_DATA_SIZE
+            ? SNAPSHOT_CHUNK_DATA_SIZE : remaining);
+    memcpy(chunk.payload, runtime.snapshotReceiver.data + offset,
+           chunk.payloadLength);
+
     uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
     size_t size = 0;
-    if (!encodeActivityPrepare(prepare, bytes, sizeof(bytes), size) ||
-        !sendToPlayer(destination, NetworkPacketType::ACTIVITY_PREPARE,
-                      bytes, size)) return false;
+    uint8_t flags = NETWORK_FLAG_CONTROL_EVENT;
+    if (chunk.chunkIndex == 0) flags |= NETWORK_FLAG_SNAPSHOT_BEGIN;
+    if (chunk.chunkIndex + 1 == totalChunks) flags |= NETWORK_FLAG_SNAPSHOT_END;
+    ActivityAckPayload ack = controlAck(NetworkPacketType::SNAPSHOT_CHUNK);
+    ack.snapshotType = type;
+    ack.roomID = roomID;
+    ack.chunkIndex = chunk.chunkIndex;
+    if (!encodeSnapshotChunk(chunk, bytes, sizeof(bytes), size) ||
+        !sendReliablePacket(destination, NetworkPacketType::SNAPSHOT_CHUNK,
+                            bytes, size, ack, flags)) return false;
+    MP_DEBUGF("Snapshot sent type=%u epoch=%u chunk=%u/%u player=%u\n",
+              static_cast<unsigned>(type), runtime.snapshotEpoch,
+              chunk.chunkIndex + 1, totalChunks, destination);
+    return true;
+}
 
-    if (runtime.type == MultiplayerActivityType::FOREST)
+bool sendCurrentReliableItem(PlayerID destination)
+{
+    Participant& participant = runtime.participants[destination];
+    normalizeSyncStage(participant);
+    if (participant.syncStage == SyncStage::COMPLETE) return true;
+
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (participant.syncStage == SyncStage::PREPARE)
     {
-        ActivityReadyPayload begin{};
-        begin.activityID = runtime.activityID;
-        begin.snapshotEpoch = runtime.snapshotEpoch;
-        if (!encodeActivityReady(begin, bytes, sizeof(bytes), size) ||
-            !sendToPlayer(destination, NetworkPacketType::FOREST_BEGIN,
-                          bytes, size)) return false;
+        size_t graphSize = 0;
+        size_t detailSize = 0;
+        size_t worldSize = 0;
+        const bool needsGraph = runtime.type == MultiplayerActivityType::DUNGEON &&
+                                runtime.snapshotEpoch == 1;
+        if ((needsGraph && !buildGraphSnapshot(graphSize)) ||
+            (runtime.type == MultiplayerActivityType::DUNGEON &&
+             !buildRoomDetailSnapshot(detailSize)) ||
+            !buildWorldSnapshot(worldSize)) return false;
+        ActivityPreparePayload prepare{};
+        prepare.activityID = runtime.activityID;
+        prepare.activityType = runtime.type;
+        prepare.roomID = getCurrentRoomID();
+        prepare.snapshotEpoch = runtime.snapshotEpoch;
+        prepare.participantMask = runtime.participantMask;
+        prepare.graphChunkCount = needsGraph ? chunkCountForSize(graphSize) : 0;
+        prepare.detailChunkCount = runtime.type == MultiplayerActivityType::DUNGEON
+            ? chunkCountForSize(detailSize) : 0;
+        prepare.worldChunkCount = chunkCountForSize(worldSize);
+        return encodeActivityPrepare(prepare, bytes, sizeof(bytes), size) &&
+            sendReliablePacket(destination, NetworkPacketType::ACTIVITY_PREPARE,
+                bytes, size, controlAck(NetworkPacketType::ACTIVITY_PREPARE));
     }
-    else if (needsGraph)
+
+    if (participant.syncStage == SyncStage::BEGIN)
     {
-        DungeonBeginPayload begin{};
-        begin.activityID = runtime.activityID;
-        begin.roomCount = dungeon.roomCount;
-        begin.entranceRoom = dungeon.currentRoom;
-        begin.snapshotEpoch = runtime.snapshotEpoch;
-        if (!encodeDungeonBegin(begin, bytes, sizeof(bytes), size) ||
-            !sendToPlayer(destination, NetworkPacketType::DUNGEON_BEGIN,
-                          bytes, size)) return false;
-    }
-    else
-    {
+        if (runtime.type == MultiplayerActivityType::FOREST)
+        {
+            ActivityReadyPayload begin{};
+            begin.activityID = runtime.activityID;
+            begin.snapshotEpoch = runtime.snapshotEpoch;
+            return encodeActivityReady(begin, bytes, sizeof(bytes), size) &&
+                sendReliablePacket(destination, NetworkPacketType::FOREST_BEGIN,
+                    bytes, size, controlAck(NetworkPacketType::FOREST_BEGIN));
+        }
+        if (runtime.snapshotEpoch == 1)
+        {
+            DungeonBeginPayload begin{};
+            begin.activityID = runtime.activityID;
+            begin.roomCount = dungeon.roomCount;
+            begin.entranceRoom = dungeon.currentRoom;
+            begin.snapshotEpoch = runtime.snapshotEpoch;
+            return encodeDungeonBegin(begin, bytes, sizeof(bytes), size) &&
+                sendReliablePacket(destination, NetworkPacketType::DUNGEON_BEGIN,
+                    bytes, size, controlAck(NetworkPacketType::DUNGEON_BEGIN));
+        }
         RoomTransitionPayload transition{};
         transition.activityID = runtime.activityID;
         transition.roomID = dungeon.currentRoom;
         transition.entryDirection = runtime.transitionEntry;
         transition.snapshotEpoch = runtime.snapshotEpoch;
-        if (!encodeRoomTransition(transition, bytes, sizeof(bytes), size) ||
-            !sendToPlayer(destination, NetworkPacketType::ROOM_TRANSITION,
-                          bytes, size)) return false;
+        return encodeRoomTransition(transition, bytes, sizeof(bytes), size) &&
+            sendReliablePacket(destination, NetworkPacketType::ROOM_TRANSITION,
+                bytes, size, controlAck(NetworkPacketType::ROOM_TRANSITION));
     }
 
-    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    if (participant.syncStage == SyncStage::CHARACTERS)
     {
-        if (!isParticipant(playerID)) continue;
+        const PlayerID playerID = participant.syncItem;
         PlayerCharacterStatePayload character{};
         character.activityID = runtime.activityID;
         character.character = runtime.participants[playerID].character;
-        if (!encodePlayerCharacterState(
-                character, bytes, sizeof(bytes), size) ||
-            !sendToPlayer(destination,
-                          NetworkPacketType::PLAYER_CHARACTER_STATE,
-                          bytes, size)) return false;
+        return encodePlayerCharacterState(character, bytes, sizeof(bytes), size) &&
+            sendReliablePacket(destination,
+                NetworkPacketType::PLAYER_CHARACTER_STATE, bytes, size,
+                controlAck(NetworkPacketType::PLAYER_CHARACTER_STATE, playerID));
     }
 
-    if (needsGraph && (!buildGraphSnapshot(graphSize) ||
-        !sendSnapshot(destination, SnapshotType::DUNGEON_GRAPH,
-                      NETWORK_NO_ROOM, runtime.snapshotEpoch,
-                      runtime.snapshotReceiver.data, graphSize))) return false;
+    if (participant.syncStage == SyncStage::GRAPH ||
+        participant.syncStage == SyncStage::DETAIL ||
+        participant.syncStage == SyncStage::WORLD)
+        return sendReliableSnapshotChunk(destination, participant);
 
-    if (runtime.type == MultiplayerActivityType::DUNGEON &&
-        (!buildRoomDetailSnapshot(detailSize) ||
-         !sendSnapshot(destination, SnapshotType::DUNGEON_ROOM_DETAIL,
-                       getCurrentRoomID(), runtime.snapshotEpoch,
-                       runtime.snapshotReceiver.data, detailSize))) return false;
+    const PlayerID playerID = participant.syncItem;
+    return encodePlayerSpawn(runtime.participants[playerID].spawn,
+                             bytes, sizeof(bytes), size) &&
+        sendReliablePacket(destination, NetworkPacketType::PLAYER_SPAWN,
+            bytes, size, controlAck(NetworkPacketType::PLAYER_SPAWN, playerID));
+}
 
-    const SnapshotType worldType =
-        runtime.type == MultiplayerActivityType::FOREST
-            ? SnapshotType::FOREST_STATE : SnapshotType::DUNGEON_ROOM;
-    if (!buildWorldSnapshot(worldSize) ||
-        !sendSnapshot(destination, worldType, getCurrentRoomID(),
-                      runtime.snapshotEpoch, runtime.snapshotReceiver.data,
-                      worldSize)) return false;
-
-    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+void advanceReliableTransfer(Participant& participant)
+{
+    switch (participant.syncStage)
     {
-        if (!isParticipant(playerID)) continue;
-        if (!encodePlayerSpawn(runtime.participants[playerID].spawn,
-                               bytes, sizeof(bytes), size) ||
-            !sendToPlayer(destination, NetworkPacketType::PLAYER_SPAWN,
-                          bytes, size)) return false;
+        case SyncStage::PREPARE:
+            participant.syncStage = SyncStage::BEGIN;
+            break;
+        case SyncStage::BEGIN:
+            participant.syncStage = SyncStage::CHARACTERS;
+            participant.syncItem = 0;
+            break;
+        case SyncStage::CHARACTERS:
+            ++participant.syncItem;
+            break;
+        case SyncStage::GRAPH:
+        case SyncStage::DETAIL:
+        case SyncStage::WORLD:
+        {
+            SnapshotType type = SnapshotType::FOREST_STATE;
+            uint8_t roomID = NETWORK_NO_ROOM;
+            size_t dataSize = 0;
+            if (!snapshotForStage(participant.syncStage, type, roomID, dataSize))
+            {
+                participant.syncStage = SyncStage::COMPLETE;
+                break;
+            }
+            ++participant.syncItem;
+            if (participant.syncItem >= chunkCountForSize(dataSize))
+            {
+                participant.syncStage = participant.syncStage == SyncStage::GRAPH
+                    ? SyncStage::DETAIL
+                    : participant.syncStage == SyncStage::DETAIL
+                        ? SyncStage::WORLD : SyncStage::SPAWNS;
+                participant.syncItem = 0;
+            }
+            break;
+        }
+        case SyncStage::SPAWNS:
+            ++participant.syncItem;
+            break;
+        case SyncStage::COMPLETE:
+            break;
     }
-    MP_DEBUGF("Player %u snapshot bundle sent, epoch %u\n",
-              destination, runtime.snapshotEpoch);
-    return true;
+    participant.awaitingAck = false;
+    participant.retryCount = 0;
+    normalizeSyncStage(participant);
 }
 
 void enterTownLocally()
@@ -1190,6 +1366,15 @@ bool allParticipantsReady()
     return true;
 }
 
+bool hasReliablePacketInFlight()
+{
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+        if (runtime.participants[playerID].participating &&
+            runtime.participants[playerID].awaitingAck)
+            return true;
+    return false;
+}
+
 void sendTravelInvites()
 {
     TravelInvitePayload invite{};
@@ -1234,8 +1419,11 @@ void beginHostLoading(uint32_t now)
         Participant& participant = runtime.participants[playerID];
         if (!participant.participating) continue;
         participant.ready = false;
-        participant.syncAttempts = 0;
-        participant.lastSyncAt = 0;
+        participant.syncStage = SyncStage::PREPARE;
+        participant.syncItem = 0;
+        participant.retryCount = 0;
+        participant.awaitingAck = false;
+        participant.lastSendAt = 0;
     }
     setGameMessage(runtime.type == MultiplayerActivityType::DUNGEON
         ? "Preparing shared dungeon..." : "Preparing shared forest...");
@@ -1253,8 +1441,11 @@ void broadcastActivityStart(uint32_t now)
         for (PlayerID playerID = 1;
              playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
             if (isParticipant(playerID))
+            {
+                if (runtime.participants[playerID].startAcked) continue;
                 sendToPlayer(playerID, NetworkPacketType::ACTIVITY_START,
                              bytes, size);
+            }
     }
     runtime.lastStartAt = now;
 }
@@ -1263,6 +1454,8 @@ void startHostActivity(uint32_t now)
 {
     runtime.phase = ActivityPhase::ACTIVE;
     runtime.startRepeatsRemaining = START_REPEAT_COUNT;
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+        runtime.participants[playerID].startAcked = false;
     broadcastActivityStart(now);
     setGameMessage(runtime.type == MultiplayerActivityType::DUNGEON
         ? "Party entered dungeon." : "Party entered forest.");
@@ -1271,6 +1464,7 @@ void startHostActivity(uint32_t now)
 
 bool clientLoadComplete()
 {
+    if (!runtime.beginReceived) return false;
     if (!runtime.worldApplied &&
         !isSnapshotComplete(runtime.snapshotReceiver)) return false;
     if (runtime.type == MultiplayerActivityType::DUNGEON &&
@@ -1287,6 +1481,35 @@ bool clientLoadComplete()
     return true;
 }
 
+void logClientLoadBlockers(uint32_t now)
+{
+#if MULTIPLAYER_DEBUG
+    if (!elapsed(now, runtime.lastLoadDebugAt, 1000)) return;
+    runtime.lastLoadDebugAt = now;
+    MP_DEBUGF("Load incomplete: begin=%s graph=%s detail=%s world=%s mask=%02X/%02X\n",
+              runtime.beginReceived ? "ready" : "missing",
+              runtime.graphApplied ? "ready" : "missing",
+              runtime.detailApplied ? "ready" : "missing",
+              runtime.worldApplied ? "ready" :
+                  isSnapshotComplete(runtime.snapshotReceiver)
+                      ? "complete-not-applied" : "missing",
+              runtime.snapshotReceiver.receivedMask,
+              runtime.snapshotReceiver.totalChunks == 0 ? 0 :
+                  static_cast<unsigned>((1u << runtime.snapshotReceiver.totalChunks) - 1u));
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    {
+        if (!isParticipant(playerID)) continue;
+        MP_DEBUGF("  P%u character=%s spawn=%s\n", playerID,
+                  runtime.participants[playerID].characterReceived
+                      ? "ready" : "missing",
+                  runtime.participants[playerID].spawnReceived
+                      ? "ready" : "missing");
+    }
+#else
+    (void)now;
+#endif
+}
+
 void finishClientLoading()
 {
     if (!clientLoadComplete()) return;
@@ -1295,6 +1518,7 @@ void finishClientLoading()
                             runtime.snapshotReceiver.dataSize))
         return;
     runtime.worldApplied = true;
+    MP_DEBUG("World snapshot complete and applied");
     for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
     {
         if (!isParticipant(playerID)) continue;
@@ -1319,6 +1543,7 @@ void finishClientLoading()
     sendActivityReady();
     runtime.lastReadyAt = millis();
     setGameMessage("Area ready. Waiting for host...");
+    MP_DEBUG("ACTIVITY_READY sent");
 }
 
 void sendAuthoritativePosition(
@@ -1364,8 +1589,11 @@ void beginRoomTransition(uint8_t entryDirection, uint32_t now)
         if (!isParticipant(playerID)) continue;
         Participant& participant = runtime.participants[playerID];
         participant.ready = false;
-        participant.syncAttempts = 0;
-        participant.lastSyncAt = 0;
+        participant.syncStage = SyncStage::PREPARE;
+        participant.syncItem = 0;
+        participant.retryCount = 0;
+        participant.awaitingAck = false;
+        participant.lastSendAt = 0;
     }
     runtime.phaseStartedAt = now;
     setGameMessage("Party entering next room...");
@@ -1398,49 +1626,55 @@ void applyPositionUpdate(const PlayerPositionPayload& position)
     needsRedraw = true;
 }
 
+void sendStoredTravelResponse(uint32_t now)
+{
+    if (!multiplayerSession.isClient() ||
+        (!runtime.pendingInviteAccepted && !runtime.pendingInviteDeclined))
+        return;
+    TravelResponsePayload response{};
+    response.activityID = runtime.activityID;
+    copyCharacterToNetwork(multiplayerSession.getLocalPlayerID(),
+                           player, response.character);
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodeTravelResponse(response, bytes, sizeof(bytes), size))
+        sendToHost(runtime.pendingInviteAccepted
+            ? NetworkPacketType::TRAVEL_ACCEPT
+            : NetworkPacketType::TRAVEL_DECLINE, bytes, size);
+    runtime.lastTravelResponseAt = now;
+    if (runtime.travelResponseStartedAt == 0)
+        runtime.travelResponseStartedAt = now;
+}
+
 void processTravelInvite(
     PlayerID sender,
     const uint8_t* payload,
     uint16_t payloadSize)
 {
-    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
-        runtime.phase != ActivityPhase::NONE || gameState != GAME_TOWN)
-        return;
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID) return;
     TravelInvitePayload invite{};
     if (!decodeTravelInvite(payload, payloadSize, invite)) return;
-    if (runtime.pendingInviteAccepted &&
-        invite.activityID == runtime.activityID)
+    if (isDuplicateTravelInvitation(
+            runtime.activityID, runtime.type, runtime.pendingInvite,
+            runtime.pendingInviteAccepted, runtime.pendingInviteDeclined,
+            invite))
     {
-        TravelResponsePayload response{};
-        response.activityID = runtime.activityID;
-        copyCharacterToNetwork(multiplayerSession.getLocalPlayerID(),
-                               player, response.character);
-        uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
-        size_t size = 0;
-        if (encodeTravelResponse(response, bytes, sizeof(bytes), size))
-            sendToHost(NetworkPacketType::TRAVEL_ACCEPT, bytes, size);
+        MP_DEBUG("Duplicate travel invitation ignored");
         return;
     }
-    if (runtime.pendingInviteDeclined &&
-        invite.activityID == runtime.activityID)
+    if (invite.activityID == runtime.activityID)
     {
-        TravelResponsePayload response{};
-        response.activityID = runtime.activityID;
-        copyCharacterToNetwork(multiplayerSession.getLocalPlayerID(),
-                               player, response.character);
-        uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
-        size_t size = 0;
-        if (encodeTravelResponse(response, bytes, sizeof(bytes), size))
-            sendToHost(NetworkPacketType::TRAVEL_DECLINE, bytes, size);
-        return;
+        if (invite.activityType != runtime.type) return;
+        if (runtime.phase != ActivityPhase::NONE)
+        {
+            MP_DEBUG("Duplicate travel invitation ignored");
+            return;
+        }
     }
-    if (invite.activityID != runtime.activityID)
-    {
-        runtime.pendingInviteAccepted = false;
-        runtime.pendingInviteDeclined = false;
-    }
+    if (runtime.phase != ActivityPhase::NONE || gameState != GAME_TOWN) return;
     runtime.pendingInvite = true;
     runtime.pendingInviteAccepted = false;
+    runtime.pendingInviteDeclined = false;
     runtime.activityID = invite.activityID;
     runtime.type = invite.activityType;
     const SessionMember* host = multiplayerSession.getMember(HOST_PLAYER_ID);
@@ -1480,6 +1714,44 @@ void processTravelResponse(
         runtime.participantMask &= ~playerBit(sender);
 }
 
+void sendActivityAckToHost(const ActivityAckPayload& ack)
+{
+    uint8_t bytes[ACTIVITY_ACK_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodeActivityAck(ack, bytes, sizeof(bytes), size))
+        sendToHost(NetworkPacketType::ACK, bytes, size,
+                   NETWORK_FLAG_CONTROL_EVENT);
+}
+
+void processActivityAck(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isHost() || !isParticipant(sender) ||
+        sender == HOST_PLAYER_ID) return;
+    ActivityAckPayload ack{};
+    if (!decodeActivityAck(payload, payloadSize, ack)) return;
+    Participant& participant = runtime.participants[sender];
+    if (runtime.phase == ActivityPhase::ACTIVE &&
+        ack.activityID == runtime.activityID &&
+        ack.snapshotEpoch == runtime.snapshotEpoch &&
+        ack.packetType == NetworkPacketType::ACTIVITY_START)
+    {
+        participant.startAcked = true;
+        MP_DEBUGF("ACTIVITY_START acknowledged by P%u\n", sender);
+        return;
+    }
+    if (runtime.phase != ActivityPhase::LOADING) return;
+    if (!participant.awaitingAck ||
+        !activityAcksMatch(participant.expectedAck, ack)) return;
+    MP_DEBUGF("ACK player=%u packet=%u type=%u chunk=%u epoch=%u\n",
+              sender, static_cast<unsigned>(ack.packetType),
+              static_cast<unsigned>(ack.snapshotType), ack.chunkIndex,
+              ack.snapshotEpoch);
+    advanceReliableTransfer(participant);
+}
+
 void processActivityPrepare(
     PlayerID sender,
     const uint8_t* payload,
@@ -1496,12 +1768,16 @@ void processActivityPrepare(
                                   runtime.snapshotEpoch) &&
          prepare.snapshotEpoch != runtime.snapshotEpoch)) return;
 
-    if (prepare.snapshotEpoch != runtime.snapshotEpoch)
+    const bool newEpoch = shouldResetActivitySnapshot(
+        runtime.snapshotEpoch, prepare.snapshotEpoch);
+    const bool firstPrepare = runtime.phase != ActivityPhase::LOADING;
+    if (newEpoch)
     {
         resetSnapshotReceiver(runtime.snapshotReceiver);
         runtime.graphApplied = prepare.graphChunkCount == 0;
         runtime.detailApplied = prepare.detailChunkCount == 0;
         runtime.worldApplied = false;
+        runtime.beginReceived = false;
         for (Participant& participant : runtime.participants)
         {
             participant.characterReceived = false;
@@ -1520,8 +1796,87 @@ void processActivityPrepare(
     runtime.expectedGraphChunks = prepare.graphChunkCount;
     runtime.expectedDetailChunks = prepare.detailChunkCount;
     runtime.expectedWorldChunks = prepare.worldChunkCount;
-    setGameMessage(runtime.type == MultiplayerActivityType::DUNGEON
-        ? "Joining Dungeon..." : "Joining Forest...");
+    if (newEpoch || firstPrepare)
+    {
+        runtime.phaseStartedAt = millis();
+        setGameMessage(runtime.type == MultiplayerActivityType::DUNGEON
+            ? "Joining Dungeon..." : "Joining Forest...");
+        needsRedraw = true;
+    }
+    runtime.pendingInviteAccepted = false;
+    runtime.travelResponseStartedAt = 0;
+    sendActivityAckToHost(controlAck(NetworkPacketType::ACTIVITY_PREPARE));
+    MP_DEBUGF("ActivityPrepare received epoch=%u graph=%u detail=%u world=%u\n",
+              prepare.snapshotEpoch, prepare.graphChunkCount,
+              prepare.detailChunkCount, prepare.worldChunkCount);
+}
+
+void processDungeonBegin(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        runtime.phase != ActivityPhase::LOADING) return;
+    DungeonBeginPayload begin{};
+    if (!decodeDungeonBegin(payload, payloadSize, begin) ||
+        begin.activityID != runtime.activityID ||
+        begin.snapshotEpoch != runtime.snapshotEpoch ||
+        runtime.type != MultiplayerActivityType::DUNGEON ||
+        begin.entranceRoom != runtime.currentRoom) return;
+    runtime.beginReceived = true;
+    sendActivityAckToHost(controlAck(NetworkPacketType::DUNGEON_BEGIN));
+    MP_DEBUGF("DungeonBegin received rooms=%u entrance=%u epoch=%u\n",
+              begin.roomCount, begin.entranceRoom, begin.snapshotEpoch);
+}
+
+void processForestBegin(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        runtime.phase != ActivityPhase::LOADING) return;
+    ActivityReadyPayload begin{};
+    if (!decodeActivityReady(payload, payloadSize, begin) ||
+        begin.activityID != runtime.activityID ||
+        begin.snapshotEpoch != runtime.snapshotEpoch ||
+        runtime.type != MultiplayerActivityType::FOREST) return;
+    runtime.beginReceived = true;
+    sendActivityAckToHost(controlAck(NetworkPacketType::FOREST_BEGIN));
+    MP_DEBUGF("ForestBegin received epoch=%u\n", begin.snapshotEpoch);
+}
+
+void processRoomTransition(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        runtime.phase != ActivityPhase::LOADING) return;
+    RoomTransitionPayload transition{};
+    if (!decodeRoomTransition(payload, payloadSize, transition) ||
+        transition.activityID != runtime.activityID ||
+        transition.snapshotEpoch != runtime.snapshotEpoch ||
+        transition.roomID != runtime.currentRoom ||
+        runtime.type != MultiplayerActivityType::DUNGEON) return;
+    runtime.beginReceived = true;
+    sendActivityAckToHost(controlAck(NetworkPacketType::ROOM_TRANSITION));
+    MP_DEBUGF("RoomTransition received room=%u epoch=%u\n",
+              transition.roomID, transition.snapshotEpoch);
+}
+
+void recordSnapshotReject(const SnapshotChunkPayload& chunk, const char* reason)
+{
+#if MULTIPLAYER_DEBUG
+    ++runtime.snapshotChunkRejects;
+    MP_DEBUGF("Snapshot rejected reason=%s type=%u epoch=%u chunk=%u/%u\n",
+              reason, static_cast<unsigned>(chunk.snapshotType),
+              chunk.snapshotEpoch, chunk.chunkIndex + 1, chunk.totalChunks);
+#else
+    (void)chunk;
+    (void)reason;
+#endif
 }
 
 void processSnapshotChunk(
@@ -1532,35 +1887,89 @@ void processSnapshotChunk(
     if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
         runtime.phase != ActivityPhase::LOADING) return;
     SnapshotChunkPayload chunk{};
-    if (!decodeSnapshotChunk(payload, payloadSize, chunk)) return;
+    if (!decodeSnapshotChunk(payload, payloadSize, chunk))
+    {
+#if MULTIPLAYER_DEBUG
+        ++runtime.snapshotChunkRejects;
+#endif
+        return;
+    }
     uint8_t expectedCount = 0;
     uint8_t expectedRoom = NETWORK_NO_ROOM;
+    bool alreadyApplied = false;
     if (chunk.snapshotType == SnapshotType::DUNGEON_GRAPH)
     {
-        if (runtime.graphApplied) return;
         expectedCount = runtime.expectedGraphChunks;
+        alreadyApplied = runtime.graphApplied;
     }
     else if (chunk.snapshotType == SnapshotType::DUNGEON_ROOM_DETAIL)
     {
-        if (!runtime.graphApplied || runtime.detailApplied) return;
+        if (!runtime.graphApplied)
+        {
+            recordSnapshotReject(chunk, "graph-not-ready");
+            return;
+        }
         expectedCount = runtime.expectedDetailChunks;
         expectedRoom = runtime.currentRoom;
+        alreadyApplied = runtime.detailApplied;
     }
     else
     {
-        if (runtime.worldApplied) return;
         if (runtime.type == MultiplayerActivityType::DUNGEON &&
-            (!runtime.graphApplied || !runtime.detailApplied)) return;
+            (!runtime.graphApplied || !runtime.detailApplied))
+        {
+            recordSnapshotReject(chunk, "room-metadata-not-ready");
+            return;
+        }
         const SnapshotType expectedType =
             runtime.type == MultiplayerActivityType::FOREST
                 ? SnapshotType::FOREST_STATE : SnapshotType::DUNGEON_ROOM;
-        if (chunk.snapshotType != expectedType) return;
+        if (chunk.snapshotType != expectedType)
+        {
+            recordSnapshotReject(chunk, "wrong-world-type");
+            return;
+        }
         expectedCount = runtime.expectedWorldChunks;
         expectedRoom = runtime.currentRoom;
+        alreadyApplied = runtime.worldApplied;
     }
+    ActivityAckPayload ack = controlAck(NetworkPacketType::SNAPSHOT_CHUNK);
+    ack.snapshotType = chunk.snapshotType;
+    ack.roomID = chunk.roomID;
+    ack.chunkIndex = chunk.chunkIndex;
+    if (alreadyApplied)
+    {
+        if (chunk.activityID == runtime.activityID &&
+            chunk.snapshotEpoch == runtime.snapshotEpoch &&
+            chunk.roomID == expectedRoom && chunk.totalChunks == expectedCount)
+        {
+#if MULTIPLAYER_DEBUG
+            ++runtime.snapshotChunkDuplicates;
+#endif
+            sendActivityAckToHost(ack);
+        }
+        else
+            recordSnapshotReject(chunk, "applied-snapshot-mismatch");
+        return;
+    }
+    const bool duplicate = isDuplicateSnapshotChunk(runtime.snapshotReceiver, chunk);
     if (!acceptSnapshotChunk(runtime.snapshotReceiver, chunk, runtime.activityID,
                              expectedRoom, runtime.snapshotEpoch,
-                             expectedCount)) return;
+                             expectedCount))
+    {
+        recordSnapshotReject(chunk, "validation");
+        return;
+    }
+    if (duplicate)
+    {
+#if MULTIPLAYER_DEBUG
+        ++runtime.snapshotChunkDuplicates;
+#endif
+        MP_DEBUGF("Snapshot duplicate type=%u epoch=%u chunk=%u/%u\n",
+                  static_cast<unsigned>(chunk.snapshotType),
+                  chunk.snapshotEpoch, chunk.chunkIndex + 1,
+                  chunk.totalChunks);
+    }
     if (chunk.snapshotType == SnapshotType::DUNGEON_GRAPH &&
         isSnapshotComplete(runtime.snapshotReceiver))
     {
@@ -1580,6 +1989,10 @@ void processSnapshotChunk(
         resetSnapshotReceiver(runtime.snapshotReceiver);
     }
     finishClientLoading();
+    sendActivityAckToHost(ack);
+    MP_DEBUGF("Snapshot received type=%u epoch=%u chunk=%u/%u\n",
+              static_cast<unsigned>(chunk.snapshotType), chunk.snapshotEpoch,
+              chunk.chunkIndex + 1, chunk.totalChunks);
 }
 
 void processCharacterState(
@@ -1596,6 +2009,9 @@ void processCharacterState(
     participant.character = state.character;
     participant.characterReceived = true;
     finishClientLoading();
+    sendActivityAckToHost(controlAck(
+        NetworkPacketType::PLAYER_CHARACTER_STATE, state.character.playerID));
+    MP_DEBUGF("Character state received P%u\n", state.character.playerID);
 }
 
 void processPlayerSpawn(
@@ -1611,7 +2027,11 @@ void processPlayerSpawn(
     Participant& participant = runtime.participants[spawn.playerID];
     participant.spawn = spawn;
     participant.spawnReceived = true;
+    sendActivityAckToHost(controlAck(
+        NetworkPacketType::PLAYER_SPAWN, spawn.playerID));
     finishClientLoading();
+    MP_DEBUGF("Player spawn received P%u at %u,%u\n",
+              spawn.playerID, spawn.x, spawn.y);
 }
 
 void processActivityReady(
@@ -1625,6 +2045,7 @@ void processActivityReady(
     if (!decodeActivityReady(payload, payloadSize, ready) ||
         ready.activityID != runtime.activityID ||
         ready.snapshotEpoch != runtime.snapshotEpoch) return;
+    if (runtime.participants[sender].syncStage != SyncStage::COMPLETE) return;
     runtime.participants[sender].ready = true;
     MP_DEBUGF("Player %u ready, epoch %u\n", sender, runtime.snapshotEpoch);
 }
@@ -1634,17 +2055,25 @@ void processActivityStart(
     const uint8_t* payload,
     uint16_t payloadSize)
 {
-    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
-        runtime.phase != ActivityPhase::LOADING || !clientLoadComplete()) return;
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID) return;
     ActivityReadyPayload start{};
     if (!decodeActivityReady(payload, payloadSize, start) ||
         start.activityID != runtime.activityID ||
         start.snapshotEpoch != runtime.snapshotEpoch) return;
+    ActivityAckPayload ack = controlAck(NetworkPacketType::ACTIVITY_START);
+    if (runtime.phase == ActivityPhase::ACTIVE)
+    {
+        sendActivityAckToHost(ack);
+        return;
+    }
+    if (runtime.phase != ActivityPhase::LOADING || !clientLoadComplete()) return;
     runtime.phase = ActivityPhase::ACTIVE;
     runtime.pendingInvite = false;
     runtime.pendingInviteAccepted = false;
     setGameMessage(runtime.type == MultiplayerActivityType::DUNGEON
         ? "Party entered dungeon." : "Party entered forest.");
+    sendActivityAckToHost(ack);
+    MP_DEBUG("ACTIVITY_START received");
 }
 
 void processActivityLeave(
@@ -1688,7 +2117,10 @@ void processActivityEnd(
     ActivityMemberPayload end{};
     if (!decodeActivityMember(payload, payloadSize, end) ||
         end.activityID != runtime.activityID) return;
-    endActivityLocally("The host ended the activity.");
+    endActivityLocally(runtime.phase == ActivityPhase::LOADING
+        ? runtime.type == MultiplayerActivityType::DUNGEON
+            ? "Unable to join dungeon." : "Unable to join forest."
+        : "The host ended the activity.");
 }
 
 void processMoveRequest(
@@ -1750,6 +2182,15 @@ void handleGameplayPacket(
         case NetworkPacketType::ACTIVITY_PREPARE:
             processActivityPrepare(sender, payload, payloadSize);
             break;
+        case NetworkPacketType::DUNGEON_BEGIN:
+            processDungeonBegin(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::FOREST_BEGIN:
+            processForestBegin(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::ROOM_TRANSITION:
+            processRoomTransition(sender, payload, payloadSize);
+            break;
         case NetworkPacketType::SNAPSHOT_CHUNK:
             processSnapshotChunk(sender, payload, payloadSize);
             break;
@@ -1781,6 +2222,9 @@ void handleGameplayPacket(
         case NetworkPacketType::PLAYER_POSITION:
             processPlayerPosition(sender, payload, payloadSize);
             break;
+        case NetworkPacketType::ACK:
+            processActivityAck(sender, payload, payloadSize);
+            break;
         default:
             break;
     }
@@ -1804,6 +2248,25 @@ void removeDisconnectedParticipants()
         setGameMessage(message);
     }
 }
+
+void failParticipantLoad(PlayerID playerID)
+{
+    Participant& participant = runtime.participants[playerID];
+    char message[64] = {};
+    snprintf(message, sizeof(message), "%s could not load the %s.",
+             participant.character.displayName[0] != '\0'
+                ? participant.character.displayName : "Adventurer",
+             runtime.type == MultiplayerActivityType::DUNGEON
+                ? "dungeon" : "forest");
+    removePlayerEntity(playerID);
+    runtime.participantMask &= ~playerBit(playerID);
+    participant.participating = false;
+    participant.awaitingAck = false;
+    sendActivityEndTo(playerID);
+    broadcastPlayerDespawn(playerID);
+    setGameMessage(message);
+    MP_DEBUGF("Activity participant %u removed due load failure\n", playerID);
+}
 }
 
 void initializeMultiplayerActivity()
@@ -1822,6 +2285,18 @@ void updateMultiplayerActivity(uint32_t now)
     }
 
     removeDisconnectedParticipants();
+
+    if (multiplayerSession.isClient() && runtime.phase == ActivityPhase::NONE &&
+        (runtime.pendingInviteAccepted || runtime.pendingInviteDeclined))
+    {
+        if ((runtime.travelResponseStartedAt == 0 ||
+             !elapsed(now, runtime.travelResponseStartedAt,
+                      TRAVEL_RESPONSE_TIMEOUT_MS)) &&
+            (runtime.lastTravelResponseAt == 0 ||
+             elapsed(now, runtime.lastTravelResponseAt,
+                     TRAVEL_RESPONSE_RETRY_MS)))
+            sendStoredTravelResponse(now);
+    }
 
     if (multiplayerSession.isHost() &&
         runtime.phase == ActivityPhase::WAITING_FOR_RESPONSES)
@@ -1848,26 +2323,61 @@ void updateMultiplayerActivity(uint32_t now)
 
     if (multiplayerSession.isHost() && runtime.phase == ActivityPhase::LOADING)
     {
+        if (elapsed(now, runtime.phaseStartedAt, ACTIVITY_LOAD_TIMEOUT_MS))
+        {
+            for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS;
+                 ++playerID)
+                if (isParticipant(playerID) &&
+                    !runtime.participants[playerID].ready)
+                    failParticipantLoad(playerID);
+        }
+
         for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
         {
             Participant& participant = runtime.participants[playerID];
             if (!participant.participating || participant.ready) continue;
-            if (participant.syncAttempts >= SNAPSHOT_RETRY_LIMIT)
+            if (participant.awaitingAck &&
+                elapsed(now, participant.lastSendAt, RELIABLE_ACK_TIMEOUT_MS))
             {
-                removePlayerEntity(playerID);
-                runtime.participantMask &= ~playerBit(playerID);
-                participant.participating = false;
-                sendActivityEndTo(playerID);
-                broadcastPlayerDespawn(playerID);
-                setGameMessage("A player failed to load the area.");
-                continue;
+                if (participant.retryCount >= RELIABLE_RETRY_LIMIT)
+                {
+                    failParticipantLoad(playerID);
+                    continue;
+                }
+                participant.awaitingAck = false;
+                ++participant.retryCount;
+#if MULTIPLAYER_DEBUG
+                ++runtime.snapshotRetries;
+#endif
+                MP_DEBUGF("Reliable retry player=%u stage=%u item=%u retry=%u\n",
+                          playerID,
+                          static_cast<unsigned>(participant.syncStage),
+                          participant.syncItem, participant.retryCount);
             }
-            if (participant.lastSyncAt == 0 ||
-                elapsed(now, participant.lastSyncAt, SNAPSHOT_RETRY_MS))
+        }
+
+        if (!hasReliablePacketInFlight() &&
+            elapsed(now, runtime.lastReliableSendAt, RELIABLE_SEND_GAP_MS))
+        {
+            for (uint8_t checked = 0; checked < MAX_MULTIPLAYER_PLAYERS - 1;
+                 ++checked)
             {
-                sendSyncBundle(playerID);
-                participant.lastSyncAt = now;
-                participant.syncAttempts++;
+                PlayerID playerID = runtime.nextTransferPlayer;
+                runtime.nextTransferPlayer = playerID + 1;
+                if (runtime.nextTransferPlayer >= MAX_MULTIPLAYER_PLAYERS)
+                    runtime.nextTransferPlayer = 1;
+                Participant& participant = runtime.participants[playerID];
+                normalizeSyncStage(participant);
+                if (!participant.participating || participant.ready ||
+                    participant.awaitingAck ||
+                    participant.syncStage == SyncStage::COMPLETE)
+                    continue;
+                if (!sendCurrentReliableItem(playerID))
+                {
+                    participant.lastSendAt = now;
+                    runtime.lastReliableSendAt = now;
+                }
+                break;
             }
         }
         if (allParticipantsReady()) startHostActivity(now);
@@ -1881,6 +2391,38 @@ void updateMultiplayerActivity(uint32_t now)
         sendActivityReady();
         runtime.lastReadyAt = now;
     }
+    else if (multiplayerSession.isClient() &&
+             runtime.phase == ActivityPhase::LOADING)
+    {
+        logClientLoadBlockers(now);
+        if (elapsed(now, runtime.phaseStartedAt, ACTIVITY_LOAD_TIMEOUT_MS + 5000))
+        {
+            endActivityLocally(runtime.type == MultiplayerActivityType::DUNGEON
+                ? "Unable to join dungeon." : "Unable to join forest.");
+            return;
+        }
+    }
+
+#if MULTIPLAYER_DEBUG
+    if (elapsed(now, runtime.lastDebugSummaryAt, DEBUG_SUMMARY_INTERVAL_MS))
+    {
+        runtime.lastDebugSummaryAt = now;
+        MP_DEBUGF("MP counters rxQueueDrops=%lu immediateSendFailures=%lu "
+                  "sendCallbackFailures=%lu sendCallbackSuccess=%lu "
+                  "snapshotRetries=%u chunkDuplicates=%u chunkRejects=%u\n",
+                  static_cast<unsigned long>(
+                      multiplayerTransport.getDroppedReceiveCount()),
+                  static_cast<unsigned long>(
+                      multiplayerTransport.getImmediateSendFailureCount()),
+                  static_cast<unsigned long>(
+                      multiplayerTransport.getSendCompletionFailureCount()),
+                  static_cast<unsigned long>(
+                      multiplayerTransport.getSendCompletionSuccessCount()),
+                  runtime.snapshotRetries,
+                  runtime.snapshotChunkDuplicates,
+                  runtime.snapshotChunkRejects);
+    }
+#endif
 
     if (multiplayerSession.isHost() && runtime.phase == ActivityPhase::ACTIVE &&
         runtime.startRepeatsRemaining > 0 &&
@@ -1948,39 +2490,28 @@ const char* getPendingMultiplayerTravelHostName()
 void acceptPendingMultiplayerTravel()
 {
     if (!runtime.pendingInvite || !multiplayerSession.isClient()) return;
-    TravelResponsePayload response{};
-    response.activityID = runtime.activityID;
-    copyCharacterToNetwork(multiplayerSession.getLocalPlayerID(),
-                           player, response.character);
-    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
-    size_t size = 0;
-    if (encodeTravelResponse(response, bytes, sizeof(bytes), size))
-        sendToHost(NetworkPacketType::TRAVEL_ACCEPT, bytes, size);
     runtime.pendingInvite = false;
     runtime.pendingInviteAccepted = true;
     runtime.pendingInviteDeclined = false;
     runtime.localPlayerID = multiplayerSession.getLocalPlayerID();
     runtime.participantMask = playerBit(multiplayerSession.getLocalPlayerID());
+    runtime.travelResponseStartedAt = millis();
+    runtime.lastTravelResponseAt = 0;
+    sendStoredTravelResponse(millis());
     setGameMessage("Joining party activity...");
 }
 
 void declinePendingMultiplayerTravel()
 {
     if (!runtime.pendingInvite || !multiplayerSession.isClient()) return;
-    TravelResponsePayload response{};
-    response.activityID = runtime.activityID;
-    copyCharacterToNetwork(multiplayerSession.getLocalPlayerID(),
-                           player, response.character);
-    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
-    size_t size = 0;
-    if (encodeTravelResponse(response, bytes, sizeof(bytes), size))
-        sendToHost(NetworkPacketType::TRAVEL_DECLINE, bytes, size);
     runtime.pendingInvite = false;
     runtime.pendingInviteAccepted = false;
     runtime.pendingInviteDeclined = true;
     runtime.localPlayerID = multiplayerSession.getLocalPlayerID();
     runtime.participantMask = 0;
-    runtime.type = MultiplayerActivityType::NONE;
+    runtime.travelResponseStartedAt = millis();
+    runtime.lastTravelResponseAt = 0;
+    sendStoredTravelResponse(millis());
     setGameMessage("Staying in Town. Party remains connected.");
 }
 

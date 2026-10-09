@@ -91,22 +91,26 @@ void loop()
 {
     updateMultiplayerRuntime();
 
-    handleButtons();
+    if (!isMultiplayerActivityLoading())
+        handleButtons();
 
-    if (!isMultiplayerExplorationActive())
+    if (!isMultiplayerExplorationActive() &&
+        !isMultiplayerActivityLoading())
     {
         updateAwareness();
         updateElementalTrapCharges();
         updateMonsterIdleBehavior();
     }
-    updateElementalVisualEffect();
+    if (!isMultiplayerActivityLoading())
+        updateElementalVisualEffect();
 
     if (combat.active)
     {
         updateCombat();
     }
 
-    updateMonsterVisibility();
+    if (!isMultiplayerActivityLoading())
+        updateMonsterVisibility();
 
     updateGameMessage();
     updateTownRest();

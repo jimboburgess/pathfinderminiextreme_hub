@@ -227,8 +227,76 @@ void test_snapshot_chunks_accept_ordering_and_identical_duplicates()
     TEST_ASSERT_TRUE(isSnapshotComplete(receiver));
     TEST_ASSERT_EQUAL_UINT16(210, receiver.dataSize);
     TEST_ASSERT_TRUE(acceptSnapshotChunk(receiver, first, 99, 4, 8, 2));
+    TEST_ASSERT_TRUE(isDuplicateSnapshotChunk(receiver, first));
     first.payload[0] = 0x77;
     TEST_ASSERT_FALSE(acceptSnapshotChunk(receiver, first, 99, 4, 8, 2));
+}
+
+void test_activity_ack_round_trip_identifies_exact_snapshot_chunk()
+{
+    ActivityAckPayload ack{};
+    ack.activityID = 0x12345678;
+    ack.snapshotEpoch = 9;
+    ack.packetType = NetworkPacketType::SNAPSHOT_CHUNK;
+    ack.snapshotType = SnapshotType::DUNGEON_ROOM;
+    ack.roomID = 3;
+    ack.chunkIndex = 1;
+
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodeActivityAck(ack, bytes, sizeof(bytes), size));
+    TEST_ASSERT_EQUAL_UINT32(ACTIVITY_ACK_PAYLOAD_SIZE, size);
+    ActivityAckPayload decoded{};
+    TEST_ASSERT_TRUE(decodeActivityAck(bytes, size, decoded));
+    TEST_ASSERT_TRUE(activityAcksMatch(ack, decoded));
+    decoded.chunkIndex = 0;
+    TEST_ASSERT_FALSE(activityAcksMatch(ack, decoded));
+
+    ack.packetType = NetworkPacketType::ACTIVITY_START;
+    ack.snapshotType = SnapshotType::FOREST_STATE;
+    ack.roomID = NETWORK_NO_ROOM;
+    ack.chunkIndex = 0;
+    TEST_ASSERT_TRUE(encodeActivityAck(ack, bytes, sizeof(bytes), size));
+    TEST_ASSERT_TRUE(decodeActivityAck(bytes, size, decoded));
+    TEST_ASSERT_TRUE(activityAcksMatch(ack, decoded));
+}
+
+void test_lost_ack_resend_is_duplicate_and_can_be_acked_again()
+{
+    BoundedSnapshotReceiver receiver{};
+    SnapshotChunkPayload chunk{};
+    chunk.activityID = 88;
+    chunk.snapshotType = SnapshotType::DUNGEON_ROOM;
+    chunk.roomID = 2;
+    chunk.snapshotEpoch = 4;
+    chunk.chunkIndex = 0;
+    chunk.totalChunks = 1;
+    chunk.payloadLength = 12;
+    memset(chunk.payload, 0x5A, chunk.payloadLength);
+    TEST_ASSERT_TRUE(acceptSnapshotChunk(receiver, chunk, 88, 2, 4, 1));
+    TEST_ASSERT_FALSE(isDuplicateSnapshotChunk(
+        BoundedSnapshotReceiver{}, chunk));
+    TEST_ASSERT_TRUE(isDuplicateSnapshotChunk(receiver, chunk));
+    TEST_ASSERT_TRUE(acceptSnapshotChunk(receiver, chunk, 88, 2, 4, 1));
+    TEST_ASSERT_TRUE(isSnapshotComplete(receiver));
+}
+
+void test_duplicate_invite_and_prepare_epoch_decisions_are_idempotent()
+{
+    TravelInvitePayload invite{};
+    invite.activityID = 123;
+    invite.activityType = MultiplayerActivityType::DUNGEON;
+    TEST_ASSERT_TRUE(isDuplicateTravelInvitation(
+        123, MultiplayerActivityType::DUNGEON,
+        true, false, false, invite));
+    TEST_ASSERT_TRUE(isDuplicateTravelInvitation(
+        123, MultiplayerActivityType::DUNGEON,
+        false, true, false, invite));
+    TEST_ASSERT_FALSE(isDuplicateTravelInvitation(
+        124, MultiplayerActivityType::DUNGEON,
+        true, false, false, invite));
+    TEST_ASSERT_FALSE(shouldResetActivitySnapshot(7, 7));
+    TEST_ASSERT_TRUE(shouldResetActivitySnapshot(7, 8));
 }
 
 void test_snapshot_chunks_reject_stale_missing_and_oversized_data()
@@ -331,6 +399,9 @@ void setup()
     RUN_TEST(test_activity_and_room_validation_rejects_invalid_rooms);
     RUN_TEST(test_snapshot_chunks_accept_ordering_and_identical_duplicates);
     RUN_TEST(test_snapshot_chunks_reject_stale_missing_and_oversized_data);
+    RUN_TEST(test_activity_ack_round_trip_identifies_exact_snapshot_chunk);
+    RUN_TEST(test_lost_ack_resend_is_duplicate_and_can_be_acked_again);
+    RUN_TEST(test_duplicate_invite_and_prepare_epoch_decisions_are_idempotent);
     RUN_TEST(test_movement_sequence_comparison_handles_stale_and_wraparound);
     RUN_TEST(test_spawn_search_is_deterministic_and_avoids_occupied_tiles);
     RUN_TEST(test_spawn_search_rejects_invalid_inputs_and_full_maps);

@@ -93,6 +93,18 @@ bool acceptSnapshotChunk(
     return true;
 }
 
+bool isDuplicateSnapshotChunk(
+    const BoundedSnapshotReceiver& receiver,
+    const SnapshotChunkPayload& chunk)
+{
+    if (!receiver.active || receiver.type != chunk.snapshotType ||
+        receiver.activityID != chunk.activityID ||
+        receiver.roomID != chunk.roomID || receiver.epoch != chunk.snapshotEpoch ||
+        chunk.chunkIndex >= receiver.totalChunks) return false;
+    const uint8_t bit = static_cast<uint8_t>(1u << chunk.chunkIndex);
+    return (receiver.receivedMask & bit) != 0;
+}
+
 bool isSnapshotComplete(const BoundedSnapshotReceiver& receiver)
 {
     if (!receiver.active || receiver.totalChunks == 0 ||
@@ -100,4 +112,37 @@ bool isSnapshotComplete(const BoundedSnapshotReceiver& receiver)
     const uint8_t expectedMask = static_cast<uint8_t>(
         (1u << receiver.totalChunks) - 1u);
     return (receiver.receivedMask & expectedMask) == expectedMask;
+}
+
+bool activityAcksMatch(
+    const ActivityAckPayload& expected,
+    const ActivityAckPayload& received)
+{
+    return expected.activityID == received.activityID &&
+           expected.snapshotEpoch == received.snapshotEpoch &&
+           expected.packetType == received.packetType &&
+           expected.snapshotType == received.snapshotType &&
+           expected.roomID == received.roomID &&
+           expected.itemIndex == received.itemIndex &&
+           expected.chunkIndex == received.chunkIndex;
+}
+
+bool isDuplicateTravelInvitation(
+    uint32_t currentActivityID,
+    MultiplayerActivityType currentType,
+    bool pending,
+    bool accepted,
+    bool declined,
+    const TravelInvitePayload& incoming)
+{
+    return incoming.activityID == currentActivityID &&
+           incoming.activityType == currentType &&
+           (pending || accepted || declined);
+}
+
+bool shouldResetActivitySnapshot(
+    uint16_t currentEpoch,
+    uint16_t incomingEpoch)
+{
+    return currentEpoch != incomingEpoch;
 }

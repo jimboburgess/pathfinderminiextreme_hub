@@ -694,8 +694,56 @@ bool decodeSnapshotChunk(const uint8_t* data, size_t size,
              payload.roomID == NETWORK_NO_ROOM) ||
             (payload.snapshotType == SnapshotType::DUNGEON_ROOM &&
              payload.roomID < NETWORK_MAX_DUNGEON_ROOMS) ||
-            (payload.snapshotType == SnapshotType::DUNGEON_ROOM_DETAIL &&
+           (payload.snapshotType == SnapshotType::DUNGEON_ROOM_DETAIL &&
              payload.roomID < NETWORK_MAX_DUNGEON_ROOMS));
+}
+
+bool encodeActivityAck(const ActivityAckPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.snapshotEpoch) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.packetType)) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.snapshotType)) ||
+        !writer.writeU8(payload.roomID) ||
+        !writer.writeU8(payload.itemIndex) ||
+        !writer.writeU8(payload.chunkIndex)) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodeActivityAck(const uint8_t* data, size_t size,
+    ActivityAckPayload& payload)
+{
+    PacketReader reader(data, size);
+    uint8_t packetType = 0;
+    uint8_t snapshotType = 0;
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.snapshotEpoch) ||
+        !reader.readU8(packetType) || !reader.readU8(snapshotType) ||
+        !reader.readU8(payload.roomID) ||
+        !reader.readU8(payload.itemIndex) ||
+        !reader.readU8(payload.chunkIndex) || !reader.finished()) return false;
+    payload.packetType = static_cast<NetworkPacketType>(packetType);
+    payload.snapshotType = static_cast<SnapshotType>(snapshotType);
+    const bool reliablePacket =
+        payload.packetType == NetworkPacketType::ACTIVITY_PREPARE ||
+        payload.packetType == NetworkPacketType::DUNGEON_BEGIN ||
+        payload.packetType == NetworkPacketType::FOREST_BEGIN ||
+        payload.packetType == NetworkPacketType::ROOM_TRANSITION ||
+        payload.packetType == NetworkPacketType::ACTIVITY_START ||
+        payload.packetType == NetworkPacketType::PLAYER_CHARACTER_STATE ||
+        payload.packetType == NetworkPacketType::SNAPSHOT_CHUNK ||
+        payload.packetType == NetworkPacketType::PLAYER_SPAWN;
+    return payload.activityID != 0 && reliablePacket &&
+           snapshotType >= static_cast<uint8_t>(SnapshotType::DUNGEON_GRAPH) &&
+           snapshotType <= static_cast<uint8_t>(SnapshotType::DUNGEON_ROOM_DETAIL) &&
+           (payload.roomID == NETWORK_NO_ROOM ||
+            payload.roomID < NETWORK_MAX_DUNGEON_ROOMS) &&
+           payload.itemIndex < MAX_MULTIPLAYER_PLAYERS &&
+           payload.chunkIndex < MAX_SNAPSHOT_CHUNKS;
 }
 
 bool encodeRoomTransition(const RoomTransitionPayload& payload,

@@ -49,6 +49,10 @@ public:
     void removePeer(const TransportAddress& address);
     TransportAddress getLocalAddress() const;
     uint32_t getDroppedReceiveCount() const;
+    uint32_t getImmediateSendFailureCount() const;
+    uint32_t getSendCompletionSuccessCount() const;
+    uint32_t getSendCompletionFailureCount() const;
+    uint8_t getReceiveQueueCapacity() const;
 
 private:
     bool initialized = false;

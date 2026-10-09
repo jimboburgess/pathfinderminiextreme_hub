@@ -6,7 +6,7 @@
 
 #include "multiplayer_types.h"
 
-constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 2;
+constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 3;
 constexpr uint16_t MULTIPLAYER_PACKET_MAGIC = 0x504D;
 constexpr size_t ESPNOW_MAX_PACKET_SIZE = 250;
 constexpr size_t NETWORK_PACKET_HEADER_SIZE = 14;
@@ -22,6 +22,7 @@ constexpr size_t PLAYER_MOVE_REQUEST_PAYLOAD_SIZE = 7;
 constexpr size_t PLAYER_POSITION_PAYLOAD_SIZE = 11;
 constexpr size_t PLAYER_ROOM_CHANGE_PAYLOAD_SIZE = 11;
 constexpr size_t SNAPSHOT_CHUNK_DATA_SIZE = 200;
+constexpr size_t ACTIVITY_ACK_PAYLOAD_SIZE = 11;
 constexpr uint8_t MAX_SNAPSHOT_CHUNKS = 4;
 constexpr uint8_t NETWORK_NO_ROOM = UINT8_MAX;
 constexpr uint8_t NETWORK_MAX_DUNGEON_ROOMS = 12;
@@ -288,6 +289,17 @@ struct SnapshotChunkPayload
     uint8_t payload[SNAPSHOT_CHUNK_DATA_SIZE] = {};
 };
 
+struct ActivityAckPayload
+{
+    uint32_t activityID = 0;
+    uint16_t snapshotEpoch = 0;
+    NetworkPacketType packetType = NetworkPacketType::ACTIVITY_PREPARE;
+    SnapshotType snapshotType = SnapshotType::FOREST_STATE;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    uint8_t itemIndex = 0;
+    uint8_t chunkIndex = 0;
+};
+
 struct RoomTransitionPayload
 {
     uint32_t activityID = 0;
@@ -442,6 +454,10 @@ bool encodeSnapshotChunk(const SnapshotChunkPayload& payload,
     uint8_t* destination, size_t capacity, size_t& size);
 bool decodeSnapshotChunk(const uint8_t* data, size_t size,
     SnapshotChunkPayload& payload);
+bool encodeActivityAck(const ActivityAckPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeActivityAck(const uint8_t* data, size_t size,
+    ActivityAckPayload& payload);
 bool encodeRoomTransition(const RoomTransitionPayload& payload,
     uint8_t* destination, size_t capacity, size_t& size);
 bool decodeRoomTransition(const uint8_t* data, size_t size,
