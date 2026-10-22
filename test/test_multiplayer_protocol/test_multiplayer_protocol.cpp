@@ -172,6 +172,7 @@ void test_activity_and_room_validation_rejects_invalid_rooms()
     prepare.roomID = 3;
     prepare.snapshotEpoch = 7;
     prepare.participantMask = 0x03;
+    prepare.roomPlayerMask = 0x03;
     prepare.graphChunkCount = 2;
     prepare.worldChunkCount = 2;
     TEST_ASSERT_TRUE(encodeActivityPrepare(prepare, bytes, sizeof(bytes), size));
@@ -202,6 +203,168 @@ void test_activity_and_room_validation_rejects_invalid_rooms()
     RoomTransitionPayload decodedTransition{};
     TEST_ASSERT_FALSE(decodeRoomTransition(
         bytes, size, decodedTransition));
+}
+
+void test_shared_message_round_trip_is_bounded_and_ordered()
+{
+    SharedGameplayMessagePayload message{};
+    message.activityID = 0x1234ABCD;
+    message.messageSequence = UINT16_MAX;
+    message.category = SharedMessageCategory::COMBAT;
+    strncpy(message.text, "Goblin hits Meriel for 6.",
+            sizeof(message.text) - 1);
+    message.textLength = strlen(message.text);
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodeSharedGameplayMessage(
+        message, bytes, sizeof(bytes), size));
+    SharedGameplayMessagePayload decoded{};
+    TEST_ASSERT_TRUE(decodeSharedGameplayMessage(bytes, size, decoded));
+    TEST_ASSERT_EQUAL_UINT16(UINT16_MAX, decoded.messageSequence);
+    TEST_ASSERT_EQUAL_STRING(message.text, decoded.text);
+    TEST_ASSERT_TRUE(isNewerMovementSequence(0, decoded.messageSequence));
+
+    message.textLength = SHARED_MESSAGE_TEXT_SIZE;
+    TEST_ASSERT_FALSE(encodeSharedGameplayMessage(
+        message, bytes, sizeof(bytes), size));
+}
+
+void test_player_room_transition_request_round_trip_rejects_bad_room()
+{
+    PlayerRoomTransitionRequestPayload request{};
+    request.activityID = 55;
+    request.sourceRoomID = 4;
+    request.direction = 6;
+    request.transitionSequence = 91;
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodePlayerRoomTransitionRequest(
+        request, bytes, sizeof(bytes), size));
+    PlayerRoomTransitionRequestPayload decoded{};
+    TEST_ASSERT_TRUE(decodePlayerRoomTransitionRequest(bytes, size, decoded));
+    TEST_ASSERT_EQUAL_UINT8(4, decoded.sourceRoomID);
+    TEST_ASSERT_EQUAL_UINT16(91, decoded.transitionSequence);
+    bytes[4] = NETWORK_MAX_DUNGEON_ROOMS;
+    TEST_ASSERT_FALSE(decodePlayerRoomTransitionRequest(bytes, size, decoded));
+}
+
+void test_multiplayer_combat_begin_preserves_stable_refs_and_initiative()
+{
+    MultiplayerCombatBeginPayload begin{};
+    begin.activityID = 99;
+    begin.combatID = 12;
+    begin.eventSequence = 7;
+    begin.combatantCount = 3;
+    begin.currentTurnIndex = 1;
+    begin.round = 2;
+    begin.combatants[0].combatant.kind = MultiplayerCombatantKind::PLAYER;
+    begin.combatants[0].combatant.playerID = 2;
+    begin.combatants[0].combatant.roomID = 5;
+    begin.combatants[0].initiative = 18;
+    begin.combatants[1].combatant.kind = MultiplayerCombatantKind::MONSTER;
+    begin.combatants[1].combatant.playerID = INVALID_PLAYER_ID;
+    begin.combatants[1].combatant.roomID = 5;
+    begin.combatants[1].combatant.entityID = 3;
+    begin.combatants[1].initiative = 13;
+    begin.combatants[2].combatant.kind = MultiplayerCombatantKind::PLAYER;
+    begin.combatants[2].combatant.playerID = 0;
+    begin.combatants[2].combatant.roomID = 1;
+    begin.combatants[2].initiative = 8;
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodeMultiplayerCombatBegin(
+        begin, bytes, sizeof(bytes), size));
+    MultiplayerCombatBeginPayload decoded{};
+    TEST_ASSERT_TRUE(decodeMultiplayerCombatBegin(bytes, size, decoded));
+    TEST_ASSERT_EQUAL_UINT8(3, decoded.combatantCount);
+    TEST_ASSERT_EQUAL_UINT8(2, decoded.combatants[0].combatant.playerID);
+    TEST_ASSERT_EQUAL_UINT8(5, decoded.combatants[1].combatant.roomID);
+    TEST_ASSERT_EQUAL_UINT8(3, decoded.combatants[1].combatant.entityID);
+    TEST_ASSERT_EQUAL_INT8(13, decoded.combatants[1].initiative);
+}
+
+void test_combat_action_and_result_round_trip_are_host_authoritative()
+{
+    MultiplayerCombatActionRequestPayload action{};
+    action.activityID = 99;
+    action.combatID = 12;
+    action.actionSequence = 4;
+    action.action = MultiplayerCombatActionType::MELEE_ATTACK;
+    action.actor.kind = MultiplayerCombatantKind::PLAYER;
+    action.actor.playerID = 1;
+    action.actor.roomID = 3;
+    action.target.kind = MultiplayerCombatantKind::MONSTER;
+    action.target.playerID = INVALID_PLAYER_ID;
+    action.target.roomID = 3;
+    action.target.entityID = 2;
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodeMultiplayerCombatActionRequest(
+        action, bytes, sizeof(bytes), size));
+    MultiplayerCombatActionRequestPayload decodedAction{};
+    TEST_ASSERT_TRUE(decodeMultiplayerCombatActionRequest(
+        bytes, size, decodedAction));
+    TEST_ASSERT_EQUAL_UINT8(1, decodedAction.actor.playerID);
+    TEST_ASSERT_EQUAL_UINT8(2, decodedAction.target.entityID);
+
+    MultiplayerCombatEventPayload result{};
+    result.activityID = 99;
+    result.combatID = 12;
+    result.eventSequence = 5;
+    result.eventType = MultiplayerCombatEventType::ACTION_RESULT;
+    result.currentTurnIndex = 2;
+    result.round = 1;
+    result.actor = action.actor;
+    result.target = action.target;
+    result.actorHP = 20;
+    result.targetHP = 0;
+    result.actorState = 0;
+    result.targetState = 2;
+    result.roomRevision = 8;
+    strncpy(result.text, "Rogue hits Goblin for 9.", sizeof(result.text) - 1);
+    result.textLength = strlen(result.text);
+    TEST_ASSERT_TRUE(encodeMultiplayerCombatEvent(
+        result, bytes, sizeof(bytes), size));
+    MultiplayerCombatEventPayload decodedResult{};
+    TEST_ASSERT_TRUE(decodeMultiplayerCombatEvent(
+        bytes, size, decodedResult));
+    TEST_ASSERT_EQUAL_INT16(0, decodedResult.targetHP);
+    TEST_ASSERT_EQUAL_UINT16(8, decodedResult.roomRevision);
+    TEST_ASSERT_EQUAL_STRING(result.text, decodedResult.text);
+}
+
+void test_combat_move_is_bounded_and_invalid_stable_refs_are_rejected()
+{
+    MultiplayerCombatActionRequestPayload move{};
+    move.activityID = 101;
+    move.combatID = 9;
+    move.actionSequence = 22;
+    move.action = MultiplayerCombatActionType::MOVE;
+    move.actor.kind = MultiplayerCombatantKind::PLAYER;
+    move.actor.playerID = 3;
+    move.actor.roomID = 4;
+    move.direction = 2;
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodeMultiplayerCombatActionRequest(
+        move, bytes, sizeof(bytes), size));
+    MultiplayerCombatActionRequestPayload decoded{};
+    TEST_ASSERT_TRUE(decodeMultiplayerCombatActionRequest(
+        bytes, size, decoded));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(MultiplayerCombatActionType::MOVE),
+        static_cast<uint8_t>(decoded.action));
+    TEST_ASSERT_EQUAL_UINT8(3, decoded.actor.playerID);
+    TEST_ASSERT_EQUAL_UINT8(4, decoded.actor.roomID);
+
+    move.actor.playerID = INVALID_PLAYER_ID;
+    TEST_ASSERT_FALSE(encodeMultiplayerCombatActionRequest(
+        move, bytes, sizeof(bytes), size));
+    move.actor.kind = MultiplayerCombatantKind::MONSTER;
+    move.actor.roomID = NETWORK_MAX_DUNGEON_ROOMS;
+    move.actor.entityID = 1;
+    TEST_ASSERT_FALSE(encodeMultiplayerCombatActionRequest(
+        move, bytes, sizeof(bytes), size));
 }
 
 void test_snapshot_chunks_accept_ordering_and_identical_duplicates()
@@ -397,6 +560,11 @@ void setup()
     RUN_TEST(test_movement_payloads_remain_tiny_and_validate_ids);
     RUN_TEST(test_travel_and_character_payloads_round_trip);
     RUN_TEST(test_activity_and_room_validation_rejects_invalid_rooms);
+    RUN_TEST(test_shared_message_round_trip_is_bounded_and_ordered);
+    RUN_TEST(test_player_room_transition_request_round_trip_rejects_bad_room);
+    RUN_TEST(test_multiplayer_combat_begin_preserves_stable_refs_and_initiative);
+    RUN_TEST(test_combat_action_and_result_round_trip_are_host_authoritative);
+    RUN_TEST(test_combat_move_is_bounded_and_invalid_stable_refs_are_rejected);
     RUN_TEST(test_snapshot_chunks_accept_ordering_and_identical_duplicates);
     RUN_TEST(test_snapshot_chunks_reject_stale_missing_and_oversized_data);
     RUN_TEST(test_activity_ack_round_trip_identifies_exact_snapshot_chunk);

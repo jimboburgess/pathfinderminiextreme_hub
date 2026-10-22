@@ -26,6 +26,17 @@ BellToneID furnitureTone(DungeonFurnitureType type)
     }
 }
 
+bool hasValidBellPlaybackSequence(const BellPuzzleState& state)
+{
+    if (state.sequenceLength == 0 ||
+        state.sequenceLength > MAX_BELL_SEQUENCE)
+        return false;
+    for (uint8_t i = 0; i < state.sequenceLength; ++i)
+        if (state.sequence[i] >= BELL_TONE_COUNT)
+            return false;
+    return true;
+}
+
 bool isReservedBellTile(const DungeonRoom& room, int x, int y)
 {
     if (x <= 0 || x >= ROOM_WIDTH - 1 || y <= 0 || y >= ROOM_HEIGHT - 1 ||
@@ -245,6 +256,26 @@ bool isBellPuzzleRoom(const DungeonRoom& room)
         room.bellPuzzle.progress != BELL_PUZZLE_NONE;
 }
 
+bool playBellPuzzleSequence(const BellPuzzleState& state)
+{
+    if (!hasValidBellPlaybackSequence(state))
+        return false;
+
+    uint16_t frequencies[MAX_BELL_SEQUENCE] = {};
+    for (uint8_t i = 0; i < state.sequenceLength; ++i)
+    {
+        frequencies[i] = getBellToneFrequency(state.sequence[i]);
+        if (frequencies[i] == 0)
+            return false;
+    }
+
+    return playToneSequence(
+        frequencies,
+        state.sequenceLength,
+        BELL_TONE_DURATION_MS,
+        BELL_PAUSE_DURATION_MS);
+}
+
 bool strikeCurrentBellAt(int x, int y)
 {
     if (dungeon.currentRoom >= dungeon.roomCount) return false;
@@ -268,20 +299,36 @@ bool strikeCurrentBellAt(int x, int y)
     return true;
 }
 
-bool handleCurrentBellListeningRuneEntry(Entity& mover, int x, int y)
+bool isCurrentBellListeningRuneAt(int x, int y)
 {
-    if (mover.type != ENTITY_PLAYER || dungeon.currentRoom >= dungeon.roomCount)
+    if (dungeon.currentRoom >= dungeon.roomCount ||
+        x < 0 || x >= ROOM_WIDTH || y < 0 || y >= ROOM_HEIGHT)
         return false;
     const DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
-    if (!isBellPuzzleRoom(room) || room.bellPuzzle.runeX != x ||
-        room.bellPuzzle.runeY != y) return false;
-    uint16_t frequencies[MAX_BELL_SEQUENCE] = {};
-    for (uint8_t i = 0; i < room.bellPuzzle.sequenceLength; ++i)
-        frequencies[i] = getBellToneFrequency(room.bellPuzzle.sequence[i]);
-    playToneSequence(frequencies, room.bellPuzzle.sequenceLength,
-                     BELL_TONE_DURATION_MS, BELL_PAUSE_DURATION_MS);
+    return isBellPuzzleRoom(room) && room.bellPuzzle.runeX == x &&
+        room.bellPuzzle.runeY == y &&
+        room.map.tiles[y][x] == TILE_BELL_LISTEN_RUNE;
+}
+
+bool handleCurrentBellListeningRuneEntry(Entity& mover, int x, int y)
+{
+    if (mover.type != ENTITY_PLAYER || !isCurrentBellListeningRuneAt(x, y))
+        return false;
+    const BellPuzzleState& state =
+        dungeon.rooms[dungeon.currentRoom].bellPuzzle;
+    if (!hasValidBellPlaybackSequence(state))
+        return false;
+    playBellPuzzleSequence(state);
     setGameMessage("You hear a sequence of bells.");
     return true;
+}
+
+bool handleCurrentBellListeningRuneMovement(
+    Entity& mover, int previousX, int previousY, int x, int y)
+{
+    if (previousX == x && previousY == y)
+        return false;
+    return handleCurrentBellListeningRuneEntry(mover, x, y);
 }
 
 bool collectCurrentBellKey(Entity& keyEntity)

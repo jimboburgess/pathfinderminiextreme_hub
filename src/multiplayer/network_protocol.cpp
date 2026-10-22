@@ -126,15 +126,40 @@ bool writeCharacterState(
     if (!isValidPlayerID(character.playerID) ||
         character.characterClass >= NETWORK_CHARACTER_CLASS_COUNT)
         return false;
-    return writer.writeU8(character.playerID) &&
-           writer.writeBytes(character.displayName, NETWORK_PLAYER_NAME_SIZE) &&
-           writer.writeU8(character.characterClass) &&
-           writer.writeU8(character.level) &&
-           writer.writeU16(static_cast<uint16_t>(character.currentHP)) &&
-           writer.writeU16(static_cast<uint16_t>(character.maxHP)) &&
-           writer.writeBytes(character.abilityScores,
-                             sizeof(character.abilityScores)) &&
-           writer.writeU8(character.speed);
+    if (character.knownAbilityCount > NETWORK_KNOWN_ABILITY_CAPACITY ||
+        character.conditionCount > NETWORK_CONDITION_CAPACITY)
+        return false;
+    if (!writer.writeU8(character.playerID) ||
+        !writer.writeBytes(character.displayName, NETWORK_PLAYER_NAME_SIZE) ||
+        !writer.writeU8(character.characterClass) ||
+        !writer.writeU8(character.level) ||
+        !writer.writeU16(static_cast<uint16_t>(character.currentHP)) ||
+        !writer.writeU16(static_cast<uint16_t>(character.maxHP)) ||
+        !writer.writeBytes(character.abilityScores,
+                           sizeof(character.abilityScores)) ||
+        !writer.writeU8(character.speed)) return false;
+    if (!writer.writeU8(character.characterState) ||
+        !writer.writeU16(static_cast<uint16_t>(character.currentMP)) ||
+        !writer.writeU16(static_cast<uint16_t>(character.maxMP)) ||
+        !writer.writeU8(static_cast<uint8_t>(character.initiative)) ||
+        !writer.writeU8(character.trainedWeaponGroup) ||
+        !writer.writeU8(character.channelEnergyCurrent) ||
+        !writer.writeU8(character.channelEnergyMax)) return false;
+    for (const NetworkCharacterState::EquipmentItem& item : character.equipment)
+        if (!writer.writeU8(item.itemID) ||
+            !writer.writeU8(static_cast<uint8_t>(item.enhancementBonus)) ||
+            !writer.writeU8(item.weaponProperties)) return false;
+    if (!writer.writeU8(character.knownAbilityCount)) return false;
+    for (uint8_t index = 0; index < NETWORK_KNOWN_ABILITY_CAPACITY; ++index)
+        if (!writer.writeU16(character.knownAbilities[index])) return false;
+    if (!writer.writeU8(character.conditionCount)) return false;
+    for (const NetworkCharacterState::ConditionState& condition :
+         character.conditions)
+        if (!writer.writeU8(condition.type) ||
+            !writer.writeU16(static_cast<uint16_t>(condition.value)) ||
+            !writer.writeU16(static_cast<uint16_t>(condition.roundsRemaining)))
+            return false;
+    return true;
 }
 
 bool readCharacterState(
@@ -143,6 +168,9 @@ bool readCharacterState(
 {
     uint16_t currentHP = 0;
     uint16_t maxHP = 0;
+    uint16_t currentMP = 0;
+    uint16_t maxMP = 0;
+    uint8_t initiative = 0;
     if (!reader.readU8(character.playerID) ||
         !reader.readBytes(character.displayName, NETWORK_PLAYER_NAME_SIZE) ||
         !reader.readU8(character.characterClass) ||
@@ -150,14 +178,116 @@ bool readCharacterState(
         !reader.readU16(currentHP) || !reader.readU16(maxHP) ||
         !reader.readBytes(character.abilityScores,
                           sizeof(character.abilityScores)) ||
-        !reader.readU8(character.speed))
+        !reader.readU8(character.speed) ||
+        !reader.readU8(character.characterState) ||
+        !reader.readU16(currentMP) || !reader.readU16(maxMP) ||
+        !reader.readU8(initiative) ||
+        !reader.readU8(character.trainedWeaponGroup) ||
+        !reader.readU8(character.channelEnergyCurrent) ||
+        !reader.readU8(character.channelEnergyMax))
         return false;
+    for (NetworkCharacterState::EquipmentItem& item : character.equipment)
+    {
+        uint8_t enhancementBonus = 0;
+        if (!reader.readU8(item.itemID) || !reader.readU8(enhancementBonus) ||
+            !reader.readU8(item.weaponProperties)) return false;
+        item.enhancementBonus = static_cast<int8_t>(enhancementBonus);
+    }
+    if (!reader.readU8(character.knownAbilityCount) ||
+        character.knownAbilityCount > NETWORK_KNOWN_ABILITY_CAPACITY)
+        return false;
+    for (uint16_t& ability : character.knownAbilities)
+        if (!reader.readU16(ability)) return false;
+    if (!reader.readU8(character.conditionCount) ||
+        character.conditionCount > NETWORK_CONDITION_CAPACITY) return false;
+    for (NetworkCharacterState::ConditionState& condition :
+         character.conditions)
+    {
+        uint16_t value = 0;
+        uint16_t rounds = 0;
+        if (!reader.readU8(condition.type) || !reader.readU16(value) ||
+            !reader.readU16(rounds)) return false;
+        condition.value = static_cast<int16_t>(value);
+        condition.roundsRemaining = static_cast<int16_t>(rounds);
+    }
     character.displayName[NETWORK_PLAYER_NAME_SIZE - 1] = '\0';
     character.currentHP = static_cast<int16_t>(currentHP);
     character.maxHP = static_cast<int16_t>(maxHP);
+    character.currentMP = static_cast<int16_t>(currentMP);
+    character.maxMP = static_cast<int16_t>(maxMP);
+    character.initiative = static_cast<int8_t>(initiative);
     return isValidPlayerID(character.playerID) &&
            character.characterClass < NETWORK_CHARACTER_CLASS_COUNT &&
            character.maxHP > 0;
+}
+
+bool validRoomID(uint8_t roomID)
+{
+    return roomID < NETWORK_MAX_DUNGEON_ROOMS;
+}
+
+bool validCombatantKind(MultiplayerCombatantKind kind)
+{
+    return kind == MultiplayerCombatantKind::PLAYER ||
+           kind == MultiplayerCombatantKind::MONSTER;
+}
+
+bool validCombatantRef(const MultiplayerCombatantRef& combatant)
+{
+    if (!validCombatantKind(combatant.kind) || !validRoomID(combatant.roomID))
+        return false;
+    if (combatant.kind == MultiplayerCombatantKind::PLAYER)
+        return isValidPlayerID(combatant.playerID) && combatant.entityID == 0;
+    return combatant.playerID == INVALID_PLAYER_ID && combatant.entityID != 0;
+}
+
+bool writeCombatantRef(
+    PacketWriter& writer,
+    const MultiplayerCombatantRef& combatant)
+{
+    return validCombatantRef(combatant) &&
+           writer.writeU8(static_cast<uint8_t>(combatant.kind)) &&
+           writer.writeU8(combatant.playerID) &&
+           writer.writeU8(combatant.roomID) &&
+           writer.writeU8(combatant.entityID);
+}
+
+bool readCombatantRef(
+    PacketReader& reader,
+    MultiplayerCombatantRef& combatant)
+{
+    uint8_t kind = 0;
+    if (!reader.readU8(kind) || !reader.readU8(combatant.playerID) ||
+        !reader.readU8(combatant.roomID) || !reader.readU8(combatant.entityID))
+        return false;
+    combatant.kind = static_cast<MultiplayerCombatantKind>(kind);
+    return validCombatantRef(combatant);
+}
+
+bool writeOptionalCombatantRef(
+    PacketWriter& writer,
+    const MultiplayerCombatantRef& combatant)
+{
+    if (combatant.kind == MultiplayerCombatantKind::NONE)
+        return writer.writeU8(static_cast<uint8_t>(combatant.kind)) &&
+               writer.writeU8(INVALID_PLAYER_ID) &&
+               writer.writeU8(NETWORK_NO_ROOM) && writer.writeU8(0);
+    return writeCombatantRef(writer, combatant);
+}
+
+bool readOptionalCombatantRef(
+    PacketReader& reader,
+    MultiplayerCombatantRef& combatant)
+{
+    uint8_t kind = 0;
+    if (!reader.readU8(kind) || !reader.readU8(combatant.playerID) ||
+        !reader.readU8(combatant.roomID) || !reader.readU8(combatant.entityID))
+        return false;
+    combatant.kind = static_cast<MultiplayerCombatantKind>(kind);
+    if (combatant.kind == MultiplayerCombatantKind::NONE)
+        return combatant.playerID == INVALID_PLAYER_ID &&
+               combatant.roomID == NETWORK_NO_ROOM && combatant.entityID == 0;
+    return validCombatantRef(combatant);
 }
 }
 
@@ -190,6 +320,8 @@ bool isKnownPacketType(NetworkPacketType packetType)
         case NetworkPacketType::ROOM_TRANSITION:
         case NetworkPacketType::ROOM_READY:
         case NetworkPacketType::ACK:
+        case NetworkPacketType::SHARED_GAMEPLAY_MESSAGE:
+        case NetworkPacketType::PLAYER_ROOM_TRANSITION_REQUEST:
         case NetworkPacketType::PLAYER_MOVE_REQUEST:
         case NetworkPacketType::PLAYER_POSITION:
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
@@ -198,6 +330,8 @@ bool isKnownPacketType(NetworkPacketType packetType)
         case NetworkPacketType::COMBAT_ACTION_REQUEST:
         case NetworkPacketType::COMBAT_ACTION_RESULT:
         case NetworkPacketType::COMBAT_TURN:
+        case NetworkPacketType::COMBAT_END:
+        case NetworkPacketType::COMBAT_ACK:
         case NetworkPacketType::TRADE_REQUEST:
         case NetworkPacketType::TRADE_STATE:
         case NetworkPacketType::TRADE_CONFIRM:
@@ -239,6 +373,8 @@ bool isGameplayPacketType(NetworkPacketType packetType)
         case NetworkPacketType::ROOM_TRANSITION:
         case NetworkPacketType::ROOM_READY:
         case NetworkPacketType::ACK:
+        case NetworkPacketType::SHARED_GAMEPLAY_MESSAGE:
+        case NetworkPacketType::PLAYER_ROOM_TRANSITION_REQUEST:
         case NetworkPacketType::PLAYER_MOVE_REQUEST:
         case NetworkPacketType::PLAYER_POSITION:
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
@@ -247,6 +383,8 @@ bool isGameplayPacketType(NetworkPacketType packetType)
         case NetworkPacketType::COMBAT_ACTION_REQUEST:
         case NetworkPacketType::COMBAT_ACTION_RESULT:
         case NetworkPacketType::COMBAT_TURN:
+        case NetworkPacketType::COMBAT_END:
+        case NetworkPacketType::COMBAT_ACK:
         case NetworkPacketType::TRADE_REQUEST:
         case NetworkPacketType::TRADE_STATE:
         case NetworkPacketType::TRADE_CONFIRM:
@@ -514,6 +652,7 @@ bool encodeActivityPrepare(const ActivityPreparePayload& payload,
         !writer.writeU8(payload.roomID) ||
         !writer.writeU16(payload.snapshotEpoch) ||
         !writer.writeU8(payload.participantMask) ||
+        !writer.writeU8(payload.roomPlayerMask) ||
         !writer.writeU8(payload.graphChunkCount) ||
         !writer.writeU8(payload.detailChunkCount) ||
         !writer.writeU8(payload.worldChunkCount)) return false;
@@ -530,6 +669,7 @@ bool decodeActivityPrepare(const uint8_t* data, size_t size,
         !reader.readU8(activityType) || !reader.readU8(payload.roomID) ||
         !reader.readU16(payload.snapshotEpoch) ||
         !reader.readU8(payload.participantMask) ||
+        !reader.readU8(payload.roomPlayerMask) ||
         !reader.readU8(payload.graphChunkCount) ||
         !reader.readU8(payload.detailChunkCount) ||
         !reader.readU8(payload.worldChunkCount) || !reader.finished())
@@ -544,6 +684,8 @@ bool decodeActivityPrepare(const uint8_t* data, size_t size,
            payload.detailChunkCount <= MAX_SNAPSHOT_CHUNKS &&
            payload.worldChunkCount > 0 &&
            payload.worldChunkCount <= MAX_SNAPSHOT_CHUNKS &&
+           payload.roomPlayerMask != 0 &&
+           (payload.roomPlayerMask & ~payload.participantMask) == 0 &&
            (payload.participantMask & ~((1u << MAX_MULTIPLAYER_PLAYERS) - 1u)) == 0;
 }
 
@@ -771,6 +913,270 @@ bool decodeRoomTransition(const uint8_t* data, size_t size,
            payload.activityID != 0 &&
            payload.roomID < NETWORK_MAX_DUNGEON_ROOMS &&
            payload.entryDirection <= 4;
+}
+
+bool encodePlayerRoomTransitionRequest(
+    const PlayerRoomTransitionRequestPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 || !validRoomID(payload.sourceRoomID) ||
+        payload.direction >= 8 ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU8(payload.sourceRoomID) ||
+        !writer.writeU8(payload.direction) ||
+        !writer.writeU16(payload.transitionSequence)) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodePlayerRoomTransitionRequest(
+    const uint8_t* data, size_t size,
+    PlayerRoomTransitionRequestPayload& payload)
+{
+    PacketReader reader(data, size);
+    return reader.readU32(payload.activityID) &&
+           reader.readU8(payload.sourceRoomID) &&
+           reader.readU8(payload.direction) &&
+           reader.readU16(payload.transitionSequence) && reader.finished() &&
+           payload.activityID != 0 && validRoomID(payload.sourceRoomID) &&
+           payload.direction < 8;
+}
+
+bool encodeSharedGameplayMessage(
+    const SharedGameplayMessagePayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    const uint8_t category = static_cast<uint8_t>(payload.category);
+    if (payload.activityID == 0 ||
+        category > static_cast<uint8_t>(SharedMessageCategory::SYSTEM) ||
+        payload.textLength == 0 ||
+        payload.textLength >= SHARED_MESSAGE_TEXT_SIZE ||
+        payload.text[payload.textLength] != '\0' ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.messageSequence) ||
+        !writer.writeU8(category) || !writer.writeU8(payload.textLength) ||
+        !writer.writeBytes(payload.text, payload.textLength)) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodeSharedGameplayMessage(
+    const uint8_t* data, size_t size,
+    SharedGameplayMessagePayload& payload)
+{
+    PacketReader reader(data, size);
+    uint8_t category = 0;
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.messageSequence) ||
+        !reader.readU8(category) || !reader.readU8(payload.textLength) ||
+        category > static_cast<uint8_t>(SharedMessageCategory::SYSTEM) ||
+        payload.textLength == 0 || payload.textLength >= SHARED_MESSAGE_TEXT_SIZE ||
+        !reader.readBytes(payload.text, payload.textLength) || !reader.finished())
+        return false;
+    payload.category = static_cast<SharedMessageCategory>(category);
+    payload.text[payload.textLength] = '\0';
+    return payload.activityID != 0;
+}
+
+bool encodeMultiplayerCombatBegin(
+    const MultiplayerCombatBeginPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 || payload.combatID == 0 ||
+        payload.combatantCount == 0 || payload.combatantCount > 16 ||
+        payload.currentTurnIndex >= payload.combatantCount ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.combatID) ||
+        !writer.writeU16(payload.eventSequence) ||
+        !writer.writeU8(payload.combatantCount) ||
+        !writer.writeU8(payload.currentTurnIndex) ||
+        !writer.writeU16(payload.round)) return false;
+    for (uint8_t index = 0; index < payload.combatantCount; ++index)
+        if (!writeCombatantRef(writer, payload.combatants[index].combatant) ||
+            !writer.writeU8(static_cast<uint8_t>(
+                payload.combatants[index].initiative))) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodeMultiplayerCombatBegin(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatBeginPayload& payload)
+{
+    PacketReader reader(data, size);
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.combatID) ||
+        !reader.readU16(payload.eventSequence) ||
+        !reader.readU8(payload.combatantCount) ||
+        !reader.readU8(payload.currentTurnIndex) ||
+        !reader.readU16(payload.round) || payload.activityID == 0 ||
+        payload.combatID == 0 || payload.combatantCount == 0 ||
+        payload.combatantCount > 16 ||
+        payload.currentTurnIndex >= payload.combatantCount) return false;
+    for (uint8_t index = 0; index < payload.combatantCount; ++index)
+    {
+        uint8_t initiative = 0;
+        if (!readCombatantRef(reader, payload.combatants[index].combatant) ||
+            !reader.readU8(initiative)) return false;
+        payload.combatants[index].initiative = static_cast<int8_t>(initiative);
+    }
+    return reader.finished();
+}
+
+bool encodeMultiplayerCombatActionRequest(
+    const MultiplayerCombatActionRequestPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    const uint8_t action = static_cast<uint8_t>(payload.action);
+    if (payload.activityID == 0 || payload.combatID == 0 ||
+        action == 0 ||
+        action > static_cast<uint8_t>(MultiplayerCombatActionType::END_TURN) ||
+        payload.direction >= 8 ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.combatID) ||
+        !writer.writeU16(payload.actionSequence) || !writer.writeU8(action) ||
+        !writeCombatantRef(writer, payload.actor) ||
+        !writeOptionalCombatantRef(writer, payload.target) ||
+        !writer.writeU16(payload.abilityID) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.targetX)) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.targetY)) ||
+        !writer.writeU8(payload.direction) ||
+        !writer.writeU8(payload.damageType) ||
+        !writer.writeU8(payload.flags)) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodeMultiplayerCombatActionRequest(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatActionRequestPayload& payload)
+{
+    PacketReader reader(data, size);
+    uint8_t action = 0;
+    uint8_t targetX = 0;
+    uint8_t targetY = 0;
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.combatID) ||
+        !reader.readU16(payload.actionSequence) || !reader.readU8(action) ||
+        !readCombatantRef(reader, payload.actor) ||
+        !readOptionalCombatantRef(reader, payload.target) ||
+        !reader.readU16(payload.abilityID) || !reader.readU8(targetX) ||
+        !reader.readU8(targetY) || !reader.readU8(payload.direction) ||
+        !reader.readU8(payload.damageType) || !reader.readU8(payload.flags) ||
+        !reader.finished()) return false;
+    payload.action = static_cast<MultiplayerCombatActionType>(action);
+    payload.targetX = static_cast<int8_t>(targetX);
+    payload.targetY = static_cast<int8_t>(targetY);
+    return payload.activityID != 0 && payload.combatID != 0 && action != 0 &&
+        action <= static_cast<uint8_t>(MultiplayerCombatActionType::END_TURN) &&
+        payload.direction < 8;
+}
+
+bool encodeMultiplayerCombatEvent(
+    const MultiplayerCombatEventPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    const uint8_t eventType = static_cast<uint8_t>(payload.eventType);
+    if (payload.activityID == 0 || payload.combatID == 0 ||
+        eventType > static_cast<uint8_t>(MultiplayerCombatEventType::COMBAT_ENDED) ||
+        payload.textLength >= SHARED_MESSAGE_TEXT_SIZE ||
+        payload.text[payload.textLength] != '\0' ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.combatID) ||
+        !writer.writeU16(payload.eventSequence) || !writer.writeU8(eventType) ||
+        !writer.writeU8(payload.currentTurnIndex) ||
+        !writer.writeU16(payload.round) ||
+        !writeOptionalCombatantRef(writer, payload.actor) ||
+        !writeOptionalCombatantRef(writer, payload.target) ||
+        !writer.writeU8(payload.actorX) || !writer.writeU8(payload.actorY) ||
+        !writer.writeU8(payload.targetX) || !writer.writeU8(payload.targetY) ||
+        !writer.writeU16(static_cast<uint16_t>(payload.actorHP)) ||
+        !writer.writeU16(static_cast<uint16_t>(payload.targetHP)) ||
+        !writer.writeU8(payload.actorState) ||
+        !writer.writeU8(payload.targetState) ||
+        !writer.writeU16(payload.roomRevision) ||
+        !writer.writeU8(payload.textLength) ||
+        (payload.textLength > 0 &&
+         !writer.writeBytes(payload.text, payload.textLength))) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodeMultiplayerCombatEvent(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatEventPayload& payload)
+{
+    PacketReader reader(data, size);
+    uint8_t eventType = 0;
+    uint16_t actorHP = 0;
+    uint16_t targetHP = 0;
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.combatID) ||
+        !reader.readU16(payload.eventSequence) || !reader.readU8(eventType) ||
+        !reader.readU8(payload.currentTurnIndex) ||
+        !reader.readU16(payload.round) ||
+        !readOptionalCombatantRef(reader, payload.actor) ||
+        !readOptionalCombatantRef(reader, payload.target) ||
+        !reader.readU8(payload.actorX) || !reader.readU8(payload.actorY) ||
+        !reader.readU8(payload.targetX) || !reader.readU8(payload.targetY) ||
+        !reader.readU16(actorHP) || !reader.readU16(targetHP) ||
+        !reader.readU8(payload.actorState) ||
+        !reader.readU8(payload.targetState) ||
+        !reader.readU16(payload.roomRevision) ||
+        !reader.readU8(payload.textLength) ||
+        eventType > static_cast<uint8_t>(MultiplayerCombatEventType::COMBAT_ENDED) ||
+        payload.textLength >= SHARED_MESSAGE_TEXT_SIZE ||
+        (payload.textLength > 0 &&
+         !reader.readBytes(payload.text, payload.textLength)) ||
+        !reader.finished()) return false;
+    payload.eventType = static_cast<MultiplayerCombatEventType>(eventType);
+    payload.actorHP = static_cast<int16_t>(actorHP);
+    payload.targetHP = static_cast<int16_t>(targetHP);
+    payload.text[payload.textLength] = '\0';
+    return payload.activityID != 0 && payload.combatID != 0;
+}
+
+bool encodeMultiplayerCombatAck(
+    const MultiplayerCombatAckPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 || payload.combatID == 0 ||
+        (payload.packetType != NetworkPacketType::COMBAT_BEGIN &&
+         payload.packetType != NetworkPacketType::COMBAT_ACTION_RESULT &&
+         payload.packetType != NetworkPacketType::COMBAT_TURN &&
+         payload.packetType != NetworkPacketType::COMBAT_END) ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.combatID) ||
+        !writer.writeU16(payload.eventSequence) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.packetType)) ||
+        !writer.writeU8(payload.reserved)) return false;
+    size = writer.size();
+    return true;
+}
+
+bool decodeMultiplayerCombatAck(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatAckPayload& payload)
+{
+    PacketReader reader(data, size);
+    uint8_t packetType = 0;
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.combatID) ||
+        !reader.readU16(payload.eventSequence) ||
+        !reader.readU8(packetType) || !reader.readU8(payload.reserved) ||
+        !reader.finished()) return false;
+    payload.packetType = static_cast<NetworkPacketType>(packetType);
+    return payload.activityID != 0 && payload.combatID != 0 &&
+        (payload.packetType == NetworkPacketType::COMBAT_BEGIN ||
+         payload.packetType == NetworkPacketType::COMBAT_ACTION_RESULT ||
+         payload.packetType == NetworkPacketType::COMBAT_TURN ||
+         payload.packetType == NetworkPacketType::COMBAT_END);
 }
 
 bool encodeDungeonBegin(const DungeonBeginPayload& payload,

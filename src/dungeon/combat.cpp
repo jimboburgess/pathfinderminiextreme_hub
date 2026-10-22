@@ -61,6 +61,13 @@ static int rollMitigatedWeaponEnergyDamage(const ItemInstance& weaponItem,
     return total;
 }
 
+int rollWeaponEnergyDamage(
+    const ItemInstance& weaponItem,
+    Character& target)
+{
+    return rollMitigatedWeaponEnergyDamage(weaponItem, target);
+}
+
 static Entity* getPlayerCombatant()
 {
     return getActiveMapPlayer();
@@ -1353,6 +1360,8 @@ void findCombatants()
 
 bool isCombatParticipant(const Entity& entity)
 {
+    if (isMultiplayerCombatActive())
+        return isMultiplayerCombatParticipant(entity);
     if (!combat.active)
         return false;
 
@@ -1438,6 +1447,8 @@ static int rollCombatInitiative(Entity& entity)
 
 Entity* getCurrentCombatant()
 {
+    if (isMultiplayerCombatActive())
+        return getVisibleMultiplayerCurrentCombatant();
     if (!combat.active)
         return nullptr;
 
@@ -1449,6 +1460,8 @@ Entity* getCurrentCombatant()
 
 bool isPlayerTurn()
 {
+    if (isMultiplayerCombatActive())
+        return isLocalPlayersMultiplayerTurn();
     Entity* current = getCurrentCombatant();
 
     if (current == nullptr)
@@ -1461,7 +1474,7 @@ void startCombat()
 {
     if (isMultiplayerExplorationActive())
     {
-        setGameMessage("Multiplayer combat arrives in Stage 3.");
+        startMultiplayerCombatFromCurrentRoom();
         return;
     }
     Entity* player = getActiveMapPlayer();
@@ -1906,6 +1919,12 @@ void nextTurn()
 
 void endPlayerTurn()
 {
+    if (isMultiplayerCombatActive())
+    {
+        if (requestMultiplayerCombatEndTurn())
+            combat.waitingForPlayer = false;
+        return;
+    }
     combat.waitingForPlayer = false;
     playSound(SoundEffect::DEFEND);
 
@@ -1942,6 +1961,8 @@ static bool skipTurnForCondition(Entity* entity)
 
 void updateCombat()
 {
+    if (isMultiplayerCombatActive())
+        return;
    switch (combat.phase)
     {
         case COMBAT_NONE:
@@ -2451,6 +2472,20 @@ void confirmPlayerAttack()
         ? getActiveMapPlayer()
         : getCurrentCombatant();
     Entity* target = getSelectedAttackTarget();
+
+    if (isMultiplayerCombatActive())
+    {
+        if (requestMultiplayerCombatAttack(
+                combat.attackType == COMBAT_ATTACK_RANGED, target))
+        {
+            markAttackCursorDirty();
+            combat.attackType = COMBAT_ATTACK_NONE;
+            combat.selectedTargetIndex = -1;
+            combat.waitingForPlayer = false;
+            requestCombatTileRedraw();
+        }
+        return;
+    }
 
     if (player == nullptr || target == nullptr ||
         !canCharacterAct(player->character))
@@ -3244,6 +3279,28 @@ void confirmPlayerAbility()
     Entity* player = combat.active
         ? getCurrentCombatant() : getActiveMapPlayer();
 
+    if (isMultiplayerCombatActive())
+    {
+        Entity* target = getSelectedAbilityTarget();
+        const uint8_t flags = combat.selectedAbilityFromScroll ? 1 : 0;
+        if (requestMultiplayerCombatAbility(
+                static_cast<uint16_t>(combat.selectedAbility), target,
+                combat.selectedAbilityX, combat.selectedAbilityY,
+                static_cast<uint8_t>(combat.selectedAbilityDirection),
+                static_cast<uint8_t>(combat.selectedAbilityDamageType), flags))
+        {
+            markAbilityCursorDirty();
+            combat.selectedAbility = ABILITY_NONE;
+            combat.selectedAbilityX = -1;
+            combat.selectedAbilityY = -1;
+            combat.selectedTargetIndex = -1;
+            clearSelectedAbilityScroll();
+            combat.waitingForPlayer = false;
+            requestCombatTileRedraw();
+        }
+        return;
+    }
+
     if (player != nullptr && isPlayerTargetingDirectionalAbility())
     {
         AbilityID abilityID = combat.selectedAbility;
@@ -3526,6 +3583,14 @@ void beginDoubleMove()
 
 void beginTotalDefense()
 {
+    if (isMultiplayerCombatActive())
+    {
+        if (!requestMultiplayerFullDefense())
+            setGameMessage("Total Defense unavailable.");
+        else
+            combat.waitingForPlayer = false;
+        return;
+    }
     Entity* player = getCurrentCombatant();
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||

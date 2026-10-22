@@ -6,6 +6,8 @@
 
 #include "network_protocol.h"
 
+struct Entity;
+
 constexpr size_t MULTIPLAYER_SNAPSHOT_BUFFER_SIZE = 384;
 
 struct BoundedSnapshotReceiver
@@ -77,6 +79,30 @@ MultiplayerMemberLocation getMultiplayerMemberLocation(PlayerID playerID);
 const char* multiplayerMemberLocationName(MultiplayerMemberLocation location);
 
 bool handleMultiplayerLocalMove(uint8_t direction, bool& moved);
+bool publishSharedGameplayMessage(
+    const char* message,
+    SharedMessageCategory category = SharedMessageCategory::GAMEPLAY);
+uint8_t getMultiplayerPlayerRoom(PlayerID playerID);
+uint16_t getMultiplayerRoomRevision(uint8_t roomID);
+bool isMultiplayerCombatActive();
+bool startMultiplayerCombatFromCurrentRoom();
+void updateMultiplayerCombat(uint32_t now);
+Entity* getVisibleMultiplayerCurrentCombatant();
+bool isLocalPlayersMultiplayerTurn();
+bool requestMultiplayerCombatMove(uint8_t direction);
+bool requestMultiplayerCombatAttack(bool ranged, const Entity* target);
+bool requestMultiplayerCombatAbility(
+    uint16_t abilityID,
+    const Entity* target,
+    int8_t targetX,
+    int8_t targetY,
+    uint8_t direction,
+    uint8_t damageType,
+    uint8_t flags = 0);
+bool requestMultiplayerCombatEndTurn();
+bool requestMultiplayerFullDefense();
+bool isCurrentMultiplayerCombatant(const Entity& entity);
+bool isMultiplayerCombatParticipant(const Entity& entity);
 void leaveMultiplayerActivity();
 
 #endif

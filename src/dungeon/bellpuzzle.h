@@ -82,8 +82,12 @@ bool configureBellPuzzleRoom(
     const uint8_t* sequenceRolls,
     uint8_t sequenceRollCount);
 bool isBellPuzzleRoom(const DungeonRoom& room);
+bool playBellPuzzleSequence(const BellPuzzleState& state);
 bool strikeCurrentBellAt(int x, int y);
+bool isCurrentBellListeningRuneAt(int x, int y);
 bool handleCurrentBellListeningRuneEntry(Entity& mover, int x, int y);
+bool handleCurrentBellListeningRuneMovement(
+    Entity& mover, int previousX, int previousY, int x, int y);
 bool collectCurrentBellKey(Entity& keyEntity);
 bool tryUnlockCurrentBellExit(Direction direction);
 

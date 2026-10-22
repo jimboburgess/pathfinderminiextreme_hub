@@ -732,14 +732,24 @@ static void rebuildMultiplayerStatusMenu()
     {
         const SessionMember* member = multiplayerSession.getMember(playerID);
         if (member == nullptr || used >= sizeof(multiplayerStatusBody)) continue;
+        const MultiplayerMemberLocation location =
+            getMultiplayerMemberLocation(playerID);
+        char locationText[12] = {};
+        if (location == MultiplayerMemberLocation::DUNGEON &&
+            getMultiplayerPlayerRoom(playerID) != NETWORK_NO_ROOM)
+            snprintf(locationText, sizeof(locationText), "Rm %u",
+                     static_cast<unsigned>(
+                         getMultiplayerPlayerRoom(playerID) + 1));
+        else
+            snprintf(locationText, sizeof(locationText), "%s",
+                     multiplayerMemberLocationName(location));
         used += snprintf(multiplayerStatusBody + used,
                          sizeof(multiplayerStatusBody) - used,
                          "%s %s%s %s\n",
                          member->profile.displayName,
                          networkClassName(member->profile.characterClass),
                          playerID == HOST_PLAYER_ID ? " HOST" : "",
-                         multiplayerMemberLocationName(
-                             getMultiplayerMemberLocation(playerID)));
+                         locationText);
     }
 }
 

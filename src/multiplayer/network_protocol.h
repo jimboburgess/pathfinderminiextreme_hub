@@ -6,7 +6,7 @@
 
 #include "multiplayer_types.h"
 
-constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 3;
+constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 4;
 constexpr uint16_t MULTIPLAYER_PACKET_MAGIC = 0x504D;
 constexpr size_t ESPNOW_MAX_PACKET_SIZE = 250;
 constexpr size_t NETWORK_PACKET_HEADER_SIZE = 14;
@@ -17,12 +17,19 @@ constexpr uint8_t NETWORK_CHARACTER_CLASS_COUNT = 4;
 constexpr uint16_t DUNGEON_GENERATION_VERSION = 1;
 constexpr size_t NETWORK_PLAYER_PROFILE_SIZE = 22;
 constexpr size_t DISCOVERY_BEACON_PAYLOAD_SIZE = 24;
-constexpr size_t NETWORK_CHARACTER_STATE_SIZE = 30;
+constexpr uint8_t NETWORK_COMBAT_EQUIPMENT_SLOTS = 4;
+constexpr uint8_t NETWORK_KNOWN_ABILITY_CAPACITY = 32;
+constexpr uint8_t NETWORK_CONDITION_CAPACITY = 12;
+constexpr size_t NETWORK_CHARACTER_STATE_SIZE = 177;
 constexpr size_t PLAYER_MOVE_REQUEST_PAYLOAD_SIZE = 7;
 constexpr size_t PLAYER_POSITION_PAYLOAD_SIZE = 11;
 constexpr size_t PLAYER_ROOM_CHANGE_PAYLOAD_SIZE = 11;
 constexpr size_t SNAPSHOT_CHUNK_DATA_SIZE = 200;
 constexpr size_t ACTIVITY_ACK_PAYLOAD_SIZE = 11;
+constexpr size_t PLAYER_ROOM_TRANSITION_REQUEST_PAYLOAD_SIZE = 8;
+constexpr size_t SHARED_MESSAGE_TEXT_SIZE = 96;
+constexpr size_t COMBATANT_REFERENCE_SIZE = 4;
+constexpr size_t COMBAT_ACK_PAYLOAD_SIZE = 10;
 constexpr uint8_t MAX_SNAPSHOT_CHUNKS = 4;
 constexpr uint8_t NETWORK_NO_ROOM = UINT8_MAX;
 constexpr uint8_t NETWORK_MAX_DUNGEON_ROOMS = 12;
@@ -62,6 +69,9 @@ enum class NetworkPacketType : uint8_t
     ROOM_READY,
     ACK,
 
+    SHARED_GAMEPLAY_MESSAGE = 26,
+    PLAYER_ROOM_TRANSITION_REQUEST,
+
     PLAYER_MOVE_REQUEST = 32,
     PLAYER_POSITION,
     PLAYER_ROOM_CHANGE,
@@ -71,6 +81,8 @@ enum class NetworkPacketType : uint8_t
     COMBAT_ACTION_REQUEST,
     COMBAT_ACTION_RESULT,
     COMBAT_TURN,
+    COMBAT_END,
+    COMBAT_ACK,
 
     TRADE_REQUEST = 64,
     TRADE_STATE,
@@ -144,6 +156,43 @@ enum class SnapshotType : uint8_t
     FOREST_STATE,
     DUNGEON_ROOM,
     DUNGEON_ROOM_DETAIL
+};
+
+enum class SharedMessageCategory : uint8_t
+{
+    GAMEPLAY,
+    COMBAT,
+    ROOM,
+    SYSTEM
+};
+
+enum class MultiplayerCombatantKind : uint8_t
+{
+    NONE,
+    PLAYER,
+    MONSTER
+};
+
+enum class MultiplayerCombatActionType : uint8_t
+{
+    NONE,
+    MOVE,
+    MELEE_ATTACK,
+    RANGED_ATTACK,
+    CAST_ABILITY,
+    USE_ITEM,
+    FIVE_FOOT_STEP,
+    FULL_DEFENSE,
+    DELAY,
+    END_TURN
+};
+
+enum class MultiplayerCombatEventType : uint8_t
+{
+    STATE,
+    ACTION_RESULT,
+    TURN_ADVANCE,
+    COMBAT_ENDED
 };
 
 struct NetworkPacketHeader
@@ -223,6 +272,28 @@ struct NetworkCharacterState
     int16_t maxHP = 0;
     uint8_t abilityScores[6] = {};
     uint8_t speed = 0;
+    uint8_t characterState = 0;
+    int16_t currentMP = 0;
+    int16_t maxMP = 0;
+    int8_t initiative = 0;
+    uint8_t trainedWeaponGroup = 0;
+    uint8_t channelEnergyCurrent = 0;
+    uint8_t channelEnergyMax = 0;
+    struct EquipmentItem
+    {
+        uint8_t itemID = 0;
+        int8_t enhancementBonus = 0;
+        uint8_t weaponProperties = 0;
+    } equipment[NETWORK_COMBAT_EQUIPMENT_SLOTS] = {};
+    uint8_t knownAbilityCount = 0;
+    uint16_t knownAbilities[NETWORK_KNOWN_ABILITY_CAPACITY] = {};
+    struct ConditionState
+    {
+        uint8_t type = 0;
+        int16_t value = 0;
+        int16_t roundsRemaining = 0;
+    } conditions[NETWORK_CONDITION_CAPACITY] = {};
+    uint8_t conditionCount = 0;
 };
 
 struct TravelInvitePayload
@@ -245,6 +316,7 @@ struct ActivityPreparePayload
     uint8_t roomID = NETWORK_NO_ROOM;
     uint16_t snapshotEpoch = 0;
     uint8_t participantMask = 0;
+    uint8_t roomPlayerMask = 0;
     uint8_t graphChunkCount = 0;
     uint8_t detailChunkCount = 0;
     uint8_t worldChunkCount = 0;
@@ -306,6 +378,96 @@ struct RoomTransitionPayload
     uint8_t roomID = NETWORK_NO_ROOM;
     uint8_t entryDirection = 0;
     uint16_t snapshotEpoch = 0;
+};
+
+struct PlayerRoomTransitionRequestPayload
+{
+    uint32_t activityID = 0;
+    uint8_t sourceRoomID = NETWORK_NO_ROOM;
+    uint8_t direction = 0;
+    uint16_t transitionSequence = 0;
+};
+
+struct SharedGameplayMessagePayload
+{
+    uint32_t activityID = 0;
+    uint16_t messageSequence = 0;
+    SharedMessageCategory category = SharedMessageCategory::GAMEPLAY;
+    uint8_t textLength = 0;
+    char text[SHARED_MESSAGE_TEXT_SIZE] = {};
+};
+
+struct MultiplayerCombatantRef
+{
+    MultiplayerCombatantKind kind = MultiplayerCombatantKind::NONE;
+    PlayerID playerID = INVALID_PLAYER_ID;
+    uint8_t roomID = NETWORK_NO_ROOM;
+    uint8_t entityID = 0;
+};
+
+struct MultiplayerInitiativeEntry
+{
+    MultiplayerCombatantRef combatant{};
+    int8_t initiative = 0;
+};
+
+struct MultiplayerCombatBeginPayload
+{
+    uint32_t activityID = 0;
+    uint16_t combatID = 0;
+    uint16_t eventSequence = 0;
+    uint8_t combatantCount = 0;
+    uint8_t currentTurnIndex = 0;
+    uint16_t round = 1;
+    MultiplayerInitiativeEntry combatants[16] = {};
+};
+
+struct MultiplayerCombatActionRequestPayload
+{
+    uint32_t activityID = 0;
+    uint16_t combatID = 0;
+    uint16_t actionSequence = 0;
+    MultiplayerCombatActionType action = MultiplayerCombatActionType::NONE;
+    MultiplayerCombatantRef actor{};
+    MultiplayerCombatantRef target{};
+    uint16_t abilityID = 0;
+    int8_t targetX = -1;
+    int8_t targetY = -1;
+    uint8_t direction = 0;
+    uint8_t damageType = 0;
+    uint8_t flags = 0;
+};
+
+struct MultiplayerCombatEventPayload
+{
+    uint32_t activityID = 0;
+    uint16_t combatID = 0;
+    uint16_t eventSequence = 0;
+    MultiplayerCombatEventType eventType = MultiplayerCombatEventType::STATE;
+    uint8_t currentTurnIndex = 0;
+    uint16_t round = 1;
+    MultiplayerCombatantRef actor{};
+    MultiplayerCombatantRef target{};
+    uint8_t actorX = 0;
+    uint8_t actorY = 0;
+    uint8_t targetX = 0;
+    uint8_t targetY = 0;
+    int16_t actorHP = 0;
+    int16_t targetHP = 0;
+    uint8_t actorState = 0;
+    uint8_t targetState = 0;
+    uint16_t roomRevision = 0;
+    uint8_t textLength = 0;
+    char text[SHARED_MESSAGE_TEXT_SIZE] = {};
+};
+
+struct MultiplayerCombatAckPayload
+{
+    uint32_t activityID = 0;
+    uint16_t combatID = 0;
+    uint16_t eventSequence = 0;
+    NetworkPacketType packetType = NetworkPacketType::COMBAT_STATE;
+    uint8_t reserved = 0;
 };
 
 struct PlayerMoveRequestPayload
@@ -462,6 +624,42 @@ bool encodeRoomTransition(const RoomTransitionPayload& payload,
     uint8_t* destination, size_t capacity, size_t& size);
 bool decodeRoomTransition(const uint8_t* data, size_t size,
     RoomTransitionPayload& payload);
+bool encodePlayerRoomTransitionRequest(
+    const PlayerRoomTransitionRequestPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodePlayerRoomTransitionRequest(
+    const uint8_t* data, size_t size,
+    PlayerRoomTransitionRequestPayload& payload);
+bool encodeSharedGameplayMessage(
+    const SharedGameplayMessagePayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeSharedGameplayMessage(
+    const uint8_t* data, size_t size,
+    SharedGameplayMessagePayload& payload);
+bool encodeMultiplayerCombatBegin(
+    const MultiplayerCombatBeginPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeMultiplayerCombatBegin(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatBeginPayload& payload);
+bool encodeMultiplayerCombatActionRequest(
+    const MultiplayerCombatActionRequestPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeMultiplayerCombatActionRequest(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatActionRequestPayload& payload);
+bool encodeMultiplayerCombatEvent(
+    const MultiplayerCombatEventPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeMultiplayerCombatEvent(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatEventPayload& payload);
+bool encodeMultiplayerCombatAck(
+    const MultiplayerCombatAckPayload& payload,
+    uint8_t* destination, size_t capacity, size_t& size);
+bool decodeMultiplayerCombatAck(
+    const uint8_t* data, size_t size,
+    MultiplayerCombatAckPayload& payload);
 bool encodeDungeonBegin(
     const DungeonBeginPayload& payload,
     uint8_t* destination,

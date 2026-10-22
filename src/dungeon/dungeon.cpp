@@ -18,6 +18,7 @@
 #include "map/interaction.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
+#include "multiplayer/multiplayer_activity.h"
 
 Dungeon dungeon;
 
@@ -807,13 +808,19 @@ bool persistActiveDungeonRoom(Dungeon& dungeon)
     if (!packActiveEntities(dungeon, scratch, packedCount))
         return false;
 
-    // Clear every known pointer into the shared buffer before it can be reused.
-    abortCombat();
+    // Multiplayer combat uses stable room/entity references instead of these
+    // active-buffer addresses, so an authoritative room swap must not abort it.
+    const bool multiplayerExploration = isMultiplayerExplorationActive();
+    if (!multiplayerExploration)
+        abortCombat();
     closeInventoryMenu();
     clearInteractionEntityReferences();
     closeMenu();
-    copyActivePlayerToGlobal(dungeon);
-    resetActiveRoomTurnState(dungeon);
+    if (!multiplayerExploration)
+    {
+        copyActivePlayerToGlobal(dungeon);
+        resetActiveRoomTurnState(dungeon);
+    }
 
     // abortCombat() removes combat-local Flat-Footed and resets TurnState.
     // Repack that cleaned state before atomically committing the room snapshot.

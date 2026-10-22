@@ -6,6 +6,7 @@
 #include <cstring>
 #include "messageLog.h"
 #include "data/game.h"
+#include "multiplayer/multiplayer_activity.h"
 
 constexpr uint8_t MESSAGE_LINE_MAX_CHARS = 39;
 constexpr unsigned long MESSAGE_LINE_PAUSE_MS = 1400;
@@ -87,6 +88,16 @@ void setGameMessage(const char* message)
     messagePosition = 0;
     showNextMessageLine();
     needsRedraw = true;
+}
+
+void setSharedGameMessage(const char* message)
+{
+    if (isMultiplayerExplorationActive())
+    {
+        publishSharedGameplayMessage(message);
+        return;
+    }
+    setGameMessage(message);
 }
 
 const char* getGameMessage()

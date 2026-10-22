@@ -5,12 +5,21 @@
 
 #include "data/entities.h"
 #include "data/entityspawn.h"
+#include "data/entitytraits.h"
 #include "data/game.h"
 #include "dungeon/combat.h"
+#include "dungeon/abilityresolver.h"
+#include "dungeon/bellpuzzle.h"
+#include "dungeon/brazierpuzzle.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/furniture.h"
+#include "dungeon/monsterscripts.h"
+#include "dungeon/numbertilepuzzle.h"
+#include "dungeon/riddlepuzzle.h"
 #include "dungeon/traps.h"
 #include "forest/forest.h"
+#include "characters/items.h"
+#include "data/dice.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "graphics/npcsprites.h"
@@ -18,6 +27,8 @@
 #include "graphics/tiles.h"
 #include "input/menu.h"
 #include "map/activemap.h"
+#include "map/awareness.h"
+#include "map/mapeffects.h"
 #include "map/playermovement.h"
 #include "multiplayer_session.h"
 
@@ -47,7 +58,7 @@ constexpr uint32_t READY_RETRY_MS = 500;
 constexpr uint32_t START_REPEAT_MS = 700;
 constexpr uint8_t START_REPEAT_COUNT = 4;
 constexpr uint32_t DEBUG_SUMMARY_INTERVAL_MS = 5000;
-constexpr uint8_t WORLD_SNAPSHOT_VERSION = 1;
+constexpr uint8_t WORLD_SNAPSHOT_VERSION = 2;
 constexpr uint8_t DUNGEON_GRAPH_VERSION = 1;
 constexpr uint8_t WORLD_ENTITY_RECORD_SIZE = 10;
 
@@ -81,8 +92,19 @@ struct Participant
     bool spawnReceived = false;
     bool hasMoveSequence = false;
     bool startAcked = false;
+    bool roomLoading = false;
+    bool transferIncludesGraph = false;
+    bool transitionPending = false;
+    bool hasTransitionSequence = false;
     uint16_t lastMoveSequence = 0;
-    NetworkCharacterState character{};
+    uint16_t lastTransitionSequence = 0;
+    uint16_t transferEpoch = 0;
+    uint8_t transferRoom = NETWORK_NO_ROOM;
+    uint8_t transitionEntry = 0;
+    uint8_t pendingTransitionDirection = 0;
+    uint8_t pendingTransitionSourceRoom = NETWORK_NO_ROOM;
+    uint32_t lastTransitionRequestAt = 0;
+    uint32_t roomLoadStartedAt = 0;
     PlayerSpawnPayload spawn{};
     SyncStage syncStage = SyncStage::PREPARE;
     uint8_t syncItem = 0;
@@ -99,10 +121,14 @@ struct ActivityRuntime
     uint32_t activityID = 0;
     uint16_t snapshotEpoch = 0;
     uint8_t participantMask = 0;
+    uint8_t visiblePlayerMask = 0;
     PlayerID localPlayerID = INVALID_PLAYER_ID;
     uint8_t currentRoom = NETWORK_NO_ROOM;
     uint8_t transitionEntry = 0;
     uint16_t localMovementSequence = 0;
+    uint16_t nextSharedMessageSequence = 1;
+    uint16_t lastSharedMessageSequence = 0;
+    bool hasSharedMessageSequence = false;
     uint32_t phaseStartedAt = 0;
     uint32_t lastInviteAt = 0;
     uint32_t lastReadyAt = 0;
@@ -121,12 +147,47 @@ struct ActivityRuntime
     bool detailApplied = false;
     bool worldApplied = false;
     bool beginReceived = false;
+    bool clientRoomLoading = false;
     uint8_t expectedGraphChunks = 0;
     uint8_t expectedDetailChunks = 0;
     uint8_t expectedWorldChunks = 0;
     char pendingHostName[NETWORK_PLAYER_NAME_SIZE] = {};
     Participant participants[MAX_MULTIPLAYER_PLAYERS] = {};
+    uint16_t roomRevisions[NETWORK_MAX_DUNGEON_ROOMS] = {};
     BoundedSnapshotReceiver snapshotReceiver{};
+};
+
+struct MultiplayerCombatSlot
+{
+    MultiplayerInitiativeEntry initiative{};
+    uint8_t movementRemaining = 0;
+    bool moveActionUsed = false;
+    bool standardActionUsed = false;
+    bool fullDefense = false;
+};
+
+struct MultiplayerCombatRuntime
+{
+    bool active = false;
+    bool ending = false;
+    uint16_t combatID = 0;
+    uint16_t nextEventSequence = 1;
+    uint16_t lastEventSequence = 0;
+    bool hasEventSequence = false;
+    uint8_t combatantCount = 0;
+    uint8_t currentTurnIndex = 0;
+    uint16_t round = 1;
+    uint16_t localActionSequence = 0;
+    uint16_t lastActionSequence[MAX_MULTIPLAYER_PLAYERS] = {};
+    bool hasActionSequence[MAX_MULTIPLAYER_PLAYERS] = {};
+    MultiplayerCombatSlot slots[MAX_COMBATANTS] = {};
+    NetworkPacketType pendingPacketType = NetworkPacketType::ERROR_PACKET;
+    uint16_t pendingEventSequence = 0;
+    uint8_t pendingPlayerMask = 0;
+    uint8_t retryCount = 0;
+    uint32_t lastSendAt = 0;
+    uint16_t pendingSize = 0;
+    uint8_t pendingBytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
 #if MULTIPLAYER_DEBUG
     uint8_t snapshotRetries = 0;
     uint8_t snapshotChunkDuplicates = 0;
@@ -134,7 +195,24 @@ struct ActivityRuntime
 #endif
 };
 
+struct MultiplayerRoomEffectState
+{
+    bool initialized = false;
+    MapEffect effects[MAX_MAP_EFFECTS] = {};
+};
+
 ActivityRuntime runtime;
+NetworkCharacterState* participantCharacters = nullptr;
+MultiplayerCombatRuntime* multiplayerCombat = nullptr;
+MultiplayerRoomEffectState* multiplayerRoomEffects = nullptr;
+
+const MultiplayerCombatantRef* currentCombatRef();
+Entity* resolveVisibleCombatant(const MultiplayerCombatantRef& reference);
+
+NetworkCharacterState& participantCharacter(PlayerID playerID)
+{
+    return participantCharacters[playerID];
+}
 
 class BufferWriter
 {
@@ -211,15 +289,37 @@ bool isParticipant(PlayerID playerID)
            (runtime.participantMask & playerBit(playerID)) != 0;
 }
 
+uint8_t getPlayersInRoomMask(uint8_t roomID)
+{
+    uint8_t result = 0;
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+        if (isParticipant(playerID) &&
+            runtime.participants[playerID].spawn.roomID == roomID)
+            result |= playerBit(playerID);
+    return result;
+}
+
 uint8_t getCurrentRoomID()
 {
     return runtime.type == MultiplayerActivityType::DUNGEON
         ? dungeon.currentRoom : NETWORK_NO_ROOM;
 }
 
+uint8_t getCombatRoomID()
+{
+    return runtime.type == MultiplayerActivityType::FOREST
+        ? 0 : getCurrentRoomID();
+}
+
 void resetActivityState()
 {
     runtime = ActivityRuntime{};
+    if (multiplayerCombat != nullptr)
+        *multiplayerCombat = MultiplayerCombatRuntime{};
+    if (multiplayerRoomEffects != nullptr)
+        memset(multiplayerRoomEffects, 0,
+               sizeof(MultiplayerRoomEffectState) *
+               NETWORK_MAX_DUNGEON_ROOMS);
 }
 
 void setFullMapRedraw()
@@ -250,6 +350,43 @@ void copyCharacterToNetwork(
     destination.abilityScores[4] = source.abilities.wisdom;
     destination.abilityScores[5] = source.abilities.charisma;
     destination.speed = source.speed;
+    destination.characterState = static_cast<uint8_t>(source.state);
+    destination.currentMP = static_cast<int16_t>(source.magic.currentMP);
+    destination.maxMP = static_cast<int16_t>(source.magic.maxMP);
+    destination.initiative = source.initiative;
+    destination.trainedWeaponGroup =
+        static_cast<uint8_t>(source.trainedWeaponGroup);
+    destination.channelEnergyCurrent =
+        source.classAbilities.channelEnergyCurrent;
+    destination.channelEnergyMax = source.classAbilities.channelEnergyMax;
+    const EquipmentSlot networkSlots[NETWORK_COMBAT_EQUIPMENT_SLOTS] = {
+        SLOT_MELEE_WEAPON, SLOT_RANGED_WEAPON, SLOT_SHIELD, SLOT_ARMOR};
+    for (uint8_t index = 0; index < NETWORK_COMBAT_EQUIPMENT_SLOTS; ++index)
+    {
+        const ItemInstance& item = source.equipment.equipped[networkSlots[index]];
+        destination.equipment[index].itemID = static_cast<uint8_t>(item.itemID);
+        destination.equipment[index].enhancementBonus = item.enhancementBonus;
+        destination.equipment[index].weaponProperties = item.weaponProperties;
+    }
+    destination.knownAbilityCount = source.magic.knownAbilityCount <
+        NETWORK_KNOWN_ABILITY_CAPACITY ? source.magic.knownAbilityCount :
+        NETWORK_KNOWN_ABILITY_CAPACITY;
+    for (uint8_t index = 0; index < destination.knownAbilityCount; ++index)
+        destination.knownAbilities[index] =
+            static_cast<uint16_t>(source.magic.knownAbilities[index]);
+    destination.conditionCount = source.conditions.count <
+        NETWORK_CONDITION_CAPACITY ? source.conditions.count :
+        NETWORK_CONDITION_CAPACITY;
+    for (uint8_t index = 0; index < destination.conditionCount; ++index)
+    {
+        const Condition& condition = source.conditions.conditions[index];
+        destination.conditions[index].type =
+            static_cast<uint8_t>(condition.type);
+        destination.conditions[index].value =
+            static_cast<int16_t>(condition.value);
+        destination.conditions[index].roundsRemaining =
+            static_cast<int16_t>(condition.roundsRemaining);
+    }
 }
 
 void applyNetworkCharacter(
@@ -261,7 +398,9 @@ void applyNetworkCharacter(
     destination.characterClass =
         static_cast<CharacterClass>(source.characterClass);
     destination.team = TEAM_PLAYER;
-    destination.state = source.currentHP > 0 ? STATE_ALIVE : STATE_UNCONSCIOUS;
+    destination.state = source.characterState <= STATE_TURNED
+        ? static_cast<CharacterState>(source.characterState)
+        : (source.currentHP > 0 ? STATE_ALIVE : STATE_UNCONSCIOUS);
     destination.level = source.level;
     destination.health.currentHP = source.currentHP;
     destination.health.maxHP = source.maxHP;
@@ -272,6 +411,41 @@ void applyNetworkCharacter(
     destination.abilities.wisdom = source.abilityScores[4];
     destination.abilities.charisma = source.abilityScores[5];
     destination.speed = source.speed;
+    destination.magic.currentMP = source.currentMP;
+    destination.magic.maxMP = source.maxMP;
+    destination.initiative = source.initiative;
+    destination.trainedWeaponGroup =
+        static_cast<WeaponGroup>(source.trainedWeaponGroup);
+    destination.classAbilities.channelEnergyCurrent =
+        source.channelEnergyCurrent;
+    destination.classAbilities.channelEnergyMax = source.channelEnergyMax;
+    const EquipmentSlot networkSlots[NETWORK_COMBAT_EQUIPMENT_SLOTS] = {
+        SLOT_MELEE_WEAPON, SLOT_RANGED_WEAPON, SLOT_SHIELD, SLOT_ARMOR};
+    for (uint8_t index = 0; index < NETWORK_COMBAT_EQUIPMENT_SLOTS; ++index)
+    {
+        const NetworkCharacterState::EquipmentItem& item =
+            source.equipment[index];
+        if (item.itemID >= ITEM_COUNT) continue;
+        destination.equipment.equipped[networkSlots[index]] = {
+            static_cast<ItemID>(item.itemID), item.enhancementBonus,
+            item.weaponProperties};
+    }
+    destination.magic.knownAbilityCount = source.knownAbilityCount <
+        MAX_KNOWN_ABILITIES ? source.knownAbilityCount : MAX_KNOWN_ABILITIES;
+    for (uint8_t index = 0;
+         index < destination.magic.knownAbilityCount; ++index)
+        if (source.knownAbilities[index] < ABILITY_MAX)
+            destination.magic.knownAbilities[index] =
+                static_cast<AbilityID>(source.knownAbilities[index]);
+    for (uint8_t index = 0; index < source.conditionCount; ++index)
+    {
+        const NetworkCharacterState::ConditionState& condition =
+            source.conditions[index];
+        if (condition.type == CONDITION_NONE ||
+            condition.type >= CONDITION_MAX) continue;
+        addCondition(destination, static_cast<ConditionType>(condition.type),
+                     condition.value, condition.roundsRemaining);
+    }
 }
 
 bool sendToPlayer(
@@ -295,7 +469,7 @@ bool sendToHost(
         packetType, payload, payloadSize, flags);
 }
 
-bool sendActivityReady()
+bool sendActivityReady(bool roomReady = false)
 {
     ActivityReadyPayload ready{};
     ready.activityID = runtime.activityID;
@@ -303,7 +477,9 @@ bool sendActivityReady()
     uint8_t bytes[16] = {};
     size_t size = 0;
     return encodeActivityReady(ready, bytes, sizeof(bytes), size) &&
-           sendToHost(NetworkPacketType::ACTIVITY_READY, bytes, size);
+           sendToHost(roomReady ? NetworkPacketType::ROOM_READY
+                                : NetworkPacketType::ACTIVITY_READY,
+                      bytes, size);
 }
 
 bool tileIsValidSpawn(int x, int y)
@@ -371,8 +547,13 @@ Entity* spawnPlayerFromState(
 
     uint8_t* count = gameState == GAME_FOREST
         ? &forestEntityCount : &dungeon.entityCount;
-    Entity* result = spawnEntity(entities, *count, ENTITY_PLAYER, x, y);
-    if (result == nullptr) return nullptr;
+    if (*count >= MAX_ENTITIES) return nullptr;
+    Entity* result = &entities[(*count)++];
+    *result = Entity{};
+    result->active = true;
+    result->type = ENTITY_PLAYER;
+    result->x = x;
+    result->y = y;
     result->ownerPlayerID = character.playerID;
     if (character.playerID == runtime.localPlayerID)
         result->character = player;
@@ -402,12 +583,14 @@ void refreshHostParticipantCharacters()
     if (entities == nullptr) return;
     for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
     {
-        if (!isParticipant(playerID)) continue;
+        if (!isParticipant(playerID) ||
+            runtime.participants[playerID].spawn.roomID != getCurrentRoomID())
+            continue;
         Entity* entity = getPlayerEntityByOwner(entities, count, playerID);
         if (entity != nullptr)
             copyCharacterToNetwork(
                 playerID, entity->character,
-                runtime.participants[playerID].character);
+                participantCharacter(playerID));
     }
 }
 
@@ -421,7 +604,7 @@ bool spawnHostParticipants()
 
     host->ownerPlayerID = HOST_PLAYER_ID;
     copyCharacterToNetwork(HOST_PLAYER_ID, host->character,
-                           runtime.participants[HOST_PLAYER_ID].character);
+                           participantCharacter(HOST_PLAYER_ID));
     runtime.participants[HOST_PLAYER_ID].characterReceived = true;
     runtime.participants[HOST_PLAYER_ID].participating = true;
     runtime.participants[HOST_PLAYER_ID].ready = true;
@@ -443,7 +626,7 @@ bool spawnHostParticipants()
         uint8_t x = 0;
         uint8_t y = 0;
         if (!findSpawnNear(originX, originY, x, y) ||
-            spawnPlayerFromState(participant.character, x, y) == nullptr)
+            spawnPlayerFromState(participantCharacter(playerID), x, y) == nullptr)
         {
             participant.participating = false;
             runtime.participantMask &= ~playerBit(playerID);
@@ -456,6 +639,198 @@ bool spawnHostParticipants()
         participant.spawn.y = y;
         participant.spawnReceived = true;
     }
+    return true;
+}
+
+void capturePlayersInLoadedDungeonRoom()
+{
+    if (!multiplayerSession.isHost() ||
+        runtime.type != MultiplayerActivityType::DUNGEON ||
+        dungeon.loadedRoom >= dungeon.roomCount) return;
+    for (uint8_t index = 0; index < dungeon.entityCount; ++index)
+    {
+        Entity& entity = dungeon.activeDungeonEntities[index];
+        if (!entity.active || entity.type != ENTITY_PLAYER ||
+            !isParticipant(entity.ownerPlayerID)) continue;
+        Participant& participant = runtime.participants[entity.ownerPlayerID];
+        participant.spawn.roomID = dungeon.loadedRoom;
+        participant.spawn.x = entity.x;
+        participant.spawn.y = entity.y;
+        copyCharacterToNetwork(entity.ownerPlayerID, entity.character,
+                               participantCharacter(entity.ownerPlayerID));
+        if (entity.ownerPlayerID == HOST_PLAYER_ID)
+            player = entity.character;
+    }
+}
+
+void checkAuthoritativeRoomCombat(PlayerID playerID)
+{
+    if (!multiplayerSession.isHost()) return;
+    uint8_t count = 0;
+    Entity* entities = getActiveMapEntities(count);
+    Entity* movingPlayer = entities != nullptr
+        ? getPlayerEntityByOwner(entities, count, playerID) : nullptr;
+    if (movingPlayer == nullptr || movingPlayer->character.state != STATE_ALIVE)
+        return;
+    for (uint8_t index = 0; index < count; ++index)
+    {
+        Entity& monster = entities[index];
+        if (!monster.active || monster.type != ENTITY_MONSTER ||
+            monster.character.state != STATE_ALIVE || monster.monster == nullptr)
+            continue;
+        const int distance = getEntityGridDistance(*movingPlayer, monster);
+        const bool wasAware = monster.awareOfPlayer;
+        if (distance > COMBAT_DETECTION_RANGE ||
+            !tryMonsterDetectPlayer(monster, *movingPlayer)) continue;
+        if (!wasAware)
+        {
+            char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+            snprintf(message, sizeof(message), "%s looks your way!",
+                     getEntityName(&monster));
+            publishSharedGameplayMessage(message, SharedMessageCategory::COMBAT);
+        }
+        startMultiplayerCombatFromCurrentRoom();
+        return;
+    }
+}
+
+void removeAllLoadedDungeonPlayers()
+{
+    for (uint8_t index = 0; index < dungeon.entityCount; ++index)
+        if (dungeon.activeDungeonEntities[index].type == ENTITY_PLAYER)
+            dungeon.activeDungeonEntities[index].active = false;
+}
+
+bool spawnPlayersForLoadedDungeonRoom(uint8_t roomID)
+{
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    {
+        if (!isParticipant(playerID)) continue;
+        const Participant& participant = runtime.participants[playerID];
+        if (participant.spawn.roomID != roomID) continue;
+        if (spawnPlayerFromState(participantCharacter(playerID),
+                                 participant.spawn.x,
+                                 participant.spawn.y) == nullptr)
+            return false;
+    }
+    return true;
+}
+
+void captureMultiplayerRoomEffects(uint8_t roomID)
+{
+    if (multiplayerRoomEffects == nullptr ||
+        roomID >= NETWORK_MAX_DUNGEON_ROOMS) return;
+    MultiplayerRoomEffectState& state = multiplayerRoomEffects[roomID];
+    memcpy(state.effects, activeMapEffects, sizeof(state.effects));
+    state.initialized = true;
+}
+
+void restoreMultiplayerRoomEffects(uint8_t roomID)
+{
+    clearMapEffects();
+    if (multiplayerRoomEffects == nullptr ||
+        roomID >= NETWORK_MAX_DUNGEON_ROOMS ||
+        !multiplayerRoomEffects[roomID].initialized) return;
+    memcpy(activeMapEffects, multiplayerRoomEffects[roomID].effects,
+           sizeof(multiplayerRoomEffects[roomID].effects));
+}
+
+bool activateAuthoritativeDungeonRoom(
+    uint8_t roomID,
+    RoomEntry entry,
+    PlayerID enteringPlayer = INVALID_PLAYER_ID)
+{
+    if (!multiplayerSession.isHost() || roomID >= dungeon.roomCount)
+        return false;
+    if (dungeon.loadedRoom == roomID)
+        return true;
+
+    capturePlayersInLoadedDungeonRoom();
+    if (dungeon.loadedRoom < NETWORK_MAX_DUNGEON_ROOMS)
+        captureMultiplayerRoomEffects(dungeon.loadedRoom);
+    const bool hostWasInLoadedRoom = isParticipant(HOST_PLAYER_ID) &&
+        runtime.participants[HOST_PLAYER_ID].spawn.roomID == dungeon.loadedRoom;
+    if (!hostWasInLoadedRoom) removeAllLoadedDungeonPlayers();
+
+    dungeon.currentRoom = roomID;
+    if (!loadRoom(dungeon, entry)) return false;
+    restoreMultiplayerRoomEffects(roomID);
+    Entity* attached = getPlayerEntity(
+        dungeon.activeDungeonEntities, dungeon.entityCount);
+    uint8_t entryX = attached != nullptr ? attached->x : ROOM_WIDTH / 2;
+    uint8_t entryY = attached != nullptr ? attached->y : ROOM_HEIGHT / 2;
+    removeAllLoadedDungeonPlayers();
+
+    if (isValidPlayerID(enteringPlayer))
+    {
+        Participant& participant = runtime.participants[enteringPlayer];
+        participant.spawn.roomID = roomID;
+        participant.spawn.x = entryX;
+        participant.spawn.y = entryY;
+    }
+    return spawnPlayersForLoadedDungeonRoom(roomID);
+}
+
+bool restoreHostDungeonRoom()
+{
+    const uint8_t hostRoom = runtime.participants[HOST_PLAYER_ID].spawn.roomID;
+    if (hostRoom >= dungeon.roomCount) return false;
+    return activateAuthoritativeDungeonRoom(hostRoom, ENTRY_START);
+}
+
+bool resolvePlayerDoorTransition(
+    PlayerID playerID,
+    Direction direction,
+    uint8_t& destinationRoom,
+    RoomEntry& entry)
+{
+    if (dungeon.currentRoom >= dungeon.roomCount || direction >= 8)
+        return false;
+    Entity* movingPlayer = getPlayerEntityByOwner(
+        dungeon.activeDungeonEntities, dungeon.entityCount, playerID);
+    if (movingPlayer == nullptr) return false;
+    const int targetX = movingPlayer->x + directionOffsets[direction].dx;
+    const int targetY = movingPlayer->y + directionOffsets[direction].dy;
+    if (targetX < 0 || targetX >= ROOM_WIDTH ||
+        targetY < 0 || targetY >= ROOM_HEIGHT ||
+        dungeon.rooms[dungeon.currentRoom].map.tiles[targetY][targetX] !=
+            TILE_DOOR) return false;
+
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    Direction doorDirection = DIR_NORTH;
+    destinationRoom = NETWORK_NO_ROOM;
+    if (targetY == 0)
+    {
+        destinationRoom = room.north;
+        doorDirection = DIR_NORTH;
+        entry = ENTRY_SOUTH;
+    }
+    else if (targetY == ROOM_HEIGHT - 1)
+    {
+        destinationRoom = room.south;
+        doorDirection = DIR_SOUTH;
+        entry = ENTRY_NORTH;
+    }
+    else if (targetX == 0)
+    {
+        destinationRoom = room.west;
+        doorDirection = DIR_WEST;
+        entry = ENTRY_EAST;
+    }
+    else if (targetX == ROOM_WIDTH - 1)
+    {
+        destinationRoom = room.east;
+        doorDirection = DIR_EAST;
+        entry = ENTRY_WEST;
+    }
+    if (destinationRoom >= dungeon.roomCount ||
+        !tryUnlockCurrentRiddleExit(doorDirection) ||
+        !tryUnlockCurrentBellExit(doorDirection) ||
+        !tryUnlockCurrentNumberPuzzleExit(doorDirection) ||
+        !tryUnlockCurrentBrazierPuzzleExit(doorDirection)) return false;
+    if (dungeon.currentRoom == dungeon.bossRoom &&
+        destinationRoom == dungeon.treasureRoom &&
+        !dungeon.rooms[dungeon.bossRoom].completed) return false;
     return true;
 }
 
@@ -836,6 +1211,78 @@ bool applyRoomDetailSnapshot(const uint8_t* source, size_t size)
     return reader.finished();
 }
 
+bool writeMapEffectSnapshot(BufferWriter& writer, const MapEffect& effect)
+{
+    if (effect.tileCount > MAX_MAP_EFFECT_TILES ||
+        !writer.u8(static_cast<uint8_t>(effect.type)) ||
+        !writer.u16(static_cast<uint16_t>(effect.sourceAbility)) ||
+        !writer.u8(static_cast<uint8_t>(effect.x)) ||
+        !writer.u8(static_cast<uint8_t>(effect.y)) ||
+        !writer.u8(effect.radius) || !writer.u8(effect.roundsRemaining) ||
+        !writer.u8(effect.expiresWithCombat ? 1 : 0) ||
+        !writer.u8(static_cast<uint8_t>(effect.saveType)) ||
+        !writer.u16(static_cast<uint16_t>(effect.saveDC)) ||
+        !writer.u8(static_cast<uint8_t>(effect.conditionType)) ||
+        !writer.u16(static_cast<uint16_t>(effect.conditionValue)) ||
+        !writer.u8(effect.conditionDuration) ||
+        !writer.u8(effect.tileCount)) return false;
+    for (uint8_t index = 0; index < effect.tileCount; ++index)
+        if (!writer.u8(static_cast<uint8_t>(effect.tiles[index].x)) ||
+            !writer.u8(static_cast<uint8_t>(effect.tiles[index].y)))
+            return false;
+    return writer.u8(static_cast<uint8_t>(effect.damageType)) &&
+           writer.u8(effect.damageDiceCount) &&
+           writer.u8(effect.damageDiceSides) &&
+           writer.u16(static_cast<uint16_t>(effect.flatDamage)) &&
+           writer.u8(static_cast<uint8_t>(effect.damageSaveEffect));
+}
+
+bool readMapEffectSnapshot(BufferReader& reader, MapEffect& effect)
+{
+    uint8_t type = 0;
+    uint16_t ability = 0;
+    uint8_t x = 0;
+    uint8_t y = 0;
+    uint8_t expires = 0;
+    uint8_t saveType = 0;
+    uint16_t saveDC = 0;
+    uint8_t conditionType = 0;
+    uint16_t conditionValue = 0;
+    uint8_t damageType = 0;
+    uint16_t flatDamage = 0;
+    uint8_t saveEffect = 0;
+    if (!reader.u8(type) || !reader.u16(ability) ||
+        !reader.u8(x) || !reader.u8(y) || !reader.u8(effect.radius) ||
+        !reader.u8(effect.roundsRemaining) || !reader.u8(expires) ||
+        !reader.u8(saveType) || !reader.u16(saveDC) ||
+        !reader.u8(conditionType) || !reader.u16(conditionValue) ||
+        !reader.u8(effect.conditionDuration) || !reader.u8(effect.tileCount) ||
+        effect.tileCount > MAX_MAP_EFFECT_TILES) return false;
+    effect.active = true;
+    effect.type = static_cast<MapEffectType>(type);
+    effect.sourceAbility = static_cast<AbilityID>(ability);
+    effect.x = static_cast<int8_t>(x);
+    effect.y = static_cast<int8_t>(y);
+    effect.expiresWithCombat = expires != 0;
+    effect.saveType = static_cast<SaveType>(saveType);
+    effect.saveDC = static_cast<int16_t>(saveDC);
+    effect.conditionType = static_cast<ConditionType>(conditionType);
+    effect.conditionValue = static_cast<int16_t>(conditionValue);
+    for (uint8_t index = 0; index < effect.tileCount; ++index)
+    {
+        if (!reader.u8(x) || !reader.u8(y)) return false;
+        effect.tiles[index].x = static_cast<int8_t>(x);
+        effect.tiles[index].y = static_cast<int8_t>(y);
+    }
+    if (!reader.u8(damageType) || !reader.u8(effect.damageDiceCount) ||
+        !reader.u8(effect.damageDiceSides) || !reader.u16(flatDamage) ||
+        !reader.u8(saveEffect)) return false;
+    effect.damageType = static_cast<DamageType>(damageType);
+    effect.flatDamage = static_cast<int16_t>(flatDamage);
+    effect.damageSaveEffect = static_cast<SaveEffect>(saveEffect);
+    return true;
+}
+
 bool encodeWorldSnapshot(uint8_t* destination, size_t capacity, size_t& size)
 {
     BufferWriter writer(destination, capacity);
@@ -877,6 +1324,13 @@ bool encodeWorldSnapshot(uint8_t* destination, size_t capacity, size_t& size)
             !writer.u16(static_cast<uint16_t>(entity.character.health.maxHP)))
             return false;
     }
+    uint8_t effectCount = 0;
+    for (const MapEffect& effect : activeMapEffects)
+        if (effect.active) ++effectCount;
+    if (!writer.u8(effectCount)) return false;
+    for (const MapEffect& effect : activeMapEffects)
+        if (effect.active && !writeMapEffectSnapshot(writer, effect))
+            return false;
     size = writer.size();
     return true;
 }
@@ -904,7 +1358,8 @@ bool applyWorldSnapshot(const uint8_t* source, size_t size)
     else
     {
         if (runtime.currentRoom >= dungeon.roomCount) return false;
-        abortCombat();
+        if (!isMultiplayerCombatActive())
+            abortCombat();
         dungeon.currentRoom = runtime.currentRoom;
         dungeon.loadedRoom = runtime.currentRoom;
         dungeon.entities = dungeon.activeDungeonEntities;
@@ -973,6 +1428,15 @@ bool applyWorldSnapshot(const uint8_t* source, size_t size)
         entity->character.health.currentHP = static_cast<int16_t>(currentHP);
         entity->character.health.maxHP = static_cast<int16_t>(maxHP);
     }
+    uint8_t effectCount = 0;
+    if (!reader.u8(effectCount) || effectCount > MAX_MAP_EFFECTS) return false;
+    clearMapEffects();
+    for (uint8_t index = 0; index < effectCount; ++index)
+    {
+        MapEffect effect{};
+        if (!readMapEffectSnapshot(reader, effect) || addMapEffect(effect) == nullptr)
+            return false;
+    }
     return reader.finished();
 }
 
@@ -1027,6 +1491,24 @@ bool findParticipantAtOrAfter(PlayerID start, PlayerID& result)
     return false;
 }
 
+bool findRoomParticipantAtOrAfter(
+    uint8_t roomID,
+    PlayerID start,
+    PlayerID& result)
+{
+    for (PlayerID playerID = start; playerID < MAX_MULTIPLAYER_PLAYERS;
+         ++playerID)
+    {
+        if (isParticipant(playerID) &&
+            runtime.participants[playerID].spawn.roomID == roomID)
+        {
+            result = playerID;
+            return true;
+        }
+    }
+    return false;
+}
+
 void normalizeSyncStage(Participant& participant)
 {
     for (;;)
@@ -1035,7 +1517,11 @@ void normalizeSyncStage(Participant& participant)
             participant.syncStage == SyncStage::SPAWNS)
         {
             PlayerID playerID = INVALID_PLAYER_ID;
-            if (findParticipantAtOrAfter(participant.syncItem, playerID))
+            const bool found = participant.syncStage == SyncStage::CHARACTERS
+                ? findParticipantAtOrAfter(participant.syncItem, playerID)
+                : findRoomParticipantAtOrAfter(
+                    participant.transferRoom, participant.syncItem, playerID);
+            if (found)
             {
                 participant.syncItem = playerID;
                 return;
@@ -1047,7 +1533,7 @@ void normalizeSyncStage(Participant& participant)
         }
         if (participant.syncStage == SyncStage::GRAPH &&
             (runtime.type != MultiplayerActivityType::DUNGEON ||
-             runtime.snapshotEpoch != 1))
+             !participant.transferIncludesGraph))
         {
             participant.syncStage = SyncStage::DETAIL;
             participant.syncItem = 0;
@@ -1106,6 +1592,21 @@ bool sendReliablePacket(
     return true;
 }
 
+bool sendTargetedActivityStart(PlayerID destination)
+{
+    Participant& participant = runtime.participants[destination];
+    ActivityReadyPayload start{};
+    start.activityID = runtime.activityID;
+    start.snapshotEpoch = participant.transferEpoch;
+    uint8_t bytes[16] = {};
+    size_t size = 0;
+    ActivityAckPayload ack = controlAck(NetworkPacketType::ACTIVITY_START);
+    ack.snapshotEpoch = participant.transferEpoch;
+    return encodeActivityReady(start, bytes, sizeof(bytes), size) &&
+        sendReliablePacket(destination, NetworkPacketType::ACTIVITY_START,
+                           bytes, size, ack);
+}
+
 bool sendReliableSnapshotChunk(PlayerID destination, Participant& participant)
 {
     SnapshotType type = SnapshotType::FOREST_STATE;
@@ -1121,7 +1622,7 @@ bool sendReliableSnapshotChunk(PlayerID destination, Participant& participant)
     chunk.activityID = runtime.activityID;
     chunk.snapshotType = type;
     chunk.roomID = roomID;
-    chunk.snapshotEpoch = runtime.snapshotEpoch;
+    chunk.snapshotEpoch = participant.transferEpoch;
     chunk.chunkIndex = participant.syncItem;
     chunk.totalChunks = totalChunks;
     const size_t offset = chunk.chunkIndex * SNAPSHOT_CHUNK_DATA_SIZE;
@@ -1138,6 +1639,7 @@ bool sendReliableSnapshotChunk(PlayerID destination, Participant& participant)
     if (chunk.chunkIndex == 0) flags |= NETWORK_FLAG_SNAPSHOT_BEGIN;
     if (chunk.chunkIndex + 1 == totalChunks) flags |= NETWORK_FLAG_SNAPSHOT_END;
     ActivityAckPayload ack = controlAck(NetworkPacketType::SNAPSHOT_CHUNK);
+    ack.snapshotEpoch = participant.transferEpoch;
     ack.snapshotType = type;
     ack.roomID = roomID;
     ack.chunkIndex = chunk.chunkIndex;
@@ -1145,12 +1647,12 @@ bool sendReliableSnapshotChunk(PlayerID destination, Participant& participant)
         !sendReliablePacket(destination, NetworkPacketType::SNAPSHOT_CHUNK,
                             bytes, size, ack, flags)) return false;
     MP_DEBUGF("Snapshot sent type=%u epoch=%u chunk=%u/%u player=%u\n",
-              static_cast<unsigned>(type), runtime.snapshotEpoch,
+              static_cast<unsigned>(type), participant.transferEpoch,
               chunk.chunkIndex + 1, totalChunks, destination);
     return true;
 }
 
-bool sendCurrentReliableItem(PlayerID destination)
+bool sendCurrentReliableItemInActiveRoom(PlayerID destination)
 {
     Participant& participant = runtime.participants[destination];
     normalizeSyncStage(participant);
@@ -1164,7 +1666,7 @@ bool sendCurrentReliableItem(PlayerID destination)
         size_t detailSize = 0;
         size_t worldSize = 0;
         const bool needsGraph = runtime.type == MultiplayerActivityType::DUNGEON &&
-                                runtime.snapshotEpoch == 1;
+                                participant.transferIncludesGraph;
         if ((needsGraph && !buildGraphSnapshot(graphSize)) ||
             (runtime.type == MultiplayerActivityType::DUNGEON &&
              !buildRoomDetailSnapshot(detailSize)) ||
@@ -1172,16 +1674,20 @@ bool sendCurrentReliableItem(PlayerID destination)
         ActivityPreparePayload prepare{};
         prepare.activityID = runtime.activityID;
         prepare.activityType = runtime.type;
-        prepare.roomID = getCurrentRoomID();
-        prepare.snapshotEpoch = runtime.snapshotEpoch;
+        prepare.roomID = participant.transferRoom;
+        prepare.snapshotEpoch = participant.transferEpoch;
         prepare.participantMask = runtime.participantMask;
+        prepare.roomPlayerMask = getPlayersInRoomMask(prepare.roomID);
         prepare.graphChunkCount = needsGraph ? chunkCountForSize(graphSize) : 0;
         prepare.detailChunkCount = runtime.type == MultiplayerActivityType::DUNGEON
             ? chunkCountForSize(detailSize) : 0;
         prepare.worldChunkCount = chunkCountForSize(worldSize);
-        return encodeActivityPrepare(prepare, bytes, sizeof(bytes), size) &&
-            sendReliablePacket(destination, NetworkPacketType::ACTIVITY_PREPARE,
-                bytes, size, controlAck(NetworkPacketType::ACTIVITY_PREPARE));
+        if (!encodeActivityPrepare(prepare, bytes, sizeof(bytes), size))
+            return false;
+        ActivityAckPayload ack = controlAck(NetworkPacketType::ACTIVITY_PREPARE);
+        ack.snapshotEpoch = participant.transferEpoch;
+        return sendReliablePacket(destination,
+            NetworkPacketType::ACTIVITY_PREPARE, bytes, size, ack);
     }
 
     if (participant.syncStage == SyncStage::BEGIN)
@@ -1190,30 +1696,36 @@ bool sendCurrentReliableItem(PlayerID destination)
         {
             ActivityReadyPayload begin{};
             begin.activityID = runtime.activityID;
-            begin.snapshotEpoch = runtime.snapshotEpoch;
+            begin.snapshotEpoch = participant.transferEpoch;
+            ActivityAckPayload ack = controlAck(NetworkPacketType::FOREST_BEGIN);
+            ack.snapshotEpoch = participant.transferEpoch;
             return encodeActivityReady(begin, bytes, sizeof(bytes), size) &&
                 sendReliablePacket(destination, NetworkPacketType::FOREST_BEGIN,
-                    bytes, size, controlAck(NetworkPacketType::FOREST_BEGIN));
+                    bytes, size, ack);
         }
-        if (runtime.snapshotEpoch == 1)
+        if (participant.transferIncludesGraph)
         {
             DungeonBeginPayload begin{};
             begin.activityID = runtime.activityID;
             begin.roomCount = dungeon.roomCount;
-            begin.entranceRoom = dungeon.currentRoom;
-            begin.snapshotEpoch = runtime.snapshotEpoch;
+            begin.entranceRoom = participant.transferRoom;
+            begin.snapshotEpoch = participant.transferEpoch;
+            ActivityAckPayload ack = controlAck(NetworkPacketType::DUNGEON_BEGIN);
+            ack.snapshotEpoch = participant.transferEpoch;
             return encodeDungeonBegin(begin, bytes, sizeof(bytes), size) &&
                 sendReliablePacket(destination, NetworkPacketType::DUNGEON_BEGIN,
-                    bytes, size, controlAck(NetworkPacketType::DUNGEON_BEGIN));
+                    bytes, size, ack);
         }
         RoomTransitionPayload transition{};
         transition.activityID = runtime.activityID;
-        transition.roomID = dungeon.currentRoom;
-        transition.entryDirection = runtime.transitionEntry;
-        transition.snapshotEpoch = runtime.snapshotEpoch;
+        transition.roomID = participant.transferRoom;
+        transition.entryDirection = participant.transitionEntry;
+        transition.snapshotEpoch = participant.transferEpoch;
+        ActivityAckPayload ack = controlAck(NetworkPacketType::ROOM_TRANSITION);
+        ack.snapshotEpoch = participant.transferEpoch;
         return encodeRoomTransition(transition, bytes, sizeof(bytes), size) &&
             sendReliablePacket(destination, NetworkPacketType::ROOM_TRANSITION,
-                bytes, size, controlAck(NetworkPacketType::ROOM_TRANSITION));
+                bytes, size, ack);
     }
 
     if (participant.syncStage == SyncStage::CHARACTERS)
@@ -1221,11 +1733,14 @@ bool sendCurrentReliableItem(PlayerID destination)
         const PlayerID playerID = participant.syncItem;
         PlayerCharacterStatePayload character{};
         character.activityID = runtime.activityID;
-        character.character = runtime.participants[playerID].character;
-        return encodePlayerCharacterState(character, bytes, sizeof(bytes), size) &&
-            sendReliablePacket(destination,
-                NetworkPacketType::PLAYER_CHARACTER_STATE, bytes, size,
-                controlAck(NetworkPacketType::PLAYER_CHARACTER_STATE, playerID));
+        character.character = participantCharacter(playerID);
+        if (!encodePlayerCharacterState(character, bytes, sizeof(bytes), size))
+            return false;
+        ActivityAckPayload ack = controlAck(
+            NetworkPacketType::PLAYER_CHARACTER_STATE, playerID);
+        ack.snapshotEpoch = participant.transferEpoch;
+        return sendReliablePacket(destination,
+            NetworkPacketType::PLAYER_CHARACTER_STATE, bytes, size, ack);
     }
 
     if (participant.syncStage == SyncStage::GRAPH ||
@@ -1234,10 +1749,29 @@ bool sendCurrentReliableItem(PlayerID destination)
         return sendReliableSnapshotChunk(destination, participant);
 
     const PlayerID playerID = participant.syncItem;
+    ActivityAckPayload ack = controlAck(NetworkPacketType::PLAYER_SPAWN, playerID);
+    ack.snapshotEpoch = participant.transferEpoch;
     return encodePlayerSpawn(runtime.participants[playerID].spawn,
                              bytes, sizeof(bytes), size) &&
         sendReliablePacket(destination, NetworkPacketType::PLAYER_SPAWN,
-            bytes, size, controlAck(NetworkPacketType::PLAYER_SPAWN, playerID));
+            bytes, size, ack);
+}
+
+bool sendCurrentReliableItem(PlayerID destination)
+{
+    Participant& participant = runtime.participants[destination];
+    if (runtime.type != MultiplayerActivityType::DUNGEON ||
+        participant.transferRoom == dungeon.loadedRoom)
+        return sendCurrentReliableItemInActiveRoom(destination);
+
+    const uint8_t restoreRoom =
+        runtime.participants[HOST_PLAYER_ID].spawn.roomID;
+    if (!activateAuthoritativeDungeonRoom(
+            participant.transferRoom, ENTRY_START)) return false;
+    const bool sent = sendCurrentReliableItemInActiveRoom(destination);
+    const bool restored = activateAuthoritativeDungeonRoom(
+        restoreRoom, ENTRY_START);
+    return sent && restored;
 }
 
 void advanceReliableTransfer(Participant& participant)
@@ -1375,6 +1909,15 @@ bool hasReliablePacketInFlight()
     return false;
 }
 
+bool hasParticipantRoomLoading()
+{
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+        if (runtime.participants[playerID].participating &&
+            runtime.participants[playerID].roomLoading)
+            return true;
+    return false;
+}
+
 void sendTravelInvites()
 {
     TravelInvitePayload invite{};
@@ -1407,6 +1950,8 @@ void beginHostLoading(uint32_t now)
         enterDungeon();
     }
     runtime.currentRoom = getCurrentRoomID();
+    if (runtime.currentRoom < NETWORK_MAX_DUNGEON_ROOMS)
+        runtime.roomRevisions[runtime.currentRoom] = 1;
     if (!spawnHostParticipants())
     {
         sendActivityEndToParticipants();
@@ -1419,6 +1964,10 @@ void beginHostLoading(uint32_t now)
         Participant& participant = runtime.participants[playerID];
         if (!participant.participating) continue;
         participant.ready = false;
+        participant.transferRoom = runtime.currentRoom;
+        participant.transferEpoch = runtime.snapshotEpoch;
+        participant.transferIncludesGraph =
+            runtime.type == MultiplayerActivityType::DUNGEON;
         participant.syncStage = SyncStage::PREPARE;
         participant.syncItem = 0;
         participant.retryCount = 0;
@@ -1475,7 +2024,9 @@ bool clientLoadComplete()
     {
         if (!isParticipant(playerID)) continue;
         const Participant& participant = runtime.participants[playerID];
-        if (!participant.characterReceived || !participant.spawnReceived)
+        if (!participant.characterReceived ||
+            ((runtime.visiblePlayerMask & playerBit(playerID)) != 0 &&
+             !participant.spawnReceived))
             return false;
     }
     return true;
@@ -1498,7 +2049,8 @@ void logClientLoadBlockers(uint32_t now)
                   static_cast<unsigned>((1u << runtime.snapshotReceiver.totalChunks) - 1u));
     for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
     {
-        if (!isParticipant(playerID)) continue;
+        if (!isParticipant(playerID) ||
+            (runtime.visiblePlayerMask & playerBit(playerID)) == 0) continue;
         MP_DEBUGF("  P%u character=%s spawn=%s\n", playerID,
                   runtime.participants[playerID].characterReceived
                       ? "ready" : "missing",
@@ -1521,9 +2073,10 @@ void finishClientLoading()
     MP_DEBUG("World snapshot complete and applied");
     for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
     {
-        if (!isParticipant(playerID)) continue;
+        if (!isParticipant(playerID) ||
+            (runtime.visiblePlayerMask & playerBit(playerID)) == 0) continue;
         const Participant& participant = runtime.participants[playerID];
-        if (spawnPlayerFromState(participant.character,
+        if (spawnPlayerFromState(participantCharacter(playerID),
                                  participant.spawn.x,
                                  participant.spawn.y) == nullptr)
             return;
@@ -1540,7 +2093,7 @@ void finishClientLoading()
         previousPlayerPosition.y = local->y;
     }
     setFullMapRedraw();
-    sendActivityReady();
+    sendActivityReady(runtime.clientRoomLoading);
     runtime.lastReadyAt = millis();
     setGameMessage("Area ready. Waiting for host...");
     MP_DEBUG("ACTIVITY_READY sent");
@@ -1569,6 +2122,145 @@ void sendAuthoritativePosition(
     if (encodePlayerPosition(position, bytes, sizeof(bytes), size))
         multiplayerSession.broadcastAuthoritativeGameplayPacket(
             NetworkPacketType::PLAYER_POSITION, bytes, size);
+}
+
+void sendPlayerRoomChangeTo(PlayerID destination, PlayerID movingPlayer)
+{
+    const Participant& participant = runtime.participants[movingPlayer];
+    PlayerRoomChangePayload change{};
+    change.activityID = runtime.activityID;
+    change.playerID = movingPlayer;
+    change.roomID = participant.spawn.roomID;
+    change.entryDirection = participant.transitionEntry;
+    change.x = participant.spawn.x;
+    change.y = participant.spawn.y;
+    change.movementSequence = participant.lastMoveSequence;
+    uint8_t bytes[PLAYER_ROOM_CHANGE_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodePlayerRoomChange(change, bytes, sizeof(bytes), size))
+        sendToPlayer(destination, NetworkPacketType::PLAYER_ROOM_CHANGE,
+                     bytes, size);
+}
+
+void announcePlayerRoomChange(PlayerID movingPlayer)
+{
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+        if (isParticipant(playerID) && playerID != movingPlayer)
+            sendPlayerRoomChangeTo(playerID, movingPlayer);
+}
+
+bool beginIndependentRoomTransition(
+    PlayerID movingPlayer,
+    uint8_t destinationRoom,
+    RoomEntry entry,
+    uint16_t transitionSequence,
+    uint32_t now)
+{
+    if (!multiplayerSession.isHost() || !isParticipant(movingPlayer) ||
+        destinationRoom >= dungeon.roomCount) return false;
+    Participant& participant = runtime.participants[movingPlayer];
+    const uint8_t sourceRoom = participant.spawn.roomID;
+    if (!activateAuthoritativeDungeonRoom(
+            destinationRoom, entry, movingPlayer))
+    {
+        restoreHostDungeonRoom();
+        return false;
+    }
+    participant.lastTransitionSequence = transitionSequence;
+    participant.transitionPending = false;
+    participant.transitionEntry = static_cast<uint8_t>(entry);
+    if (runtime.roomRevisions[destinationRoom] == 0)
+        runtime.roomRevisions[destinationRoom] = 1;
+    capturePlayersInLoadedDungeonRoom();
+    checkAuthoritativeRoomCombat(movingPlayer);
+    if (multiplayerCombat != nullptr && multiplayerCombat->active)
+        for (uint8_t index = 0; index < multiplayerCombat->combatantCount;
+             ++index)
+        {
+            MultiplayerCombatantRef& reference =
+                multiplayerCombat->slots[index].initiative.combatant;
+            if (reference.kind == MultiplayerCombatantKind::PLAYER &&
+                reference.playerID == movingPlayer)
+            {
+                reference.roomID = destinationRoom;
+                if (multiplayerCombat->slots[index].movementRemaining > 0)
+                    --multiplayerCombat->slots[index].movementRemaining;
+                Entity* movedEntity = resolveVisibleCombatant(reference);
+                if (movedEntity != nullptr)
+                {
+                    movedEntity->turn.turnActive = true;
+                    movedEntity->turn.movementRemaining =
+                        multiplayerCombat->slots[index].movementRemaining;
+                }
+            }
+        }
+
+    announcePlayerRoomChange(movingPlayer);
+    char message[64] = {};
+    snprintf(message, sizeof(message), "%s moves to Room %u.",
+             participantCharacter(movingPlayer).displayName[0] != '\0'
+                ? participantCharacter(movingPlayer).displayName
+                : "Adventurer",
+             static_cast<unsigned>(destinationRoom + 1));
+    publishSharedGameplayMessage(message, SharedMessageCategory::ROOM);
+    MP_DEBUGF("Player %u authoritative room %u -> %u\n",
+              movingPlayer, sourceRoom, destinationRoom);
+
+    if (movingPlayer == HOST_PLAYER_ID)
+    {
+        runtime.currentRoom = destinationRoom;
+        dungeon.currentRoom = destinationRoom;
+        setFullMapRedraw();
+        return true;
+    }
+
+    if (!restoreHostDungeonRoom()) return false;
+    participant.roomLoading = true;
+    participant.ready = false;
+    participant.transferRoom = destinationRoom;
+    participant.transferEpoch = runtime.roomRevisions[destinationRoom];
+    participant.transferIncludesGraph = false;
+    participant.roomLoadStartedAt = now;
+    participant.syncStage = SyncStage::PREPARE;
+    participant.syncItem = 0;
+    participant.retryCount = 0;
+    participant.awaitingAck = false;
+    participant.lastSendAt = 0;
+    MP_DEBUGF("Sending Room %u revision %u to Player %u\n",
+              destinationRoom, participant.transferEpoch, movingPlayer);
+    return true;
+}
+
+bool localMoveTargetsDungeonDoor(Direction direction)
+{
+    if (runtime.type != MultiplayerActivityType::DUNGEON || direction >= 8)
+        return false;
+    Entity* local = getPlayerEntityByOwner(
+        dungeon.activeDungeonEntities, dungeon.entityCount,
+        runtime.localPlayerID);
+    if (local == nullptr) return false;
+    const int targetX = local->x + directionOffsets[direction].dx;
+    const int targetY = local->y + directionOffsets[direction].dy;
+    return targetX >= 0 && targetX < ROOM_WIDTH &&
+           targetY >= 0 && targetY < ROOM_HEIGHT &&
+           dungeon.rooms[dungeon.currentRoom].map.tiles[targetY][targetX] ==
+               TILE_DOOR;
+}
+
+void sendPendingRoomTransitionRequest(Participant& participant, uint32_t now)
+{
+    PlayerRoomTransitionRequestPayload request{};
+    request.activityID = runtime.activityID;
+    request.sourceRoomID = participant.pendingTransitionSourceRoom;
+    request.direction = participant.pendingTransitionDirection;
+    request.transitionSequence = participant.lastTransitionSequence;
+    uint8_t bytes[PLAYER_ROOM_TRANSITION_REQUEST_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodePlayerRoomTransitionRequest(
+            request, bytes, sizeof(bytes), size))
+        sendToHost(NetworkPacketType::PLAYER_ROOM_TRANSITION_REQUEST,
+                   bytes, size);
+    participant.lastTransitionRequestAt = now;
 }
 
 void beginRoomTransition(uint8_t entryDirection, uint32_t now)
@@ -1603,13 +2295,21 @@ void applyPositionUpdate(const PlayerPositionPayload& position)
 {
     if (position.activityID != runtime.activityID ||
         !isParticipant(position.playerID) ||
-        position.x >= getActiveMapWidth() || position.y >= getActiveMapHeight() ||
-        (runtime.type == MultiplayerActivityType::DUNGEON &&
-         position.roomID != dungeon.currentRoom)) return;
+        position.x >= (runtime.type == MultiplayerActivityType::FOREST
+            ? FOREST_WIDTH : ROOM_WIDTH) ||
+        position.y >= (runtime.type == MultiplayerActivityType::FOREST
+            ? FOREST_HEIGHT : ROOM_HEIGHT)) return;
     Participant& participant = runtime.participants[position.playerID];
     if (participant.hasMoveSequence &&
         !isNewerMovementSequence(position.movementSequence,
                                  participant.lastMoveSequence)) return;
+    participant.spawn.roomID = position.roomID;
+    participant.spawn.x = position.x;
+    participant.spawn.y = position.y;
+    participant.lastMoveSequence = position.movementSequence;
+    participant.hasMoveSequence = true;
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
+        position.roomID != runtime.currentRoom) return;
     uint8_t count = 0;
     Entity* entities = getActiveMapEntities(count);
     Entity* entity = entities != nullptr
@@ -1619,8 +2319,6 @@ void applyPositionUpdate(const PlayerPositionPayload& position)
     entity->x = position.x;
     entity->y = position.y;
     markEntityFootprintDirty(*entity);
-    participant.lastMoveSequence = position.movementSequence;
-    participant.hasMoveSequence = true;
     if (position.playerID == multiplayerSession.getLocalPlayerID())
         moveDirection = static_cast<Direction>(position.facing);
     needsRedraw = true;
@@ -1705,7 +2403,7 @@ void processTravelResponse(
     participant.participating = packetType == NetworkPacketType::TRAVEL_ACCEPT;
     if (participant.participating)
     {
-        participant.character = response.character;
+        participantCharacter(sender) = response.character;
         participant.characterReceived = true;
         runtime.participantMask |= playerBit(sender);
         MP_DEBUGF("Player %u accepted travel\n", sender);
@@ -1735,14 +2433,24 @@ void processActivityAck(
     Participant& participant = runtime.participants[sender];
     if (runtime.phase == ActivityPhase::ACTIVE &&
         ack.activityID == runtime.activityID &&
-        ack.snapshotEpoch == runtime.snapshotEpoch &&
-        ack.packetType == NetworkPacketType::ACTIVITY_START)
+        ack.packetType == NetworkPacketType::ACTIVITY_START &&
+        ack.snapshotEpoch == participant.transferEpoch)
     {
         participant.startAcked = true;
+        if (participant.awaitingAck &&
+            activityAcksMatch(participant.expectedAck, ack))
+        {
+            participant.awaitingAck = false;
+            participant.retryCount = 0;
+            participant.roomLoading = false;
+            participant.transitionPending = false;
+        }
         MP_DEBUGF("ACTIVITY_START acknowledged by P%u\n", sender);
         return;
     }
-    if (runtime.phase != ActivityPhase::LOADING) return;
+    if (runtime.phase != ActivityPhase::LOADING &&
+        !(runtime.phase == ActivityPhase::ACTIVE && participant.roomLoading))
+        return;
     if (!participant.awaitingAck ||
         !activityAcksMatch(participant.expectedAck, ack)) return;
     MP_DEBUGF("ACK player=%u packet=%u type=%u chunk=%u epoch=%u\n",
@@ -1763,13 +2471,30 @@ void processActivityPrepare(
         prepare.activityID != runtime.activityID ||
         (prepare.participantMask &
          playerBit(multiplayerSession.getLocalPlayerID())) == 0 ||
-        (runtime.snapshotEpoch != 0 &&
-         !isNewerMovementSequence(prepare.snapshotEpoch,
-                                  runtime.snapshotEpoch) &&
-         prepare.snapshotEpoch != runtime.snapshotEpoch)) return;
+        (prepare.activityType == MultiplayerActivityType::DUNGEON &&
+         prepare.roomID >= NETWORK_MAX_DUNGEON_ROOMS)) return;
 
-    const bool newEpoch = shouldResetActivitySnapshot(
-        runtime.snapshotEpoch, prepare.snapshotEpoch);
+    const uint16_t knownRoomRevision = prepare.roomID < NETWORK_MAX_DUNGEON_ROOMS
+        ? runtime.roomRevisions[prepare.roomID] : 0;
+    if (knownRoomRevision != 0 && prepare.roomID == runtime.currentRoom &&
+        prepare.snapshotEpoch != knownRoomRevision &&
+        !isNewerMovementSequence(prepare.snapshotEpoch, knownRoomRevision))
+        return;
+
+    if (runtime.phase == ActivityPhase::ACTIVE &&
+        prepare.roomID == runtime.currentRoom &&
+        prepare.snapshotEpoch == runtime.snapshotEpoch)
+    {
+        ActivityAckPayload ack = controlAck(NetworkPacketType::ACTIVITY_PREPARE);
+        ack.snapshotEpoch = prepare.snapshotEpoch;
+        sendActivityAckToHost(ack);
+        return;
+    }
+
+    const bool wasActive = runtime.phase == ActivityPhase::ACTIVE;
+    const bool newEpoch = runtime.currentRoom != prepare.roomID ||
+        shouldResetActivitySnapshot(runtime.snapshotEpoch,
+                                    prepare.snapshotEpoch);
     const bool firstPrepare = runtime.phase != ActivityPhase::LOADING;
     if (newEpoch)
     {
@@ -1785,14 +2510,18 @@ void processActivityPrepare(
         }
     }
     runtime.phase = ActivityPhase::LOADING;
+    runtime.clientRoomLoading = wasActive || runtime.clientRoomLoading;
     runtime.type = prepare.activityType;
     runtime.snapshotEpoch = prepare.snapshotEpoch;
     runtime.participantMask = prepare.participantMask;
+    runtime.visiblePlayerMask = prepare.roomPlayerMask;
     runtime.localPlayerID = multiplayerSession.getLocalPlayerID();
     for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
         runtime.participants[playerID].participating =
             (prepare.participantMask & playerBit(playerID)) != 0;
     runtime.currentRoom = prepare.roomID;
+    if (prepare.roomID < NETWORK_MAX_DUNGEON_ROOMS)
+        runtime.roomRevisions[prepare.roomID] = prepare.snapshotEpoch;
     runtime.expectedGraphChunks = prepare.graphChunkCount;
     runtime.expectedDetailChunks = prepare.detailChunkCount;
     runtime.expectedWorldChunks = prepare.worldChunkCount;
@@ -1804,6 +2533,7 @@ void processActivityPrepare(
         needsRedraw = true;
     }
     runtime.pendingInviteAccepted = false;
+    runtime.participants[runtime.localPlayerID].transitionPending = false;
     runtime.travelResponseStartedAt = 0;
     sendActivityAckToHost(controlAck(NetworkPacketType::ACTIVITY_PREPARE));
     MP_DEBUGF("ActivityPrepare received epoch=%u graph=%u detail=%u world=%u\n",
@@ -1869,7 +2599,7 @@ void processRoomTransition(
 void recordSnapshotReject(const SnapshotChunkPayload& chunk, const char* reason)
 {
 #if MULTIPLAYER_DEBUG
-    ++runtime.snapshotChunkRejects;
+    if (multiplayerCombat != nullptr) ++multiplayerCombat->snapshotChunkRejects;
     MP_DEBUGF("Snapshot rejected reason=%s type=%u epoch=%u chunk=%u/%u\n",
               reason, static_cast<unsigned>(chunk.snapshotType),
               chunk.snapshotEpoch, chunk.chunkIndex + 1, chunk.totalChunks);
@@ -1890,7 +2620,7 @@ void processSnapshotChunk(
     if (!decodeSnapshotChunk(payload, payloadSize, chunk))
     {
 #if MULTIPLAYER_DEBUG
-        ++runtime.snapshotChunkRejects;
+        if (multiplayerCombat != nullptr) ++multiplayerCombat->snapshotChunkRejects;
 #endif
         return;
     }
@@ -1944,7 +2674,7 @@ void processSnapshotChunk(
             chunk.roomID == expectedRoom && chunk.totalChunks == expectedCount)
         {
 #if MULTIPLAYER_DEBUG
-            ++runtime.snapshotChunkDuplicates;
+            if (multiplayerCombat != nullptr) ++multiplayerCombat->snapshotChunkDuplicates;
 #endif
             sendActivityAckToHost(ack);
         }
@@ -1963,7 +2693,7 @@ void processSnapshotChunk(
     if (duplicate)
     {
 #if MULTIPLAYER_DEBUG
-        ++runtime.snapshotChunkDuplicates;
+        if (multiplayerCombat != nullptr) ++multiplayerCombat->snapshotChunkDuplicates;
 #endif
         MP_DEBUGF("Snapshot duplicate type=%u epoch=%u chunk=%u/%u\n",
                   static_cast<unsigned>(chunk.snapshotType),
@@ -2006,7 +2736,7 @@ void processCharacterState(
         state.activityID != runtime.activityID ||
         !isParticipant(state.character.playerID)) return;
     Participant& participant = runtime.participants[state.character.playerID];
-    participant.character = state.character;
+    participantCharacter(state.character.playerID) = state.character;
     participant.characterReceived = true;
     finishClientLoading();
     sendActivityAckToHost(controlAck(
@@ -2037,17 +2767,29 @@ void processPlayerSpawn(
 void processActivityReady(
     PlayerID sender,
     const uint8_t* payload,
-    uint16_t payloadSize)
+    uint16_t payloadSize,
+    bool roomReady)
 {
-    if (!multiplayerSession.isHost() || runtime.phase != ActivityPhase::LOADING ||
+    if (!multiplayerSession.isHost() ||
+        (runtime.phase != ActivityPhase::LOADING &&
+         runtime.phase != ActivityPhase::ACTIVE) ||
         !isParticipant(sender)) return;
     ActivityReadyPayload ready{};
     if (!decodeActivityReady(payload, payloadSize, ready) ||
-        ready.activityID != runtime.activityID ||
-        ready.snapshotEpoch != runtime.snapshotEpoch) return;
-    if (runtime.participants[sender].syncStage != SyncStage::COMPLETE) return;
-    runtime.participants[sender].ready = true;
-    MP_DEBUGF("Player %u ready, epoch %u\n", sender, runtime.snapshotEpoch);
+        ready.activityID != runtime.activityID) return;
+    Participant& participant = runtime.participants[sender];
+    if (ready.snapshotEpoch != participant.transferEpoch ||
+        participant.syncStage != SyncStage::COMPLETE) return;
+    participant.ready = true;
+    if (roomReady)
+    {
+        participant.startAcked = false;
+        participant.retryCount = 0;
+        sendTargetedActivityStart(sender);
+        MP_DEBUGF("Player %u Room %u ready\n", sender,
+                  participant.spawn.roomID);
+    }
+    MP_DEBUGF("Player %u ready, epoch %u\n", sender, ready.snapshotEpoch);
 }
 
 void processActivityStart(
@@ -2068,8 +2810,27 @@ void processActivityStart(
     }
     if (runtime.phase != ActivityPhase::LOADING || !clientLoadComplete()) return;
     runtime.phase = ActivityPhase::ACTIVE;
+    runtime.clientRoomLoading = false;
     runtime.pendingInvite = false;
     runtime.pendingInviteAccepted = false;
+    if (isMultiplayerCombatActive())
+    {
+        const MultiplayerCombatantRef* current = currentCombatRef();
+        if (current != nullptr)
+        {
+            Entity* currentEntity = resolveVisibleCombatant(*current);
+            if (currentEntity != nullptr)
+            {
+                const MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+                    multiplayerCombat->currentTurnIndex];
+                currentEntity->turn.turnActive = true;
+                currentEntity->turn.movementRemaining = slot.movementRemaining;
+                currentEntity->turn.moveActionUsed = slot.moveActionUsed;
+                currentEntity->turn.standardActionUsed =
+                    slot.standardActionUsed;
+            }
+        }
+    }
     setGameMessage(runtime.type == MultiplayerActivityType::DUNGEON
         ? "Party entered dungeon." : "Party entered forest.");
     sendActivityAckToHost(ack);
@@ -2133,21 +2894,75 @@ void processMoveRequest(
     PlayerMoveRequestPayload request{};
     if (!decodePlayerMoveRequest(payload, payloadSize, request) ||
         request.activityID != runtime.activityID) return;
+    if (isMultiplayerCombatActive())
+    {
+        const MultiplayerCombatantRef* current = currentCombatRef();
+        if (current == nullptr ||
+            current->kind != MultiplayerCombatantKind::PLAYER ||
+            current->playerID != sender) return;
+    }
     MP_DEBUGF("Player %u move request seq %u\n",
               sender, request.clientMovementSequence);
     Participant& participant = runtime.participants[sender];
     if (participant.hasMoveSequence &&
         !isNewerMovementSequence(request.clientMovementSequence,
                                  participant.lastMoveSequence)) return;
+    const uint8_t senderRoom = participant.spawn.roomID;
+    const uint8_t hostRoom = runtime.participants[HOST_PLAYER_ID].spawn.roomID;
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
+        !activateAuthoritativeDungeonRoom(senderRoom, ENTRY_START)) return;
+    MultiplayerCombatSlot* combatSlot = nullptr;
+    if (isMultiplayerCombatActive())
+    {
+        combatSlot = &multiplayerCombat->slots[
+            multiplayerCombat->currentTurnIndex];
+        uint8_t movingCount = 0;
+        Entity* movingEntities = getActiveMapEntities(movingCount);
+        Entity* movingPlayer = movingEntities != nullptr
+            ? getPlayerEntityByOwner(movingEntities, movingCount, sender)
+            : nullptr;
+        if (movingPlayer != nullptr)
+        {
+            movingPlayer->turn.turnActive = true;
+            movingPlayer->turn.movementRemaining =
+                combatSlot->movementRemaining;
+            movingPlayer->turn.moveActionUsed = combatSlot->moveActionUsed;
+            movingPlayer->turn.standardActionUsed =
+                combatSlot->standardActionUsed;
+        }
+        combat.waitingForPlayer = true;
+    }
     bool roomChanged = false;
     tryMovePlayerAuthoritative(
         dungeon, sender, static_cast<Direction>(request.direction),
         false, roomChanged);
+    checkAuthoritativeRoomCombat(sender);
+    if (combatSlot != nullptr)
+    {
+        uint8_t movingCount = 0;
+        Entity* movingEntities = getActiveMapEntities(movingCount);
+        Entity* movingPlayer = movingEntities != nullptr
+            ? getPlayerEntityByOwner(movingEntities, movingCount, sender)
+            : nullptr;
+        if (movingPlayer != nullptr)
+        {
+            combatSlot->movementRemaining =
+                movingPlayer->turn.movementRemaining;
+            combatSlot->moveActionUsed = movingPlayer->turn.moveActionUsed;
+            combatSlot->standardActionUsed =
+                movingPlayer->turn.standardActionUsed;
+        }
+        combat.waitingForPlayer = isLocalPlayersMultiplayerTurn();
+    }
     participant.lastMoveSequence = request.clientMovementSequence;
     participant.hasMoveSequence = true;
+    capturePlayersInLoadedDungeonRoom();
     sendAuthoritativePosition(
         sender, request.clientMovementSequence,
         static_cast<Direction>(request.direction));
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
+        senderRoom != hostRoom)
+        restoreHostDungeonRoom();
     MP_DEBUGF("Player %u position broadcast seq %u\n",
               sender, request.clientMovementSequence);
 }
@@ -2164,12 +2979,450 @@ void processPlayerPosition(
         applyPositionUpdate(position);
 }
 
+void processRoomTransitionRequest(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isHost() || runtime.phase != ActivityPhase::ACTIVE ||
+        runtime.type != MultiplayerActivityType::DUNGEON ||
+        !isParticipant(sender) || sender == HOST_PLAYER_ID) return;
+    PlayerRoomTransitionRequestPayload request{};
+    if (!decodePlayerRoomTransitionRequest(payload, payloadSize, request) ||
+        request.activityID != runtime.activityID) return;
+    Participant& participant = runtime.participants[sender];
+    if (participant.spawn.roomID != request.sourceRoomID ||
+        participant.roomLoading ||
+        (participant.hasTransitionSequence &&
+         !isNewerMovementSequence(request.transitionSequence,
+                                   participant.lastTransitionSequence))) return;
+    if (isMultiplayerCombatActive())
+    {
+        const MultiplayerCombatantRef* current = currentCombatRef();
+        if (current == nullptr ||
+            current->kind != MultiplayerCombatantKind::PLAYER ||
+            current->playerID != sender ||
+            multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]
+                    .movementRemaining == 0)
+            return;
+    }
+    participant.transitionPending = true;
+    participant.lastTransitionSequence = request.transitionSequence;
+    participant.hasTransitionSequence = true;
+    participant.pendingTransitionDirection = request.direction;
+    participant.pendingTransitionSourceRoom = request.sourceRoomID;
+    MP_DEBUGF("Player %u transition request R%u direction=%u\n",
+              sender, request.sourceRoomID, request.direction);
+
+    const uint8_t hostRoom = runtime.participants[HOST_PLAYER_ID].spawn.roomID;
+    if (!activateAuthoritativeDungeonRoom(request.sourceRoomID, ENTRY_START))
+        return;
+    uint8_t destinationRoom = NETWORK_NO_ROOM;
+    RoomEntry entry = ENTRY_START;
+    const bool valid = resolvePlayerDoorTransition(
+        sender, static_cast<Direction>(request.direction),
+        destinationRoom, entry);
+    if (!valid)
+    {
+        participant.transitionPending = false;
+        restoreHostDungeonRoom();
+        sendAuthoritativePosition(
+            sender, participant.lastMoveSequence,
+            static_cast<Direction>(request.direction));
+        return;
+    }
+    beginIndependentRoomTransition(
+        sender, destinationRoom, entry, request.transitionSequence, millis());
+    if (dungeon.loadedRoom != hostRoom) restoreHostDungeonRoom();
+}
+
+void processPlayerRoomChange(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        runtime.phase == ActivityPhase::NONE) return;
+    PlayerRoomChangePayload change{};
+    if (!decodePlayerRoomChange(payload, payloadSize, change) ||
+        change.activityID != runtime.activityID ||
+        !isParticipant(change.playerID)) return;
+    Participant& participant = runtime.participants[change.playerID];
+    const uint8_t previousRoom = participant.spawn.roomID;
+    participant.spawn.roomID = change.roomID;
+    participant.spawn.x = change.x;
+    participant.spawn.y = change.y;
+    participant.transitionEntry = change.entryDirection;
+    if (multiplayerCombat != nullptr && multiplayerCombat->active)
+        for (uint8_t index = 0; index < multiplayerCombat->combatantCount;
+             ++index)
+        {
+            MultiplayerCombatantRef& reference =
+                multiplayerCombat->slots[index].initiative.combatant;
+            if (reference.kind == MultiplayerCombatantKind::PLAYER &&
+                reference.playerID == change.playerID)
+                reference.roomID = change.roomID;
+        }
+    if (change.playerID == runtime.localPlayerID) return;
+    if (previousRoom == runtime.currentRoom)
+        removePlayerEntity(change.playerID);
+    if (change.roomID == runtime.currentRoom)
+        spawnPlayerFromState(participantCharacter(change.playerID),
+                             change.x, change.y);
+    needsRedraw = true;
+}
+
+void processSharedGameplayMessage(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        runtime.phase == ActivityPhase::NONE) return;
+    SharedGameplayMessagePayload message{};
+    if (!decodeSharedGameplayMessage(payload, payloadSize, message) ||
+        message.activityID != runtime.activityID) return;
+    if (runtime.hasSharedMessageSequence &&
+        !isNewerMovementSequence(message.messageSequence,
+                                 runtime.lastSharedMessageSequence)) return;
+    runtime.lastSharedMessageSequence = message.messageSequence;
+    runtime.hasSharedMessageSequence = true;
+    setGameMessage(message.text);
+}
+
+bool combatRefsEqual(
+    const MultiplayerCombatantRef& left,
+    const MultiplayerCombatantRef& right)
+{
+    return left.kind == right.kind && left.playerID == right.playerID &&
+           left.roomID == right.roomID && left.entityID == right.entityID;
+}
+
+MultiplayerCombatantRef combatRefForEntity(const Entity& entity)
+{
+    MultiplayerCombatantRef reference{};
+    reference.roomID = getCombatRoomID();
+    if (entity.type == ENTITY_PLAYER && isValidPlayerID(entity.ownerPlayerID))
+    {
+        reference.kind = MultiplayerCombatantKind::PLAYER;
+        reference.playerID = entity.ownerPlayerID;
+        return reference;
+    }
+    uint8_t count = 0;
+    Entity* entities = getActiveMapEntities(count);
+    if (entity.type == ENTITY_MONSTER && entities != nullptr &&
+        &entity >= entities && &entity < entities + count)
+    {
+        reference.kind = MultiplayerCombatantKind::MONSTER;
+        reference.playerID = INVALID_PLAYER_ID;
+        reference.entityID = static_cast<uint8_t>(&entity - entities + 1);
+    }
+    return reference;
+}
+
+Entity* resolveVisibleCombatant(const MultiplayerCombatantRef& reference)
+{
+    if (reference.roomID != getCombatRoomID()) return nullptr;
+    uint8_t count = 0;
+    Entity* entities = getActiveMapEntities(count);
+    if (entities == nullptr) return nullptr;
+    if (reference.kind == MultiplayerCombatantKind::PLAYER)
+        return getPlayerEntityByOwner(entities, count, reference.playerID);
+    if (reference.kind != MultiplayerCombatantKind::MONSTER ||
+        reference.entityID == 0 || reference.entityID > count) return nullptr;
+    Entity* entity = &entities[reference.entityID - 1];
+    return entity->type == ENTITY_MONSTER ? entity : nullptr;
+}
+
+int findCombatSlot(const MultiplayerCombatantRef& reference)
+{
+    if (multiplayerCombat == nullptr) return -1;
+    for (uint8_t index = 0; index < multiplayerCombat->combatantCount; ++index)
+        if (combatRefsEqual(multiplayerCombat->slots[index].initiative.combatant,
+                            reference)) return index;
+    return -1;
+}
+
+const MultiplayerCombatantRef* currentCombatRef()
+{
+    if (multiplayerCombat == nullptr || !multiplayerCombat->active ||
+        multiplayerCombat->currentTurnIndex >= multiplayerCombat->combatantCount)
+        return nullptr;
+    return &multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]
+                .initiative.combatant;
+}
+
+void resetMultiplayerTurnState(MultiplayerCombatSlot& slot);
+const char* combatantDisplayName(
+    const MultiplayerCombatantRef& reference,
+    const Entity* entity);
+
+uint8_t combatRecipientMask()
+{
+    return static_cast<uint8_t>(runtime.participantMask &
+                                ~playerBit(HOST_PLAYER_ID));
+}
+
+void sendPendingCombatPacket()
+{
+    if (multiplayerCombat == nullptr || multiplayerCombat->pendingSize == 0)
+        return;
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+        if ((multiplayerCombat->pendingPlayerMask & playerBit(playerID)) != 0)
+            sendToPlayer(playerID, multiplayerCombat->pendingPacketType,
+                         multiplayerCombat->pendingBytes,
+                         multiplayerCombat->pendingSize,
+                         NETWORK_FLAG_CONTROL_EVENT);
+    multiplayerCombat->lastSendAt = millis();
+}
+
+bool queueReliableCombatPacket(
+    NetworkPacketType packetType,
+    uint16_t eventSequence,
+    const uint8_t* bytes,
+    size_t size)
+{
+    if (multiplayerCombat == nullptr || bytes == nullptr || size == 0 ||
+        size > sizeof(multiplayerCombat->pendingBytes) ||
+        multiplayerCombat->pendingSize != 0) return false;
+    multiplayerCombat->pendingPacketType = packetType;
+    multiplayerCombat->pendingEventSequence = eventSequence;
+    multiplayerCombat->pendingPlayerMask = combatRecipientMask();
+    multiplayerCombat->retryCount = 0;
+    multiplayerCombat->pendingSize = static_cast<uint16_t>(size);
+    memcpy(multiplayerCombat->pendingBytes, bytes, size);
+    if (multiplayerCombat->pendingPlayerMask == 0)
+    {
+        multiplayerCombat->pendingSize = 0;
+        return true;
+    }
+    sendPendingCombatPacket();
+    return true;
+}
+
+void sendCombatAck(NetworkPacketType packetType, uint16_t eventSequence)
+{
+    MultiplayerCombatAckPayload ack{};
+    ack.activityID = runtime.activityID;
+    ack.combatID = multiplayerCombat->combatID;
+    ack.eventSequence = eventSequence;
+    ack.packetType = packetType;
+    uint8_t bytes[COMBAT_ACK_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodeMultiplayerCombatAck(ack, bytes, sizeof(bytes), size))
+        sendToHost(NetworkPacketType::COMBAT_ACK, bytes, size,
+                   NETWORK_FLAG_CONTROL_EVENT);
+}
+
+void processCombatAck(
+    PlayerID sender, const uint8_t* payload, uint16_t payloadSize)
+{
+    if (!multiplayerSession.isHost() || multiplayerCombat == nullptr ||
+        !multiplayerCombat->active || !isParticipant(sender)) return;
+    MultiplayerCombatAckPayload ack{};
+    if (!decodeMultiplayerCombatAck(payload, payloadSize, ack) ||
+        ack.activityID != runtime.activityID ||
+        ack.combatID != multiplayerCombat->combatID ||
+        ack.eventSequence != multiplayerCombat->pendingEventSequence ||
+        ack.packetType != multiplayerCombat->pendingPacketType) return;
+    multiplayerCombat->pendingPlayerMask &= ~playerBit(sender);
+    if (multiplayerCombat->pendingPlayerMask == 0)
+    {
+        multiplayerCombat->pendingSize = 0;
+        multiplayerCombat->retryCount = 0;
+    }
+}
+
+void applyCombatantEventState(
+    const MultiplayerCombatantRef& reference,
+    uint8_t x,
+    uint8_t y,
+    int16_t hp,
+    uint8_t state)
+{
+    if (reference.kind == MultiplayerCombatantKind::PLAYER &&
+        isValidPlayerID(reference.playerID))
+    {
+        NetworkCharacterState& character = participantCharacter(reference.playerID);
+        character.currentHP = hp;
+        character.characterState = state;
+        runtime.participants[reference.playerID].spawn.roomID = reference.roomID;
+        runtime.participants[reference.playerID].spawn.x = x;
+        runtime.participants[reference.playerID].spawn.y = y;
+    }
+    Entity* entity = resolveVisibleCombatant(reference);
+    if (entity == nullptr) return;
+    markEntityFootprintDirty(*entity);
+    entity->x = x;
+    entity->y = y;
+    entity->character.health.currentHP = hp;
+    entity->character.state = static_cast<CharacterState>(state);
+    markEntityFootprintDirty(*entity);
+    needsRedraw = true;
+}
+
+void processCombatBegin(
+    PlayerID sender, const uint8_t* payload, uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        multiplayerCombat == nullptr) return;
+    MultiplayerCombatBeginPayload begin{};
+    if (!decodeMultiplayerCombatBegin(payload, payloadSize, begin) ||
+        begin.activityID != runtime.activityID) return;
+    if (multiplayerCombat->active && begin.combatID == multiplayerCombat->combatID &&
+        (!isNewerMovementSequence(begin.eventSequence,
+                                  multiplayerCombat->lastEventSequence)))
+    {
+        sendCombatAck(NetworkPacketType::COMBAT_BEGIN, begin.eventSequence);
+        return;
+    }
+    const bool reinforcementUpdate = multiplayerCombat->active &&
+        begin.combatID == multiplayerCombat->combatID;
+    MultiplayerCombatSlot priorCurrent{};
+    if (reinforcementUpdate &&
+        multiplayerCombat->currentTurnIndex < multiplayerCombat->combatantCount)
+        priorCurrent = multiplayerCombat->slots[
+            multiplayerCombat->currentTurnIndex];
+    if (!reinforcementUpdate)
+        *multiplayerCombat = MultiplayerCombatRuntime{};
+    multiplayerCombat->active = true;
+    multiplayerCombat->combatID = begin.combatID;
+    multiplayerCombat->lastEventSequence = begin.eventSequence;
+    multiplayerCombat->hasEventSequence = true;
+    multiplayerCombat->combatantCount = begin.combatantCount;
+    multiplayerCombat->currentTurnIndex = begin.currentTurnIndex;
+    multiplayerCombat->round = begin.round;
+    if (multiplayerCombat->pendingPacketType ==
+        NetworkPacketType::COMBAT_ACTION_REQUEST)
+    {
+        multiplayerCombat->pendingSize = 0;
+        multiplayerCombat->retryCount = 0;
+    }
+    for (uint8_t index = 0; index < begin.combatantCount; ++index)
+    {
+        multiplayerCombat->slots[index].initiative = begin.combatants[index];
+        Entity* entity = resolveVisibleCombatant(
+            begin.combatants[index].combatant);
+        if (entity != nullptr && entity->type == ENTITY_MONSTER)
+        {
+            entity->awareOfPlayer = true;
+            entity->revealedToPlayer = true;
+            markEntityFootprintDirty(*entity);
+        }
+    }
+    if (reinforcementUpdate)
+    {
+        const int priorIndex = findCombatSlot(priorCurrent.initiative.combatant);
+        if (priorIndex >= 0)
+        {
+            MultiplayerCombatSlot& current = multiplayerCombat->slots[priorIndex];
+            current.movementRemaining = priorCurrent.movementRemaining;
+            current.moveActionUsed = priorCurrent.moveActionUsed;
+            current.standardActionUsed = priorCurrent.standardActionUsed;
+            current.fullDefense = priorCurrent.fullDefense;
+        }
+    }
+    else
+        resetMultiplayerTurnState(
+            multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]);
+    combat.active = true;
+    combat.phase = COMBAT_TURN;
+    combat.waitingForPlayer = isLocalPlayersMultiplayerTurn();
+    setGameMessage(reinforcementUpdate
+        ? "More enemies join combat!" : "Combat begins!");
+    sendCombatAck(NetworkPacketType::COMBAT_BEGIN, begin.eventSequence);
+    setFullMapRedraw();
+}
+
+void processCombatEvent(
+    PlayerID sender,
+    NetworkPacketType packetType,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        multiplayerCombat == nullptr || !multiplayerCombat->active) return;
+    MultiplayerCombatEventPayload event{};
+    if (!decodeMultiplayerCombatEvent(payload, payloadSize, event) ||
+        event.activityID != runtime.activityID ||
+        event.combatID != multiplayerCombat->combatID) return;
+    if (multiplayerCombat->hasEventSequence &&
+        !isNewerMovementSequence(event.eventSequence,
+                                 multiplayerCombat->lastEventSequence))
+    {
+        sendCombatAck(packetType, event.eventSequence);
+        return;
+    }
+    multiplayerCombat->lastEventSequence = event.eventSequence;
+    multiplayerCombat->hasEventSequence = true;
+    if (multiplayerCombat->pendingPacketType ==
+        NetworkPacketType::COMBAT_ACTION_REQUEST)
+    {
+        multiplayerCombat->pendingSize = 0;
+        multiplayerCombat->retryCount = 0;
+    }
+    applyCombatantEventState(event.actor, event.actorX, event.actorY,
+                             event.actorHP, event.actorState);
+    applyCombatantEventState(event.target, event.targetX, event.targetY,
+                             event.targetHP, event.targetState);
+    Entity* previousTurnEntity = getVisibleMultiplayerCurrentCombatant();
+    if (previousTurnEntity != nullptr)
+        markEntityFootprintDirty(*previousTurnEntity);
+    multiplayerCombat->currentTurnIndex = event.currentTurnIndex;
+    multiplayerCombat->round = event.round;
+    Entity* currentTurnEntity = getVisibleMultiplayerCurrentCombatant();
+    if (currentTurnEntity != nullptr)
+        markEntityFootprintDirty(*currentTurnEntity);
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
+        event.actor.roomID < NETWORK_MAX_DUNGEON_ROOMS)
+        runtime.roomRevisions[event.actor.roomID] = event.roomRevision;
+    if (event.textLength > 0) setGameMessage(event.text);
+    if (packetType == NetworkPacketType::COMBAT_END ||
+        event.eventType == MultiplayerCombatEventType::COMBAT_ENDED)
+    {
+        multiplayerCombat->active = false;
+        combat.active = false;
+        combat.phase = COMBAT_NONE;
+        combat.waitingForPlayer = false;
+    }
+    else
+    {
+        resetMultiplayerTurnState(
+            multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]);
+        combat.waitingForPlayer = isLocalPlayersMultiplayerTurn();
+    }
+    sendCombatAck(packetType, event.eventSequence);
+}
+
+bool processAuthoritativeCombatAction(
+    PlayerID sender, const MultiplayerCombatActionRequestPayload& request);
+
+void processCombatActionRequest(
+    PlayerID sender, const uint8_t* payload, uint16_t payloadSize)
+{
+    if (!multiplayerSession.isHost() || multiplayerCombat == nullptr ||
+        !multiplayerCombat->active || multiplayerCombat->pendingSize != 0)
+        return;
+    MultiplayerCombatActionRequestPayload request{};
+    if (!decodeMultiplayerCombatActionRequest(payload, payloadSize, request) ||
+        request.activityID != runtime.activityID ||
+        request.combatID != multiplayerCombat->combatID ||
+        !isValidPlayerID(sender) || request.actor.playerID != sender) return;
+    if (multiplayerCombat->hasActionSequence[sender] &&
+        !isNewerMovementSequence(request.actionSequence,
+            multiplayerCombat->lastActionSequence[sender])) return;
+    multiplayerCombat->hasActionSequence[sender] = true;
+    multiplayerCombat->lastActionSequence[sender] = request.actionSequence;
+    processAuthoritativeCombatAction(sender, request);
+}
+
 void handleGameplayPacket(
     PlayerID sender,
     NetworkPacketType packetType,
     const uint8_t* payload,
     uint16_t payloadSize)
 {
+    if (participantCharacters == nullptr) return;
     switch (packetType)
     {
         case NetworkPacketType::TRAVEL_INVITE:
@@ -2204,8 +3457,10 @@ void handleGameplayPacket(
             processPlayerDespawn(sender, payload, payloadSize);
             break;
         case NetworkPacketType::ACTIVITY_READY:
+            processActivityReady(sender, payload, payloadSize, false);
+            break;
         case NetworkPacketType::ROOM_READY:
-            processActivityReady(sender, payload, payloadSize);
+            processActivityReady(sender, payload, payloadSize, true);
             break;
         case NetworkPacketType::ACTIVITY_START:
             processActivityStart(sender, payload, payloadSize);
@@ -2221,6 +3476,29 @@ void handleGameplayPacket(
             break;
         case NetworkPacketType::PLAYER_POSITION:
             processPlayerPosition(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::PLAYER_ROOM_TRANSITION_REQUEST:
+            processRoomTransitionRequest(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::PLAYER_ROOM_CHANGE:
+            processPlayerRoomChange(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::SHARED_GAMEPLAY_MESSAGE:
+            processSharedGameplayMessage(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::COMBAT_BEGIN:
+            processCombatBegin(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::COMBAT_ACTION_REQUEST:
+            processCombatActionRequest(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::COMBAT_ACTION_RESULT:
+        case NetworkPacketType::COMBAT_TURN:
+        case NetworkPacketType::COMBAT_END:
+            processCombatEvent(sender, packetType, payload, payloadSize);
+            break;
+        case NetworkPacketType::COMBAT_ACK:
+            processCombatAck(sender, payload, payloadSize);
             break;
         case NetworkPacketType::ACK:
             processActivityAck(sender, payload, payloadSize);
@@ -2238,14 +3516,613 @@ void removeDisconnectedParticipants()
         if (!participant.participating ||
             multiplayerSession.getMember(playerID) != nullptr) continue;
         char message[48] = {};
+        const NetworkCharacterState& character = participantCharacter(playerID);
         snprintf(message, sizeof(message), "%s disconnected.",
-                 participant.character.displayName[0] != '\0'
-                    ? participant.character.displayName : "Adventurer");
+                 character.displayName[0] != '\0'
+                    ? character.displayName : "Adventurer");
         removePlayerEntity(playerID);
         runtime.participantMask &= ~playerBit(playerID);
         participant.participating = false;
+        if (multiplayerCombat != nullptr)
+        {
+            multiplayerCombat->pendingPlayerMask &= ~playerBit(playerID);
+            if (multiplayerCombat->pendingPlayerMask == 0)
+                multiplayerCombat->pendingSize = 0;
+        }
         if (multiplayerSession.isHost()) broadcastPlayerDespawn(playerID);
         setGameMessage(message);
+    }
+}
+
+bool multiplayerCombatantAlive(const MultiplayerCombatantRef& reference)
+{
+    if (reference.kind == MultiplayerCombatantKind::PLAYER)
+    {
+        if (!isValidPlayerID(reference.playerID) ||
+            !isParticipant(reference.playerID)) return false;
+        const NetworkCharacterState& character = participantCharacter(reference.playerID);
+        return character.currentHP > 0 &&
+               character.characterState == STATE_ALIVE;
+    }
+    if (reference.kind != MultiplayerCombatantKind::MONSTER ||
+        reference.entityID == 0)
+        return false;
+    if (runtime.type == MultiplayerActivityType::FOREST)
+    {
+        Entity* entity = resolveVisibleCombatant(reference);
+        return entity != nullptr && entity->active &&
+               entity->character.state == STATE_ALIVE;
+    }
+    if (reference.roomID >= dungeon.roomCount) return false;
+    if (reference.roomID == dungeon.loadedRoom)
+    {
+        Entity* entity = resolveVisibleCombatant(reference);
+        return entity != nullptr && entity->active &&
+               entity->character.state == STATE_ALIVE;
+    }
+    const DungeonRoomRuntime& room = dungeon.roomRuntime[reference.roomID];
+    const uint8_t index = reference.entityID - 1;
+    if (!room.persistenceReady || index >= room.persistentEntityCount)
+        return false;
+    const PersistentEntity& entity =
+        room.entityStorage.compact.persistentEntities[index];
+    return entity.type == ENTITY_MONSTER &&
+           (entity.flags & PERSISTENT_ENTITY_ACTIVE) != 0 &&
+           entity.payload.monster.state == STATE_ALIVE &&
+           entity.payload.monster.currentHP > 0;
+}
+
+bool hasLivingMultiplayerHostile()
+{
+    for (uint8_t index = 0; index < multiplayerCombat->combatantCount; ++index)
+    {
+        const MultiplayerCombatantRef& reference =
+            multiplayerCombat->slots[index].initiative.combatant;
+        if (reference.kind == MultiplayerCombatantKind::MONSTER &&
+            multiplayerCombatantAlive(reference)) return true;
+    }
+    return false;
+}
+
+void resetMultiplayerTurnState(MultiplayerCombatSlot& slot)
+{
+    slot.moveActionUsed = false;
+    slot.standardActionUsed = false;
+    slot.fullDefense = false;
+    const MultiplayerCombatantRef& reference = slot.initiative.combatant;
+    slot.movementRemaining = reference.kind == MultiplayerCombatantKind::PLAYER &&
+        isValidPlayerID(reference.playerID)
+        ? participantCharacter(reference.playerID).speed
+        : 6;
+    Entity* entity = resolveVisibleCombatant(reference);
+    if (entity != nullptr)
+    {
+        entity->turn = TurnState{};
+        entity->turn.turnActive = true;
+        entity->turn.movementRemaining = slot.movementRemaining;
+        entity->turn.fullDefense = slot.fullDefense;
+    }
+}
+
+void advanceMultiplayerTurn()
+{
+    if (multiplayerCombat == nullptr || multiplayerCombat->combatantCount == 0)
+        return;
+    Entity* previousVisible = getVisibleMultiplayerCurrentCombatant();
+    if (previousVisible != nullptr) markEntityFootprintDirty(*previousVisible);
+    for (uint8_t attempts = 0; attempts < multiplayerCombat->combatantCount;
+         ++attempts)
+    {
+        ++multiplayerCombat->currentTurnIndex;
+        if (multiplayerCombat->currentTurnIndex >=
+            multiplayerCombat->combatantCount)
+        {
+            multiplayerCombat->currentTurnIndex = 0;
+            ++multiplayerCombat->round;
+        }
+        MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+            multiplayerCombat->currentTurnIndex];
+        if (multiplayerCombatantAlive(slot.initiative.combatant))
+        {
+            resetMultiplayerTurnState(slot);
+            break;
+        }
+    }
+    Entity* currentVisible = getVisibleMultiplayerCurrentCombatant();
+    if (currentVisible != nullptr) markEntityFootprintDirty(*currentVisible);
+    needsRedraw = true;
+    combat.waitingForPlayer = isLocalPlayersMultiplayerTurn();
+}
+
+void fillCombatEventState(
+    MultiplayerCombatEventPayload& event,
+    const MultiplayerCombatantRef& reference,
+    bool actor)
+{
+    Entity* entity = resolveVisibleCombatant(reference);
+    uint8_t x = 0;
+    uint8_t y = 0;
+    int16_t hp = 0;
+    uint8_t state = STATE_DEAD;
+    if (reference.kind == MultiplayerCombatantKind::PLAYER &&
+        isValidPlayerID(reference.playerID))
+    {
+        const Participant& participant = runtime.participants[reference.playerID];
+        const NetworkCharacterState& character = participantCharacter(reference.playerID);
+        x = participant.spawn.x;
+        y = participant.spawn.y;
+        hp = character.currentHP;
+        state = character.characterState;
+    }
+    else if (runtime.type == MultiplayerActivityType::DUNGEON &&
+             reference.kind == MultiplayerCombatantKind::MONSTER &&
+             reference.roomID < dungeon.roomCount && reference.entityID > 0 &&
+             reference.roomID != dungeon.loadedRoom)
+    {
+        const DungeonRoomRuntime& room = dungeon.roomRuntime[reference.roomID];
+        const uint8_t index = reference.entityID - 1;
+        if (room.persistenceReady && index < room.persistentEntityCount)
+        {
+            const PersistentEntity& persistent =
+                room.entityStorage.compact.persistentEntities[index];
+            if (persistent.type == ENTITY_MONSTER)
+            {
+                x = persistent.x;
+                y = persistent.y;
+                hp = static_cast<int16_t>(persistent.payload.monster.currentHP);
+                state = static_cast<uint8_t>(persistent.payload.monster.state);
+            }
+        }
+    }
+    if (entity != nullptr)
+    {
+        x = entity->x;
+        y = entity->y;
+        hp = static_cast<int16_t>(entity->character.health.currentHP);
+        state = static_cast<uint8_t>(entity->character.state);
+    }
+    if (actor)
+    {
+        event.actor = reference;
+        event.actorX = x;
+        event.actorY = y;
+        event.actorHP = hp;
+        event.actorState = state;
+    }
+    else
+    {
+        event.target = reference;
+        event.targetX = x;
+        event.targetY = y;
+        event.targetHP = hp;
+        event.targetState = state;
+    }
+}
+
+bool emitCombatEvent(
+    NetworkPacketType packetType,
+    MultiplayerCombatEventType eventType,
+    const MultiplayerCombatantRef& actor,
+    const MultiplayerCombatantRef& target,
+    const char* message)
+{
+    MultiplayerCombatEventPayload event{};
+    event.activityID = runtime.activityID;
+    event.combatID = multiplayerCombat->combatID;
+    event.eventSequence = multiplayerCombat->nextEventSequence++;
+    if (multiplayerCombat->nextEventSequence == 0)
+        multiplayerCombat->nextEventSequence = 1;
+    event.eventType = eventType;
+    event.currentTurnIndex = multiplayerCombat->currentTurnIndex;
+    event.round = multiplayerCombat->round;
+    fillCombatEventState(event, actor, true);
+    fillCombatEventState(event, target, false);
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
+        actor.roomID < NETWORK_MAX_DUNGEON_ROOMS)
+        event.roomRevision = runtime.roomRevisions[actor.roomID];
+    if (message != nullptr)
+    {
+        char combined[SHARED_MESSAGE_TEXT_SIZE] = {};
+        snprintf(combined, sizeof(combined), "%s", message);
+        if (eventType != MultiplayerCombatEventType::COMBAT_ENDED)
+        {
+            const MultiplayerCombatantRef* next = currentCombatRef();
+            if (next != nullptr)
+            {
+                const char* nextName = combatantDisplayName(
+                    *next, resolveVisibleCombatant(*next));
+                const size_t used = strnlen(combined, sizeof(combined));
+                if (used < sizeof(combined) - 1)
+                    snprintf(combined + used, sizeof(combined) - used,
+                             " %s's turn.", nextName);
+            }
+        }
+        const size_t length = strnlen(combined, SHARED_MESSAGE_TEXT_SIZE - 1);
+        memcpy(event.text, combined, length);
+        event.text[length] = '\0';
+        event.textLength = static_cast<uint8_t>(length);
+        setGameMessage(event.text);
+    }
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    return encodeMultiplayerCombatEvent(event, bytes, sizeof(bytes), size) &&
+        queueReliableCombatPacket(packetType, event.eventSequence, bytes, size);
+}
+
+bool prepareCombatantRoom(const MultiplayerCombatantRef& reference)
+{
+    if (runtime.type != MultiplayerActivityType::DUNGEON ||
+        reference.roomID == dungeon.loadedRoom) return true;
+    if (!activateAuthoritativeDungeonRoom(reference.roomID, ENTRY_START))
+        return false;
+    for (uint8_t index = 0; index < multiplayerCombat->combatantCount; ++index)
+    {
+        MultiplayerCombatSlot& slot = multiplayerCombat->slots[index];
+        if (slot.initiative.combatant.roomID != reference.roomID) continue;
+        Entity* entity = resolveVisibleCombatant(slot.initiative.combatant);
+        if (entity == nullptr) continue;
+        entity->turn.turnActive = true;
+        entity->turn.movementRemaining = slot.movementRemaining;
+        entity->turn.moveActionUsed = slot.moveActionUsed;
+        entity->turn.standardActionUsed = slot.standardActionUsed;
+        entity->turn.fullDefense = slot.fullDefense;
+    }
+    return true;
+}
+
+void saveCombatRoomAndRestoreHost(uint8_t changedRoom)
+{
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
+        changedRoom < NETWORK_MAX_DUNGEON_ROOMS)
+    {
+        if (++runtime.roomRevisions[changedRoom] == 0)
+            runtime.roomRevisions[changedRoom] = 1;
+        capturePlayersInLoadedDungeonRoom();
+        refreshHostParticipantCharacters();
+        captureMultiplayerRoomEffects(changedRoom);
+    }
+    if (runtime.type == MultiplayerActivityType::DUNGEON)
+        restoreHostDungeonRoom();
+}
+
+void scheduleRoomRefreshForClients(uint8_t roomID)
+{
+    if (!multiplayerSession.isHost() ||
+        runtime.type != MultiplayerActivityType::DUNGEON ||
+        roomID >= NETWORK_MAX_DUNGEON_ROOMS) return;
+    const uint32_t now = millis();
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    {
+        Participant& participant = runtime.participants[playerID];
+        if (!participant.participating ||
+            participant.spawn.roomID != roomID || participant.roomLoading)
+            continue;
+        participant.roomLoading = true;
+        participant.ready = false;
+        participant.startAcked = false;
+        participant.transferRoom = roomID;
+        participant.transferEpoch = runtime.roomRevisions[roomID];
+        participant.transferIncludesGraph = false;
+        participant.transitionEntry = ENTRY_START;
+        participant.roomLoadStartedAt = now;
+        participant.syncStage = SyncStage::PREPARE;
+        participant.syncItem = 0;
+        participant.retryCount = 0;
+        participant.awaitingAck = false;
+        participant.lastSendAt = 0;
+        MP_DEBUGF("Refreshing Room %u revision %u for Player %u\n",
+                  roomID, participant.transferEpoch, playerID);
+    }
+}
+
+const char* combatantDisplayName(
+    const MultiplayerCombatantRef& reference,
+    const Entity* entity)
+{
+    if (reference.kind == MultiplayerCombatantKind::PLAYER &&
+        isValidPlayerID(reference.playerID))
+        return participantCharacter(reference.playerID).displayName;
+    return entity != nullptr ? getEntityName(entity) : "Monster";
+}
+
+bool multiplayerCombatantsAreHostile(
+    const Entity& attacker, const Entity& target)
+{
+    return attacker.character.team != TEAM_NEUTRAL &&
+           target.character.team != TEAM_NEUTRAL &&
+           attacker.character.team != target.character.team;
+}
+
+bool resolveMultiplayerAttack(
+    const MultiplayerCombatActionRequestPayload& request,
+    bool ranged)
+{
+    if (!prepareCombatantRoom(request.actor)) return false;
+    Entity* actor = resolveVisibleCombatant(request.actor);
+    Entity* target = resolveVisibleCombatant(request.target);
+    if (actor == nullptr || target == nullptr ||
+        request.actor.roomID != request.target.roomID ||
+        actor->character.state != STATE_ALIVE ||
+        target->character.state != STATE_ALIVE ||
+        !multiplayerCombatantsAreHostile(*actor, *target))
+    {
+        restoreHostDungeonRoom();
+        return false;
+    }
+    const int dx = abs(static_cast<int>(actor->x) - target->x);
+    const int dy = abs(static_cast<int>(actor->y) - target->y);
+    if (!ranged && (dx > 1 || dy > 1))
+    {
+        restoreHostDungeonRoom();
+        return false;
+    }
+    const EquipmentSlot equipmentSlot =
+        ranged ? SLOT_RANGED_WEAPON : SLOT_MELEE_WEAPON;
+    const ItemInstance& item =
+        actor->character.equipment.equipped[equipmentSlot];
+    const Weapon* weapon = getWeapon(item.itemID);
+    if (weapon == nullptr)
+    {
+        restoreHostDungeonRoom();
+        return false;
+    }
+    int rangePenalty = 0;
+    if (ranged)
+    {
+        if (!canSee(*actor) ||
+            !hasLineOfSightBetweenFootprintsAt(
+                *actor, actor->x, actor->y, *target))
+        {
+            restoreHostDungeonRoom();
+            return false;
+        }
+        const int distanceFeet = getEntityGridDistance(*actor, *target) * 5;
+        const int increments = weapon->rangeIncrement > 0
+            ? (distanceFeet - 1) / weapon->rangeIncrement : 10;
+        if (increments >= 10)
+        {
+            restoreHostDungeonRoom();
+            return false;
+        }
+        rangePenalty = -2 * increments;
+    }
+    const int roll = rollDie(20);
+    const int bonus = (ranged ? getRangedAttackBonus(actor->character)
+                              : getMeleeAttackBonus(actor->character)) +
+                      rangePenalty;
+    const int armorClass = getArmorClass(target->character,
+                                         target->turn.fullDefense ? 4 : 0);
+    const bool hit = roll == 20 || (roll != 1 && roll + bonus >= armorClass);
+    bool critical = false;
+    if (hit && roll >= weapon->criticalThreat)
+    {
+        const int confirmation = rollDie(20);
+        critical = confirmation == 20 ||
+            (confirmation != 1 && confirmation + bonus >= armorClass);
+    }
+    int damage = 0;
+    if (hit)
+    {
+        damage = rollDice(weapon->damageDice, weapon->damageSides) +
+                 getItemWeaponDamageBonus(item);
+        if (!ranged)
+            damage += getAbilityModifier(actor->character, ABILITY_STRENGTH);
+        if (damage < 1) damage = 1;
+        if (critical) damage *= weapon->criticalMultiplier;
+        damage += rollWeaponEnergyDamage(item, target->character);
+        damageCharacter(target->character, damage);
+        if (target->character.health.currentHP <= 0)
+        {
+            target->character.health.currentHP = 0;
+            target->character.state = target->type == ENTITY_PLAYER
+                ? STATE_UNCONSCIOUS : STATE_DEAD;
+        }
+        markEntityFootprintDirty(*target);
+    }
+    if (request.actor.kind == MultiplayerCombatantKind::PLAYER)
+        copyCharacterToNetwork(request.actor.playerID, actor->character,
+                               participantCharacter(request.actor.playerID));
+    if (request.target.kind == MultiplayerCombatantKind::PLAYER)
+        copyCharacterToNetwork(request.target.playerID, target->character,
+                               participantCharacter(request.target.playerID));
+    char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+    if (hit)
+        snprintf(message, sizeof(message), "%s hits %s for %d.",
+                 combatantDisplayName(request.actor, actor),
+                 combatantDisplayName(request.target, target), damage);
+    else
+        snprintf(message, sizeof(message), "%s misses %s.",
+                 combatantDisplayName(request.actor, actor),
+                 combatantDisplayName(request.target, target));
+    MultiplayerCombatSlot& combatSlot = multiplayerCombat->slots[
+        multiplayerCombat->currentTurnIndex];
+    combatSlot.standardActionUsed = true;
+    const uint8_t roomID = request.actor.roomID;
+    saveCombatRoomAndRestoreHost(roomID);
+    if (!hasLivingMultiplayerHostile())
+    {
+        multiplayerCombat->ending = true;
+        emitCombatEvent(NetworkPacketType::COMBAT_END,
+                        MultiplayerCombatEventType::COMBAT_ENDED,
+                        request.actor, request.target, "Combat ends.");
+        return true;
+    }
+    advanceMultiplayerTurn();
+    return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
+                           MultiplayerCombatEventType::ACTION_RESULT,
+                           request.actor, request.target, message);
+}
+
+bool resolveMultiplayerAbility(
+    const MultiplayerCombatActionRequestPayload& request)
+{
+    if ((request.flags & 0x01u) != 0) return false;
+    if (!prepareCombatantRoom(request.actor)) return false;
+    Entity* actor = resolveVisibleCombatant(request.actor);
+    Entity* target = resolveVisibleCombatant(request.target);
+    if (actor == nullptr || actor->character.state != STATE_ALIVE)
+    {
+        restoreHostDungeonRoom();
+        return false;
+    }
+    const AbilityID abilityID = static_cast<AbilityID>(request.abilityID);
+    AbilityResolution result{};
+    if (isDirectionalAbility(abilityID))
+        result = resolveAbilityInDirection(
+            *actor, static_cast<Direction>(request.direction), abilityID);
+    else if (isGroundTargetAbility(abilityID))
+        result = resolveAbilityAt(
+            *actor, request.targetX, request.targetY, abilityID);
+    else
+    {
+        if (target == nullptr || request.actor.roomID != request.target.roomID)
+        {
+            restoreHostDungeonRoom();
+            return false;
+        }
+        result = resolveAbility(*actor, target, abilityID,
+            AbilityCastSource::NORMAL, static_cast<DamageType>(request.damageType));
+    }
+    if (result.result != ABILITY_RESULT_SUCCESS)
+    {
+        setGameMessage(getAbilityResultMessage(result.result));
+        restoreHostDungeonRoom();
+        return false;
+    }
+    copyCharacterToNetwork(request.actor.playerID, actor->character,
+                           participantCharacter(request.actor.playerID));
+    if (target != nullptr && request.target.kind == MultiplayerCombatantKind::PLAYER)
+        copyCharacterToNetwork(request.target.playerID, target->character,
+                               participantCharacter(request.target.playerID));
+    multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]
+        .standardActionUsed = true;
+    char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+    snprintf(message, sizeof(message), "%s casts %s.",
+             combatantDisplayName(request.actor, actor), getAbilityName(abilityID));
+    const uint8_t roomID = request.actor.roomID;
+    saveCombatRoomAndRestoreHost(roomID);
+    scheduleRoomRefreshForClients(roomID);
+    if (!hasLivingMultiplayerHostile())
+    {
+        multiplayerCombat->ending = true;
+        return emitCombatEvent(NetworkPacketType::COMBAT_END,
+            MultiplayerCombatEventType::COMBAT_ENDED,
+            request.actor, request.target, "Combat ends.");
+    }
+    advanceMultiplayerTurn();
+    return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
+        MultiplayerCombatEventType::ACTION_RESULT,
+        request.actor, request.target, message);
+}
+
+bool processAuthoritativeCombatAction(
+    PlayerID sender, const MultiplayerCombatActionRequestPayload& request)
+{
+    const MultiplayerCombatantRef* current = currentCombatRef();
+    if (current == nullptr || current->kind != MultiplayerCombatantKind::PLAYER ||
+        current->playerID != sender || !combatRefsEqual(*current, request.actor))
+        return false;
+    const MultiplayerCombatSlot& currentSlot = multiplayerCombat->slots[
+        multiplayerCombat->currentTurnIndex];
+    if ((request.action == MultiplayerCombatActionType::MELEE_ATTACK ||
+         request.action == MultiplayerCombatActionType::RANGED_ATTACK ||
+         request.action == MultiplayerCombatActionType::CAST_ABILITY) &&
+        currentSlot.standardActionUsed)
+        return false;
+    if (request.action == MultiplayerCombatActionType::FULL_DEFENSE &&
+        (currentSlot.standardActionUsed || currentSlot.moveActionUsed))
+        return false;
+    switch (request.action)
+    {
+        case MultiplayerCombatActionType::MOVE:
+        {
+            if (!prepareCombatantRoom(request.actor)) return false;
+            Entity* actor = resolveVisibleCombatant(request.actor);
+            if (actor == nullptr)
+            {
+                restoreHostDungeonRoom();
+                return false;
+            }
+            MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+                multiplayerCombat->currentTurnIndex];
+            actor->turn.turnActive = true;
+            actor->turn.movementRemaining = slot.movementRemaining;
+            actor->turn.moveActionUsed = slot.moveActionUsed;
+            actor->turn.standardActionUsed = slot.standardActionUsed;
+            combat.waitingForPlayer = true;
+            bool roomChanged = false;
+            const bool moved = tryMovePlayerAuthoritative(
+                dungeon, sender, static_cast<Direction>(request.direction),
+                false, roomChanged);
+            slot.movementRemaining = actor->turn.movementRemaining;
+            slot.moveActionUsed = actor->turn.moveActionUsed;
+            slot.standardActionUsed = actor->turn.standardActionUsed;
+            capturePlayersInLoadedDungeonRoom();
+            copyCharacterToNetwork(sender, actor->character,
+                                   participantCharacter(sender));
+            Participant& participant = runtime.participants[sender];
+            participant.lastMoveSequence = request.actionSequence;
+            participant.hasMoveSequence = true;
+            sendAuthoritativePosition(
+                sender, request.actionSequence,
+                static_cast<Direction>(request.direction));
+            checkAuthoritativeRoomCombat(sender);
+            if (moved)
+                saveCombatRoomAndRestoreHost(request.actor.roomID);
+            else
+                restoreHostDungeonRoom();
+            if (multiplayerCombat->pendingSize != 0) return true;
+            char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+            snprintf(message, sizeof(message), moved ? "%s moves." :
+                     "%s cannot move there.",
+                     combatantDisplayName(request.actor, actor));
+            return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
+                MultiplayerCombatEventType::ACTION_RESULT,
+                request.actor, MultiplayerCombatantRef{}, message);
+        }
+        case MultiplayerCombatActionType::MELEE_ATTACK:
+            return resolveMultiplayerAttack(request, false);
+        case MultiplayerCombatActionType::RANGED_ATTACK:
+            return resolveMultiplayerAttack(request, true);
+        case MultiplayerCombatActionType::CAST_ABILITY:
+            return resolveMultiplayerAbility(request);
+        case MultiplayerCombatActionType::FULL_DEFENSE:
+        {
+            if (!prepareCombatantRoom(request.actor)) return false;
+            Entity* actor = resolveVisibleCombatant(request.actor);
+            if (actor == nullptr)
+            {
+                restoreHostDungeonRoom();
+                return false;
+            }
+            actor->turn.fullDefense = true;
+            MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+                multiplayerCombat->currentTurnIndex];
+            slot.standardActionUsed = true;
+            slot.moveActionUsed = true;
+            slot.fullDefense = true;
+            char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+            snprintf(message, sizeof(message), "%s takes Full Defense.",
+                     combatantDisplayName(request.actor, actor));
+            saveCombatRoomAndRestoreHost(request.actor.roomID);
+            advanceMultiplayerTurn();
+            return emitCombatEvent(NetworkPacketType::COMBAT_TURN,
+                MultiplayerCombatEventType::TURN_ADVANCE,
+                request.actor, MultiplayerCombatantRef{}, message);
+        }
+        case MultiplayerCombatActionType::END_TURN:
+        {
+            char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+            snprintf(message, sizeof(message), "%s ends their turn.",
+                     combatantDisplayName(request.actor,
+                         resolveVisibleCombatant(request.actor)));
+            advanceMultiplayerTurn();
+            return emitCombatEvent(NetworkPacketType::COMBAT_TURN,
+                MultiplayerCombatEventType::TURN_ADVANCE,
+                request.actor, MultiplayerCombatantRef{}, message);
+        }
+        default:
+            return false;
     }
 }
 
@@ -2253,9 +4130,10 @@ void failParticipantLoad(PlayerID playerID)
 {
     Participant& participant = runtime.participants[playerID];
     char message[64] = {};
+    const NetworkCharacterState& character = participantCharacter(playerID);
     snprintf(message, sizeof(message), "%s could not load the %s.",
-             participant.character.displayName[0] != '\0'
-                ? participant.character.displayName : "Adventurer",
+             character.displayName[0] != '\0'
+                ? character.displayName : "Adventurer",
              runtime.type == MultiplayerActivityType::DUNGEON
                 ? "dungeon" : "forest");
     removePlayerEntity(playerID);
@@ -2271,6 +4149,42 @@ void failParticipantLoad(PlayerID playerID)
 
 void initializeMultiplayerActivity()
 {
+    if (participantCharacters == nullptr)
+    {
+        participantCharacters = static_cast<NetworkCharacterState*>(
+            ps_malloc(sizeof(NetworkCharacterState) * MAX_MULTIPLAYER_PLAYERS));
+        if (participantCharacters != nullptr)
+            memset(participantCharacters, 0,
+                   sizeof(NetworkCharacterState) * MAX_MULTIPLAYER_PLAYERS);
+    }
+    if (multiplayerCombat == nullptr)
+    {
+        multiplayerCombat = static_cast<MultiplayerCombatRuntime*>(
+            ps_malloc(sizeof(MultiplayerCombatRuntime)));
+        if (multiplayerCombat != nullptr)
+            *multiplayerCombat = MultiplayerCombatRuntime{};
+    }
+    if (multiplayerRoomEffects == nullptr)
+    {
+        multiplayerRoomEffects = static_cast<MultiplayerRoomEffectState*>(
+            ps_malloc(sizeof(MultiplayerRoomEffectState) *
+                      NETWORK_MAX_DUNGEON_ROOMS));
+        if (multiplayerRoomEffects != nullptr)
+            memset(multiplayerRoomEffects, 0,
+                   sizeof(MultiplayerRoomEffectState) *
+                   NETWORK_MAX_DUNGEON_ROOMS);
+    }
+    MP_DEBUGF("Stage3 PSRAM chars=%u combat=%u roomEffects=%u total=%u\n",
+              static_cast<unsigned>(sizeof(NetworkCharacterState) *
+                                    MAX_MULTIPLAYER_PLAYERS),
+              static_cast<unsigned>(sizeof(MultiplayerCombatRuntime)),
+              static_cast<unsigned>(sizeof(MultiplayerRoomEffectState) *
+                                    NETWORK_MAX_DUNGEON_ROOMS),
+              static_cast<unsigned>(sizeof(NetworkCharacterState) *
+                                    MAX_MULTIPLAYER_PLAYERS +
+                                    sizeof(MultiplayerCombatRuntime) +
+                                    sizeof(MultiplayerRoomEffectState) *
+                                    NETWORK_MAX_DUNGEON_ROOMS));
     resetActivityState();
     multiplayerSession.setGameplayPacketHandler(handleGameplayPacket);
 }
@@ -2321,9 +4235,11 @@ void updateMultiplayerActivity(uint32_t now)
             sendTravelInvites();
     }
 
-    if (multiplayerSession.isHost() && runtime.phase == ActivityPhase::LOADING)
+    if (multiplayerSession.isHost() &&
+        (runtime.phase == ActivityPhase::LOADING || hasParticipantRoomLoading()))
     {
-        if (elapsed(now, runtime.phaseStartedAt, ACTIVITY_LOAD_TIMEOUT_MS))
+        if (runtime.phase == ActivityPhase::LOADING &&
+            elapsed(now, runtime.phaseStartedAt, ACTIVITY_LOAD_TIMEOUT_MS))
         {
             for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS;
                  ++playerID)
@@ -2335,7 +4251,14 @@ void updateMultiplayerActivity(uint32_t now)
         for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
         {
             Participant& participant = runtime.participants[playerID];
-            if (!participant.participating || participant.ready) continue;
+            if (!participant.participating) continue;
+            if (participant.roomLoading && participant.roomLoadStartedAt != 0 &&
+                elapsed(now, participant.roomLoadStartedAt,
+                        ACTIVITY_LOAD_TIMEOUT_MS))
+            {
+                failParticipantLoad(playerID);
+                continue;
+            }
             if (participant.awaitingAck &&
                 elapsed(now, participant.lastSendAt, RELIABLE_ACK_TIMEOUT_MS))
             {
@@ -2347,12 +4270,18 @@ void updateMultiplayerActivity(uint32_t now)
                 participant.awaitingAck = false;
                 ++participant.retryCount;
 #if MULTIPLAYER_DEBUG
-                ++runtime.snapshotRetries;
+                if (multiplayerCombat != nullptr) ++multiplayerCombat->snapshotRetries;
 #endif
                 MP_DEBUGF("Reliable retry player=%u stage=%u item=%u retry=%u\n",
                           playerID,
                           static_cast<unsigned>(participant.syncStage),
                           participant.syncItem, participant.retryCount);
+                if (participant.expectedAck.packetType ==
+                    NetworkPacketType::ACTIVITY_START)
+                {
+                    sendTargetedActivityStart(playerID);
+                    continue;
+                }
             }
         }
 
@@ -2380,7 +4309,18 @@ void updateMultiplayerActivity(uint32_t now)
                 break;
             }
         }
-        if (allParticipantsReady()) startHostActivity(now);
+        if (runtime.phase == ActivityPhase::LOADING && allParticipantsReady())
+            startHostActivity(now);
+    }
+
+    if (multiplayerSession.isClient() && runtime.phase == ActivityPhase::ACTIVE)
+    {
+        Participant& local = runtime.participants[runtime.localPlayerID];
+        if (local.transitionPending &&
+            (local.lastTransitionRequestAt == 0 ||
+             elapsed(now, local.lastTransitionRequestAt,
+                     RELIABLE_ACK_TIMEOUT_MS)))
+            sendPendingRoomTransitionRequest(local, now);
     }
 
     if (multiplayerSession.isClient() && runtime.phase == ActivityPhase::LOADING &&
@@ -2388,7 +4328,7 @@ void updateMultiplayerActivity(uint32_t now)
         (runtime.lastReadyAt == 0 ||
          elapsed(now, runtime.lastReadyAt, READY_RETRY_MS)))
     {
-        sendActivityReady();
+        sendActivityReady(runtime.clientRoomLoading);
         runtime.lastReadyAt = now;
     }
     else if (multiplayerSession.isClient() &&
@@ -2418,9 +4358,9 @@ void updateMultiplayerActivity(uint32_t now)
                       multiplayerTransport.getSendCompletionFailureCount()),
                   static_cast<unsigned long>(
                       multiplayerTransport.getSendCompletionSuccessCount()),
-                  runtime.snapshotRetries,
-                  runtime.snapshotChunkDuplicates,
-                  runtime.snapshotChunkRejects);
+                  multiplayerCombat != nullptr ? multiplayerCombat->snapshotRetries : 0,
+                  multiplayerCombat != nullptr ? multiplayerCombat->snapshotChunkDuplicates : 0,
+                  multiplayerCombat != nullptr ? multiplayerCombat->snapshotChunkRejects : 0);
     }
 #endif
 
@@ -2431,10 +4371,16 @@ void updateMultiplayerActivity(uint32_t now)
         broadcastActivityStart(now);
         runtime.startRepeatsRemaining--;
     }
+    updateMultiplayerCombat(now);
 }
 
 bool requestMultiplayerTravel(MultiplayerActivityType activityType)
 {
+    if (participantCharacters == nullptr)
+    {
+        setGameMessage("Multiplayer memory unavailable.");
+        return true;
+    }
     if (!multiplayerSession.isActive()) return false;
     if (runtime.phase != ActivityPhase::NONE)
     {
@@ -2568,9 +4514,48 @@ bool handleMultiplayerLocalMove(uint8_t direction, bool& moved)
     if (!isMultiplayerExplorationActive() || !isLocalActivityParticipant())
         return false;
     if (direction >= 8) return true;
+    if (isMultiplayerCombatActive() && !isLocalPlayersMultiplayerTurn())
+        return true;
     const PlayerID localPlayerID = runtime.localPlayerID;
     Participant& participant = runtime.participants[localPlayerID];
     const uint16_t sequence = ++runtime.localMovementSequence;
+
+    if (localMoveTargetsDungeonDoor(static_cast<Direction>(direction)))
+    {
+        if (participant.roomLoading || participant.transitionPending)
+            return true;
+        if (isMultiplayerCombatActive() &&
+            multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]
+                    .movementRemaining == 0)
+            return true;
+        if (multiplayerSession.isHost())
+        {
+            uint8_t destinationRoom = NETWORK_NO_ROOM;
+            RoomEntry entry = ENTRY_START;
+            if (resolvePlayerDoorTransition(
+                    localPlayerID, static_cast<Direction>(direction),
+                    destinationRoom, entry))
+                moved = beginIndependentRoomTransition(
+                    localPlayerID, destinationRoom, entry, sequence, millis());
+            return true;
+        }
+        participant.transitionPending = true;
+        participant.hasTransitionSequence = true;
+        participant.lastTransitionSequence = sequence;
+        participant.pendingTransitionDirection = direction;
+        participant.pendingTransitionSourceRoom = runtime.currentRoom;
+        participant.lastTransitionRequestAt = 0;
+        sendPendingRoomTransitionRequest(participant, millis());
+        setGameMessage("Entering next room...");
+        return true;
+    }
+
+    if (isMultiplayerCombatActive())
+    {
+        const bool accepted = requestMultiplayerCombatMove(direction);
+        moved = multiplayerSession.isHost() && accepted;
+        return true;
+    }
 
     if (multiplayerSession.isHost())
     {
@@ -2579,6 +4564,26 @@ bool handleMultiplayerLocalMove(uint8_t direction, bool& moved)
         moved = tryMovePlayerAuthoritative(
             dungeon, localPlayerID, static_cast<Direction>(direction),
             true, roomChanged);
+        checkAuthoritativeRoomCombat(localPlayerID);
+        if (isMultiplayerCombatActive())
+        {
+            uint8_t activeCount = 0;
+            Entity* activeEntities = getActiveMapEntities(activeCount);
+            Entity* activePlayer = activeEntities != nullptr
+                ? getPlayerEntityByOwner(
+                    activeEntities, activeCount, localPlayerID) : nullptr;
+            if (activePlayer != nullptr)
+            {
+                MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+                    multiplayerCombat->currentTurnIndex];
+                slot.movementRemaining = activePlayer->turn.movementRemaining;
+                slot.moveActionUsed = activePlayer->turn.moveActionUsed;
+                slot.standardActionUsed =
+                    activePlayer->turn.standardActionUsed;
+            }
+        }
+        if (runtime.type == MultiplayerActivityType::DUNGEON)
+            capturePlayersInLoadedDungeonRoom();
         participant.lastMoveSequence = sequence;
         participant.hasMoveSequence = true;
         if (!roomChanged) refreshHostParticipantCharacters();
@@ -2626,6 +4631,486 @@ bool handleMultiplayerLocalMove(uint8_t direction, bool& moved)
         sendToHost(NetworkPacketType::PLAYER_MOVE_REQUEST, bytes, size,
                    NETWORK_FLAG_NONE);
     return true;
+}
+
+bool publishSharedGameplayMessage(
+    const char* message,
+    SharedMessageCategory category)
+{
+    if (message == nullptr || message[0] == '\0' ||
+        runtime.phase == ActivityPhase::NONE ||
+        !multiplayerSession.isHost()) return false;
+    SharedGameplayMessagePayload payload{};
+    payload.activityID = runtime.activityID;
+    payload.messageSequence = runtime.nextSharedMessageSequence++;
+    if (runtime.nextSharedMessageSequence == 0)
+        runtime.nextSharedMessageSequence = 1;
+    payload.category = category;
+    const size_t length = strnlen(message, SHARED_MESSAGE_TEXT_SIZE - 1);
+    memcpy(payload.text, message, length);
+    payload.text[length] = '\0';
+    payload.textLength = static_cast<uint8_t>(length);
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (!encodeSharedGameplayMessage(payload, bytes, sizeof(bytes), size))
+        return false;
+    setGameMessage(payload.text);
+    multiplayerSession.broadcastAuthoritativeGameplayPacket(
+        NetworkPacketType::SHARED_GAMEPLAY_MESSAGE, bytes, size,
+        NETWORK_FLAG_CONTROL_EVENT);
+    MP_DEBUGF("Shared message seq %u: %s\n",
+              payload.messageSequence, payload.text);
+    return true;
+}
+
+uint8_t getMultiplayerPlayerRoom(PlayerID playerID)
+{
+    if (!isParticipant(playerID)) return NETWORK_NO_ROOM;
+    return runtime.participants[playerID].spawn.roomID;
+}
+
+uint16_t getMultiplayerRoomRevision(uint8_t roomID)
+{
+    return roomID < NETWORK_MAX_DUNGEON_ROOMS
+        ? runtime.roomRevisions[roomID] : 0;
+}
+
+bool isMultiplayerCombatActive()
+{
+    return multiplayerCombat != nullptr && multiplayerCombat->active;
+}
+
+bool startMultiplayerCombatFromCurrentRoom()
+{
+    if (!isMultiplayerExplorationActive() || !multiplayerSession.isHost() ||
+        multiplayerCombat == nullptr) return false;
+    if (multiplayerCombat->active)
+    {
+        if (multiplayerCombat->pendingSize != 0) return true;
+        uint8_t entityCount = 0;
+        Entity* entities = getActiveMapEntities(entityCount);
+        const uint8_t roomID = getCombatRoomID();
+        uint8_t added = 0;
+        for (uint8_t index = 0; entities != nullptr && index < entityCount &&
+             multiplayerCombat->combatantCount < MAX_COMBATANTS; ++index)
+        {
+            Entity& entity = entities[index];
+            if (!entity.active || entity.type != ENTITY_MONSTER ||
+                entity.character.state != STATE_ALIVE) continue;
+            MultiplayerCombatantRef reference{};
+            reference.kind = MultiplayerCombatantKind::MONSTER;
+            reference.playerID = INVALID_PLAYER_ID;
+            reference.roomID = roomID;
+            reference.entityID = index + 1;
+            if (findCombatSlot(reference) >= 0) continue;
+            entity.awareOfPlayer = true;
+            entity.revealedToPlayer = true;
+            MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+                multiplayerCombat->combatantCount++];
+            slot.initiative.combatant = reference;
+            slot.initiative.initiative = static_cast<int8_t>(
+                rollDie(20) +
+                getAbilityModifier(entity.character.abilities.dexterity));
+            ++added;
+        }
+        if (added == 0) return true;
+        const uint8_t firstFuture = static_cast<uint8_t>(
+            multiplayerCombat->currentTurnIndex + 1);
+        for (uint8_t left = firstFuture;
+             left + 1 < multiplayerCombat->combatantCount; ++left)
+            for (uint8_t right = left + 1;
+                 right < multiplayerCombat->combatantCount; ++right)
+                if (multiplayerCombat->slots[right].initiative.initiative >
+                    multiplayerCombat->slots[left].initiative.initiative)
+                {
+                    MultiplayerCombatSlot swap = multiplayerCombat->slots[left];
+                    multiplayerCombat->slots[left] = multiplayerCombat->slots[right];
+                    multiplayerCombat->slots[right] = swap;
+                }
+        MultiplayerCombatBeginPayload update{};
+        update.activityID = runtime.activityID;
+        update.combatID = multiplayerCombat->combatID;
+        update.eventSequence = multiplayerCombat->nextEventSequence++;
+        update.combatantCount = multiplayerCombat->combatantCount;
+        update.currentTurnIndex = multiplayerCombat->currentTurnIndex;
+        update.round = multiplayerCombat->round;
+        for (uint8_t index = 0; index < update.combatantCount; ++index)
+            update.combatants[index] =
+                multiplayerCombat->slots[index].initiative;
+        uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+        size_t size = 0;
+        if (encodeMultiplayerCombatBegin(update, bytes, sizeof(bytes), size))
+            queueReliableCombatPacket(NetworkPacketType::COMBAT_BEGIN,
+                                      update.eventSequence, bytes, size);
+        setGameMessage("More enemies join combat!");
+        return true;
+    }
+    *multiplayerCombat = MultiplayerCombatRuntime{};
+    multiplayerCombat->active = true;
+    multiplayerCombat->combatID = static_cast<uint16_t>(esp_random());
+    if (multiplayerCombat->combatID == 0) multiplayerCombat->combatID = 1;
+    multiplayerCombat->nextEventSequence = 2;
+    multiplayerCombat->combatantCount = 0;
+
+    refreshHostParticipantCharacters();
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    {
+        if (!isParticipant(playerID) ||
+            participantCharacter(playerID).currentHP <= 0 ||
+            participantCharacter(playerID).characterState != STATE_ALIVE ||
+            multiplayerCombat->combatantCount >= MAX_COMBATANTS) continue;
+        MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+            multiplayerCombat->combatantCount++];
+        slot.initiative.combatant.kind = MultiplayerCombatantKind::PLAYER;
+        slot.initiative.combatant.playerID = playerID;
+        slot.initiative.combatant.roomID =
+            runtime.type == MultiplayerActivityType::FOREST
+                ? 0 : runtime.participants[playerID].spawn.roomID;
+        const int initiative = rollDie(20) +
+            getAbilityModifier(participantCharacter(playerID).abilityScores[1]);
+        slot.initiative.initiative = static_cast<int8_t>(initiative);
+        participantCharacter(playerID).initiative =
+            static_cast<int8_t>(initiative);
+        MP_DEBUGF("Combat %u added P%u initiative %d room=%u\n",
+                  multiplayerCombat->combatID, playerID, initiative,
+                  slot.initiative.combatant.roomID);
+    }
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    const uint8_t triggerRoom = getCombatRoomID();
+    for (uint8_t index = 0; entities != nullptr && index < entityCount &&
+         multiplayerCombat->combatantCount < MAX_COMBATANTS; ++index)
+    {
+        Entity& entity = entities[index];
+        if (!entity.active || entity.type != ENTITY_MONSTER ||
+            entity.character.state != STATE_ALIVE ||
+            entity.character.health.currentHP <= 0) continue;
+        entity.awareOfPlayer = true;
+        entity.revealedToPlayer = true;
+        MultiplayerCombatSlot& slot = multiplayerCombat->slots[
+            multiplayerCombat->combatantCount++];
+        slot.initiative.combatant.kind = MultiplayerCombatantKind::MONSTER;
+        slot.initiative.combatant.playerID = INVALID_PLAYER_ID;
+        slot.initiative.combatant.roomID = triggerRoom;
+        slot.initiative.combatant.entityID = index + 1;
+        const int initiative = rollDie(20) +
+            getAbilityModifier(entity.character.abilities.dexterity);
+        slot.initiative.initiative = static_cast<int8_t>(initiative);
+        entity.character.initiative = initiative;
+        MP_DEBUGF("Combat %u added monster R%u:E%u initiative %d\n",
+                  multiplayerCombat->combatID, triggerRoom, index + 1,
+                  initiative);
+    }
+    if (multiplayerCombat->combatantCount < 2 || !hasLivingMultiplayerHostile())
+    {
+        multiplayerCombat->active = false;
+        return false;
+    }
+    for (uint8_t left = 0; left + 1 < multiplayerCombat->combatantCount; ++left)
+        for (uint8_t right = left + 1;
+             right < multiplayerCombat->combatantCount; ++right)
+            if (multiplayerCombat->slots[right].initiative.initiative >
+                multiplayerCombat->slots[left].initiative.initiative)
+            {
+                MultiplayerCombatSlot swap = multiplayerCombat->slots[left];
+                multiplayerCombat->slots[left] = multiplayerCombat->slots[right];
+                multiplayerCombat->slots[right] = swap;
+            }
+    resetMultiplayerTurnState(multiplayerCombat->slots[0]);
+    combat.active = true;
+    combat.phase = COMBAT_TURN;
+    combat.combatantCount = 0;
+    combat.currentTurnIndex = 0;
+    combat.combatRound = 1;
+    combat.waitingForPlayer = isLocalPlayersMultiplayerTurn();
+
+    MultiplayerCombatBeginPayload begin{};
+    begin.activityID = runtime.activityID;
+    begin.combatID = multiplayerCombat->combatID;
+    begin.eventSequence = 1;
+    begin.combatantCount = multiplayerCombat->combatantCount;
+    begin.currentTurnIndex = 0;
+    begin.round = 1;
+    for (uint8_t index = 0; index < begin.combatantCount; ++index)
+        begin.combatants[index] = multiplayerCombat->slots[index].initiative;
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (!encodeMultiplayerCombatBegin(begin, bytes, sizeof(bytes), size) ||
+        !queueReliableCombatPacket(
+            NetworkPacketType::COMBAT_BEGIN, begin.eventSequence, bytes, size))
+    {
+        multiplayerCombat->active = false;
+        combat.active = false;
+        return false;
+    }
+    setGameMessage("Combat begins!");
+    MP_DEBUGF("Combat %u started in Room %u with %u combatants\n",
+              multiplayerCombat->combatID, triggerRoom,
+              multiplayerCombat->combatantCount);
+    setFullMapRedraw();
+    return true;
+}
+
+Entity* getVisibleMultiplayerCurrentCombatant()
+{
+    const MultiplayerCombatantRef* reference = currentCombatRef();
+    return reference != nullptr ? resolveVisibleCombatant(*reference) : nullptr;
+}
+
+bool isLocalPlayersMultiplayerTurn()
+{
+    const MultiplayerCombatantRef* reference = currentCombatRef();
+    return reference != nullptr &&
+           reference->kind == MultiplayerCombatantKind::PLAYER &&
+           reference->playerID == runtime.localPlayerID;
+}
+
+bool submitMultiplayerCombatRequest(MultiplayerCombatActionRequestPayload request)
+{
+    if (!isLocalPlayersMultiplayerTurn() || multiplayerCombat->ending ||
+        multiplayerCombat->pendingSize != 0)
+        return false;
+    request.activityID = runtime.activityID;
+    request.combatID = multiplayerCombat->combatID;
+    request.actionSequence = ++multiplayerCombat->localActionSequence;
+    if (multiplayerCombat->localActionSequence == 0)
+        request.actionSequence = ++multiplayerCombat->localActionSequence;
+    request.actor = *currentCombatRef();
+    if (multiplayerSession.isHost())
+        return processAuthoritativeCombatAction(runtime.localPlayerID, request);
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (!encodeMultiplayerCombatActionRequest(
+            request, bytes, sizeof(bytes), size)) return false;
+    multiplayerCombat->pendingPacketType =
+        NetworkPacketType::COMBAT_ACTION_REQUEST;
+    multiplayerCombat->pendingSize = static_cast<uint16_t>(size);
+    multiplayerCombat->retryCount = 0;
+    memcpy(multiplayerCombat->pendingBytes, bytes, size);
+    multiplayerCombat->lastSendAt = millis();
+    return sendToHost(NetworkPacketType::COMBAT_ACTION_REQUEST, bytes, size,
+                      NETWORK_FLAG_CONTROL_EVENT);
+}
+
+bool requestMultiplayerCombatAttack(bool ranged, const Entity* target)
+{
+    if (target == nullptr) return false;
+    MultiplayerCombatActionRequestPayload request{};
+    request.action = ranged ? MultiplayerCombatActionType::RANGED_ATTACK
+                            : MultiplayerCombatActionType::MELEE_ATTACK;
+    request.target = combatRefForEntity(*target);
+    request.direction = static_cast<uint8_t>(moveDirection);
+    return request.target.kind != MultiplayerCombatantKind::NONE &&
+           submitMultiplayerCombatRequest(request);
+}
+
+bool requestMultiplayerCombatMove(uint8_t direction)
+{
+    if (direction >= 8) return false;
+    MultiplayerCombatActionRequestPayload request{};
+    request.action = MultiplayerCombatActionType::MOVE;
+    request.direction = direction;
+    return submitMultiplayerCombatRequest(request);
+}
+
+bool requestMultiplayerCombatAbility(
+    uint16_t abilityID,
+    const Entity* target,
+    int8_t targetX,
+    int8_t targetY,
+    uint8_t direction,
+    uint8_t damageType,
+    uint8_t flags)
+{
+    MultiplayerCombatActionRequestPayload request{};
+    request.action = MultiplayerCombatActionType::CAST_ABILITY;
+    if (target != nullptr) request.target = combatRefForEntity(*target);
+    request.abilityID = abilityID;
+    request.targetX = targetX;
+    request.targetY = targetY;
+    request.direction = direction;
+    request.damageType = damageType;
+    request.flags = flags;
+    return submitMultiplayerCombatRequest(request);
+}
+
+bool requestMultiplayerCombatEndTurn()
+{
+    MultiplayerCombatActionRequestPayload request{};
+    request.action = MultiplayerCombatActionType::END_TURN;
+    request.direction = static_cast<uint8_t>(moveDirection);
+    return submitMultiplayerCombatRequest(request);
+}
+
+bool requestMultiplayerFullDefense()
+{
+    MultiplayerCombatActionRequestPayload request{};
+    request.action = MultiplayerCombatActionType::FULL_DEFENSE;
+    request.direction = static_cast<uint8_t>(moveDirection);
+    return submitMultiplayerCombatRequest(request);
+}
+
+bool isCurrentMultiplayerCombatant(const Entity& entity)
+{
+    const MultiplayerCombatantRef* current = currentCombatRef();
+    return current != nullptr && combatRefsEqual(*current, combatRefForEntity(entity));
+}
+
+bool isMultiplayerCombatParticipant(const Entity& entity)
+{
+    return isMultiplayerCombatActive() &&
+           findCombatSlot(combatRefForEntity(entity)) >= 0;
+}
+
+void updateMultiplayerCombat(uint32_t now)
+{
+    if (multiplayerCombat == nullptr || !multiplayerCombat->active) return;
+    if (multiplayerSession.isClient() &&
+        multiplayerCombat->pendingPacketType ==
+            NetworkPacketType::COMBAT_ACTION_REQUEST &&
+        multiplayerCombat->pendingSize != 0)
+    {
+        if (elapsed(now, multiplayerCombat->lastSendAt,
+                    RELIABLE_ACK_TIMEOUT_MS))
+        {
+            if (multiplayerCombat->retryCount < RELIABLE_RETRY_LIMIT)
+            {
+                ++multiplayerCombat->retryCount;
+                sendToHost(NetworkPacketType::COMBAT_ACTION_REQUEST,
+                           multiplayerCombat->pendingBytes,
+                           multiplayerCombat->pendingSize,
+                           NETWORK_FLAG_CONTROL_EVENT);
+                multiplayerCombat->lastSendAt = now;
+            }
+            else
+            {
+                multiplayerCombat->pendingSize = 0;
+                multiplayerCombat->retryCount = 0;
+                setGameMessage("Combat action was not accepted.");
+            }
+        }
+        return;
+    }
+    if (multiplayerSession.isHost() && multiplayerCombat->pendingSize != 0)
+    {
+        if (elapsed(now, multiplayerCombat->lastSendAt, RELIABLE_ACK_TIMEOUT_MS))
+        {
+            if (multiplayerCombat->retryCount < RELIABLE_RETRY_LIMIT)
+            {
+                ++multiplayerCombat->retryCount;
+                sendPendingCombatPacket();
+            }
+            else
+            {
+                MP_DEBUGF("Combat event %u timed out mask=%02X\n",
+                          multiplayerCombat->pendingEventSequence,
+                          multiplayerCombat->pendingPlayerMask);
+                multiplayerCombat->pendingPlayerMask = 0;
+                multiplayerCombat->pendingSize = 0;
+            }
+        }
+        return;
+    }
+    if (multiplayerCombat->ending)
+    {
+        multiplayerCombat->active = false;
+        combat.active = false;
+        combat.phase = COMBAT_NONE;
+        combat.waitingForPlayer = false;
+        setFullMapRedraw();
+        return;
+    }
+    if (!multiplayerSession.isHost()) return;
+    const MultiplayerCombatantRef* current = currentCombatRef();
+    if (current != nullptr && !multiplayerCombatantAlive(*current))
+    {
+        const MultiplayerCombatantRef skipped = *current;
+        if (!hasLivingMultiplayerHostile())
+        {
+            multiplayerCombat->ending = true;
+            emitCombatEvent(NetworkPacketType::COMBAT_END,
+                MultiplayerCombatEventType::COMBAT_ENDED,
+                skipped, MultiplayerCombatantRef{}, "Combat ends.");
+            return;
+        }
+        advanceMultiplayerTurn();
+        emitCombatEvent(NetworkPacketType::COMBAT_TURN,
+            MultiplayerCombatEventType::TURN_ADVANCE,
+            skipped, MultiplayerCombatantRef{}, "Turn skipped.");
+        return;
+    }
+    if (current == nullptr || current->kind != MultiplayerCombatantKind::MONSTER)
+        return;
+    if (!prepareCombatantRoom(*current)) return;
+    Entity* monster = resolveVisibleCombatant(*current);
+    Entity* target = nullptr;
+    MultiplayerCombatantRef targetRef{};
+    int bestDistance = 1000;
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
+    {
+        if (!isParticipant(playerID) ||
+            (runtime.type == MultiplayerActivityType::DUNGEON &&
+             runtime.participants[playerID].spawn.roomID != current->roomID) ||
+            participantCharacter(playerID).currentHP <= 0) continue;
+        uint8_t activeCount = 0;
+        Entity* activeEntities = getActiveMapEntities(activeCount);
+        Entity* candidate = activeEntities != nullptr
+            ? getPlayerEntityByOwner(activeEntities, activeCount, playerID)
+            : nullptr;
+        if (candidate == nullptr || monster == nullptr) continue;
+        const int distance = abs(static_cast<int>(candidate->x) - monster->x) +
+                             abs(static_cast<int>(candidate->y) - monster->y);
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            target = candidate;
+            targetRef = combatRefForEntity(*candidate);
+        }
+    }
+    MultiplayerCombatActionRequestPayload request{};
+    request.actor = *current;
+    request.target = targetRef;
+    request.direction = 0;
+    bool resolved = false;
+    if (target != nullptr && monster != nullptr)
+    {
+        uint8_t steps = static_cast<uint8_t>(
+            max(1, static_cast<int>(monster->character.speed)));
+        while (steps-- > 0 &&
+               (abs(static_cast<int>(target->x) - monster->x) > 1 ||
+                abs(static_cast<int>(target->y) - monster->y) > 1))
+        {
+            const int dx = target->x == monster->x ? 0
+                : target->x > monster->x ? 1 : -1;
+            const int dy = target->y == monster->y ? 0
+                : target->y > monster->y ? 1 : -1;
+            int nextX = monster->x + dx;
+            int nextY = monster->y;
+            if (!canMonsterMoveTo(monster, nextX, nextY))
+            {
+                nextX = monster->x;
+                nextY = monster->y + dy;
+            }
+            if (!canMonsterMoveTo(monster, nextX, nextY)) break;
+            markEntityFootprintDirty(*monster);
+            monster->x = static_cast<uint8_t>(nextX);
+            monster->y = static_cast<uint8_t>(nextY);
+            markEntityFootprintDirty(*monster);
+        }
+        if (abs(static_cast<int>(target->x) - monster->x) <= 1 &&
+            abs(static_cast<int>(target->y) - monster->y) <= 1)
+            resolved = resolveMultiplayerAttack(request, false);
+    }
+    if (!resolved)
+    {
+        const MultiplayerCombatantRef actor = *current;
+        saveCombatRoomAndRestoreHost(actor.roomID);
+        advanceMultiplayerTurn();
+        emitCombatEvent(NetworkPacketType::COMBAT_TURN,
+            MultiplayerCombatEventType::TURN_ADVANCE,
+            actor, MultiplayerCombatantRef{}, "Monster holds position.");
+    }
 }
 
 void leaveMultiplayerActivity()

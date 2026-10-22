@@ -362,11 +362,10 @@ bool tryMovePlayerAuthoritative(
 
     if (isMultiplayerExplorationActive())
     {
-        if (targetEntity != nullptr && targetEntity != player)
+        if (targetEntity != nullptr && targetEntity != player &&
+            targetEntity->type != ENTITY_MONSTER)
         {
-            setGameMessage(targetEntity->type == ENTITY_MONSTER
-                ? "Multiplayer combat arrives in Stage 3."
-                : "That interaction is unavailable in multiplayer.");
+            setGameMessage("That interaction is unavailable in multiplayer.");
             playSound(SoundEffect::BUMP);
             return false;
         }
@@ -416,7 +415,10 @@ bool tryMovePlayerAuthoritative(
     {
         if (isMultiplayerExplorationActive())
         {
-            setGameMessage("Multiplayer combat arrives in Stage 3.");
+            targetEntity->revealedToPlayer = true;
+            targetEntity->awareOfPlayer = true;
+            markEntityFootprintDirty(*targetEntity);
+            startCombat();
             playSound(SoundEffect::BUMP);
             return false;
         }
@@ -542,7 +544,8 @@ bool tryMovePlayerAuthoritative(
 
             player->x = targetX;
             player->y = targetY;
-            handleCurrentBellListeningRuneEntry(*player, targetX, targetY);
+            handleCurrentBellListeningRuneMovement(
+                *player, oldX, oldY, targetX, targetY);
             handleCurrentNumberPuzzleMovement(*player, oldX, oldY);
 
             //--------------------------------------------------

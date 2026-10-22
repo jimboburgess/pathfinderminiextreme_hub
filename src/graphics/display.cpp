@@ -893,6 +893,16 @@ void redrawForestTile(int x, int y)
     }
 }
 
+static void drawMultiplayerTurnOutline(const Entity& entity)
+{
+    if (!isMultiplayerCombatActive() ||
+        !isCurrentMultiplayerCombatant(entity)) return;
+    tft.drawRect(entity.x * TILE_SIZE, entity.y * TILE_SIZE,
+                 getEntityTileWidth(entity) * TILE_SIZE,
+                 getEntityTileHeight(entity) * TILE_SIZE,
+                 ST77XX_CYAN);
+}
+
 void drawEntity(const Entity& entity)
 {
     if (!entity.active)
@@ -933,6 +943,7 @@ void drawEntity(const Entity& entity)
                 entity.sprite,
                 entity.spriteWidth,
                 entity.spriteHeight);
+            drawMultiplayerTurnOutline(entity);
             return;
         }
     }
@@ -946,6 +957,7 @@ void drawEntity(const Entity& entity)
         entity.sprite,
         entity.spriteWidth,
         entity.spriteHeight);
+    drawMultiplayerTurnOutline(entity);
 
     if (entity.character.state == STATE_DEAD ||
         entity.character.state == STATE_TURNED ||

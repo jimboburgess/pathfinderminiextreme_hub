@@ -15,6 +15,7 @@
 #include "data/entityspawn.h"
 #include "map/activemap.h"
 #include "dungeon/combat.h"
+#include "dungeon/bellpuzzle.h"
 #include "forest/forest.h"
 #include "map/interaction.h"
 #include "dungeon/turns.h"
@@ -752,7 +753,12 @@ void handleMapButtons()
             moved = tryMovePlayer(dungeon);
 
         if (moved)
-            playSound(SoundEffect::WALK);
+        {
+            Entity* player = getActiveMapPlayer();
+            if (gameState != GAME_DUNGEON || player == nullptr ||
+                !isCurrentBellListeningRuneAt(player->x, player->y))
+                playSound(SoundEffect::WALK);
+        }
 
         return;
     }

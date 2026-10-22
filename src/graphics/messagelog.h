@@ -10,6 +10,7 @@
 #define MESSAGELOG_H
 
 void setGameMessage(const char* message);
+void setSharedGameMessage(const char* message);
 
 const char* getGameMessage();
 

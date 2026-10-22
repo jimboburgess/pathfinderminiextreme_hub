@@ -37,6 +37,7 @@ const uint16_t testBertramSprite[16 * 16] = {};
 void closeInventoryMenu() { inventoryCloseCount++; }
 void closeMenu() { menuCloseCount++; }
 void clearInteractionEntityReferences() { interactionClearCount++; }
+bool isMultiplayerExplorationActive() { return false; }
 
 Entity* getActiveMapEntities(uint8_t& entityCount)
 {

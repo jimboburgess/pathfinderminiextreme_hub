@@ -16,6 +16,10 @@ struct CombatDamageResult
     int damageApplied = 0;
 };
 
+int rollWeaponEnergyDamage(
+    const ItemInstance& weaponItem,
+    Character& target);
+
 //==================================================
 // Combat Constants
 //==================================================
