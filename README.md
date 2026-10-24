@@ -23,6 +23,7 @@ I am using an
 ESP32-s3-zero
 
 two simple buttons
+A24 Round Tactile Button Caps
 
 EC11 analog encoder
 
