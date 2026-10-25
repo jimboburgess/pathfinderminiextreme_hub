@@ -290,6 +290,7 @@ int getMaxHP(const Character& character)
 }
 
 #include "../../src/characters/abilities.cpp"
+#include "../../src/characters/combat_rules.cpp"
 #include "../../src/data/progression.cpp"
 
 int getFortitudeSave(const Character& character)

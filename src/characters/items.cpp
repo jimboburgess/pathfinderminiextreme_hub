@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "characters.h"
+#include "combat_rules.h"
 #include "data/dice.h"
 
 const Item itemDatabase[] =
@@ -563,17 +564,14 @@ uint8_t getEffectiveEnhancementBonus(const ItemInstance& item)
 
 int getItemWeaponAttackBonus(const ItemInstance& item)
 {
-	if (getWeapon(item.itemID) == nullptr)
-		return 0;
-	if (item.enhancementBonus > 0)
-		return item.enhancementBonus;
-	return hasWeaponProperty(item, WEAPON_PROPERTY_MASTERWORK) ? 1 : 0;
+	return calculateItemWeaponAttackBonus(
+		getWeapon(item.itemID) != nullptr, item);
 }
 
 int getItemWeaponDamageBonus(const ItemInstance& item)
 {
-	return getWeapon(item.itemID) != nullptr && item.enhancementBonus > 0
-		? item.enhancementBonus : 0;
+	return calculateItemWeaponDamageBonus(
+		getWeapon(item.itemID) != nullptr, item);
 }
 
 uint8_t getWeaponElementalDamageDice(const ItemInstance& item,

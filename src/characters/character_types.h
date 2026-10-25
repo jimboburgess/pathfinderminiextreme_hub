@@ -1,0 +1,42 @@
+#ifndef PATHFINDERMINIEXTREME_025_CHARACTER_TYPES_H
+#define PATHFINDERMINIEXTREME_025_CHARACTER_TYPES_H
+
+#include <stdint.h>
+
+constexpr uint8_t MAX_CHARACTER_LEVEL = 20;
+
+enum CharacterClass
+{
+    CLASS_FIGHTER,
+    CLASS_ROGUE,
+    CLASS_WIZARD,
+    CLASS_CLERIC
+};
+
+enum FighterFeature : uint8_t
+{
+    FIGHTER_POWER_ATTACK,
+    FIGHTER_WEAPON_FOCUS,
+    FIGHTER_TOUGHNESS,
+    FIGHTER_WEAPON_SPECIALIZATION,
+    FIGHTER_WEAPON_TRAINING_1,
+    FIGHTER_GREATER_WEAPON_FOCUS,
+    FIGHTER_WEAPON_TRAINING_2,
+    FIGHTER_IMPROVED_CRITICAL,
+    FIGHTER_GREATER_WEAPON_SPECIALIZATION,
+    FIGHTER_WEAPON_TRAINING_3,
+    FIGHTER_GREATER_TOUGHNESS,
+    FIGHTER_WEAPON_TRAINING_4,
+    FIGHTER_WEAPON_MASTERY
+};
+
+struct FighterFeatureGrant
+{
+    uint8_t level;
+    FighterFeature feature;
+};
+
+extern const FighterFeatureGrant fighterFeatureProgression[];
+extern const uint8_t fighterFeatureProgressionCount;
+
+#endif

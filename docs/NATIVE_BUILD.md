@@ -14,6 +14,8 @@ display, audio, GPIO, Wi-Fi, or ESP-NOW implementation dependency:
 - deterministic dungeon topology generation from
   `src/dungeon/dungeontopology.cpp` and the shared
   `src/dungeon/dungeongraph_core.h` algorithm;
+- character progression and deterministic combat calculations from
+  `src/characters/combat_rules.cpp`;
 - the header-only quadrature decoder from `src/input/encoderdecoder.h`.
 
 No source is copied into a native-only implementation. PlatformIO and CMake
@@ -92,6 +94,46 @@ and content generator in `roomgen.cpp` still depends on full `DungeonRoom`,
 entities, puzzles, traps, furniture, global player level, and Arduino RNG. The
 simulator reports `geometry_included=false` until that boundary is extracted
 without duplicating or weakening the handheld generator.
+
+## Character and combat rules
+
+`pfme_combat_tests` runs production ability-modifier, class progression,
+saving-throw, Fighter feature, equipment modifier, iterative attack, attack
+roll, critical confirmation, Power Attack, Armor Class, and physical weapon
+damage rules. The ESP32 character and combat wrappers call these same
+functions.
+
+Run the deterministic rule regression cases:
+
+```sh
+./build/native/tests/native/pfme_combat_tests --self-test
+```
+
+Run 10,000 attacks from seed 12345:
+
+```sh
+./build/native/tests/native/pfme_combat_tests --seed 12345 --attacks 10000
+```
+
+Request machine-readable output:
+
+```sh
+./build/native/tests/native/pfme_combat_tests \
+  --seed 12345 --attacks 10000 --json
+```
+
+Rerun the same seed and attack count to reproduce the exact summary and
+fingerprints. The statistical simulation compares a level-five Fighter using
+a +1 Keen longsword against the current Bugbear Armor Class of 18, with Power
+Attack off and on. Both scenarios receive identical pre-generated attack,
+confirmation, and weapon-damage rolls. This paired stream is intentionally a
+native analysis technique; the ESP32 continues to consume Arduino random
+values only when its existing controller requests them.
+
+The simulation covers physical weapon damage only. Energy damage, sneak
+attack positioning, conditions, spells, HP defeat transitions, initiative,
+menus, rendering, audio, and multiplayer authority remain in the embedded
+runtime and are not imitated by the native executable.
 
 ## ESP32 build
 

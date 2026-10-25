@@ -3,41 +3,14 @@
 //
 
 #include "characters.h"
+#include "combat_rules.h"
 #include "data/progression.h"
 #include "graphics/sprites.h"
 
-const FighterFeatureGrant fighterFeatureProgression[] =
-{
-    {  1, FIGHTER_POWER_ATTACK },
-    {  2, FIGHTER_WEAPON_FOCUS },
-    {  3, FIGHTER_TOUGHNESS },
-    {  4, FIGHTER_WEAPON_SPECIALIZATION },
-    {  5, FIGHTER_WEAPON_TRAINING_1 },
-    {  8, FIGHTER_GREATER_WEAPON_FOCUS },
-    {  9, FIGHTER_WEAPON_TRAINING_2 },
-    { 10, FIGHTER_IMPROVED_CRITICAL },
-    { 12, FIGHTER_GREATER_WEAPON_SPECIALIZATION },
-    { 13, FIGHTER_WEAPON_TRAINING_3 },
-    { 14, FIGHTER_GREATER_TOUGHNESS },
-    { 17, FIGHTER_WEAPON_TRAINING_4 },
-    { 20, FIGHTER_WEAPON_MASTERY }
-};
-
-const uint8_t fighterFeatureProgressionCount =
-    sizeof(fighterFeatureProgression) / sizeof(fighterFeatureProgression[0]);
-
 bool hasFighterFeature(const Character& character, FighterFeature feature)
 {
-    if (character.characterClass != CLASS_FIGHTER)
-        return false;
-
-    for (uint8_t i = 0; i < fighterFeatureProgressionCount; i++)
-    {
-        if (fighterFeatureProgression[i].feature == feature)
-            return character.level >= fighterFeatureProgression[i].level;
-    }
-
-    return false;
+    return hasFighterFeatureAtLevel(
+        character.characterClass, character.level, feature);
 }
 
 WeaponGroup getFighterTrainedWeaponGroup(const Character& character)
@@ -84,49 +57,34 @@ bool isFighterTrainedWeapon(const Character& character, const Weapon& weapon)
 
 int getFighterWeaponTrainingBonus(const Character& character)
 {
-    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_4)) return 4;
-    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_3)) return 3;
-    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_2)) return 2;
-    if (hasFighterFeature(character, FIGHTER_WEAPON_TRAINING_1)) return 1;
-    return 0;
+    return calculateFighterWeaponTrainingBonus(
+        character.characterClass, character.level);
 }
 
 int getFighterWeaponAttackBonus(const Character& character,
                                 const Weapon& weapon)
 {
-    if (!isFighterTrainedWeapon(character, weapon))
-        return 0;
-
-    int bonus = getFighterWeaponTrainingBonus(character);
-    if (hasFighterFeature(character, FIGHTER_WEAPON_FOCUS))
-        bonus++;
-    if (hasFighterFeature(character, FIGHTER_GREATER_WEAPON_FOCUS))
-        bonus++;
-    return bonus;
+    return calculateFighterWeaponAttackBonus(
+        character.characterClass,
+        character.level,
+        getFighterTrainedWeaponGroup(character),
+        weapon.group);
 }
 
 int getFighterWeaponDamageBonus(const Character& character,
                                 const Weapon& weapon)
 {
-    if (!isFighterTrainedWeapon(character, weapon))
-        return 0;
-
-    int bonus = getFighterWeaponTrainingBonus(character);
-    if (hasFighterFeature(character, FIGHTER_WEAPON_SPECIALIZATION))
-        bonus += 2;
-    if (hasFighterFeature(character, FIGHTER_GREATER_WEAPON_SPECIALIZATION))
-        bonus += 2;
-    return bonus;
+    return calculateFighterWeaponDamageBonus(
+        character.characterClass,
+        character.level,
+        getFighterTrainedWeaponGroup(character),
+        weapon.group);
 }
 
 int getFighterBonusMaxHP(const Character& character)
 {
-    int bonus = 0;
-    if (hasFighterFeature(character, FIGHTER_TOUGHNESS))
-        bonus += character.level;
-    if (hasFighterFeature(character, FIGHTER_GREATER_TOUGHNESS))
-        bonus += character.level;
-    return bonus;
+    return calculateFighterBonusMaxHP(
+        character.characterClass, character.level);
 }
 
 uint8_t getWeaponCriticalThreatMinimum(const Character& character,
@@ -138,23 +96,17 @@ uint8_t getWeaponCriticalThreatMinimum(const Character& character,
         hasFighterFeature(character, FIGHTER_IMPROVED_CRITICAL);
     const bool keen = weaponItem != nullptr &&
         hasWeaponProperty(*weaponItem, WEAPON_PROPERTY_KEEN);
-    if (!improvedCritical && !keen)
-    {
-        return weapon.criticalThreat;
-    }
-
-    const int naturalThreatCount = 21 - weapon.criticalThreat;
-    int doubledMinimum = 21 - naturalThreatCount * 2;
-    if (doubledMinimum < 2)
-        doubledMinimum = 2;
-    return static_cast<uint8_t>(doubledMinimum);
+    return calculateCriticalThreatMinimum(
+        weapon.criticalThreat, improvedCritical, keen);
 }
 
 bool fighterAutomaticallyConfirmsCritical(const Character& character,
                                            const Weapon& weapon)
 {
-    return isFighterTrainedWeapon(character, weapon) &&
-           hasFighterFeature(character, FIGHTER_WEAPON_MASTERY);
+    return calculateAutomaticCriticalConfirmation(
+        character.characterClass,
+        character.level,
+        isFighterTrainedWeapon(character, weapon));
 }
 
 void assignAbilityScoresForClass(Character& character,
@@ -250,10 +202,7 @@ const uint16_t* getPlayerSprite(CharacterClass characterClass)
 
 int getAbilityModifier(int score)
 {
-  if (score >= 10)
-    return (score - 10) / 2;
-
-  return (score - 11) / 2;
+  return calculateAbilityModifier(score);
 }
 
 int getEffectiveAbilityScore(const Character& character, AbilityScore ability) {
@@ -444,15 +393,14 @@ int getArmorClass(const Character& character, int dodgeBonus)
     int deflectionBonus = 0;
     int sizeModifier = 0;
 
-    return 10
-         + armorBonus
-         + shieldBonus
-         + getAbilityModifier(character,
-                              ABILITY_DEXTERITY)
-         + naturalArmor
-         + deflectionBonus
-         + dodgeBonus
-         + sizeModifier;
+    return calculateArmorClass(
+        getAbilityModifier(character, ABILITY_DEXTERITY),
+        armorBonus,
+        shieldBonus,
+        naturalArmor,
+        deflectionBonus,
+        dodgeBonus,
+        sizeModifier);
 }
 
 int getTouchArmorClass(const Character& character, int dodgeBonus)
@@ -460,12 +408,12 @@ int getTouchArmorClass(const Character& character, int dodgeBonus)
     const int deflectionBonus = 0;
     const int sizeModifier = 0;
 
-    return 10
-         + getAbilityModifier(character, ABILITY_DEXTERITY)
-         + deflectionBonus
-         + dodgeBonus
-         + sizeModifier
-         + getConditionArmorClassModifier(character);
+    return calculateTouchArmorClass(
+        getAbilityModifier(character, ABILITY_DEXTERITY),
+        deflectionBonus,
+        dodgeBonus,
+        sizeModifier,
+        getConditionArmorClassModifier(character));
 }
 
 int getMeleeAttackBonus(const Character& character)
@@ -478,15 +426,12 @@ int getMeleeAttackBonus(const Character& character)
     int fighterBonus = weaponData != nullptr
         ? getFighterWeaponAttackBonus(character, *weaponData) : 0;
 
-    return getBaseAttackBonus(
-               character.characterClass,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_STRENGTH)
-         + weaponEnhancement
-         + fighterBonus
-         + getConditionAttackModifier(character);
+    return calculateAttackBonus(
+        getBaseAttackBonus(character.characterClass, character.level),
+        getAbilityModifier(character, ABILITY_STRENGTH),
+        weaponEnhancement,
+        fighterBonus,
+        getConditionAttackModifier(character));
 }
 
 int getRangedAttackBonus(const Character& character)
@@ -499,37 +444,32 @@ int getRangedAttackBonus(const Character& character)
     int fighterBonus = weaponData != nullptr
         ? getFighterWeaponAttackBonus(character, *weaponData) : 0;
 
-    return getBaseAttackBonus(
-               character.characterClass,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_DEXTERITY)
-         + weaponEnhancement
-         + fighterBonus
-         + getConditionAttackModifier(character);
+    return calculateAttackBonus(
+        getBaseAttackBonus(character.characterClass, character.level),
+        getAbilityModifier(character, ABILITY_DEXTERITY),
+        weaponEnhancement,
+        fighterBonus,
+        getConditionAttackModifier(character));
 }
 
 int getRangedTouchAttackBonus(const Character& character)
 {
-    return getBaseAttackBonus(
-               character.characterClass,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_DEXTERITY)
-         + getConditionAttackModifier(character);
+    return calculateAttackBonus(
+        getBaseAttackBonus(character.characterClass, character.level),
+        getAbilityModifier(character, ABILITY_DEXTERITY),
+        0,
+        0,
+        getConditionAttackModifier(character));
 }
 
 int getMeleeTouchAttackBonus(const Character& character)
 {
-    return getBaseAttackBonus(
-               character.characterClass,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_STRENGTH)
-         + getConditionAttackModifier(character);
+    return calculateAttackBonus(
+        getBaseAttackBonus(character.characterClass, character.level),
+        getAbilityModifier(character, ABILITY_STRENGTH),
+        0,
+        0,
+        getConditionAttackModifier(character));
 }
 
 uint8_t getSneakAttackDice(const Character& character)
@@ -544,33 +484,17 @@ uint8_t getSneakAttackDice(const Character& character)
 
 int getPowerAttackPenalty(const Character& character)
 {
-    if (character.characterClass != CLASS_FIGHTER || character.level == 0)
-        return 0;
-
     int baseAttackBonus = getBaseAttackBonus(
         character.characterClass, character.level);
-
-    if (baseAttackBonus < 1)
-        return 0;
-
-    return -(1 + baseAttackBonus / 4);
+    return calculatePowerAttackPenalty(
+        character.characterClass, character.level, baseAttackBonus);
 }
 
 int getPowerAttackDamageBonus(const Character& character,
                               const Weapon& weapon)
 {
-    if (weapon.type != WEAPON_MELEE)
-        return 0;
-
-    int penalty = getPowerAttackPenalty(character);
-
-    if (penalty >= 0)
-        return 0;
-
-    int multiplier =
-        (weapon.properties & WEAPON_PROP_TWO_HANDED) != 0 ? 3 : 2;
-
-    return -penalty * multiplier;
+    return calculatePowerAttackDamageBonus(
+        getPowerAttackPenalty(character), weapon.type, weapon.properties);
 }
 
 int getMovementSpeed(const Character& character)
@@ -729,35 +653,32 @@ int getSkillBonus(const Character& character,
 
 int getFortitudeSave(const Character& character)
 {
-    return getBaseSave(
-               character.characterClass,
-               SAVE_FORTITUDE,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_CONSTITUTION);
+    return calculateSavingThrowBonus(
+        getBaseSave(
+            character.characterClass,
+            SAVE_FORTITUDE,
+            character.level),
+        getAbilityModifier(character, ABILITY_CONSTITUTION));
 }
 
 int getReflexSave(const Character& character)
 {
-    return getBaseSave(
-               character.characterClass,
-               SAVE_REFLEX,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_DEXTERITY);
+    return calculateSavingThrowBonus(
+        getBaseSave(
+            character.characterClass,
+            SAVE_REFLEX,
+            character.level),
+        getAbilityModifier(character, ABILITY_DEXTERITY));
 }
 
 int getWillSave(const Character& character)
 {
-    return getBaseSave(
-               character.characterClass,
-               SAVE_WILL,
-               character.level)
-         + getAbilityModifier(
-               character,
-               ABILITY_WISDOM);
+    return calculateSavingThrowBonus(
+        getBaseSave(
+            character.characterClass,
+            SAVE_WILL,
+            character.level),
+        getAbilityModifier(character, ABILITY_WISDOM));
 }
 
 //==================================================

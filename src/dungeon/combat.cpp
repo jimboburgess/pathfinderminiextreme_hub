@@ -8,6 +8,7 @@
 #include "multiplayer/multiplayer_activity.h"
 #include "abilityresolver.h"
 #include "combatpolicy.h"
+#include "characters/combat_rules.h"
 #include "loot.h"
 #include "map/awareness.h"
 #include "map/mapeffects.h"
@@ -2611,34 +2612,39 @@ void confirmPlayerAttack()
     const int iterativePenalty = iterativeBAB - bab;
     int attackBonus = normalAttackBonus + powerAttackPenalty +
         iterativePenalty;
-    int total = dieRoll + attackBonus + rangePenalty;
+    const int totalAttackBonus = attackBonus + rangePenalty;
     const int coverBonus = combat.attackType == COMBAT_ATTACK_RANGED
         ? getCoverArmorClassBonus(getCoverBetween(*player, *target))
         : 0;
     const int targetArmorClass = getArmorClass(
         target->character,
         (target->turn.fullDefense ? 4 : 0) + coverBonus);
-    bool hit = (dieRoll == 20) ||
-               (dieRoll != 1 && total >= targetArmorClass);
-    bool criticalConfirmed = false;
+    const bool automaticCriticalConfirmation =
+        fighterAutomaticallyConfirmsCritical(player->character, *weapon);
+    AttackRollResult attackResult = resolveAttackRoll(
+        dieRoll,
+        totalAttackBonus,
+        targetArmorClass,
+        getWeaponCriticalThreatMinimum(
+            player->character, *weapon, &weaponItem),
+        automaticCriticalConfirmation);
 
-    if (hit && dieRoll >= getWeaponCriticalThreatMinimum(
-            player->character, *weapon, &weaponItem))
+    if (attackResult.criticalThreat && !automaticCriticalConfirmation)
     {
-        if (fighterAutomaticallyConfirmsCritical(player->character, *weapon))
-        {
-            criticalConfirmed = true;
-        }
-        else
-        {
-            const int confirmationRoll = rollDie(20);
-            const int confirmationTotal = confirmationRoll + attackBonus +
-                                          rangePenalty;
-            criticalConfirmed = confirmationRoll == 20 ||
-                (confirmationRoll != 1 &&
-                 confirmationTotal >= targetArmorClass);
-        }
+        const int confirmationRoll = rollDie(20);
+        attackResult = resolveAttackRoll(
+            dieRoll,
+            totalAttackBonus,
+            targetArmorClass,
+            getWeaponCriticalThreatMinimum(
+                player->character, *weapon, &weaponItem),
+            false,
+            confirmationRoll);
     }
+
+    const bool hit = attackResult.hit;
+    const bool criticalConfirmed = attackResult.criticalConfirmed;
+    const int total = attackResult.attackTotal;
 
     char message[64];
 
@@ -2664,11 +2670,13 @@ void confirmPlayerAttack()
 
     if (hit)
     {
-        combat.pendingDamage = rollDice(weapon->damageDice, weapon->damageSides);
+        PhysicalDamageInput damageInput;
+        damageInput.rolledWeaponDamage =
+            rollDice(weapon->damageDice, weapon->damageSides);
 
         if (combat.attackType == COMBAT_ATTACK_MELEE)
         {
-            combat.pendingDamage += getAbilityModifier(
+            damageInput.abilityModifier = getAbilityModifier(
                 player->character, ABILITY_STRENGTH);
 
             if (powerAttackPenalty < 0)
@@ -2677,7 +2685,7 @@ void confirmPlayerAttack()
                     getPowerAttackDamageBonus(player->character, *weapon);
                 combat.pendingPowerAttack =
                     combat.pendingPowerAttackDamage > 0;
-                combat.pendingDamage +=
+                damageInput.powerAttackBonus =
                     combat.pendingPowerAttackDamage;
 
                 if (combat.pendingPowerAttack)
@@ -2688,15 +2696,14 @@ void confirmPlayerAttack()
             }
         }
 
-        combat.pendingDamage += getFighterWeaponDamageBonus(
+        damageInput.classBonus = getFighterWeaponDamageBonus(
             player->character, *weapon);
-        combat.pendingDamage += getItemWeaponDamageBonus(weaponItem);
-        combat.pendingDamage += getConditionDamageModifier(player->character);
-
-        combat.pendingDamage = std::max(1, combat.pendingDamage);
-
-        if (criticalConfirmed)
-            combat.pendingDamage *= weapon->criticalMultiplier;
+        damageInput.itemBonus = getItemWeaponDamageBonus(weaponItem);
+        damageInput.conditionBonus =
+            getConditionDamageModifier(player->character);
+        damageInput.criticalMultiplier = weapon->criticalMultiplier;
+        damageInput.criticalConfirmed = criticalConfirmed;
+        combat.pendingDamage = calculatePhysicalWeaponDamage(damageInput);
 
         // Energy dice are independent successful-hit damage and therefore are
         // added after the physical critical multiplier.
@@ -3867,10 +3874,9 @@ void beginMonsterAttack(
         monster->monster->baseAttack, combat.monsterIterativeAttackIndex,
         combat.monsterIterativeAttackCount > baseIteratives
             ? combat.monsterIterativeAttackCount - baseIteratives : 0);
-    int total = dieRoll + iterativeBAB + abilityModifier +
-                itemAttackBonus +
-                getConditionAttackModifier(monster->character) +
-                rangePenalty;
+    const int totalAttackBonus = iterativeBAB + abilityModifier +
+        itemAttackBonus + getConditionAttackModifier(monster->character) +
+        rangePenalty;
 
     const int coverBonus = attackType == COMBAT_ATTACK_RANGED
         ? getCoverArmorClassBonus(getCoverBetween(*monster, *target))
@@ -3879,45 +3885,49 @@ void beginMonsterAttack(
         target->character,
         (target->turn.fullDefense ? 4 : 0) + coverBonus);
 
-    combat.monsterAttackHit = (dieRoll == 20) ||
-        (dieRoll != 1 && total >= targetArmorClass);
-    bool criticalConfirmed = false;
+    AttackRollResult attackResult = resolveAttackRoll(
+        dieRoll,
+        totalAttackBonus,
+        targetArmorClass,
+        getWeaponCriticalThreatMinimum(
+            monster->character, *weapon, &weaponItem),
+        false);
 
-    if (combat.monsterAttackHit && dieRoll >= getWeaponCriticalThreatMinimum(
-            monster->character, *weapon, &weaponItem))
+    if (attackResult.criticalThreat)
     {
         const int confirmationRoll = rollDie(20);
-        const int confirmationTotal = confirmationRoll + iterativeBAB +
-            abilityModifier + itemAttackBonus +
-            getConditionAttackModifier(monster->character) +
-            rangePenalty;
-        criticalConfirmed = confirmationRoll == 20 ||
-            (confirmationRoll != 1 &&
-             confirmationTotal >= targetArmorClass);
+        attackResult = resolveAttackRoll(
+            dieRoll,
+            totalAttackBonus,
+            targetArmorClass,
+            getWeaponCriticalThreatMinimum(
+                monster->character, *weapon, &weaponItem),
+            false,
+            confirmationRoll);
     }
+    combat.monsterAttackHit = attackResult.hit;
+    const bool criticalConfirmed = attackResult.criticalConfirmed;
     combat.monsterPendingDamage = 0;
     combat.monsterSneakAttack = false;
     combat.monsterPendingSneakAttackDamage = 0;
 
     if (combat.monsterAttackHit)
     {
-        combat.monsterPendingDamage = rollDice(
+        PhysicalDamageInput damageInput;
+        damageInput.rolledWeaponDamage = rollDice(
             weapon->damageDice,
             weapon->damageSides);
 
         if (weapon->type == WEAPON_MELEE)
-            combat.monsterPendingDamage += abilityModifier;
+            damageInput.abilityModifier = abilityModifier;
 
-        combat.monsterPendingDamage += getItemWeaponDamageBonus(weaponItem);
-
-        combat.monsterPendingDamage += getConditionDamageModifier(
+        damageInput.itemBonus = getItemWeaponDamageBonus(weaponItem);
+        damageInput.conditionBonus = getConditionDamageModifier(
             monster->character);
-
-        combat.monsterPendingDamage = std::max(
-            1, combat.monsterPendingDamage);
-
-        if (criticalConfirmed)
-            combat.monsterPendingDamage *= weapon->criticalMultiplier;
+        damageInput.criticalMultiplier = weapon->criticalMultiplier;
+        damageInput.criticalConfirmed = criticalConfirmed;
+        combat.monsterPendingDamage =
+            calculatePhysicalWeaponDamage(damageInput);
 
         combat.monsterPendingDamage += rollMitigatedWeaponEnergyDamage(
             weaponItem, target->character);

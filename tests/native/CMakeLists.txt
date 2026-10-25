@@ -45,3 +45,31 @@ add_test(
     NAME pfme_dungeon_batch
     COMMAND pfme_dungeon_tests --seed 1 --count 1000 --json
 )
+
+add_executable(pfme_combat_tests
+    combat_tests.cpp
+)
+
+target_link_libraries(pfme_combat_tests PRIVATE pfme_portable_leaf)
+
+set_target_properties(pfme_combat_tests PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+if(MSVC)
+    target_compile_options(pfme_combat_tests PRIVATE /W4)
+else()
+    target_compile_options(pfme_combat_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_test(
+    NAME pfme_combat_regression
+    COMMAND pfme_combat_tests --self-test
+)
+
+add_test(
+    NAME pfme_combat_batch
+    COMMAND pfme_combat_tests --seed 12345 --attacks 10000 --json
+)

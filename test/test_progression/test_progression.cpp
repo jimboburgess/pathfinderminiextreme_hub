@@ -67,6 +67,7 @@ bool completeSpellLearning(Character& character, AbilityID& completedAbility)
 }
 
 #include "../../src/characters/abilities.cpp"
+#include "../../src/characters/combat_rules.cpp"
 #include "../../src/data/progression.cpp"
 
 static Character makeCharacter(

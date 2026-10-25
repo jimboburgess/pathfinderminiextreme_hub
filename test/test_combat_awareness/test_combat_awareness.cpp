@@ -2,6 +2,8 @@
 #include <unity.h>
 
 #include "../../src/dungeon/combatpolicy.h"
+
+#include "../../src/characters/combat_rules.cpp"
 #include "../../src/dungeon/dungeon.h"
 #include "../../src/map/skillactions.h"
 #include "../../src/map/awareness.h"

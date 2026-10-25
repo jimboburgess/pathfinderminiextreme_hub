@@ -3,6 +3,7 @@
 //
 
 #include "progression.h"
+#include "characters/combat_rules.h"
 #include "characters/items.h"
 
 namespace
@@ -360,34 +361,6 @@ static const uint8_t excellentProgression[20] =
   };
 
 //==================================================
-// Base Attack Bonus Progression
-//==================================================
-
-static const uint8_t highBAB[20] =
-{
-    1,2,3,4,5,
-    6,7,8,9,10,
-    11,12,13,14,15,
-    16,17,18,19,20
-};
-
-static const uint8_t mediumBAB[20] =
-{
-    0,1,2,3,3,
-    4,5,6,6,7,
-    8,9,9,10,11,
-    12,12,13,14,15
-};
-
-static const uint8_t lowBAB[20] =
-{
-    0,1,1,2,2,
-    3,3,4,4,5,
-    5,6,6,7,7,
-    8,8,9,9,10
-};
-
-//==================================================
 // Saves Progression
 //==================================================
 int getBaseSave(
@@ -395,92 +368,8 @@ int getBaseSave(
     SaveType saveType,
     uint8_t level)
 {
-    if (saveType == SAVE_NONE)
-        return 0;
-
-    bool goodSave = false;
-
-    switch (characterClass)
-    {
-        case CLASS_FIGHTER:
-            goodSave = (saveType == SAVE_FORTITUDE);
-            break;
-
-        case CLASS_ROGUE:
-            goodSave = (saveType == SAVE_REFLEX);
-            break;
-
-        case CLASS_WIZARD:
-            goodSave = (saveType == SAVE_WILL);
-            break;
-
-        case CLASS_CLERIC:
-            goodSave =
-                (saveType == SAVE_FORTITUDE) ||
-                (saveType == SAVE_WILL);
-            break;
-    }
-
-    if (goodSave)
-        return 2 + level / 2;
-
-    return level / 3;
+    return calculateBaseSave(characterClass, saveType, level);
 }
-//==================================================
-// Hit Point Progression
-//==================================================
-
-static const uint8_t fighterHP[20] =
-{
-    10,15,21,26,32,
-    37,43,48,54,59,
-    65,70,76,81,87,
-    92,98,103,109,114
-};
-
-static const uint8_t rogueHP[20] =
-{
-    6,9,13,16,20,
-    23,27,30,34,37,
-    41,44,48,51,55,
-    58,62,65,69,72
-};
-
-static const uint8_t wizardHP[20] =
-{
-    4,6,9,11,14,
-    16,19,21,24,26,
-    29,31,34,36,39,
-    41,44,46,49,51
-};
-
-static const uint8_t clericHP[20] =
-{
-    8,12,17,21,26,
-    30,35,39,44,48,
-    53,57,62,66,71,
-    75,80,84,89,93
-};
-
-//==================================================
-// Saving Throws
-//==================================================
-
-static const uint8_t goodSave[20] =
-{
-    2,3,3,4,4,
-    5,5,6,6,6,
-    7,8,8,9,9,
-    10,10,11,11,12
-};
-
-static const uint8_t poorSave[20] =
-{
-    0,0,1,1,1,
-    2,2,2,3,3,
-    3,4,4,4,5,
-    5,5,6,6,6
-};
 
 //==================================================
 // Base Attack Bonus
@@ -488,23 +377,7 @@ static const uint8_t poorSave[20] =
 
 int getBaseAttackBonus(CharacterClass characterClass, uint8_t level)
 {
-    if (level < 1) level = 1;
-    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
-
-    switch (characterClass)
-    {
-        case CLASS_FIGHTER:
-            return highBAB[level - 1];
-
-        case CLASS_ROGUE:
-        case CLASS_CLERIC:
-            return mediumBAB[level - 1];
-
-        case CLASS_WIZARD:
-            return lowBAB[level - 1];
-    }
-
-    return 0;
+    return calculateBaseAttackBonus(characterClass, level);
 }
 
 //==================================================
@@ -513,25 +386,7 @@ int getBaseAttackBonus(CharacterClass characterClass, uint8_t level)
 
 int getBaseHitPoints(CharacterClass characterClass, uint8_t level)
 {
-    if (level < 1) level = 1;
-    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
-
-    switch (characterClass)
-    {
-        case CLASS_FIGHTER:
-            return fighterHP[level - 1];
-
-        case CLASS_ROGUE:
-            return rogueHP[level - 1];
-
-        case CLASS_WIZARD:
-            return wizardHP[level - 1];
-
-        case CLASS_CLERIC:
-            return clericHP[level - 1];
-    }
-
-    return 0;
+    return calculateBaseHitPoints(characterClass, level);
 }
 
 //==================================================
@@ -540,47 +395,15 @@ int getBaseHitPoints(CharacterClass characterClass, uint8_t level)
 
 int getFortitudeSave(CharacterClass characterClass, uint8_t level)
 {
-    if (level < 1) level = 1;
-    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
-
-    switch (characterClass)
-    {
-        case CLASS_FIGHTER:
-        case CLASS_CLERIC:
-            return goodSave[level - 1];
-
-        default:
-            return poorSave[level - 1];
-    }
+    return calculateBoundedSave(characterClass, SAVE_FORTITUDE, level);
 }
 
 int getReflexSave(CharacterClass characterClass, uint8_t level)
 {
-    if (level < 1) level = 1;
-    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
-
-    switch (characterClass)
-    {
-        case CLASS_ROGUE:
-            return goodSave[level - 1];
-
-        default:
-            return poorSave[level - 1];
-    }
+    return calculateBoundedSave(characterClass, SAVE_REFLEX, level);
 }
 
 int getWillSave(CharacterClass characterClass, uint8_t level)
 {
-    if (level < 1) level = 1;
-    if (level > MAX_CHARACTER_LEVEL) level = MAX_CHARACTER_LEVEL;
-
-    switch (characterClass)
-    {
-        case CLASS_WIZARD:
-        case CLASS_CLERIC:
-            return goodSave[level - 1];
-
-        default:
-            return poorSave[level - 1];
-    }
+    return calculateBoundedSave(characterClass, SAVE_WILL, level);
 }

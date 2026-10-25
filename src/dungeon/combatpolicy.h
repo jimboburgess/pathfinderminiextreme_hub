@@ -3,29 +3,24 @@
 
 #include <stdint.h>
 
+#include "characters/combat_rules.h"
 #include "characters/conditions.h"
 #include "data/entities.h"
 
 inline uint8_t getIterativeAttackCount(int bab)
 {
-    if (bab < 1)
-        return 1;
-
-    const int count = 1 + (bab - 1) / 5;
-    return static_cast<uint8_t>(count > 4 ? 4 : count);
+    return calculateIterativeAttackCount(bab);
 }
 
 inline int getIterativeBAB(int bab, uint8_t attackIndex)
 {
-    return bab - static_cast<int>(attackIndex) * 5;
+    return calculateIterativeAttackBAB(bab, attackIndex);
 }
 
 inline int getSequenceAttackBAB(int bab, uint8_t attackIndex,
                                 uint8_t bonusAttackCount)
 {
-    return attackIndex < bonusAttackCount
-        ? bab
-        : getIterativeBAB(bab, attackIndex - bonusAttackCount);
+    return calculateSequenceAttackBAB(bab, attackIndex, bonusAttackCount);
 }
 
 inline bool isNaturalWeaponItem(ItemID itemID)

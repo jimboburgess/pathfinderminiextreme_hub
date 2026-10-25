@@ -6,6 +6,7 @@
 #define PATHFINDERMINIEXTREME_025_CHARACTERS_H
 
 #include <Arduino.h>
+#include "character_types.h"
 #include "items.h"
 #include "abilities.h"
 #include "conditions.h"
@@ -62,40 +63,6 @@ struct RaceData
 //==================================================
 // Character Classes
 //==================================================
-
-enum CharacterClass
-{
-    CLASS_FIGHTER,
-    CLASS_ROGUE,
-    CLASS_WIZARD,
-    CLASS_CLERIC
-};
-
-// Locked Fighter class-feature progression.  These are derived from class and
-// level rather than stored on Character, preventing duplicate grants on load
-// or repeated level-up recalculation.
-enum FighterFeature : uint8_t
-{
-    FIGHTER_POWER_ATTACK,
-    FIGHTER_WEAPON_FOCUS,
-    FIGHTER_TOUGHNESS,
-    FIGHTER_WEAPON_SPECIALIZATION,
-    FIGHTER_WEAPON_TRAINING_1,
-    FIGHTER_GREATER_WEAPON_FOCUS,
-    FIGHTER_WEAPON_TRAINING_2,
-    FIGHTER_IMPROVED_CRITICAL,
-    FIGHTER_GREATER_WEAPON_SPECIALIZATION,
-    FIGHTER_WEAPON_TRAINING_3,
-    FIGHTER_GREATER_TOUGHNESS,
-    FIGHTER_WEAPON_TRAINING_4,
-    FIGHTER_WEAPON_MASTERY
-};
-
-struct FighterFeatureGrant
-{
-    uint8_t level;
-    FighterFeature feature;
-};
 
 //==================================================
 // Abilities
@@ -320,9 +287,6 @@ int getEffectiveAbilityScore(const Character& character, AbilityScore ability);
 int getEffectiveSpeed(const Character& character);
 
 int getMaxHP(const Character& character);
-
-extern const FighterFeatureGrant fighterFeatureProgression[];
-extern const uint8_t fighterFeatureProgressionCount;
 
 bool hasFighterFeature(const Character& character, FighterFeature feature);
 WeaponGroup getFighterTrainedWeaponGroup(const Character& character);

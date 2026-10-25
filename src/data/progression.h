@@ -16,8 +16,6 @@
 // Progression
 //======================================
 
-constexpr uint8_t MAX_CHARACTER_LEVEL = 20;
-
 int getBaseSave(
     CharacterClass characterClass,
     SaveType saveType,

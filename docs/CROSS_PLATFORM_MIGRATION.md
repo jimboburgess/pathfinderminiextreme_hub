@@ -767,10 +767,10 @@ puzzle blueprints, traps, furniture, rubble, fountains, global character level,
 and many direct Arduino random calls. Compiling it natively now would require
 either broad global-state stubs or a risky rewrite.
 
-The smallest practical Phase 3B milestone is to separate the existing room
-terrain/door carving and walkability validation from content placement, inject
-the same narrow bounded RNG shape into that geometry slice, and compile those
-unchanged algorithms for both PlatformIO and CMake. Entity spawning, puzzle
+A future dungeon milestone should separate the existing room terrain/door
+carving and walkability validation from content placement, inject the same
+narrow bounded RNG shape into that geometry slice, and compile those unchanged
+algorithms for both PlatformIO and CMake. Entity spawning, puzzle
 configuration, loot, and runtime room inflation should remain outside that
 milestone.
 
@@ -782,3 +782,54 @@ milestone.
 - The full `Dungeon` and `DungeonRoom` layouts remain unchanged.
 - PlatformIO continues to own the handheld composition, rendering, audio,
   input, persistence, and multiplayer transports.
+
+## Phase 3B implementation status
+
+Phase 3B adds `characters/combat_rules.cpp` as the authoritative portable
+calculation layer used by both CMake and the ESP32 runtime. Existing
+`Character`, `Entity`, inventory, turn-controller, rendering, audio, and
+network structures remain in place. Compatibility functions in
+`characters.cpp`, `items.cpp`, `progression.cpp`, `combatpolicy.h`, and
+`combat.cpp` now delegate the calculations without changing their public
+interfaces.
+
+The native slice includes:
+
+- ability score modifiers;
+- bounded class BAB, base HP, and save progressions;
+- iterative attack count and BAB sequencing;
+- Fighter feature unlocks, weapon focus/specialization/training, toughness,
+  Improved Critical, mastery, and Power Attack calculations;
+- masterwork and enhancement attack/damage modifiers;
+- Armor Class, touch Armor Class, and attack-bonus composition;
+- natural 1/20 hit rules, critical threats, confirmation, and physical weapon
+  damage including critical multipliers;
+- a deterministic xorshift32 roll source used only by the native harness.
+
+The ESP32 combat controller still obtains rolls from the existing Arduino dice
+functions in the same conditional order. It passes those exact rolls and
+modifiers into the shared resolver. Native seed sequences are reproducible but
+are not claimed to match Arduino random sequences.
+
+### Remaining combat portability boundary
+
+The full `Character` contains Arduino `String`, condition storage, inventory,
+and magic state. `items.cpp` and `monsters.cpp` combine immutable definition
+tables with potion/scroll behavior, sprite references, dice, and entity-side
+effects. `combat.cpp` still owns global initiative and target state plus
+display, messages, audio, timing, room awareness, and multiplayer side
+effects. Spell resolution, sneak-attack positioning, energy mitigation,
+conditions, defeat/XP/loot transitions, and a complete combat round are not
+yet native.
+
+No save structure, enum value, ESP-NOW packet, or persistent field was added or
+reordered. `CharacterClass` and Fighter feature declarations moved to a small
+standard-header-only value file without changing their definitions or stored
+representation.
+
+The smallest practical next milestone is to separate the immutable weapon,
+armor, and monster definition tables from their embedded side effects, then
+add a compact combatant input/result value type around the shared resolver.
+That would allow a native HP-to-defeat melee exchange using actual database
+profiles while leaving initiative presentation, entity globals, spells,
+loot, rendering, audio, and multiplayer authority unchanged.

@@ -42,6 +42,7 @@ const Monster* getMonster(MonsterID) { return nullptr; }
 void markEntityFootprintDirty(const Entity&) {}
 void removeEntity(Entity& entity) { entity.active = false; }
 
+#include "../../src/characters/combat_rules.cpp"
 #include "../../src/characters/items.cpp"
 #include "../../src/characters/characters.cpp"
 #include "../../src/dungeon/loot.cpp"

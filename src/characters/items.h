@@ -5,7 +5,7 @@
 #ifndef PATHFINDERMINIEXTREME_025_ITEMS_H
 #define PATHFINDERMINIEXTREME_025_ITEMS_H
 
-#include <Arduino.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "abilities.h"
 
