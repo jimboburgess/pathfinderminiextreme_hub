@@ -21,7 +21,30 @@ display, audio, GPIO, Wi-Fi, or ESP-NOW implementation dependency:
 No source is copied into a native-only implementation. PlatformIO and CMake
 consume the same authoritative C++ files.
 
-## Linux prerequisites
+## Windows prerequisites
+
+Install CMake and one supported C++ toolchain:
+
+- CLion's bundled MinGW toolchain;
+- standalone MinGW GCC;
+- Visual Studio 2022 with Desktop development with C++;
+- Clang with a compatible build generator.
+
+Ninja is recommended when it is available. From a terminal where CMake and
+the selected compiler are on `PATH`:
+
+```powershell
+cmake -S . -B build/native-windows -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/native-windows
+ctest --test-dir build/native-windows --output-on-failure
+.\build\native-windows\pfme_headless.exe
+```
+
+With CLion, the same root `CMakeLists.txt` can be configured through a normal
+CMake profile and `pfme_headless` selected as the run target. No Windows paths
+are stored in the project CMake files.
+
+## Ubuntu prerequisites
 
 Install a C++ compiler and CMake. Ninja is optional:
 
@@ -33,22 +56,56 @@ sudo apt-get install cmake g++ ninja-build
 GCC and Clang are both supported. The portable leaf target uses standard C++11,
 matching the conservative language baseline supported by the ESP32 toolchain.
 
-## Configure, build, and test
+## Ubuntu configure, build, and test
 
 From the repository root:
 
 ```sh
-cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/native
-ctest --test-dir build/native --output-on-failure
+cmake -S . -B build/native-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/native-linux
+ctest --test-dir build/native-linux --output-on-failure
+./build/native-linux/pfme_headless
 ```
 
 If Ninja is unavailable, omit `-G Ninja` and let CMake select the default
 generator. To use Clang, add `-DCMAKE_CXX_COMPILER=clang++` while configuring.
 
-The native tests are dependency-free host executables. They execute protocol
+The native tests and headless application are dependency-free host executables.
+They execute protocol
 golden vectors and validation, bounded snapshot behavior, deterministic spawn
 selection, riddle state rules, and encoder decoding.
+
+An optional local installation places only the headless executable under the
+selected prefix:
+
+```sh
+cmake --install build/native-linux --prefix "$HOME/.local/pfme"
+"$HOME/.local/pfme/bin/pfme_headless"
+```
+
+## Headless smoke application
+
+`pfme_headless` is a server foundation smoke test, not a playable server. It:
+
+- reports the shared engine API, multiplayer protocol, and dungeon-generation
+  compatibility versions;
+- generates and validates a dungeon through `dungeontopology.cpp`;
+- constructs portable Fighter rule inputs using the production enums and
+  compact `ItemInstance` type;
+- resolves one attack and damage result through `combat_rules.cpp`;
+- exits nonzero if dungeon generation or validation fails.
+
+The complete Arduino `Character`, room tile geometry, entity runtime,
+initiative controller, spells, persistence, rendering, audio, ESP-NOW, and
+network transport are intentionally reported as unavailable rather than
+imitated.
+
+Phase 3C was executed on Windows with CLion's MinGW GCC 13.1 toolchain. The
+machine had WSL2 enabled but no Linux distribution installed and no Docker or
+Podman runtime, so an actual Ubuntu compilation could not be performed. The
+Ubuntu commands above remain the required verification procedure on the NUC
+or a Linux CI runner; the successful Windows build is not treated as Linux
+proof.
 
 ## Dungeon topology simulation
 

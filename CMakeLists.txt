@@ -27,8 +27,29 @@ else()
     target_compile_options(pfme_portable_leaf PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(pfme_headless
+    apps/headless/main.cpp
+)
+
+target_link_libraries(pfme_headless PRIVATE pfme_portable_leaf)
+
+set_target_properties(pfme_headless PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+)
+
+if(MSVC)
+    target_compile_options(pfme_headless PRIVATE /W4)
+else()
+    target_compile_options(pfme_headless PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+install(TARGETS pfme_headless RUNTIME DESTINATION bin)
+
 include(CTest)
 
 if(BUILD_TESTING)
+    add_test(NAME pfme_headless_smoke COMMAND pfme_headless)
     add_subdirectory(tests/native)
 endif()

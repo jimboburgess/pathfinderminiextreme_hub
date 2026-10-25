@@ -833,3 +833,36 @@ add a compact combatant input/result value type around the shared resolver.
 That would allow a native HP-to-defeat melee exchange using actual database
 profiles while leaving initiative presentation, entity globals, spells,
 loot, rendering, audio, and multiplayer authority unchanged.
+
+## Phase 3C implementation status
+
+Phase 3C adds the `pfme_headless` CMake executable as a dependency-free host
+composition over the existing portable library. It executes the real dungeon
+topology generator and validator, character progression and Fighter rules,
+attack resolution, physical damage calculation, and shared protocol version
+definitions. It does not add a second gameplay implementation.
+
+The headless smoke context is deliberately limited to portable rule inputs.
+It reports that the complete Arduino `Character` model is unavailable rather
+than introducing a native-only substitute. The current portable build remains
+free of Arduino, ESP-IDF, display, audio, GPIO, Wi-Fi, and ESP-NOW runtime
+dependencies.
+
+The root CMake project contains no hardcoded Windows path, platform-specific
+source copy, or Windows-only API. GCC/Clang warning flags are used on Unix-like
+toolchains and the existing MSVC branch remains available. Windows MinGW
+builds and execution are verified. Local Linux execution is not verified
+because the development machine has no installed WSL distribution and no
+Docker or Podman runtime; no system virtualization or runtime installation was
+performed.
+
+The remaining server boundary is ownership rather than transport. A future
+`GameSession` must own dungeon/runtime state, independent per-player rooms and
+positions, global combat initiative participation, shared messages,
+authoritative command validation, deterministic authority RNG, persistence,
+and reconnect snapshots. WebSocket, browser, and Discord adapters must remain
+outside that session layer. `docs/HEADLESS_SERVER_ROADMAP.md` records the
+recommended sequence and private NUC deployment constraints.
+
+No save structure, persisted enum, ESP-NOW packet, gameplay rule, or handheld
+hardware path changes in Phase 3C.
