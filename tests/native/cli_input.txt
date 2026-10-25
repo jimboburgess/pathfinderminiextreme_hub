@@ -1,0 +1,11 @@
+new 12345
+join Fighter
+join Wizard
+join Rogue
+map
+players
+disconnect 0
+reconnect 0
+events
+status
+quit

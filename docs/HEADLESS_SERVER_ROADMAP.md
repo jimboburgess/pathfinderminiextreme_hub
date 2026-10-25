@@ -1,7 +1,8 @@
 # Headless server roadmap
 
-`pfme_headless` proves that the current portable production modules can be
-composed without Arduino or display hardware. It is not yet a game server.
+`pfme_headless` composes portable production modules without Arduino or display
+hardware. Phase 3E adds a local authoritative `GameSession` and an optional
+trusted-administrator terminal (`--interactive`), not a network service.
 
 ## Authority boundary
 
@@ -37,8 +38,13 @@ reuse the ESP32 save format for server sessions.
 
 ## Incremental implementation
 
-1. Add a portable `GameSession` shell with stable player IDs, independent room
-   ownership, shared messages, and graph-level room-transition validation.
+1. Completed in Phase 3E: portable `GameSession`, four independently located
+   participants, generation-checked in-process handles, disconnect/reconnect/
+   leave, bounded sequenced events with explicit history-gap reporting, and
+   graph-level transitions. Existing protocol IDs, name/message bounds,
+   directions, topology generation and validation are reused. See
+   `NATIVE_BUILD.md` for API semantics and CLI commands. This is topology-only;
+   adjacency does not satisfy tile, puzzle, locked-door, or boss restrictions.
 2. Extract real room geometry, walkability, and character value state so the
    session can validate movement and interactions without rendering.
 3. Move initiative progression, HP/conditions, abilities, and combat results
@@ -46,6 +52,15 @@ reuse the ESP32 save format for server sessions.
 4. Add versioned session snapshots and deterministic reconnect tests.
 5. Add an in-process transport test double, then a WebSocket adapter.
 6. Add browser and Discord clients only after authority and snapshot tests pass.
+
+The smallest next implementation should extract existing room terrain/door
+carving and walkability checks, preserving ESP32 behavior, before adding tile
+coordinates and movement validation to session players. Do not create a second
+map generator or fabricate native room contents. Then add full character value
+state through the existing rule modules. Future combat should be owned by the
+session, with room-aware combatant references and initiative participation
+across rooms. Adapters only authenticate/translate commands and distribute
+events; no socket, browser or Discord dependency belongs in `GameSession`.
 
 ## Ubuntu NUC deployment
 

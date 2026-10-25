@@ -1,5 +1,8 @@
 #include <cstdint>
 #include <iostream>
+#include <cstring>
+
+#include "interactive.h"
 
 #include "characters/combat_rules.h"
 #include "core/engine_version.h"
@@ -21,8 +24,15 @@ const char* characterClassName(CharacterClass characterClass)
 }
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc == 2 && std::strcmp(argv[1], "--interactive") == 0)
+        return runInteractive(std::cin, std::cout);
+    if (argc != 1)
+    {
+        std::cerr << "usage: pfme_headless [--interactive]\n";
+        return 2;
+    }
     std::cout << "Pathfinder Mini EXTREME headless\n"
               << "engine_api_version=" << PFME_ENGINE_API_VERSION << '\n'
               << "multiplayer_protocol_version="

@@ -866,3 +866,61 @@ recommended sequence and private NUC deployment constraints.
 
 No save structure, persisted enum, ESP-NOW packet, gameplay rule, or handheld
 hardware path changes in Phase 3C.
+
+## Phase 3E: session boundary and multiplayer audit
+
+The embedded host already owns authoritative gameplay; Phase 3E does not
+replace its transport or add another combat/dungeon algorithm. Audit findings:
+
+- `multiplayer_types.h` supplies the portable uint8 `PlayerID` (slots 0-3,
+  invalid=255), four-player capacity, and host ID 0. Native `GameSession`
+  reuses IDs/capacity; slot 0 is a participant, not a privileged network host.
+- `MultiplayerSession` owns occupied/connected `SessionMember` records and
+  binds IDs to device IDs and transport addresses. `acceptMemberPacket`
+  checks session ID, sender address, occupied slot, and packet sequence.
+  Its implementation uses Arduino time/randomness and the ESP-NOW singleton;
+  importing that lifecycle would also import hardware transport policy.
+- `multiplayer_activity.cpp::Participant` already tracks independent locations
+  in `spawn.roomID/x/y`, plus per-player load/transfer state. Its global
+  `ActivityRuntime`, character buffers, `Dungeon`, active entities, display,
+  and `MultiplayerCombatRuntime` remain embedded-only. Independent room
+  transitions temporarily activate a player's room and restore the host room;
+  Phase 3E never teleports other players or introduces a shared current room.
+- Host movement checks participation/activity, command sequences, turn ownership,
+  and authoritative tile movement. Door transitions additionally consult tile
+  doors, four puzzle locks, and boss completion. Those restrictions depend on
+  unported runtime state. Native transitions reuse `getRoomNeighbor` and the
+  generated topology's invariant validator, and explicitly mean adjacency only.
+- `publishSharedGameplayMessage` emits a bounded 96-byte categorized message
+  with an activity ID and wrapping uint16 sequence, displays it locally, and
+  broadcasts through the host. The UI message log is presentation state rather
+  than a replayable event history. Phase 3E reuses the portable message-size
+  constant but owns a 32-event uint64 replay ring; no packet layout changes.
+- Existing combat gathers participant references containing both player and
+  room IDs. Future native combat belongs to the session as a whole, enrolling
+  all participants as appropriate without assuming one room or moving them.
+
+`src/session/game_session.{h,cpp}` is a portable ownership layer over the same
+shared topology generator, graph helpers and protocol value definitions. Fixed
+participant/event arrays have no Arduino, transport, UI, or global game-object
+dependency. These production sources also compile under PlatformIO; no session
+instance is added to firmware, so the embedded composition stays unchanged.
+
+The intentional server-boundary differences are explicit: a server owns no
+local-host avatar, handles are private in-process capabilities rather than
+network/player IDs, disconnect retains the player record, explicit leave
+invalidates its generation, and event history reports gaps instead of silently
+assuming delivery. Names do not authenticate or deduplicate identities. A future
+adapter must authenticate a connection first, retain the correct handle, and
+never expose administrative creation or treat numeric IDs as credentials.
+Handles are not secret-bearing network credentials, persistence, or full auth.
+
+The terminal administrator retains handles for join/reconnect testing. Its
+bounded stream parser is shared with native tests. No-argument smoke output
+remains unchanged. `NATIVE_BUILD.md` describes commands and history semantics.
+
+Still unported: tile geometry and room contents, full Character/conditions/
+inventory, puzzles and progression, initiative/turn execution, abilities,
+defeat/loot/persistence, snapshots for this session model, authentication and
+network adapters. WebSocket and Discord framing must invoke session commands
+after authentication; they must not own a second rule implementation.

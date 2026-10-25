@@ -73,3 +73,17 @@ add_test(
     NAME pfme_combat_batch
     COMMAND pfme_combat_tests --seed 12345 --attacks 10000 --json
 )
+
+add_executable(pfme_session_tests session_tests.cpp)
+target_link_libraries(pfme_session_tests PRIVATE pfme_headless_cli)
+set_target_properties(pfme_session_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(pfme_session_tests PRIVATE /W4)
+else()
+    target_compile_options(pfme_session_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME pfme_session_tests COMMAND pfme_session_tests)
+add_test(NAME pfme_cli_script
+    COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:pfme_headless>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_test.cmake)

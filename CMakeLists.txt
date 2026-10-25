@@ -8,6 +8,7 @@ add_library(pfme_portable_leaf STATIC
     src/dungeon/riddles.cpp
     src/multiplayer/multiplayer_snapshot.cpp
     src/multiplayer/network_protocol.cpp
+    src/session/game_session.cpp
 )
 
 target_include_directories(pfme_portable_leaf
@@ -27,11 +28,22 @@ else()
     target_compile_options(pfme_portable_leaf PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(pfme_headless_cli STATIC apps/headless/interactive.cpp)
+target_link_libraries(pfme_headless_cli PUBLIC pfme_portable_leaf)
+target_include_directories(pfme_headless_cli PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/apps/headless)
+set_target_properties(pfme_headless_cli PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(pfme_headless_cli PRIVATE /W4)
+else()
+    target_compile_options(pfme_headless_cli PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(pfme_headless
     apps/headless/main.cpp
 )
 
-target_link_libraries(pfme_headless PRIVATE pfme_portable_leaf)
+target_link_libraries(pfme_headless PRIVATE pfme_headless_cli)
 
 set_target_properties(pfme_headless PROPERTIES
     CXX_STANDARD 11
