@@ -1,16 +1,19 @@
-# Native portable-leaf build
+# Native portable build
 
 The native build coexists with PlatformIO and compiles the original production
 sources directly. It does not replace or modify the ESP32 firmware target.
 
 ## Current scope
 
-The `pfme_portable_leaf` library currently contains only modules that already
-have no Arduino, ESP-IDF, display, audio, GPIO, Wi-Fi, or ESP-NOW dependency:
+The `pfme_portable_leaf` library contains modules with no Arduino, ESP-IDF,
+display, audio, GPIO, Wi-Fi, or ESP-NOW implementation dependency:
 
 - multiplayer packet codecs from `src/multiplayer/network_protocol.cpp`;
 - bounded snapshot helpers from `src/multiplayer/multiplayer_snapshot.cpp`;
 - riddle definitions and answer rules from `src/dungeon/riddles.cpp`;
+- deterministic dungeon topology generation from
+  `src/dungeon/dungeontopology.cpp` and the shared
+  `src/dungeon/dungeongraph_core.h` algorithm;
 - the header-only quadrature decoder from `src/input/encoderdecoder.h`.
 
 No source is copied into a native-only implementation. PlatformIO and CMake
@@ -44,6 +47,51 @@ generator. To use Clang, add `-DCMAKE_CXX_COMPILER=clang++` while configuring.
 The native tests are dependency-free host executables. They execute protocol
 golden vectors and validation, bounded snapshot behavior, deterministic spawn
 selection, riddle state rules, and encoder decoding.
+
+## Dungeon topology simulation
+
+The `pfme_dungeon_tests` executable runs the same graph-generation algorithm
+used by the ESP32 `dungeongraph.cpp` wrapper. The native adapter supplies a
+small deterministic seeded RNG. The ESP32 wrapper continues to call Arduino
+`random()` in the original order and retains its existing distribution.
+
+The simulator validates room bounds, unique logical coordinates, reachability,
+reciprocal cardinal links, branching, boss distance and topology, final
+treasure placement, and the designated Riddleman room on the boss route.
+
+Run one seed and print its stable topology fingerprint:
+
+```sh
+./build/native/tests/native/pfme_dungeon_tests --seed 12345 --count 1
+```
+
+Run a large sequential batch:
+
+```sh
+./build/native/tests/native/pfme_dungeon_tests --seed 1 --count 10000
+```
+
+Print machine-readable summary output:
+
+```sh
+./build/native/tests/native/pfme_dungeon_tests \
+  --seed 1 --count 10000 --json
+```
+
+Reproduce a reported failure by rerunning its seed with `--count 1`. The
+executable returns a nonzero status if generation or an invariant fails and
+prints the failing seed and reason. `--self-test` runs fixed-seed fingerprints,
+deterministic replay, invalid-boundary checks, and validator regression cases.
+
+The loop chance is applied to each eligible adjacent-room opportunity. The
+reported percentage of whole dungeons containing a loop is therefore not
+expected to equal exactly 25 percent.
+
+Phase 3A intentionally stops at the real logical graph. The 15x14 tile geometry
+and content generator in `roomgen.cpp` still depends on full `DungeonRoom`,
+entities, puzzles, traps, furniture, global player level, and Arduino RNG. The
+simulator reports `geometry_included=false` until that boundary is extracted
+without duplicating or weakening the handheld generator.
 
 ## ESP32 build
 

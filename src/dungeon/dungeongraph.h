@@ -13,10 +13,13 @@ uint8_t getRoomDistanceFromEntrance(
 bool dungeonGraphHasBranch(const Dungeon& dungeon);
 bool dungeonGraphHasLoop(const Dungeon& dungeon);
 bool validateDungeonTopology(const Dungeon& dungeon);
+bool validateDungeonLayout(const Dungeon& dungeon);
 
 // Builds only room topology and special-room indices. Individual 15x15 room
 // geometry and contents remain owned by the normal room generator.
 bool generateDungeonTopology(Dungeon& dungeon, uint8_t targetRoomCount);
+bool generateDungeonLayout(
+    Dungeon& dungeon, Direction& riddleExitDirection);
 void dumpDungeonTopology(const Dungeon& dungeon);
 
 #endif

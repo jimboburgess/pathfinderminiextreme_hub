@@ -722,3 +722,63 @@ the safest foundation for reviewing the first actual portability changes.
 No implementation beyond this documentation should begin until the boundaries,
 staging order, save policy, and first implementation step are reviewed and
 approved.
+
+## Phase 3A implementation status
+
+Phase 3A ports the real logical dungeon graph generator to the native build
+without copying its generation rules. The previous implementation from
+`dungeongraph.cpp` now lives in the shared, platform-independent
+`dungeongraph_core.h`. The existing ESP32 functions remain compatibility
+wrappers over that core, while `dungeontopology.cpp` supplies a compact native
+topology carrier and deterministic seeded entry point.
+
+The portable graph slice now includes:
+
+- the implemented 7-12 room-count bounds;
+- logical coordinates and reciprocal north/east/south/west connections;
+- the guaranteed backbone and branch;
+- optional loop generation;
+- distant boss selection and its final treasure dead end;
+- Riddleman room selection on the approach to the boss;
+- bounded generation retries and detailed invariant validation.
+
+`data/direction.h` is the only value-header extraction required by this stage.
+It preserves the existing `Direction` values while avoiding the ST7789 and
+global-game dependencies in `data/game.h`.
+
+### Randomness boundary
+
+The shared generator accepts a small compile-time random provider. The ESP32
+adapter delegates each bounded request directly to Arduino `random()` and the
+production `generateDungeon()` path preserves the previous request order. The
+native adapter uses an explicitly versioned-in-code xorshift32 sequence seeded
+from the command line. Native seeds reproduce native layouts within the same
+implementation version; no claim is made that an ESP32 and PC produce the same
+layout for an equal numeric seed.
+
+The abstraction is confined to dungeon graph generation. Combat, loot, room
+content, and other RNG consumers remain unchanged.
+
+### Remaining dungeon portability boundary
+
+Full tile and content generation is not part of the native target yet.
+`roomgen.cpp` combines geometry and door connectivity with monster markers,
+puzzle blueprints, traps, furniture, rubble, fountains, global character level,
+and many direct Arduino random calls. Compiling it natively now would require
+either broad global-state stubs or a risky rewrite.
+
+The smallest practical Phase 3B milestone is to separate the existing room
+terrain/door carving and walkability validation from content placement, inject
+the same narrow bounded RNG shape into that geometry slice, and compile those
+unchanged algorithms for both PlatformIO and CMake. Entity spawning, puzzle
+configuration, loot, and runtime room inflation should remain outside that
+milestone.
+
+### Phase 3A risk controls
+
+- No save structure, persisted enum value, or ESP-NOW codec is changed.
+- Native simulation buffers and reporting containers are test-executable only.
+- No native standard-library container enters the embedded production path.
+- The full `Dungeon` and `DungeonRoom` layouts remain unchanged.
+- PlatformIO continues to own the handheld composition, rendering, audio,
+  input, persistence, and multiplayer transports.

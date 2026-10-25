@@ -8,6 +8,7 @@
 #include <Arduino.h>
 #include "../characters/characters.h"
 #include "../data/game.h"
+#include "dungeon/dungeontopology.h"
 #include "graphics/tiles.h"
 #include "../data/entities.h"
 #include "traps.h"
@@ -23,22 +24,10 @@ constexpr uint8_t ROOM_HEIGHT = 14;
 constexpr uint8_t TILE_SIZE = 16;
 constexpr uint16_t DUNGEON_PIXEL_WIDTH = ROOM_WIDTH * TILE_SIZE;
 constexpr uint16_t DUNGEON_PIXEL_HEIGHT = ROOM_HEIGHT * TILE_SIZE;
-constexpr uint8_t NO_ROOM = 255;
-constexpr int8_t NO_DUNGEON_COORDINATE = 127;
 
 //==================================================
 // Rooms
 //==================================================
-enum RoomType : uint8_t {
-    ROOM_ENTRANCE,
-    ROOM_COMBAT,
-    ROOM_AMBUSH,
-    ROOM_PUZZLE,
-    ROOM_TREASURE,
-    ROOM_EMPTY,
-    ROOM_BOSS
-};
-
 enum EncounterTheme : uint8_t {
     ENCOUNTER_NONE,
     ENCOUNTER_GOBLIN,
@@ -128,11 +117,6 @@ struct DungeonRoom {
 };
 
 
-constexpr uint8_t MIN_DUNGEON_ROOMS = 7;
-constexpr uint8_t MAX_DUNGEON_ROOMS = 12;
-constexpr uint8_t MAX_ROOMS = MAX_DUNGEON_ROOMS;
-constexpr uint8_t MIN_BOSS_GRAPH_DISTANCE = 4;
-constexpr uint8_t DUNGEON_LOOP_CHANCE_PERCENT = 25;
 constexpr uint8_t FIRST_MIDDLE_ROOM_INDEX = 1;
 constexpr uint8_t MIDDLE_ROOM_COUNT = 3;
 constexpr uint8_t DUNGEON_RUBBLE_THEME_CHANCE_PERCENT = 70;

@@ -103,12 +103,32 @@ void test_graph_data_survives_normal_runtime_mutation()
     TEST_ASSERT_TRUE(validateDungeonTopology(dungeon));
 }
 
+void test_generated_layout_designates_riddle_room_on_boss_route()
+{
+    randomSeed(12345);
+    Dungeon dungeon{};
+    Direction riddleExitDirection = DIR_NORTH;
+
+    TEST_ASSERT_TRUE(generateDungeonLayout(
+        dungeon, riddleExitDirection));
+    TEST_ASSERT_TRUE(validateDungeonLayout(dungeon));
+    TEST_ASSERT_TRUE(dungeon.riddleRoom < dungeon.roomCount);
+    TEST_ASSERT_EQUAL_UINT8(
+        dungeon.bossRoom,
+        getRoomNeighbor(
+            dungeon.rooms[dungeon.riddleRoom],
+            riddleExitDirection));
+    TEST_ASSERT_EQUAL_UINT8(
+        2, getRoomDegree(dungeon.rooms[dungeon.bossRoom]));
+}
+
 void setup()
 {
     UNITY_BEGIN();
     RUN_TEST(test_generated_topologies_hold_all_graph_invariants_across_300_seeds);
     RUN_TEST(test_invalid_room_counts_are_rejected);
     RUN_TEST(test_graph_data_survives_normal_runtime_mutation);
+    RUN_TEST(test_generated_layout_designates_riddle_room_on_boss_route);
     UNITY_END();
 }
 

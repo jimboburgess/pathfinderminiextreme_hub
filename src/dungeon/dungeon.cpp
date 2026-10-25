@@ -630,31 +630,8 @@ void generateDungeon(Dungeon& dungeon)
     resetDungeonRun(dungeon);
     dungeon.currentRoom = 0;
 
-    const uint8_t targetRoomCount = static_cast<uint8_t>(random(
-        MIN_DUNGEON_ROOMS, MAX_DUNGEON_ROOMS + 1));
-    bool topologyGenerated = false;
-    for (uint8_t attempt = 0; attempt < 24 && !topologyGenerated; attempt++)
-        topologyGenerated = generateDungeonTopology(dungeon, targetRoomCount);
-    if (!topologyGenerated)
-        return;
-
     Direction riddleExitDirection = DIR_NORTH;
-    const Direction directions[4] = {DIR_NORTH, DIR_EAST, DIR_SOUTH, DIR_WEST};
-    for (uint8_t roomIndex = 1; roomIndex < dungeon.roomCount; ++roomIndex)
-    {
-        if (roomIndex == dungeon.bossRoom || roomIndex == dungeon.treasureRoom) continue;
-        for (Direction direction : directions)
-        {
-            if (getRoomNeighbor(dungeon.rooms[roomIndex], direction) == dungeon.bossRoom)
-            {
-                dungeon.riddleRoom = roomIndex;
-                riddleExitDirection = direction;
-                break;
-            }
-        }
-        if (dungeon.riddleRoom != NO_ROOM) break;
-    }
-    if (dungeon.riddleRoom == NO_ROOM)
+    if (!generateDungeonLayout(dungeon, riddleExitDirection))
         return;
 
     dungeon.encounterTheme = rollDungeonEncounterTheme();

@@ -8,6 +8,7 @@
 #include <Adafruit_ST7789.h>
 
 #include "characters/characters.h"
+#include "data/direction.h"
 
 //======================================================
 // Game State
@@ -37,18 +38,6 @@ enum MapType
     MAP_TOWN,
     MAP_FOREST,
     MAP_DUNGEON
-};
-
-enum Direction
-{
-    DIR_NORTH,
-    DIR_NORTHEAST,
-    DIR_EAST,
-    DIR_SOUTHEAST,
-    DIR_SOUTH,
-    DIR_SOUTHWEST,
-    DIR_WEST,
-    DIR_NORTHWEST
 };
 
 struct DirectionOffset
