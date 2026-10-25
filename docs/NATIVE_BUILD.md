@@ -279,6 +279,22 @@ attack positioning, conditions, spells, HP defeat transitions, initiative,
 menus, rendering, audio, and multiplayer authority remain in the embedded
 runtime and are not imitated by the native executable.
 
+## Private WebSocket adapter (Phase 3F)
+
+Enable `PFME_BUILD_SERVER=ON` to build `pfme_server` alongside the existing
+headless CLI and all native tests. This optional adapter uses the same
+`GameSession`; the engine stays C++11 and has no network/JSON dependency.
+Server-only dependencies are acquired by pinned hashes into the ignored build
+tree, with no system package installation. Server code requires C++17; its
+integration-test driver uses Python 3.8+ without third-party modules.
+
+See [WEBSOCKET_PROTOCOL.md](WEBSOCKET_PROTOCOL.md) for complete build commands,
+environment-secret setup, localhost-only startup, bounded version-1 JSON
+messages, ownership/reconnect rules, SSH local forwarding, shutdown, limits
+and security assumptions. `ctest --test-dir build/native-server --output-on-failure`
+includes the original eight targets plus the real loopback security test when
+the adapter is enabled. No browser, Discord client, or permanent service is added.
+
 ## ESP32 build
 
 The handheld remains a separate, unchanged PlatformIO build:

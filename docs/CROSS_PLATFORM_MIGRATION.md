@@ -924,3 +924,26 @@ inventory, puzzles and progression, initiative/turn execution, abilities,
 defeat/loot/persistence, snapshots for this session model, authentication and
 network adapters. WebSocket and Discord framing must invoke session commands
 after authentication; they must not own a second rule implementation.
+
+## Phase 3F: private WebSocket adapter
+
+`apps/server` owns one existing `GameSession`, with native-only Beast transport,
+Boost.JSON parsing, credential primitives and a command-dispatch service. No
+gameplay source, ESP-NOW packet/version, save format or PlatformIO setting is
+changed. Existing protocol value definitions/capacities and all shared graph
+and movement decisions remain in the production engine; the JSON schema is a
+separately versioned adapter, not a serialization of ESP32 structs.
+
+One event-loop thread serializes requests. Authentication gates state access;
+each connection is bound to a private GameSession handle only after join or
+proof-verified reconnect. Player IDs do not authorize actions. Administrative
+session creation occurs only at local startup. The transport is hard-bound to
+127.0.0.1; there is no LAN/public binding option. It has bounded peers, messages,
+deadlines, rates and replies; events are pulled with explicit history gaps.
+
+Server dependencies live outside `src` and are not compiled for ESP32. The
+original portable library still compiles as C++11 without networking/JSON or
+crypto headers. Native server-only code uses C++17. This is a private testing
+boundary, not production authentication: shared admission gate, bearer reconnect
+proofs, no persistence/TLS or browser admission, and topology-only gameplay.
+See `WEBSOCKET_PROTOCOL.md` for precise protocol, resource and threat semantics.

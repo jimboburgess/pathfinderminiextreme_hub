@@ -64,6 +64,22 @@ events; no socket, browser or Discord dependency belongs in `GameSession`.
 
 ## Ubuntu NUC deployment
 
+Phase 3F adds an optional native `pfme_server` using the existing session behind
+an authenticated, strictly 127.0.0.1-bound WebSocket adapter. Administrative
+reset is unavailable remotely. Player IDs never grant ownership; separate
+server-issued bearer proofs authorize reconnection. Pull-based event retrieval
+preserves bounded history/gaps. See `WEBSOCKET_PROTOCOL.md` for limits and the
+private-development threat model. The ESP-NOW adapter remains unchanged.
+
+The smallest browser milestone is a local-only text/status page showing the
+shared room graph and roster, issuing owned movement commands, and reconciling
+events/history gaps through this protocol. Before enabling browser handshakes,
+add an explicit narrow loopback Origin allowlist and keep credentials in memory.
+Do not add public deployment or Discord bootstrap as part of that milestone.
+The topology-only gameplay limit remains; real tile geometry and walkability
+are still needed for a playable session. This is a recommendation, not work
+started by Phase 3F.
+
 The Intel NUC5i3MYBE can run the future server as one small x86-64 Linux
 process without a desktop environment. The recommended eventual deployment is
 a multi-stage Docker image that builds from a pinned unified `master` commit

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 
 project(pathfinder_mini_extreme_native LANGUAGES CXX)
 
@@ -64,4 +64,9 @@ include(CTest)
 if(BUILD_TESTING)
     add_test(NAME pfme_headless_smoke COMMAND pfme_headless)
     add_subdirectory(tests/native)
+endif()
+
+option(PFME_BUILD_SERVER "Build the private loopback WebSocket adapter" OFF)
+if(PFME_BUILD_SERVER)
+    add_subdirectory(apps/server)
 endif()

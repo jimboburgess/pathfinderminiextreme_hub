@@ -1,0 +1,70 @@
+# Everything here is native-only. PlatformIO never visits apps/ or build/_deps.
+include(FetchContent)
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+FetchContent_Declare(pfme_boost
+    URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-b2-nodocs.tar.xz
+    URL_HASH SHA256=ea7b982002cc9dfbe59b0b217b206f470dc75f3de0bb2973d844118934d82411
+    SOURCE_SUBDIR pfme_no_cmake_subdirectory)
+FetchContent_MakeAvailable(pfme_boost)
+
+set(PFME_MONOCYPHER_DIR "" CACHE PATH "Offline directory containing pinned Monocypher sources")
+if(NOT PFME_MONOCYPHER_DIR)
+    set(PFME_MONOCYPHER_DIR "${CMAKE_BINARY_DIR}/_deps/monocypher")
+    file(MAKE_DIRECTORY "${PFME_MONOCYPHER_DIR}")
+endif()
+foreach(entry
+    "monocypher.c|57eb914fc88136119bd41655cccb8c250048bf54d470540625186f8ab16f64be"
+    "monocypher.h|c494da712122da7ff679fdcf318a5317e84972b6c950fe9d896212947797facd"
+    "LICENCE.md|5f8360e4c06ddcc584bdb4b210c6af824c4bb301e6a9a521869b6d90795ca4b3")
+    string(REPLACE "|" ";" parts "${entry}")
+    list(GET parts 0 name)
+    list(GET parts 1 checksum)
+    if(NOT EXISTS "${PFME_MONOCYPHER_DIR}/${name}")
+        if(name STREQUAL "LICENCE.md")
+            set(source "${name}")
+        else()
+            set(source "src/${name}")
+        endif()
+        file(DOWNLOAD "https://raw.githubusercontent.com/LoupVaillant/Monocypher/4.0.3/${source}"
+            "${PFME_MONOCYPHER_DIR}/${name}" EXPECTED_HASH "SHA256=${checksum}" TLS_VERIFY ON)
+    endif()
+    file(SHA256 "${PFME_MONOCYPHER_DIR}/${name}" actual)
+    if(NOT actual STREQUAL checksum)
+        message(FATAL_ERROR "Monocypher source checksum mismatch")
+    endif()
+endforeach()
+enable_language(C)
+find_package(Threads REQUIRED)
+add_library(pfme_server_support STATIC credentials.cpp protocol.cpp service.cpp
+    boost_json.cpp "${PFME_MONOCYPHER_DIR}/monocypher.c")
+target_include_directories(pfme_server_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(pfme_server_support SYSTEM PUBLIC
+    "${pfme_boost_SOURCE_DIR}" "${PFME_MONOCYPHER_DIR}")
+target_link_libraries(pfme_server_support PUBLIC pfme_portable_leaf Threads::Threads)
+if(WIN32)
+    target_link_libraries(pfme_server_support PUBLIC ws2_32 mswsock bcrypt)
+    target_compile_definitions(pfme_server_support PUBLIC _WIN32_WINNT=0x0601)
+endif()
+target_compile_features(pfme_server_support PUBLIC cxx_std_17)
+add_executable(pfme_server main.cpp transport.cpp)
+target_link_libraries(pfme_server PRIVATE pfme_server_support)
+if(MSVC)
+    target_compile_options(pfme_server PRIVATE /W4)
+else()
+    target_compile_options(pfme_server PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pfme_server_support PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>)
+endif()
+install(TARGETS pfme_server RUNTIME DESTINATION bin)
+install(FILES "${pfme_boost_SOURCE_DIR}/LICENSE_1_0.txt" DESTINATION share/licenses/pfme_server/boost)
+install(FILES "${PFME_MONOCYPHER_DIR}/LICENCE.md" DESTINATION share/licenses/pfme_server/monocypher)
+if(BUILD_TESTING)
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    add_executable(pfme_ws_security_tests ../../tests/server/security_tests.cpp)
+    target_link_libraries(pfme_ws_security_tests PRIVATE pfme_server_support)
+    add_test(NAME pfme_websocket_security
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/run_security.py"
+            $<TARGET_FILE:pfme_server> $<TARGET_FILE:pfme_ws_security_tests>)
+    set_tests_properties(pfme_websocket_security PROPERTIES TIMEOUT 90)
+endif()
