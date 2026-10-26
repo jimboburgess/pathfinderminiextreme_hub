@@ -1,0 +1,83 @@
+# Phase 3G: first playable browser build
+
+The original C++ handheld game now runs natively on the Ubuntu NUC behind the private authenticated server. The browser displays its actual 240×240 pixels and sends virtual handheld inputs. The first playable composition has one controlling participant per server process.
+
+## Verified gameplay
+
+An interactive browser session on the Windows PC used a private SSH local forward to the real NUC server. It completed the original title, Fighter/Blades selection, rolled statistics, acceptance, town, real generated dungeon, tile movement, door transition, monster awareness, initiative, original combat menus and attacks. A melee attack displayed **Goblin Archer takes 7 damage**. The encounter ended with **Victory! You gain 135 XP.** The character then moved again and reopened the original menus. The character sheet showed **135/2000 XP and 4/9 HP**. These values came from the production runtime; no browser dice, HP assignment, position authority or combat simulation exists.
+
+The same complete production playthrough also passes automatically on Windows and Ubuntu. Tests issue only virtual handheld inputs, inspect production state and verify wall collision, long press, generated monsters, HP damage on both sides, combat completion and subsequent exploration. Seed 2 supplies the documented reproducible test route; other seeds retain genuine generated encounters and defeat is possible.
+
+## Validation
+
+| Check | Result |
+|---|---|
+| Windows CTest | 16/16 passed |
+| Ubuntu CTest | 13/13 passed |
+| Different test counts | Three optional Node tests run on Windows; Node is absent on the NUC and was not installed |
+| Windows compiler | CLion MinGW GCC 13.1.0 |
+| Ubuntu compiler / CMake / Python | GCC 15.2.0 / CMake 4.2.3 / Python 3.14.4 |
+| Original title reference | Zero differing RGB565 pixels; actual original C++ calls, assets and Adafruit GFX 1.12.6 font |
+| C++ screen → browser decoder | Every character-sheet pixel checked, including full resynchronization and RLE |
+| Browser zoom | CSS 240, 480, 720, 960, 1200 pixels and integer Fit; logical size remains 240×240 |
+| Transport | Existing security suite plus new same-Origin HTTP/WebSocket, ownership, input, bounded frame and reconnect checks passed |
+| ESP32 release | Passed from an isolated byte-identical source/configuration snapshot |
+| ESP32 RAM | 292,704 / 327,680 bytes, unchanged |
+| ESP32 flash | 1,050,317 / 4,128,768 bytes, unchanged from the current Phase 3F baseline |
+| Embedded tests | All 26 compile-only targets passed; no upload or hardware execution |
+| Source whitespace / focused credential scan | Passed; no private keys or real access tokens found |
+
+The original repository’s PlatformIO cache metadata is read-only, so its direct verification attempt could not update integrity.dat. Verification instead used a fresh workspace copy with identical firmware inputs. No DLL, toolchain, Windows security or system settings were changed. PlatformIO managed its normal Unity test dependency in that verification copy.
+
+The live browser check exposed a reconnect repaint problem despite correct decoded pixels. New-stream initialization now resets the canvas backing store; completed frames use a fresh immutable pixel buffer and a CPU-friendly context. Server/client pixel interoperability and reconnect regression tests cover the underlying data. The final live browser check showed the complete character sheet after owned reconnect, with the same 9/9 HP and 0/2000 XP. Immediate 1� and 2� zoom remained crisp. Earlier screenshots with an emulated large viewport showed repaint artifacts; the normal viewport final check passed. No physical-panel pixel comparison is claimed.
+
+## Start your own private playtest
+
+Follow **phase3g-playable-guide.md**, which contains the full procedure and controls. The prepared NUC directory is:
+
+```text
+/home/jimbo/pathfinder-playable-phase3g.StnP3cas
+```
+
+In your NUC SSH terminal:
+
+```sh
+cd /home/jimbo/pathfinder-playable-phase3g.StnP3cas
+python3 source/tools/run_private_game.py --server build/apps/server/pfme_server --port 18765 --seed 2
+```
+
+The foreground launcher prints a fresh strong secret for that run. Copy it into the browser; it is not stored in a file or committed. In a separate Windows PowerShell terminal:
+
+```powershell
+ssh -N -o ExitOnForwardFailure=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -L 127.0.0.1:18765:127.0.0.1:18765 jimbo@nuc-server
+```
+
+Then open **http://127.0.0.1:18765/play** in a regular browser. Both terminals stay open while playing; Ctrl+C stops their foreground processes. Use the same unused port at both ends of the tunnel.
+
+Controls: Down/S = clockwise, Up/W = counterclockwise, Enter = encoder press, Space = A, Escape = B. Hold Enter for the original 750 ms long press. Rotate to face a tile, then Enter to step. Menus and targeting retain the original state-specific semantics. The onscreen controls emulate the same hardware inputs. Input queues, repeat and focus-loss release are bounded.
+
+## Implementation and limits
+
+The native-only runtime compiles the actual production setup/loop, GPIO input handlers, character systems, room generation, tiles/entities, monster AI, initiative/combat, menus, sheets, graphics and assets. It substitutes only native platform facilities. The only edit under src is removing a redundant, incorrectly capitalized messageLog.h include; the correct header was already included. PlatformIO configuration, firmware data and behavior are preserved.
+
+The renderer uses the original C++ drawing code and original sprites/font on GFXcanvas16. The browser performs lossless RGB565 patch decoding and integer nearest-neighbor scaling. The server serializes gameplay and rendering, stores one immutable pending frame, and preserves the existing 4 KiB request, 16 KiB response, 20 commands/sec and eight-connection limits. Static assets are fixed compiled routes with restrictive headers; gameplay remains authenticated and bound to ownership credentials. No arbitrary filesystem route or client-supplied gameplay state is accepted.
+
+The remaining architectural boundary is explicit: GameSession retains participant capabilities/reconnect lifecycle, while the original handheld globals contain the real world, character, combat and UI. Only one owner can claim that runtime. Other participants cannot view or control it. Independent playable participants, per-player visibility/menus and shared multi-room initiative still require separating those globals. They are not claimed complete. Explicit leave retires the private runtime until process restart, preventing a recycled participant ID from inheriting it.
+
+Audio is silent. Saves/settings use original serialization backed by process-local memory; restart persistence and ESP32 save import are not implemented. Some synchronous flash animation frames can coalesce between snapshots. Physical ST7789 panel gamma, SPI timing, tearing and a physical-device image comparison are not verified. Other classes, advanced spells and puzzles compile from production sources but were not exhaustively playtested.
+
+The native surface uses 115,200 bytes. Screen transfer uses two further such pixel arrays and a bounded patch. The browser keeps a 230,400-byte RGBA accumulator plus canvas, bounded chunks and a transient immutable presentation copy. None of these allocations enters ESP32 RAM. The observed NUC test process used about 7.2 MiB RSS and 0.8% CPU at one sample; this is not a load benchmark.
+
+## Repository, publication and machine safety
+
+Branch: master. Local HEAD: c7e130d7291a7aaeb48adbe9cc5f7252a522cee8. GitHub master: 6e6b231f2787e315e82764bc269917b1e5fa2ba6. Phase 3F remains locally committed and unpublished. Phase 3G changes remain uncommitted and reviewable. No commit, push, branch/history rewrite or checkpoint-tag change was made.
+
+Final source archive SHA256: a4faad4af87c1c5c5df284a0bc1c1ff6b951f8a15e6e0f5c4f364f3459297b26. The dedicated NUC source copy was checked against its prior snapshot before updating, so independent changes would have stopped the transfer. Existing source work and the earlier title viewer were preserved.
+
+No NUC packages were installed. No Docker, Homepage, Navidrome, Uptime Kuma, music bot, router, firewall, SSH settings, DNS or reverse proxy configuration was changed. Test servers bind only 127.0.0.1; browser access used an explicit loopback-only SSH forward. No persistent service or public endpoint was created.
+
+The native captures in phase3g-playable-captures are outputs of the actual production test, not replacement artwork or browser mockups. See the test logs for full validation details. The earlier phase3g-report.md describes the historical title-only slice; this report supersedes it for playable-build status.
+
+## Final cleanup
+
+The disposable NUC server and its local SSH tunnel exited successfully. A final NUC socket check found no pfme_server/18765 listener. The existing music bot, Homepage, Docker proxy, Navidrome and Uptime Kuma containers were running; Homepage and Uptime Kuma reported healthy. No service or container restart was requested. The temporary browser test tab was closed. Final git diff --check passed; master and both safety tags remain unchanged.
