@@ -1,0 +1,267 @@
+# Phase 3G: original handheld runtime in a private browser
+
+This build executes the production C++ game loop on the server and presents its
+240×240 RGB565 display in the browser. Character creation, town, real room
+generation, tile movement/collision, menus, door transitions, monster AI,
+initiative and combat use the existing production sources. The browser contains
+input handling, bounded pixel decoding and scaling; it determines no gameplay
+results.
+
+The first playable version supports **one controlling player per server process**.
+It does not claim completed authoritative multiplayer gameplay. The existing
+GameSession still owns authenticated participant capabilities and reconnect
+lifecycle. The original handheld runtime owns the actual character, dungeon and
+combat state, composed alongside GameSession by Service. Topology-only movement,
+map and event commands are disabled once a playable runtime is claimed, avoiding
+two competing world representations. Other participants cannot claim this runtime,
+receive its screen or submit its inputs.
+
+## Start the verified NUC build
+
+In Windows PowerShell, open the existing authorized SSH connection:
+
+```powershell
+ssh jimbo@nuc-server
+```
+
+In that NUC terminal:
+
+```sh
+cd /home/jimbo/pathfinder-playable-phase3g.StnP3cas
+python3 source/tools/run_private_game.py --server build/apps/server/pfme_server --port 18765 --seed 2
+```
+
+The foreground launcher creates a fresh strong development secret, prints it for
+you to copy and starts the server with that secret in its child environment.
+It writes no credential file, installs no service and does not change shell or
+machine settings. Keep this terminal open. Avoid recording or sharing its secret.
+
+Open a **second Windows PowerShell terminal**, then run:
+
+```powershell
+ssh -N -o ExitOnForwardFailure=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -L 127.0.0.1:18765:127.0.0.1:18765 jimbo@nuc-server
+```
+
+Keep that tunnel terminal open. Browse to:
+
+```text
+http://127.0.0.1:18765/play
+```
+
+Paste the generated secret into Development secret, choose a name without spaces
+and click Connect. The password field clears after use. The gate and reconnect
+proof remain only in that page’s memory. Reconnect from the same tab; reloading or
+closing it loses that proof. The protocol cannot recover ownership from a name or
+numeric player ID.
+
+Use the same port at both ends of the tunnel, because Host and Origin are checked
+against the listener port. If 18765 is occupied, choose another unused port above
+1023 consistently in the launcher, both tunnel port positions and browser URL.
+Do not terminate an unrelated process to free a port.
+
+## Keyboard and mouse
+
+| Browser input | Original handheld input |
+| --- | --- |
+| Down / S | Encoder clockwise |
+| Up / W | Encoder counterclockwise |
+| Enter | Encoder press |
+| Space | Button A |
+| Escape | Button B |
+| Hold Enter | Original encoder long press (750 ms) |
+
+Onscreen controls emulate the same inputs; they do not select game menu rows
+directly. Rotation changes class, weapon style, menu selection or facing according
+to the original state. In a dungeon, rotate to face a tile and press Enter to step.
+Menu selection usually uses Space or Enter; attack targeting confirms with Space.
+Original screen prompts and input guards remain authoritative.
+
+OS key-repeat events are ignored. Held rotary keys repeat deliberately after
+450 ms, then at 220 ms intervals when the input queue is available. Holding Enter
+does not generate repeated movement presses; the server runs the original
+long-press handler. Input is ignored while typing in form fields or using controls.
+Blur/hidden events release all held inputs. The server also releases held pins
+after 1.5 seconds without an input message and immediately on disconnect.
+
+Zoom supports exact CSS factors 1–5 and integer Fit to Window. The canvas remains
+240×240; zoom changes neither coordinates nor gameplay state. Fit scrolls rather
+than shrinking fractionally below 1×. Default prefers 3× when it fits. Use 100%
+browser zoom and integer OS display scaling for physical device-pixel comparisons.
+
+## Manual playtest
+
+The reproducible native acceptance route uses seed 2, a Fighter with Blades. Human
+timing, movement, visibility and dice consumption can change the encounter’s course;
+defeat remains a genuine possible outcome. No stats or monster outcomes are fixed
+by the browser.
+
+1. Confirm the original title, sprites and A: New Game / B: Load Game prompts.
+2. Press Space for New Game. Use Up/Down to inspect the existing classes, then
+   choose Fighter with Enter. Choose Blades with Enter.
+3. Inspect the rolled character sheet; rotate to scroll it. Press Space to open
+   the original acceptance menu and Space again to accept. Pause briefly between
+   selections to respect the handheld’s transition guard.
+4. In town, hold Enter for about a second to open the character sheet. Release
+   Enter; Escape closes the sheet. Confirm blur or focus loss does not leave a
+   button held.
+5. Select Explore Dungeon in the original town list: from Stay Home, Down twice
+   selects it. Press Space. Confirm the actual room tiles, Fighter sprite, facing
+   cursor, door, object graphics and bottom message bar.
+6. Press Enter once to move east one tile. Rotate to a wall and try stepping into
+   it; confirm movement is blocked. Space opens the original map menu. Down/Up
+   navigates it and Escape cancels. Restore east facing before continuing.
+7. In the entrance room, walk east to and through its door. The native route takes
+   12 eastward steps from the original (2,6) spawn. Confirm a real room transition,
+   different geometry and generated creatures. Do not use coordinates as wire
+   commands: only the virtual handheld inputs exist.
+8. Let creatures notice/approach you, or explore toward them. Observe Roll for
+   Initiative and turn messages. On your turn, Space opens Menu; select Attack.
+   Use Ranged Attack when separated, Melee Attack when adjacent. Rotate to select
+   a creature/direction and Space to confirm. Escape cancels targeting. Outside
+   menus, Escape ends your combat turn where the original game permits it.
+9. Observe attack rolls, HP changes, messages and enemy turns. Reopen the sheet to
+   inspect current character state. Continue with supported attacks/actions until
+   combat ends; confirm exploration and movement continue afterward. If the
+   character dies, observe the actual death behavior; restart the foreground
+   server for a fresh playtest if needed.
+10. Exercise 1×–5× and Fit while in a static menu. Confirm crisp pixels and the
+    same game state after zoom. Large full-screen transitions can take several
+    chunks; normal cursor and tile updates are smaller.
+11. Click Disconnect safely. Confirm the game pauses. Click Reconnect in that same
+    tab and verify the same character, room and view. A second authenticated
+    participant must receive RuntimeOccupied rather than your view.
+12. Disconnect, then Ctrl+C in the NUC server terminal and Ctrl+C in the tunnel
+    terminal. The server should print `stopped`. No daemon or public listener is
+    created. All server state ends with the process.
+
+Town Save/Load retains the original serialization code backed by process-memory
+Preferences. It survives only within that server process. It is not an ESP32 save
+import/export mechanism, and no persistence across server restarts is claimed.
+
+## Build from the current source
+
+```sh
+cmake -S . -B build/playable -DCMAKE_BUILD_TYPE=Release -DPFME_BUILD_SERVER=ON -DPFME_BUILD_PLAYABLE=ON -DPFME_BUILD_BROWSER_CAPTURE=ON
+cmake --build build/playable --parallel 2
+ctest --test-dir build/playable --output-on-failure
+python3 tools/run_private_game.py --server build/playable/apps/server/pfme_server --seed 2
+```
+
+The server reuses the pinned Boost and Monocypher dependencies documented in
+WEBSOCKET_PROTOCOL.md. The native runtime also uses the byte-identical Adafruit GFX
+1.12.6 sources/font already vendored for the title capture, retaining its license.
+No system package installation is required beyond the already installed compiler,
+CMake and Python. On Windows use a configured CMake compiler environment and the
+`.exe` filename. Keep the compiler runtime directory on PATH when using MinGW.
+
+Both playable and server options default OFF. Original leaf/headless targets and
+PlatformIO remain independent. The separate `apps/browser` offline title viewer
+is preserved as a reference artifact; it is not the playable client.
+
+## Dependency map and platform boundary
+
+| Production call path | Native adapter / behavior |
+| --- | --- |
+| `main.cpp::setup/loop` → game state, awareness, combat, messages, rest, redraw | Original composition loop compiled directly; server supplies bounded ticks |
+| `buttons.cpp` → quadrature decoder, debounce, state handlers → menus/movement | Virtual GPIO levels and complete Gray-code detents; original handler interprets them |
+| `charcreationscreen.cpp` → `charactercreation.cpp` → abilities/items/progression | Original rolls, class equipment, statistics and acceptance |
+| `town.cpp` / town handlers → `enterDungeon/enterForest` | Original navigation, room creation and character state |
+| `roomgen/dungeon/dungeongraph` → active tiles/entities | Original geometry/content generation, entry/exit, collision and objects |
+| `awareness/monsteridle/monsterscripts/combat` | Original detection, initiative, timed messages, attacks, conditions, damage and victory |
+| `display/roomdraw/sheet/menu/inventory/elementalvisual` → ST7789/GFX | Native-only ST7789 facade backed by GFXcanvas16; actual drawing code, assets and font |
+| Arduino time/RNG/String/Serial | Controlled monotonic native tick clock, seeded MT19937 modulo bounded draws, std::string, silent serial sink |
+| Audio/LEDC | Original audio sequence timing runs against silent hardware calls |
+| Preferences | Bounded in-memory key/value backing for original save/settings code |
+| ESP-NOW/Wi-Fi/FreeRTOS | Unavailable native radio adapter; existing code reports unavailable initialization |
+
+The only production source edit is removing a redundant, incorrectly cased
+`messageLog.h` include in `graphics/messagelog.cpp`. Its correct `messagelog.h`
+include was already present. This fixes Linux case sensitivity and changes no
+gameplay or firmware data. All other adapters and framebuffer allocations live
+under native-only `apps/`; PlatformIO source/include paths are unchanged.
+
+## Authority and multiplayer limit
+
+The handheld uses global `player`, `dungeon`, `combat`, `tft`, menu state and many
+file-static UI/targeting variables. They now execute on the NUC, not in each
+browser. A Service-owned lease binds that one global runtime to a valid
+GameSession participant and active authenticated connection. Another participant
+cannot receive the controller’s pixels or change its state. Reconnect requires
+the existing random ownership proof. Explicit leave retires this runtime until
+process restart, preventing a recycled player ID from inheriting its private
+state. Disconnect pauses ticks and preserves it.
+
+Independent per-player locations/views, shared multi-room initiative and multiple
+concurrent playable participants remain unimplemented. The exact next boundary is
+to move authoritative world state out of globals and isolate player menu,
+visibility, targeting and input state. Do not create independent worlds per browser
+or broadcast the controller’s screen to a party. Existing ESP-NOW authority code is
+compiled and remains available to the ESP32 firmware, but native radio transport
+is unavailable and is not used as a substitute WebSocket multiplayer engine.
+
+## Screen and input protocol extension
+
+The existing authenticated protocol 1 adds `play`, `input` and `screen`; existing
+limits remain 4 KiB requests, 16 KiB replies, 20 commands/sec and 8 connections.
+Before a playable lease, the original topology API retains its previous behavior.
+
+- `play` has no extra fields and requires an owned participant. It claims/resumes
+  the single runtime, clears held pins and restarts the pixel stream at base 0.
+- `input` accepts only `action` (`cw`, `ccw`, `encoder`, `a`, `b`, `release`) and
+  Boolean `down`. No client positions, HP, inventory, clocks or dice are accepted.
+- `screen` accepts decimal-string `since` and integer `offset`. It returns
+  `encoding: rgb565-patch-rle1`, base/frame revisions as decimal strings, offset,
+  total byte count, base64 `pixels`, and `more`. One immutable frame is pending;
+  chunks contain at most 9,216 raw bytes. Invalid cursor/order is rejected.
+
+Patch records are little-endian `start:uint16`, `encodedCount:uint16`, payload.
+Count is the low 15 bits (1–32767). With bit 15 set, payload is one repeated
+RGB565 color; otherwise payload is that many literal RGB565 colors. Start/count
+must remain inside 57,600 pixels. Unchanged pixels are omitted. Records can cross
+chunk boundaries, so the browser accumulates at most 230,400 bytes, validates the
+complete frame and presents it atomically. It never mixes revisions or renders a
+partial record. A newly claimed stream starts against a black framebuffer.
+
+The client keeps one outstanding RPC and at most eight queued input transitions;
+overflow collapses to release-all. Requests are paced at 75 ms or slower, including
+screen pulls and controls, within existing limits. There is no unbounded queue or
+idle stream of full frames. Frame IDs, bounded offsets and backpressure keep
+production rendering independent of client speed. Reconnect fully resynchronizes
+pixels. Zoom modifies only CSS dimensions and does not restart a session.
+
+## Security, memory and known differences
+
+Binding remains hard-coded to 127.0.0.1. The playable build serves only `/play`,
+`/play.js`, `/play.css` from compiled fixed assets, with no filesystem routing or
+URL parameters. HTTP assets contain no player state or secrets. Gameplay still
+requires the gate, owned participant and lease. WebSocket Origin is either absent
+(native client) or exactly `http://` plus the validated loopback Host/listener port;
+null, foreign, alternate-host and multiple Origins are rejected. CSP disables
+framing, external scripts and arbitrary connections. Auth/write/IO deadlines,
+connection/rate/message limits and ownership proof handling remain enforced.
+
+One native RGB565 surface uses 115,200 bytes. The Service screen stream holds two
+more such pixel arrays and one bounded patch (at most 230,400 bytes). The browser
+keeps one 230,400-byte RGBA accumulator, its canvas and bounded chunk buffers, plus
+one transient 230,400-byte immutable presentation copy per changed frame and
+runtime/compositor overhead. A CPU-friendly context and fresh presentation buffer
+avoid stale pixelated compositor tiles during resynchronization. No new framebuffer
+or adapter code enters ESP32 RAM.
+Uncompressed full frames would cost 115,200 bytes before framing, or 153,600
+base64 characters. Patch/RLE avoids sending repeated menu backgrounds and idle
+pixels; actual traffic depends on changed sprites and screen transitions. All
+gameplay and rendering remain on one serialized server event loop.
+
+Audio output is silent. Native `delay()` advances the simulated clock without
+blocking the entire service, so intermediate synchronous hit-flash frames can be
+coalesced before the browser receives a snapshot. The original render calls still
+run; exact flash/tearing/SPI timing and panel gamma are not claimed. A native
+unavailable ESP-NOW notice may appear on the title message line. Native RNG is
+reproducible across Windows/Ubuntu; matching an ESP32 random seed byte-for-byte is
+not promised. No physical-panel visual comparison or ESP32 hardware execution was
+performed in this phase.
+
+No router, firewall, public DNS/proxy, container or persistent service configuration
+is part of this build. No public exposure, Discord integration or Phase 3H work is
+authorized by these instructions.
+
