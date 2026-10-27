@@ -1,118 +1,151 @@
-# Headless server roadmap
+# Pathfinder development roadmap — private browser playtest
 
-`pfme_headless` composes portable production modules without Arduino or display
-hardware. Phase 3E adds a local authoritative `GameSession` and an optional
-trusted-administrator terminal (`--interactive`), not a network service.
+Updated 2026-10-27. Immediate target: a real private browser adventure for any
+party size **1, 2, 3 or 4**, hosted on the Ubuntu NUC. Discord is voice chat only.
+Discord Activities, Embedded App SDK and Discord OAuth are postponed. No fixed
+party composition, four-player start barrier or three-player optimization.
 
-## Authority boundary
+## Current implementation and limits
 
-The future process should contain a `SessionRegistry` that owns independent
-`GameSession` instances. Each session should own:
+- Phases 2–3D: portable native foundation/headless execution verified on Windows
+  and Ubuntu; ESP32 remains supported.
+- Phase 3E: GameSession owns four generation-checked participant capabilities,
+  topology-level room locations, bounded events and disconnect/reconnect/leave.
+  This graph is not yet the playable tile/combat world.
+- Phase 3F: authenticated loopback WebSockets, ownership proofs and bounded
+  requests/connections/deadlines; no remote administrator/reset API.
+- Phase 3G: original production C++ setup/loop, character creation, dungeon,
+  movement, AI, combat and 240×240 rendering run natively. One playable controller
+  owns the original global runtime; native sound output is currently silent.
+- Phase 3H: optional Discord authentication adapter and offline security harness
+  are retained, but deferred. Its SDK/Zod advisory remains unresolved. The
+  standalone CMake browser/server does not import or bundle that adapter or SDK.
+- Phase 3I first extraction: caller-owned production button decoding and character
+  creation; native ControllerSlots retain full Character, input, menu, facing,
+  view-room and framebuffer by private handle/connection lease. These foundations
+  are tested for N=1..4. They are not yet the live shared-dungeon runtime. The
+  one-controller lease stays until authority/rendering isolation is complete.
 
-- dungeon graph, room runtime, authority RNG, turn state, and shared messages;
-- one `PlayerState` per stable player ID, including room, position, visibility,
-  movement, interaction, character, and reconnect state;
-- combat state that enrolls all participating players in initiative without
-  moving players between rooms;
-- bounded command and event queues with monotonically increasing sequence IDs.
+Do not describe graph navigation, separate character allocations or four logins
+as completed playable multiplayer.
 
-Clients should submit commands such as join, move, change room, interact,
-attack, cast, end turn, and inventory action. The session validates identity,
-room, position, turn ownership, targets, resources, and command sequence before
-calling shared gameplay rules. Clients never submit authoritative dice,
-damage, or resulting positions.
+## Priority 1 — finish the multi-controller gameplay runtime
 
-## Transport and serialization
+1. Finish the PlayerRuntime context seam through existing input handlers, menus,
+   sheets, inventory/riddle/shop state and rendering. Each controller owns its
+   own decoder/timers/UI and original 240×240 surface. Keep the existing 750 ms
+   encoder hold and all five handheld actions; release only that player's inputs
+   on blur/disconnect. Keep integer 1×–5× and Fit without state resets.
+2. Give one SessionWorld the real generated dungeon, full canonical actors,
+   monster/room/effect state, clock/RNG and shared messages. Use the existing
+   owner-aware production movement, room persistence and ESP-NOW host mechanisms;
+   never create another gameplay engine or use reduced NetworkCharacterState as
+   a full character store. GameSession capabilities bind to these full actors.
+3. Separate per-player view/visibility/room selection from the shared active-room
+   simulation workspace. A door crossing moves one actor only. Room reloads must
+   preserve full HP/MP, equipment, inventory, spells, XP/gold and conditions.
+   Rendering must not consume gameplay RNG or change world state.
+4. Extract/reuse the shared initiative controller with stable room/entity/player
+   references. Check authenticated actor, turn/revision, room, LOS, resources and
+   action budget before mutations. UI/target previews belong to each player;
+   combat results, conditions, rewards and monster turns belong to the world.
+5. Distinguish occupied character slots from sockets. Reconnect rebinds an owned
+   slot; it never creates another actor. Four occupied slots include disconnected
+   retained actors. Reject a fifth identity with PartyFull and no world mutation.
+   Check entity/combatant capacity; never overwrite or silently drop occupants.
+6. Safe late join: reserve a verified slot, create through production controls,
+   spawn at a legal entrance at a non-combat authority boundary. If combat or
+   entrance capacity prevents entry, keep a private pending-entry state. Never
+   regenerate the world, teleport others or grant historical XP on joining.
+7. Disconnect policy: retain the actor and release its controls. If it becomes
+   current in combat, allow a documented 15-second server-clock grace, then end
+   the disconnected turn without free actions/defense. Skip subsequent still-
+   disconnected turns without repeated waits. Other connected users continue.
+   Reconnect cannot reroll initiative or restore spent actions. If everyone is
+   disconnected, pause at an authority boundary without catch-up attacks.
 
-The session layer should emit bounded events and snapshots through a transport
-interface. The existing ESP-NOW codecs and compact multiplayer references
-remain authoritative compatibility inputs; a future WebSocket adapter can
-frame versioned server messages without putting socket code in gameplay.
+Keep the original ESP32 singleton wrappers, saves, graphics and ESP-NOW formats.
+Native party surfaces/state never become four copies in firmware. Start solo
+immediately; the same authority path must work at every supported party size.
 
-Snapshots need explicit versions for session metadata, dungeon topology,
-room state, player state, combat state, and shared-message position. Reconnect
-should authenticate a stable player, resume from an acknowledged event
-sequence when possible, and otherwise send a complete snapshot. Persistence
-should use atomic files outside the container image and must not silently
-reuse the ESP32 save format for server sessions.
+## Priority 2 — original sound in the browser
 
-## Incremental implementation
+Keep C++ AudioCommand definitions and playback semantics as the source of truth.
+Add a native audio output sink and bounded, owner/room-filtered audio events,
+then a local Web Audio presentation backend. Preserve tone/pause/sweep/triangle
+vibrato/LFSR pitched noise/end, four pulse duties, runtime bell sequences, mono
+interruption, stop and mute. Do not replace melodies or add music mixing/looping
+that the handheld does not have. Account for 2 ms accents between native ticks.
 
-1. Completed in Phase 3E: portable `GameSession`, four independently located
-   participants, generation-checked in-process handles, disconnect/reconnect/
-   leave, bounded sequenced events with explicit history-gap reporting, and
-   graph-level transitions. Existing protocol IDs, name/message bounds,
-   directions, topology generation and validation are reused. See
-   `NATIVE_BUILD.md` for API semantics and CLI commands. This is topology-only;
-   adjacency does not satisfy tile, puzzle, locked-door, or boss restrictions.
-2. Extract real room geometry, walkability, and character value state so the
-   session can validate movement and interactions without rendering.
-3. Move initiative progression, HP/conditions, abilities, and combat results
-   behind command/result interfaces while preserving current handheld rules.
-4. Add versioned session snapshots and deterministic reconnect tests.
-5. Add an in-process transport test double, then a WebSocket adapter.
-6. Add browser and Discord clients only after authority and snapshot tests pass.
+Audio starts from a real browser gesture, requires no microphone permission,
+resynchronizes without replaying stale effects, and is independent per listener.
+Test timing/output traces from the production interpreter and actual audible
+browser behavior. No unbounded media backlog or authentication bypass.
 
-The smallest next implementation should extract existing room terrain/door
-carving and walkability checks, preserving ESP32 behavior, before adding tile
-coordinates and movement validation to session players. Do not create a second
-map generator or fabricate native room contents. Then add full character value
-state through the existing rule modules. Future combat should be owned by the
-session, with room-aware combatant references and initiative participation
-across rooms. Adapters only authenticate/translate commands and distribute
-events; no socket, browser or Discord dependency belongs in `GameSession`.
+## Priority 3 — invite-only browser access, then approval
 
-## Ubuntu NUC deployment
+See [PRIVATE_BROWSER_ACCESS.md](PRIVATE_BROWSER_ACCESS.md) for the evaluated
+options, identity boundary, approval checklist and proposed friend launch flow.
+Preferred first option is **Tailscale sharing of a dedicated isolated game node**
+on the NUC with reviewed game-HTTPS-port-only grants and private Serve, provided
+friends accept a one-time Tailscale client/login. Do not share the general-purpose
+NUC with broad default access. Do not enable Funnel or install/configure anything
+before approval. Alternative: a dedicated isolated HTTPS gateway with real
+per-person authentication, if clientless access is necessary.
 
-Phase 3F adds an optional native `pfme_server` using the existing session behind
-an authenticated, strictly 127.0.0.1-bound WebSocket adapter. Administrative
-reset is unavailable remotely. Player IDs never grant ownership; separate
-server-issued bearer proofs authorize reconnection. Pull-based event retrieval
-preserves bounded history/gaps. See `WEBSOCKET_PROTOCOL.md` for limits and the
-private-development threat model. The ESP-NOW adapter remains unchanged.
+A network allowlist does not replace player ownership. Admit only verified
+individual identities, issue bounded expiring game sessions and one-use socket
+admission, retain per-identity limits and protect reconnect capabilities. The
+shared development password alone is not a player identity. Discord OAuth is
+not required for the standalone build.
 
-The smallest browser milestone is a local-only text/status page showing the
-shared room graph and roster, issuing owned movement commands, and reconciling
-events/history gaps through this protocol. Before enabling browser handshakes,
-add an explicit narrow loopback Origin allowlist and keep credentials in memory.
-Do not add public deployment or Discord bootstrap as part of that milestone.
-The topology-only gameplay limit remains; real tile geometry and walkability
-are still needed for a playable session. This is a recommendation, not work
-started by Phase 3F.
+## Priority 4 — isolation and operational playtest
 
-The Intel NUC5i3MYBE can run the future server as one small x86-64 Linux
-process without a desktop environment. The recommended eventual deployment is
-a multi-stage Docker image that builds from a pinned unified `master` commit
-and copies only the release executable into a minimal non-root runtime image.
+Use a dedicated nonroot game VM/sandbox on the NUC with no personal directories,
+SSH credentials, Docker socket or host networking; read-only filesystem where
+possible, bounded writable storage, no capabilities/new privileges and explicit
+CPU/RAM/PID/fd limits. Deny home-LAN/metadata/unrelated-service egress. Demonstrate
+those boundaries from inside the sandbox; a container alone is not proof.
 
-Initial deployment should:
+Do not alter Homepage, Navidrome, Uptime Kuma, music bot, UniFi, shared proxy or
+other existing services. No router ports, public endpoint, firewall changes,
+network-software install, DNS/tunnel activation or invitations without a reviewed
+concrete configuration and explicit approval. No permanent game service yet.
 
-- use a dedicated Docker network and avoid publishing any host port;
-- alternatively bind only to `127.0.0.1` for local administrative testing;
-- run as a non-root UID with a read-only root filesystem and one bounded data
-  volume for session persistence;
-- start with approximately `0.5` CPU and `128 MB` memory limits, then measure;
-- use tagged images or pinned commits rather than modifying a live container;
-- leave existing containers, router, firewall, and reverse proxy unchanged.
+## Acceptance and verification gates
 
-Do not expose the service publicly until authentication, authorization, TLS,
-rate limiting, origin checks, and backup/recovery are implemented. A reverse
-proxy and secure `wss://` endpoint should be a later deployment layer shared by
-the browser client and Discord Activity.
+For **each N=1,2,3,4**, exercise real application/protocol code: independent
+identity/ownership/input/UI/media, actual tile collision and room transitions,
+one shared clock/monster/initiative state, complete character retention, clean
+shutdown and reconnect/expiry/replay/malformed-client denial. Use independent
+browser profiles and no required class composition; include duplicate classes.
 
-## Phase 3G playable native composition
+- N=1: complete a real solo creation/town/dungeon/combat/victory/exploration loop.
+- N=2: separate movement, owned reconnect and shared combat.
+- N=3: different rooms, authorized shared events and initiative.
+- N=4: complete an encounter with independent original views and audible music/SFX.
+- Fifth occupied character: PartyFull with state unchanged; valid owner reconnect
+  still succeeds while full. Race duplicate joins/last-slot allocation and test
+  pending late join, explicit leave/reuse and old generation rejection.
 
-`PFME_BUILD_PLAYABLE=ON` now compiles the original handheld game loop, input
-handlers, character creation, room geometry, movement, AI, combat and rendering
-through native-only adapters. Combined with `PFME_BUILD_SERVER=ON`, the NUC can
-serve a private authenticated browser view of its actual 240x240 display.
+Do not substitute mocks, graph-only tests or direct state assignment for the
+end-to-end gameplay result. Use controlled fixtures only to arrange repeatable
+worlds/encounters. Recheck Windows/Ubuntu native and WebSocket regressions, ESP32
+release and all embedded compile targets whenever shared source changes.
 
-See [PLAYABLE_BROWSER.md](PLAYABLE_BROWSER.md) for build/start/SSH-tunnel commands,
-manual playtest, dependency map, protocol limits and known differences. This first
-playable composition has one controlling participant per process. GameSession
-retains ownership/reconnect capabilities; the original global handheld runtime
-contains the actual world. Independent multiplayer views and shared multi-room
-combat still require extracting world state and per-player UI from those globals.
-No browser gameplay simulation, public service, firmware framebuffer or persistent
-NUC service was introduced. The earlier portable-leaf and topology-only descriptions
-above still describe those independent targets, not this optional runtime.
+## Later, explicitly deferred
+
+Discord Activity/SDK/OAuth, public hosting, multiple concurrent session registries,
+new rendering/UI, production persistence/HA and broad infrastructure work are not
+prerequisites for this private standalone trial. Preserve useful Phase 3H security
+work as an optional reference. Resolve its dependency advisory before ever
+reactivating it; do not ship the SDK in the standalone page.
+
+## Completion definition
+
+One authoritative Pathfinder dungeon is genuinely playable by any party size
+from one through four, with original graphics/input/sound and verified individual
+ownership. Friends launch a normal browser through an approved private access
+path without SSH or development tools; Discord provides voice only. Approval,
+isolation and gameplay acceptance must pass before invitations. Local commits
+retain reviewable progress; no automatic push or deployment.
