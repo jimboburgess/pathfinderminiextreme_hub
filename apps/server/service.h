@@ -4,6 +4,9 @@
 #include "protocol.h"
 #include "session/game_session.h"
 #include <chrono>
+#ifdef PFME_HAS_PLAYABLE
+#include "screen_stream.h"
+#endif
 
 namespace pfme::server
 {
@@ -27,6 +30,7 @@ public:
     Reply handle(ConnectionState& connection, std::string_view message);
     void detach(ConnectionState& connection);
     static std::string hello();
+    void tick();
 private:
     struct Participant
     {
@@ -36,6 +40,14 @@ private:
         SecretDigest proof{};
     };
     json::object dispatch(ConnectionState& connection, const Request& request);
+#ifdef PFME_HAS_PLAYABLE
+    uint32_t seed_ = 0;
+    PlayerID playOwner_ = INVALID_PLAYER_ID;
+    bool playRetired_ = false;
+    ScreenStream screen_;
+    std::chrono::steady_clock::time_point lastInput_ = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point lastTick_ = std::chrono::steady_clock::now();
+#endif
     GameSession game_;
     SecretDigest gate_;
     Participant participants_[MAX_MULTIPLAYER_PLAYERS];

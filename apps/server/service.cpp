@@ -1,6 +1,9 @@
 #include "service.h"
 #include "server_limits.h"
 #include <stdexcept>
+#ifdef PFME_HAS_PLAYABLE
+#include "runtime.h"
+#endif
 
 namespace pfme::server
 {
@@ -13,10 +16,25 @@ json::value roomJson(uint8_t room)
 }
 Service::Service(const SecretDigest& gate, uint32_t seed) : gate_(gate)
 {
+#ifdef PFME_HAS_PLAYABLE
+    seed_=seed;
+#endif
     if (game_.initialize(seed) != SessionError::Ok) throw std::runtime_error("session initialization failed");
 }
 std::string Service::hello()
 { return json::serialize(response("", "hello", {{"authentication_required", true}, {"navigation", "topology-only"}})); }
+void Service::tick()
+{
+#ifdef PFME_HAS_PLAYABLE
+    const auto now=std::chrono::steady_clock::now();
+    const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-lastTick_).count();
+    lastTick_=now;
+    if(isValidPlayerID(playOwner_) && !playRetired_ && participants_[playOwner_].activeConnection) {
+        if(now-lastInput_>std::chrono::milliseconds(1500)) runtime::releaseInputs();
+        runtime::advance(static_cast<uint32_t>(std::min<int64_t>(elapsed,100)));
+    }
+#endif
+}
 void Service::detach(ConnectionState& connection)
 {
     if (isValidPlayerID(connection.player))
@@ -24,6 +42,9 @@ void Service::detach(ConnectionState& connection)
         auto& participant = participants_[connection.player];
         if (participant.occupied && participant.activeConnection == connection.serial)
         {
+#ifdef PFME_HAS_PLAYABLE
+            if(connection.player==playOwner_) runtime::releaseInputs();
+#endif
             game_.disconnect(participant.handle);
             participant.activeConnection = 0;
         }
@@ -69,6 +90,11 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
         return ok({{"connection_id", connection.identity}});
     }
     if (!connection.authenticated) return fail("NotAuthenticated");
+#ifdef PFME_HAS_PLAYABLE
+#include "playable_service.inc"
+    if(isValidPlayerID(playOwner_) && (request.type=="move" || request.type=="map" || request.type=="events"))
+        return fail("RuntimeMode");
+#endif
     if (request.type == "join")
     {
         if (isValidPlayerID(connection.player)) return fail("AlreadyBound");
@@ -128,6 +154,9 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
         {
             const auto result = game_.leave(participant.handle);
             if (result != SessionError::Ok) return fail(sessionErrorName(result));
+#ifdef PFME_HAS_PLAYABLE
+            if(connection.player==playOwner_) { runtime::releaseInputs(); playRetired_=true; }
+#endif
             participant = Participant{};
             connection.player = INVALID_PLAYER_ID;
             return ok();

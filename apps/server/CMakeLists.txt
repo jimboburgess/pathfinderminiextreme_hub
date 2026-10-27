@@ -48,8 +48,22 @@ if(WIN32)
     target_compile_definitions(pfme_server_support PUBLIC _WIN32_WINNT=0x0601)
 endif()
 target_compile_features(pfme_server_support PUBLIC cxx_std_17)
+if(PFME_BUILD_PLAYABLE)
+    target_sources(pfme_server_support PRIVATE screen_stream.cpp)
+    target_compile_definitions(pfme_server_support PUBLIC PFME_HAS_PLAYABLE=1)
+    target_link_libraries(pfme_server_support PUBLIC pfme_handheld_runtime)
+endif()
 add_executable(pfme_server main.cpp transport.cpp)
 target_link_libraries(pfme_server PRIVATE pfme_server_support)
+if(PFME_BUILD_PLAYABLE)
+    find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_web.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web" "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc"
+        DEPENDS embed_web.py web/play.html web/play.js web/play.css VERBATIM)
+    target_sources(pfme_server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc")
+    target_include_directories(pfme_server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+endif()
 if(MSVC)
     target_compile_options(pfme_server PRIVATE /W4)
 else()
@@ -57,10 +71,34 @@ else()
     target_compile_options(pfme_server_support PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>)
 endif()
 install(TARGETS pfme_server RUNTIME DESTINATION bin)
+if(PFME_BUILD_PLAYABLE)
+    install(FILES "${PROJECT_SOURCE_DIR}/apps/browser/third_party/adafruit_gfx/license.txt"
+        DESTINATION share/licenses/pfme_server/adafruit_gfx)
+endif()
 install(FILES "${pfme_boost_SOURCE_DIR}/LICENSE_1_0.txt" DESTINATION share/licenses/pfme_server/boost)
 install(FILES "${PFME_MONOCYPHER_DIR}/LICENCE.md" DESTINATION share/licenses/pfme_server/monocypher)
 if(BUILD_TESTING)
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    if(PFME_BUILD_PLAYABLE)
+        add_executable(pfme_playable_service_tests ../../tests/server/playable_service_tests.cpp)
+        target_link_libraries(pfme_playable_service_tests PRIVATE pfme_server_support)
+        add_test(NAME pfme_playable_service COMMAND pfme_playable_service_tests)
+        add_test(NAME pfme_playable_wire COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/run_playable.py" $<TARGET_FILE:pfme_server>)
+        set_tests_properties(pfme_playable_wire PROPERTIES TIMEOUT 60)
+        find_program(PFME_CLIENT_NODE NAMES node)
+        if(PFME_CLIENT_NODE)
+            add_test(NAME pfme_browser_client COMMAND "${PFME_CLIENT_NODE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/browser_client_tests.cjs"
+                "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js")
+            add_test(NAME pfme_browser_pixel_interop COMMAND "${PFME_CLIENT_NODE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/browser_client_tests.cjs"
+                "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js"
+                "${CMAKE_CURRENT_BINARY_DIR}/resync-packets.json"
+                "${CMAKE_CURRENT_BINARY_DIR}/resync-pixels.rgb565")
+            set_tests_properties(pfme_browser_pixel_interop PROPERTIES DEPENDS pfme_playable_service)
+        endif()
+    endif()
     add_executable(pfme_ws_security_tests ../../tests/server/security_tests.cpp)
     target_link_libraries(pfme_ws_security_tests PRIVATE pfme_server_support)
     add_test(NAME pfme_websocket_security

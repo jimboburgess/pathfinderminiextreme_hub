@@ -4,7 +4,6 @@
 
 #include "messagelog.h"
 #include <cstring>
-#include "messageLog.h"
 #include "data/game.h"
 #include "multiplayer/multiplayer_activity.h"
 

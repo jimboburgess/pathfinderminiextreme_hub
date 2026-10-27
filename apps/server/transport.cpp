@@ -18,6 +18,9 @@ namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
 using Error = boost::system::error_code;
 using namespace std::chrono_literals;
+#ifdef PFME_HAS_PLAYABLE
+#include "web_assets.inc"
+#endif
 
 class Server;
 class Peer : public std::enable_shared_from_this<Peer>
@@ -41,6 +44,7 @@ private:
     ConnectionState connection_;
     uint16_t port_;
     std::string output_;
+    std::shared_ptr<http::response<http::string_body>> page_;
     unsigned controls_ = 0;
     std::chrono::steady_clock::time_point controlWindow_ = std::chrono::steady_clock::now();
     bool opened_ = false, finished_ = false, writing_ = false, stopping_ = false, closing_ = false;
@@ -50,7 +54,7 @@ class Server
 {
 public:
     Server(asio::io_context& io, uint16_t port, uint32_t seed, const SecretDigest& gate)
-        : service(gate, seed), io_(io), acceptor_(io), signals_(io, SIGINT, SIGTERM), shutdown_(io), lifetime_(io)
+        : service(gate, seed), io_(io), acceptor_(io), signals_(io, SIGINT, SIGTERM), shutdown_(io), lifetime_(io), gameClock_(io)
     {
 #ifdef _WIN32
         signals_.add(SIGBREAK);
@@ -70,6 +74,7 @@ public:
             lifetime_.expires_after(std::chrono::milliseconds(duration));
             lifetime_.async_wait([this](Error ec) { if (!ec) stop(); });
         }
+        tick();
         accept();
     }
     void removed(uint64_t serial) { peers_.erase(serial); }
@@ -79,7 +84,7 @@ public:
         stopped_ = true;
         Error ignored;
         acceptor_.cancel(ignored); acceptor_.close(ignored);
-        signals_.cancel(ignored); lifetime_.cancel();
+        signals_.cancel(ignored); lifetime_.cancel(); gameClock_.cancel();
         std::vector<std::shared_ptr<Peer>> peers;
         for (auto& entry : peers_) peers.push_back(entry.second);
         for (auto& peer : peers) peer->stop();
@@ -95,6 +100,10 @@ public:
     }
     Service service;
 private:
+    void tick() {
+        gameClock_.expires_after(20ms);
+        gameClock_.async_wait([this](Error ec) { if(!ec && !stopped_) { service.tick(); tick(); } });
+    }
     void accept()
     {
         acceptor_.async_accept([this](Error ec, tcp::socket socket)
@@ -119,7 +128,7 @@ private:
     asio::io_context& io_;
     tcp::acceptor acceptor_;
     asio::signal_set signals_;
-    asio::steady_timer shutdown_, lifetime_;
+    asio::steady_timer shutdown_, lifetime_, gameClock_;
     std::map<uint64_t, std::shared_ptr<Peer>> peers_;
     uint64_t nextSerial_ = 1;
     unsigned accepts_ = 0;
@@ -150,13 +159,34 @@ void Peer::start()
         const auto host = req[http::field::host];
         const std::string expected = "127.0.0.1:" + std::to_string(self->port_);
         const std::string local = "localhost:" + std::to_string(self->port_);
-        // No URL secrets, query strings, arbitrary Host headers, or browser origins.
-        // Browser origin policy will be added explicitly with the browser milestone.
-        if (req.target() != "/" || req.method() != http::verb::get ||
-            (host != expected && host != local) || req.count(http::field::host) != 1 ||
-            req.count(http::field::origin) != 0 ||
-            !websocket::is_upgrade(req) || self->input_.size() != 0)
-        { self->finish(); return; }
+        if(req.method()!=http::verb::get || (host!=expected && host!=local) ||
+           req.count(http::field::host)!=1 || self->input_.size()!=0) { self->finish(); return; }
+#ifdef PFME_HAS_PLAYABLE
+        // Same-origin loopback only. SSH forwarding must preserve the local port.
+        if(req.count(http::field::origin)>1 || (req.count(http::field::origin)==1 &&
+           req[http::field::origin] != "http://"+std::string(host))) { self->finish(); return; }
+        if(!websocket::is_upgrade(req)) {
+            const char* body=nullptr; const char* type=nullptr;
+            if(req.target()=="/play") { body=play_html; type="text/html; charset=utf-8"; }
+            else if(req.target()=="/play.js") { body=play_js; type="text/javascript; charset=utf-8"; }
+            else if(req.target()=="/play.css") { body=play_css; type="text/css; charset=utf-8"; }
+            if(!body) { self->finish(); return; }
+            self->page_=std::make_shared<http::response<http::string_body>>(http::status::ok,11);
+            auto& page=*self->page_;
+            page.set(http::field::content_type,type);
+            page.set(http::field::cache_control,"no-store");
+            page.set("X-Content-Type-Options","nosniff");
+            page.set("Referrer-Policy","no-referrer");
+            page.set("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src ws://"+std::string(host)+"; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+            page.keep_alive(false); page.body()=body; page.prepare_payload();
+            self->arm(WRITE_SECONDS);
+            http::async_write(self->ws_.next_layer(),page,[self](Error,std::size_t){self->finish();});
+            return;
+        }
+#else
+        if(req.count(http::field::origin)!=0) { self->finish(); return; }
+#endif
+        if(req.target()!="/" || !websocket::is_upgrade(req)) { self->finish(); return; }
         websocket::stream_base::timeout timeouts;
         timeouts.handshake_timeout = std::chrono::seconds(AUTH_SECONDS);
         timeouts.idle_timeout = std::chrono::seconds(IO_SECONDS);

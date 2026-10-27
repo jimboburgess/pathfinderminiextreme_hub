@@ -1,0 +1,10 @@
+:root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #17191c; color: #eee; }
+body { margin: 0; } main { padding: 20px; max-width: 1240px; margin: auto; }
+h1 { margin: 0; font-size: 1.3rem; } header p { margin-top: 4px; color: #bbb; }
+select, button, input { font: inherit; padding: 5px 9px; margin: 4px; }
+#viewport { margin-top: 12px; overflow: auto; }
+#display { display: block; background: black; image-rendering: crisp-edges; image-rendering: pixelated; outline-offset: 3px; }
+.notice { max-width: 75ch; border-left: 3px solid #ddb75c; padding-left: 12px; }
+#dimensions { margin-left: 10px; } #status { min-height: 1.5em; color: #e9ce91; }
+details p, main > p { max-width: 90ch; }
+@media (max-width: 500px) { main { padding: 10px; } }

@@ -99,3 +99,20 @@ Do not expose the service publicly until authentication, authorization, TLS,
 rate limiting, origin checks, and backup/recovery are implemented. A reverse
 proxy and secure `wss://` endpoint should be a later deployment layer shared by
 the browser client and Discord Activity.
+
+## Phase 3G playable native composition
+
+`PFME_BUILD_PLAYABLE=ON` now compiles the original handheld game loop, input
+handlers, character creation, room geometry, movement, AI, combat and rendering
+through native-only adapters. Combined with `PFME_BUILD_SERVER=ON`, the NUC can
+serve a private authenticated browser view of its actual 240x240 display.
+
+See [PLAYABLE_BROWSER.md](PLAYABLE_BROWSER.md) for build/start/SSH-tunnel commands,
+manual playtest, dependency map, protocol limits and known differences. This first
+playable composition has one controlling participant per process. GameSession
+retains ownership/reconnect capabilities; the original global handheld runtime
+contains the actual world. Independent multiplayer views and shared multi-room
+combat still require extracting world state and per-player UI from those globals.
+No browser gameplay simulation, public service, firmware framebuffer or persistent
+NUC service was introduced. The earlier portable-leaf and topology-only descriptions
+above still describe those independent targets, not this optional runtime.

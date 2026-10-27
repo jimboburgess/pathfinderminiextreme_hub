@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Pathfinder · Original display capture</title>
+<link rel="stylesheet" href="viewer.css">
+<main>
+  <header><h1>Pathfinder Mini EXTREME</h1><p>Original handheld display · title-screen rendering slice</p></header>
+  <label>Display scale <select id="scale">
+    <option value="1">1× · 240×240</option><option value="2">2× · 480×480</option>
+    <option value="3">3× · 720×720</option><option value="4">4× · 960×960</option>
+    <option value="5">5× · 1200×1200</option><option value="fit">Fit to Window</option>
+  </select></label><span id="dimensions"></span>
+  <div id="viewport"><canvas id="display" width="240" height="240" tabindex="0" aria-label="Original 240 by 240 title screen. Rendering preview only."></canvas></div>
+  <p class="notice">Rendering preview only. New Game, Load Game, menus, dungeon, character sheet and combat are not ported. No game session is created or changed.</p>
+  <details><summary>Handheld controls</summary>
+    <p>Arrow Up / Right or W / D: encoder clockwise. Arrow Down / Left or S / A: encoder counterclockwise. Enter: encoder press. Escape: back/cancel intent. These are input intents, not cardinal movement.</p>
+    <p><label>Button A key <input id="keyA" value="j" maxlength="1" size="2"></label> <label>Button B key <input id="keyB" value="k" maxlength="1" size="2"></label></p>
+    <div id="buttons"><button data-control="counterclockwise">↶ Encoder</button><button data-control="clockwise">↷ Encoder</button><button data-control="press">Encoder press</button><button data-control="buttonA">Button A</button><button data-control="buttonB">Button B</button><button data-control="back">Back</button></div>
+    <p>Controls report their intent below. They cannot enter unported states. A retains its original New Game meaning and B its Load Game meaning on this screen.</p>
+  </details>
+  <p id="status" role="status">Loading original C++ display capture…</p>
+  <p>Source: handheld drawStartScreen / drawStartAnimation, original RGB565 sprites and Adafruit GFX 1.12.6. Software reference comparison: zero differing pixels. No physical-panel comparison or audio.</p>
+</main>
+<script src="frames.js"></script><script src="viewer.js"></script>
+</html>

@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pathfinder Mini EXTREME</title><link rel="stylesheet" href="/play.css">
+<main><header><h1>Pathfinder Mini EXTREME</h1><p>Private handheld session · original 240×240 display</p></header>
+<form id="connect"><label>Development secret <input id="secret" type="password" autocomplete="off" maxlength="64" required></label>
+<label>Player name <input id="name" value="Adventurer" maxlength="15" required></label><button>Connect</button></form>
+<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="5">5×</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button></div>
+<div id="viewport"><canvas id="display" width="240" height="240" tabindex="0" aria-label="Pathfinder handheld game display"></canvas></div>
+<div id="controls"><button data-action="ccw">↶ Encoder</button><button data-action="encoder">Encoder press</button><button data-action="cw">↷ Encoder</button><button data-action="a">A</button><button data-action="b">B</button></div>
+<p>Down / S: clockwise · Up / W: counterclockwise · Enter: press encoder · Space: A · Escape: B. Hold Enter for the original long-press shortcut. Rotate to choose a direction, then press Enter to step.</p>
+<p id="status" role="status">Connect through your private SSH tunnel. One playable controller per server.</p>
+<p>Sound is silent. Saves survive only in this server process. Disconnect pauses play and releases held inputs. Keep this tab open to retain its reconnect credential; credentials are never saved to browser storage.</p>
+</main><script src="/play.js"></script></html>

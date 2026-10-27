@@ -1,0 +1,5 @@
+:root { color-scheme: dark; font: 16px/1.5 system-ui,sans-serif; background:#17191c; color:#eee; }
+body {margin:0} main {padding:16px;max-width:1240px;margin:auto} h1{font-size:1.3rem;margin:0} header p{margin:3px 0 12px;color:#bbb}
+input,button,select{font:inherit;padding:5px 9px;margin:4px} #secret{width:16ch} #name{width:14ch}
+#viewport{overflow:auto;margin-top:10px} #display{display:block;background:black;image-rendering:crisp-edges;image-rendering:pixelated;outline-offset:3px}
+p{max-width:90ch} #status{color:#e9ce91} #controls button{touch-action:none;user-select:none} .toolbar{display:flex;flex-wrap:wrap;align-items:center}
