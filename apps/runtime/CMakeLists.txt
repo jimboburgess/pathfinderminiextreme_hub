@@ -1,7 +1,7 @@
 # Compile production gameplay and presentation directly; only ESP-NOW hardware is replaced.
 file(GLOB_RECURSE handheld_sources CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp")
 list(FILTER handheld_sources EXCLUDE REGEX "/(espnow_transport|game_session|combat_rules|dungeontopology|riddles|multiplayer_snapshot|network_protocol)\\.cpp$")
-add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp
+add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp controller_slots.cpp
     ../browser/third_party/adafruit_gfx/Adafruit_GFX.cpp)
 target_include_directories(pfme_handheld_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
     PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx "${PROJECT_SOURCE_DIR}/src")
@@ -18,4 +18,12 @@ if(BUILD_TESTING)
     target_compile_definitions(pfme_playthrough_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_production_playthrough COMMAND pfme_playthrough_tests 2)
     set_tests_properties(pfme_production_playthrough PROPERTIES TIMEOUT 30)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(pfme_controller_tests controller_tests.cpp)
+    target_include_directories(pfme_controller_tests PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_controller_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_controller_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_controller_isolation COMMAND pfme_controller_tests)
 endif()

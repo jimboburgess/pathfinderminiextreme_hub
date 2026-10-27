@@ -1,23 +1,7 @@
 #ifndef CHARACTERCREATIONSCREEN_H
 #define CHARACTERCREATIONSCREEN_H
 
-#include "characters/characters.h"
-
-enum CharacterCreationState
-{
-    CCS_CLASS_SELECT,
-    CCS_WEAPON_STYLE_SELECT,
-    CCS_VIEW_STATS,
-    CCS_MENU
-};
-
-enum CharacterCreationMenuOption
-{
-    MENU_ACCEPT,
-    MENU_REROLL,
-    MENU_CHANGE_CLASS,
-    MENU_CANCEL
-};
+#include "characters/creation_state.h"
 
 CharacterCreationState getCharacterCreationState();
 

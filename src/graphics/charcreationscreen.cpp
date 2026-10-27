@@ -23,23 +23,13 @@ static const char *classNames[] =
 
 extern Adafruit_ST7789 tft;
 
-static Character previewCharacter;
-static CharacterClass selectedClass = CLASS_FIGHTER;
-static WeaponGroup selectedWeaponStyle = WEAPON_GROUP_BLADES;
-
-static bool showingPreview = false;
-
-static CharacterCreationState creationState = CCS_CLASS_SELECT;
-static CharacterCreationMenuOption selectedMenu = MENU_ACCEPT;
+static CharacterCreationModel creation;
 
 void enterCharacterCreation()
 {
     abortCombat();
     resetDungeonRun(dungeon);
-    selectedClass = CLASS_FIGHTER;
-    selectedWeaponStyle = WEAPON_GROUP_BLADES;
-    showingPreview = false;
-    creationState = CCS_CLASS_SELECT;
+    creation.enter();
     resetButtonStates();
     needsRedraw = true;
 }
@@ -62,7 +52,7 @@ static void drawWeaponStyleSelection()
     for (uint8_t i = 0; i < 3; i++)
     {
         tft.setCursor(30, 75 + i * 40);
-        tft.print(styles[i] == selectedWeaponStyle ? "> " : "  ");
+        tft.print(styles[i] == creation.selectedWeaponStyle ? "> " : "  ");
         tft.println(getWeaponGroupName(styles[i]));
     }
 
@@ -83,7 +73,7 @@ static void drawClassSelection() {
     for (int i = 0; i < 4; i++) {
         tft.setCursor(40, 60 + i * 35);
 
-        if (i == selectedClass)
+        if (i == creation.selectedClass)
             tft.print("> ");
         else
             tft.print("  ");
@@ -123,7 +113,7 @@ static void drawCharacterMenu()
     {
         tft.setCursor(45, 50 + i * 30);
 
-        if (i == selectedMenu)
+        if (i == creation.selectedMenu)
             tft.print("> ");
         else
             tft.print("  ");
@@ -136,32 +126,32 @@ static void drawCharacterMenu()
 
 CharacterCreationState getCharacterCreationState()
 {
-    return creationState;
+    return creation.creationState;
 }
 
 
 bool isShowingPreview()
 {
-    return showingPreview;
+    return creation.showingPreview;
 }
 
 bool isCharacterMenuOpen()
 {
-    return creationState == CCS_MENU;
+    return creation.creationState == CCS_MENU;
 }
 
 
 void drawCharacterCreationScreen()
 {
-    if (creationState == CCS_WEAPON_STYLE_SELECT)
+    if (creation.creationState == CCS_WEAPON_STYLE_SELECT)
     {
         drawWeaponStyleSelection();
     }
-    else if (showingPreview)
+    else if (creation.showingPreview)
     {
         drawPreview();
 
-        if (creationState == CCS_MENU)
+        if (creation.creationState == CCS_MENU)
             drawCharacterMenu();
     }
     else
@@ -171,38 +161,16 @@ void drawCharacterCreationScreen()
 }
 
 void rotateFighterWeaponStyleCW()
-{
-    if (creationState != CCS_WEAPON_STYLE_SELECT)
-        return;
-
-    if (selectedWeaponStyle == WEAPON_GROUP_BLADES)
-        selectedWeaponStyle = WEAPON_GROUP_AXES;
-    else if (selectedWeaponStyle == WEAPON_GROUP_AXES)
-        selectedWeaponStyle = WEAPON_GROUP_BLUDGEONS;
-    else
-        selectedWeaponStyle = WEAPON_GROUP_BLADES;
-    needsRedraw = true;
-}
+{ if(creation.creationState!=CCS_WEAPON_STYLE_SELECT)return; creation.rotateStyle(true); needsRedraw=true; }
 
 void rotateFighterWeaponStyleCCW()
-{
-    if (creationState != CCS_WEAPON_STYLE_SELECT)
-        return;
-
-    if (selectedWeaponStyle == WEAPON_GROUP_BLADES)
-        selectedWeaponStyle = WEAPON_GROUP_BLUDGEONS;
-    else if (selectedWeaponStyle == WEAPON_GROUP_BLUDGEONS)
-        selectedWeaponStyle = WEAPON_GROUP_AXES;
-    else
-        selectedWeaponStyle = WEAPON_GROUP_BLADES;
-    needsRedraw = true;
-}
+{ if(creation.creationState!=CCS_WEAPON_STYLE_SELECT)return; creation.rotateStyle(false); needsRedraw=true; }
 
 void cancelFighterWeaponStyleSelection()
 {
-    if (creationState != CCS_WEAPON_STYLE_SELECT)
+    if (creation.creationState != CCS_WEAPON_STYLE_SELECT)
         return;
-    creationState = CCS_CLASS_SELECT;
+    creation.creationState = CCS_CLASS_SELECT;
     needsRedraw = true;
 }
 
@@ -210,27 +178,9 @@ void cancelFighterWeaponStyleSelection()
 // Rotate Class Selection
 //======================================================
 
-void rotateCharacterClassCW() {
-    if (showingPreview)
-        return;
+void rotateCharacterClassCW() { creation.rotateClass(true); if(!creation.showingPreview)needsRedraw=true; }
 
-    selectedClass = (CharacterClass) ((selectedClass + 1) % 4);
-
-    needsRedraw = true;
-}
-
-void rotateCharacterClassCCW() {
-    if (showingPreview)
-        return;
-
-    if (selectedClass == CLASS_FIGHTER) {
-        selectedClass = CLASS_CLERIC;
-    } else {
-        selectedClass = (CharacterClass) (selectedClass - 1);
-    }
-
-    needsRedraw = true;
-}
+void rotateCharacterClassCCW() { creation.rotateClass(false); if(!creation.showingPreview)needsRedraw=true; }
 
 //======================================================
 // Create Preview Character
@@ -238,65 +188,33 @@ void rotateCharacterClassCCW() {
 
 void createPreviewCharacter()
 {
-    if (selectedClass == CLASS_FIGHTER &&
-        creationState == CCS_CLASS_SELECT)
-    {
-        selectedWeaponStyle = WEAPON_GROUP_BLADES;
-        creationState = CCS_WEAPON_STYLE_SELECT;
-        needsRedraw = true;
-        return;
-    }
-
-    createCharacter(previewCharacter, selectedClass, selectedWeaponStyle);
-
-    enterCharacterSheet(&previewCharacter);
-
-    showingPreview = true;
-
-    creationState = CCS_VIEW_STATS;
-
-    needsRedraw = true;
+    if(creation.createPreview())enterCharacterSheet(&creation.preview);
+    needsRedraw=true;
 }
 
 //======================================================
 // Reroll Character
 //======================================================
 
-void rerollCharacter() {
-    if (!showingPreview)
-        return;
-
-    createCharacter(previewCharacter, selectedClass, selectedWeaponStyle);
-
-    needsRedraw = true;
-}
+void rerollCharacter() { if(!creation.showingPreview)return; creation.reroll(); needsRedraw=true; }
 
 //======================================================
 // Accept Character
 //======================================================
 
 void acceptCharacter() {
-    if (!showingPreview)
-        return;
-
-    // Copy preview into the real player
-    player = previewCharacter;
-
-    // Continue to town
+    if(!creation.accept(player))return;
     resetButtonStates();
-    gameState = GAME_TOWN;
-
-    showingPreview = false;
-
-    needsRedraw = true;
+    gameState=GAME_TOWN;
+    needsRedraw=true;
 }
 
 void openCharacterMenu()
 {
     Serial.println("Open Menu");
 
-    creationState = CCS_MENU;
-    selectedMenu = MENU_ACCEPT;
+    creation.creationState = CCS_MENU;
+    creation.selectedMenu = MENU_ACCEPT;
     suppressMenuInputUntilRelease();
     needsRedraw = true;
 }
@@ -305,31 +223,31 @@ void closeCharacterMenu()
 {
     Serial.println("Close Menu");
 
-    creationState = CCS_VIEW_STATS;
+    creation.creationState = CCS_VIEW_STATS;
     needsRedraw = true;
 }
 
 void menuUp()
 {
-    if (creationState != CCS_MENU)
+    if (creation.creationState != CCS_MENU)
         return;
 
-    if (selectedMenu == MENU_ACCEPT)
-        selectedMenu = MENU_CANCEL;
+    if (creation.selectedMenu == MENU_ACCEPT)
+        creation.selectedMenu = MENU_CANCEL;
     else
-        selectedMenu =
-            (CharacterCreationMenuOption)(selectedMenu - 1);
+        creation.selectedMenu =
+            (CharacterCreationMenuOption)(creation.selectedMenu - 1);
 
     drawCharacterMenu();
 }
 
 void menuDown()
 {
-    if (creationState != CCS_MENU)
+    if (creation.creationState != CCS_MENU)
         return;
 
-    selectedMenu =
-        (CharacterCreationMenuOption)((selectedMenu + 1) % 4);
+    creation.selectedMenu =
+        (CharacterCreationMenuOption)((creation.selectedMenu + 1) % 4);
 
     drawCharacterMenu();
 }
@@ -337,12 +255,12 @@ void menuDown()
 void menuSelect()
 {
     Serial.print("Menu Select: ");
-    Serial.println(selectedMenu);
+    Serial.println(creation.selectedMenu);
 
-    if (creationState != CCS_MENU)
+    if (creation.creationState != CCS_MENU)
         return;
 
-    switch (selectedMenu)
+    switch (creation.selectedMenu)
     {
         case MENU_ACCEPT:
             acceptCharacter();
@@ -354,9 +272,9 @@ void menuSelect()
             break;
 
         case MENU_CHANGE_CLASS:
-            showingPreview = false;
-            selectedWeaponStyle = WEAPON_GROUP_BLADES;
-            creationState = CCS_CLASS_SELECT;
+            creation.showingPreview = false;
+            creation.selectedWeaponStyle = WEAPON_GROUP_BLADES;
+            creation.creationState = CCS_CLASS_SELECT;
             needsRedraw = true;
             break;
 

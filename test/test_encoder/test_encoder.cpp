@@ -2,6 +2,7 @@
 #include <unity.h>
 
 #include "../../src/input/encoderdecoder.h"
+#include "../../src/input/buttonstate.h"
 
 namespace
 {
@@ -124,6 +125,24 @@ void test_rotation_inversion_reverses_only_movement()
         applyEncoderRotationInversion(QUADRATURE_NO_STEP, true));
 }
 
+void test_controller_inputs_do_not_share_edges_or_long_press()
+{
+    ButtonInputState first, second;
+    first.reset(true,true,true,true,true,1);
+    second.reset(true,true,true,true,true,1);
+    TEST_ASSERT_TRUE(first.buttonAPressed(false,10));
+    TEST_ASSERT_TRUE(second.buttonAPressed(false,10));
+    TEST_ASSERT_FALSE(first.buttonAPressed(false,11));
+    TEST_ASSERT_FALSE(first.encoderButtonLongPressed(false,100));
+    TEST_ASSERT_FALSE(second.encoderButtonLongPressed(true,849));
+    TEST_ASSERT_TRUE(first.encoderButtonLongPressed(false,850));
+    TEST_ASSERT_FALSE(second.encoderButtonLongPressed(false,850));
+    TEST_ASSERT_FALSE(first.encoderButtonLongPressed(false,851));
+    first.suppressMenuInputUntilRelease(false,false,false,900);
+    TEST_ASSERT_TRUE(second.buttonBPressed(false,901));
+    TEST_ASSERT_FALSE(first.buttonBPressed(false,901));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -134,6 +153,7 @@ void setup()
     RUN_TEST(test_decoder_initialization_never_emits_a_phantom_step);
     RUN_TEST(test_rotation_inversion_preserves_default_direction);
     RUN_TEST(test_rotation_inversion_reverses_only_movement);
+    RUN_TEST(test_controller_inputs_do_not_share_edges_or_long_press);
     UNITY_END();
 }
 
