@@ -1,0 +1,29 @@
+# Review artifact only. No image build/pull, ports, host mounts or deployment.
+# The operator must supply an immutable digest for an independently reviewed
+# image containing Node >=22, dist, dependencies and the native test executable.
+services:
+  offline-review:
+    profiles: [offline-review]
+    image: ${PFME_REVIEW_IMAGE:?Set an approved image@sha256 digest first}
+    user: "10001:10001"
+    init: true
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    ulimits:
+      nofile: {soft: 128, hard: 128}
+      core: {soft: 0, hard: 0}
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev,mode=1777
+    environment:
+      PFME_TEST_SERVER: /opt/pfme/pfme_server
+    working_dir: /opt/pfme/apps/activity
+    command: [node, --test, tests/security.test.mjs]
+    restart: "no"
+    logging:
+      driver: json-file
+      options: {max-size: 1m, max-file: "2"}
