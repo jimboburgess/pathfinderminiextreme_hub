@@ -1,13 +1,13 @@
 {
-  "status": "PROPOSAL_ONLY_NOT_SUPPORTED_BY_CURRENT_SERVER",
+  "status": "IMPLEMENTED_LOCAL_VERIFICATION_ONLY_NOT_ACTIVATED",
   "transport": {
     "listen": "unix:/run/pfme-private/backend.sock",
     "public_origin": "https://pfme-node.example-tailnet.ts.net",
     "public_host": "pfme-node.example-tailnet.ts.net",
     "websocket_path": "/",
     "trust_forwarded_headers": false,
-    "identity_provenance": "BLOCKED: TCP loopback cannot attest Serve; protected local socket plus kernel peer credentials required",
-    "trusted_ingress_implemented": false,
+    "identity_provenance": "Linux Unix-domain socket SO_PEERCRED uid 0; root is trusted; unprivileged game only",
+    "trusted_ingress_implemented": true,
     "legacy_development_listen": "127.0.0.1:18765",
     "required_kernel_peer_uid": 0,
     "required_kernel_peer_check": "SO_PEERCRED"
@@ -23,7 +23,8 @@
     "revocation_check_seconds": 1,
     "one_character_per_principal": true,
     "reconnect_requires_same_principal": true,
-    "browser_reconnect_proof": false
+    "browser_reconnect_proof": false,
+    "revision_changes_revoke": "all old leases; remaining allowed identities reconnect"
   },
   "routes": {
     "GET": [

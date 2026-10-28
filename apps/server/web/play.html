@@ -1,9 +1,9 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pathfinder Mini EXTREME</title><link rel="stylesheet" href="/play.css">
 <main><header><h1>Pathfinder Mini EXTREME</h1><p>Private handheld session &middot; original 240&times;240 display</p></header>
-<form id="connect"><label>Development secret <input id="secret" type="password" autocomplete="off" maxlength="64" required></label>
+<form id="connect" data-auth-mode="development"><label>Development secret <input id="secret" type="password" autocomplete="off" maxlength="64" required></label>
 <label>Player name <input id="name" value="Adventurer" maxlength="15" required></label><button>Connect</button></form>
-<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1&times;</option><option value="2">2&times;</option><option value="3">3&times;</option><option value="4">4&times;</option><option value="5">5&times;</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button></div>
+<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1&times;</option><option value="2">2&times;</option><option value="3">3&times;</option><option value="4">4&times;</option><option value="5">5&times;</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button><button id="leave" disabled>Leave character</button></div>
 <div id="viewport"><canvas id="display" width="240" height="240" tabindex="0" aria-label="Pathfinder handheld game display"></canvas></div>
 <div id="controls"><button data-action="ccw">&#8630; Encoder</button><button data-action="encoder">Encoder press</button><button data-action="cw">&#8631; Encoder</button><button data-action="a">A</button><button data-action="b">B</button></div>
 <p>Down / S: clockwise &middot; Up / W: counterclockwise &middot; Enter: press encoder &middot; Space: A &middot; Escape: B. Hold Enter for the original long-press shortcut. Rotate to choose a direction, then press Enter to step.</p>

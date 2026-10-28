@@ -1,5 +1,12 @@
 # Serve identity provenance and exact access-policy follow-up
 
+**Historical checkpoint 327f388.** Stage 1 has since implemented and locally
+verified the protected Linux Unix-socket mode described here. The TCP mode still
+rejects forwarded claims. See [current implementation and approval gates](PRIVATE_TAILSCALE_STAGE1.md).
+The owner later supplied, validated and saved the owner-only policy candidate;
+no Serve endpoint was activated. The original findings below are retained as
+design history, not the current implementation status.
+
 This checkpoint starts at clean master 7482805. It implements a fail-closed
 transport boundary and regression tests, not remote authentication. Requirement 5
 applies: the current TCP localhost topology cannot securely establish Serve

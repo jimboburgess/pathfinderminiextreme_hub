@@ -4,6 +4,7 @@
 #include "protocol.h"
 #include "session/game_session.h"
 #include <chrono>
+#include <map>
 #ifdef PFME_HAS_PLAYABLE
 #include "screen_stream.h"
 #include "party_runtime.h"
@@ -15,6 +16,8 @@ struct ConnectionState
 {
     uint64_t serial = 0;
     bool authenticated = false;
+    std::string verifiedPrincipal; // Only the kernel-authenticated local transport sets this.
+    uint64_t lastRequest=0;
     std::string identity; // Issued after authentication; separate from socket serial/player ID.
     PlayerID player = INVALID_PLAYER_ID;
     uint64_t audioCursor=0;
@@ -29,10 +32,10 @@ struct Reply { std::string text; bool close = false; };
 class Service
 {
 public:
-    Service(const SecretDigest& gate, uint32_t seed, bool partyMode=false);
+    Service(const SecretDigest& gate, uint32_t seed, bool partyMode=false, bool serveMode=false);
     Reply handle(ConnectionState& connection, std::string_view message);
     void detach(ConnectionState& connection);
-    static std::string hello();
+    static std::string hello(bool serveMode=false);
     void tick();
 private:
     struct Participant
@@ -41,6 +44,7 @@ private:
         uint64_t activeConnection = 0;
         PlayerHandle handle;
         SecretDigest proof{};
+        std::string ownerPrincipal;
     };
     json::object dispatch(ConnectionState& connection, const Request& request);
 #ifdef PFME_HAS_PLAYABLE
@@ -58,6 +62,9 @@ private:
 #endif
     GameSession game_;
     SecretDigest gate_;
+    bool serveMode_=false;
+    struct PrincipalBudget {std::chrono::steady_clock::time_point window{};unsigned requests=0;};
+    std::map<std::string,PrincipalBudget> principalBudgets_;
     Participant participants_[MAX_MULTIPLAYER_PLAYERS];
 };
 }

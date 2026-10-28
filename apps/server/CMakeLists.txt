@@ -37,7 +37,7 @@ foreach(entry
 endforeach()
 enable_language(C)
 find_package(Threads REQUIRED)
-add_library(pfme_server_support STATIC credentials.cpp protocol.cpp service.cpp
+add_library(pfme_server_support STATIC credentials.cpp protocol.cpp service.cpp serve_identity.cpp
     boost_json.cpp "${PFME_MONOCYPHER_DIR}/monocypher.c")
 target_include_directories(pfme_server_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(pfme_server_support SYSTEM PUBLIC
@@ -118,4 +118,26 @@ endif()
 if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
     add_test(NAME pfme_browser_audio COMMAND "${PFME_CLIENT_NODE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/audio_client_tests.cjs" "${CMAKE_CURRENT_SOURCE_DIR}/web/audio.js")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(pfme_serve_identity_tests ../../tests/server/serve_identity_tests.cpp)
+    target_link_libraries(pfme_serve_identity_tests PRIVATE pfme_server_support)
+    add_test(NAME pfme_serve_identity COMMAND pfme_serve_identity_tests)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # Explicit test-only target; never installed or part of the default build.
+        add_executable(pfme_server_expiry_fixture EXCLUDE_FROM_ALL main.cpp transport.cpp serve_identity.cpp)
+        target_link_libraries(pfme_server_expiry_fixture PRIVATE pfme_server_support)
+        target_compile_definitions(pfme_server_expiry_fixture PRIVATE PFME_TEST_SERVE_LIFETIME=1)
+        if(PFME_BUILD_PLAYABLE)
+            target_sources(pfme_server_expiry_fixture PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc")
+            target_include_directories(pfme_server_expiry_fixture PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+        endif()
+    endif()
+endif()
+
+if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
+    add_test(NAME pfme_browser_private_client COMMAND "${PFME_CLIENT_NODE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/browser_client_tests.cjs"
+        "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --serve)
 endif()

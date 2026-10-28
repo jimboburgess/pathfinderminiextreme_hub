@@ -8,6 +8,12 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <filesystem>
+#ifdef __linux__
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace pfme::server
 {
@@ -16,6 +22,8 @@ namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
+using StreamProtocol=asio::generic::stream_protocol;
+using StreamSocket=StreamProtocol::socket;
 using Error = boost::system::error_code;
 using namespace std::chrono_literals;
 #ifdef PFME_HAS_PLAYABLE
@@ -26,7 +34,8 @@ class Server;
 class Peer : public std::enable_shared_from_this<Peer>
 {
 public:
-    Peer(tcp::socket socket, Server& owner, uint64_t serial, uint16_t port);
+    Peer(StreamSocket socket, Server& owner, uint64_t serial, uint16_t port);
+    bool checkAdmission();
     void start();
     void stop();
     void finish();
@@ -35,7 +44,9 @@ private:
     void read();
     void send(std::string text, bool close = false);
     void close(websocket::close_code code);
-    websocket::stream<beast::tcp_stream> ws_;
+    websocket::stream<beast::basic_stream<StreamProtocol>> ws_;
+    ServeLease lease_;
+    bool hasLease_=false;
     // Allow bounded framing/read-ahead slack; Beast enforces the logical 4 KiB message cap.
     beast::flat_buffer input_{MAX_REQUEST_BYTES * 2};
     http::request_parser<http::empty_body> upgrade_;
@@ -50,15 +61,43 @@ private:
     bool opened_ = false, finished_ = false, writing_ = false, stopping_ = false, closing_ = false;
 };
 
+#ifdef __linux__
+struct OwnedSocketPath {
+    std::string path;dev_t device;ino_t inode;
+    OwnedSocketPath(std::string p,dev_t d,ino_t i):path(std::move(p)),device(d),inode(i){}
+    ~OwnedSocketPath(){struct stat s{};if(::lstat(path.c_str(),&s)==0&&S_ISSOCK(s.st_mode)&&s.st_dev==device&&s.st_ino==inode)::unlink(path.c_str());}
+};
+#endif
 class Server
 {
 public:
-    Server(asio::io_context& io, uint16_t port, uint32_t seed, const SecretDigest& gate, bool partyMode)
-        : service(gate, seed, partyMode), io_(io), acceptor_(io), signals_(io, SIGINT, SIGTERM), shutdown_(io), lifetime_(io), gameClock_(io)
+    Server(asio::io_context& io, uint16_t port, uint32_t seed, const SecretDigest& gate, bool partyMode,const ServeOptions* serve)
+        : service(gate, seed, partyMode,serve!=nullptr), io_(io), acceptor_(io), signals_(io, SIGINT, SIGTERM), shutdown_(io), lifetime_(io), gameClock_(io)
     {
 #ifdef _WIN32
         signals_.add(SIGBREAK);
 #endif
+        if(serve) {
+#ifdef __linux__
+            if(::geteuid()==0)throw std::runtime_error("game runtime must be unprivileged");
+            options_=*serve;policy_=std::make_unique<ServePolicy>(options_.policy);
+            const std::filesystem::path path(options_.socket),parent=path.parent_path();struct stat directory{},existing{};
+            if(!path.is_absolute() || path.lexically_normal()!=path || options_.socket.size()>=100 ||
+               std::filesystem::canonical(parent)!=parent || ::lstat(parent.c_str(),&directory)!=0 ||
+               !S_ISDIR(directory.st_mode)||directory.st_uid!=::geteuid()||(directory.st_mode&0077)!=0 ||
+               ::lstat(options_.socket.c_str(),&existing)==0 || errno!=ENOENT)
+                throw std::runtime_error("unsafe local socket path");
+            ::umask(0077);
+            localAcceptor_=std::make_unique<asio::local::stream_protocol::acceptor>(io);
+            localAcceptor_->open();localAcceptor_->bind(asio::local::stream_protocol::endpoint(options_.socket));
+            struct stat bound{};if(::lstat(options_.socket.c_str(),&bound)!=0)throw std::runtime_error("socket creation failed");
+            ownedPath_=std::make_unique<OwnedSocketPath>(options_.socket,bound.st_dev,bound.st_ino);
+            if(::chmod(options_.socket.c_str(),0600)!=0)throw std::runtime_error("socket permissions failed");
+            localAcceptor_->listen(static_cast<int>(MAX_CONNECTIONS));return;
+#else
+            throw std::runtime_error("Serve requires Linux");
+#endif
+        }
         // Phase 3F policy: no bind-address option, DNS lookup or public interface.
         const tcp::endpoint endpoint(asio::ip::address_v4::loopback(), port);
         acceptor_.open(endpoint.protocol());
@@ -67,7 +106,8 @@ public:
     }
     void run(uint32_t duration)
     {
-        std::cout << "listening=127.0.0.1:" << acceptor_.local_endpoint().port() << " protocol=1\n" << std::flush;
+        if(privateMode())std::cout<<"listening=unix protocol=1\n"<<std::flush;
+        else std::cout << "listening=127.0.0.1:" << acceptor_.local_endpoint().port() << " protocol=1\n" << std::flush;
         signals_.async_wait([this](Error ec, int) { if (!ec) stop(); });
         if (duration)
         {
@@ -84,6 +124,9 @@ public:
         stopped_ = true;
         Error ignored;
         acceptor_.cancel(ignored); acceptor_.close(ignored);
+#ifdef __linux__
+        if(localAcceptor_){localAcceptor_->cancel(ignored);localAcceptor_->close(ignored);}
+#endif
         signals_.cancel(ignored); lifetime_.cancel(); gameClock_.cancel();
         std::vector<std::shared_ptr<Peer>> peers;
         for (auto& entry : peers_) peers.push_back(entry.second);
@@ -99,32 +142,57 @@ public:
         });
     }
     Service service;
+    bool privateMode() const {return policy_!=nullptr;}
+    ServePolicy* policy() {return policy_.get();}
+    const ServeOptions& options() const {return options_;}
 private:
     void tick() {
         gameClock_.expires_after(20ms);
-        gameClock_.async_wait([this](Error ec) { if(!ec && !stopped_) { service.tick(); tick(); } });
+        gameClock_.async_wait([this](Error ec) { if(!ec && !stopped_) {
+            if(policy_) {
+                policy_->refresh();std::vector<std::shared_ptr<Peer>> peers;
+                for(auto& item:peers_)peers.push_back(item.second);
+                for(auto& peer:peers)peer->checkAdmission();
+            }
+            service.tick(); tick();
+        } });
     }
     void accept()
     {
+#ifdef __linux__
+        if(localAcceptor_) {
+            localAcceptor_->async_accept([this](Error ec,asio::local::stream_protocol::socket socket) {
+                if(stopped_)return;
+                struct ucred credentials{};socklen_t size=sizeof(credentials);
+                if(!ec && ::getsockopt(socket.native_handle(),SOL_SOCKET,SO_PEERCRED,&credentials,&size)==0 &&
+                   size==sizeof(credentials)&&credentials.uid==0)admit(StreamSocket(std::move(socket)),0);
+                accept();
+            });return;
+        }
+#endif
         acceptor_.async_accept([this](Error ec, tcp::socket socket)
         {
             if (stopped_) return;
             if (!ec)
             {
-                if (peers_.size() >= MAX_CONNECTIONS || ++accepts_ > 32 || nextSerial_ == UINT64_MAX)
-                { Error ignored; socket.close(ignored); }
-                else
-                {
-                    const auto serial = nextSerial_++;
-                    auto peer = std::make_shared<Peer>(std::move(socket), *this, serial, acceptor_.local_endpoint().port());
-                    peers_.emplace(serial, peer); peer->start();
-                }
+                admit(StreamSocket(std::move(socket)),acceptor_.local_endpoint().port());
             }
-            const auto now = std::chrono::steady_clock::now();
-            if (now - acceptWindow_ >= 1s) { acceptWindow_ = now; accepts_ = 0; }
             accept();
         });
     }
+    void admit(StreamSocket socket,uint16_t port) {
+        const auto now=std::chrono::steady_clock::now();
+        if(now-acceptWindow_>=1s){acceptWindow_=now;accepts_=0;}
+        if(peers_.size()>=MAX_CONNECTIONS || ++accepts_>32 || nextSerial_==UINT64_MAX){Error ignored;socket.close(ignored);return;}
+        const auto serial=nextSerial_++;auto peer=std::make_shared<Peer>(std::move(socket),*this,serial,port);
+        peers_.emplace(serial,peer);peer->start();
+    }
+    ServeOptions options_;
+    std::unique_ptr<ServePolicy> policy_;
+#ifdef __linux__
+    std::unique_ptr<asio::local::stream_protocol::acceptor> localAcceptor_;
+    std::unique_ptr<OwnedSocketPath> ownedPath_;
+#endif
     asio::io_context& io_;
     tcp::acceptor acceptor_;
     asio::signal_set signals_;
@@ -136,10 +204,15 @@ private:
     bool stopped_ = false;
 };
 
-Peer::Peer(tcp::socket socket, Server& owner, uint64_t serial, uint16_t port)
+Peer::Peer(StreamSocket socket, Server& owner, uint64_t serial, uint16_t port)
     : ws_(std::move(socket)), authDeadline_(ws_.get_executor()), ioDeadline_(ws_.get_executor()),
       owner_(owner), port_(port)
 { connection_.serial = serial; }
+bool Peer::checkAdmission() {
+    if(finished_)return false;
+    if(hasLease_ && !owner_.policy()->valid(lease_)){finish();return false;}
+    return true;
+}
 void Peer::arm(unsigned seconds)
 {
     ioDeadline_.expires_after(std::chrono::seconds(seconds));
@@ -159,7 +232,7 @@ void Peer::start()
         // TCP loopback authenticates no proxy process. Never infer a verified
         // person from forwarded headers on this development-only transport.
         // A future Serve mode requires a separately authenticated local hop.
-        for (const auto& field : req) {
+        if(!self->owner_.privateMode())for (const auto& field : req) {
             const auto name=field.name_string();
             if (beast::iequals(name.substr(0,10),"Tailscale-") ||
                 beast::iequals(name.substr(0,12),"X-Forwarded-") ||
@@ -168,14 +241,19 @@ void Peer::start()
             }
         }
         const auto host = req[http::field::host];
-        const std::string expected = "127.0.0.1:" + std::to_string(self->port_);
+        const std::string expected = self->owner_.privateMode()?self->owner_.options().origin.substr(8):"127.0.0.1:" + std::to_string(self->port_);
         const std::string local = "localhost:" + std::to_string(self->port_);
-        if(req.method()!=http::verb::get || (host!=expected && host!=local) ||
+        if(req.method()!=http::verb::get || (host!=expected && (self->owner_.privateMode()||host!=local)) ||
            req.count(http::field::host)!=1 || self->input_.size()!=0) { self->finish(); return; }
+        if(self->owner_.privateMode()) {
+            if(req.count("Tailscale-User-Login")!=1 ||
+               !self->owner_.policy()->admit(std::string(req["Tailscale-User-Login"]),self->lease_)) {self->finish();return;}
+            self->hasLease_=true;self->connection_.verifiedPrincipal=self->lease_.principal;
+        }
 #ifdef PFME_HAS_PLAYABLE
         // Same-origin loopback only. SSH forwarding must preserve the local port.
         if(req.count(http::field::origin)>1 || (req.count(http::field::origin)==1 &&
-           req[http::field::origin] != "http://"+std::string(host))) { self->finish(); return; }
+           req[http::field::origin] != (self->owner_.privateMode()?self->owner_.options().origin:"http://"+std::string(host)))) { self->finish(); return; }
         if(!websocket::is_upgrade(req)) {
             const char* body=nullptr; const char* type=nullptr;
             if(req.target()=="/play") { body=play_html; type="text/html; charset=utf-8"; }
@@ -189,8 +267,15 @@ void Peer::start()
             page.set(http::field::cache_control,"no-store");
             page.set("X-Content-Type-Options","nosniff");
             page.set("Referrer-Policy","no-referrer");
-            page.set("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src ws://"+std::string(host)+"; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
-            page.keep_alive(false); page.body()=body; page.prepare_payload();
+            page.set("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src "+std::string(self->owner_.privateMode()?"wss://":"ws://")+std::string(host)+"; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+            page.keep_alive(false); page.body()=body;
+            if(self->owner_.privateMode() && body==play_html) {
+                const std::string marker="data-auth-mode=\"development\"";
+                const auto position=page.body().find(marker);
+                if(position==std::string::npos){self->finish();return;}
+                page.body().replace(position,marker.size(),"data-auth-mode=\"serve\"");
+            }
+            page.prepare_payload();
             self->arm(WRITE_SECONDS);
             http::async_write(self->ws_.next_layer(),page,[self](Error,std::size_t){self->finish();});
             return;
@@ -198,6 +283,7 @@ void Peer::start()
 #else
         if(req.count(http::field::origin)!=0) { self->finish(); return; }
 #endif
+        if(self->owner_.privateMode() && req.count(http::field::origin)!=1){self->finish();return;}
         if(req.target()!="/" || !websocket::is_upgrade(req)) { self->finish(); return; }
         websocket::stream_base::timeout timeouts;
         timeouts.handshake_timeout = std::chrono::seconds(AUTH_SECONDS);
@@ -218,18 +304,18 @@ void Peer::start()
         {
             if (error || self->finished_) { self->finish(); return; }
             self->opened_ = true;
-            self->send(Service::hello());
+            self->send(Service::hello(self->owner_.privateMode()));
         });
     });
 }
 void Peer::read()
 {
-    if (finished_ || stopping_ || closing_) return;
+    if (finished_ || stopping_ || closing_ || !checkAdmission()) return;
     arm(IO_SECONDS);
     ws_.async_read(input_, [self = shared_from_this()](Error ec, std::size_t)
     {
         if (ec || self->finished_) { self->finish(); return; }
-        if (self->closing_) return;
+        if (self->closing_ || !self->checkAdmission()) return;
         if (!self->ws_.got_text())
         { self->send(json::serialize(failure("", "TextRequired")), true); return; }
         const auto text = beast::buffers_to_string(self->input_.data());
@@ -281,10 +367,10 @@ void Peer::finish()
     owner_.service.detach(connection_);
     owner_.removed(connection_.serial);
 }
-int runServer(uint16_t port, uint32_t seed, uint32_t duration, const SecretDigest& gate, bool partyMode)
+int runServer(uint16_t port, uint32_t seed, uint32_t duration, const SecretDigest& gate, bool partyMode,const ServeOptions* serve)
 {
     asio::io_context io(1);
-    Server server(io, port, seed, gate, partyMode);
+    Server server(io, port, seed, gate, partyMode,serve);
     server.run(duration);
     io.run();
     std::cout << "stopped\n" << std::flush;

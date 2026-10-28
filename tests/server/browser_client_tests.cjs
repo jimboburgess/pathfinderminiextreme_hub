@@ -1,12 +1,14 @@
 // Client logic only: fake DOM/timers/socket, no browser or networking.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const events={},elements={},sent=[],timers=new Map();
-const fixture=process.argv[3]?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
+const privateTest=process.argv.includes('--serve');
+const fixture=process.argv[3]&&!privateTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
 const expectedPixels=process.argv[4]?fs.readFileSync(process.argv[4]):null;
-let now=0,nextTimer=1,lastPixels,socket;
+let now=0,nextTimer=1,lastPixels,socket,characterExists=false;
 function element(id){return elements[id]??={value:'',style:{},disabled:false,tagName:'DIV',clientWidth:1200,
   addEventListener(type,fn){events[id+':'+type]=fn;},getBoundingClientRect(){return {top:200};},focus(){},
-  querySelector(){return element(id+'Button');},querySelectorAll(){return [];}};}
+  closest(){return element(id+'Label');},querySelector(){return element(id+'Button');},querySelectorAll(){return [];}};}
+if(privateTest)element('connect').dataset={authMode:'serve'};
 element('secret').value='a'.repeat(64);element('name').value='Tester';
 const canvas=element('display');canvas.width=canvas.height=240;canvas.tagName='CANVAS';
 const context={createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData:image=>{lastPixels=Uint8Array.from(image.data);}};
@@ -19,10 +21,12 @@ const patch=Buffer.alloc(12);patch.writeUInt16LE(0,0);patch.writeUInt16LE(0xffff
 patch.writeUInt16LE(32767,6);patch.writeUInt16LE(0x8000|24833,8);patch.writeUInt16LE(0x001f,10);
 class Socket {
   static OPEN=1;
-  constructor(){socket=this;this.readyState=1;this.stall=false;queueMicrotask(()=>this.onopen?.());}
+  constructor(url){this.url=url;socket=this;this.readyState=1;this.stall=false;queueMicrotask(()=>this.onopen?.());}
   send(text){const request=JSON.parse(text);sent.push(request);if(this.stall){this.blocked=request;return;}this.respond(request);}
   respond(request){let data={};
-    if(request.type==='join')data={reconnect_token:'b'.repeat(64)};
+    if(privateTest&&request.type==='reconnect'&&!characterExists){queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:false,error:{code:'NoCharacter'}})}));return;}
+    if(request.type==='join'){characterExists=true;data=privateTest?{}:{reconnect_token:'b'.repeat(64)};}
+    if(request.type==='leave')characterExists=false;
     if(request.type==='screen')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):''};
     if(request.type==='screen'&&fixture&&request.since==='0')data=fixture.find(p=>p.offset===request.offset);
     queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:true,data})}));
@@ -30,7 +34,7 @@ class Socket {
   close(){this.readyState=3;queueMicrotask(()=>this.onclose?.());}
 }
 const documentMock={hidden:false,getElementById:element,addEventListener(type,fn){events['document:'+type]=fn;}};
-const sandbox={document:documentMock,window:{addEventListener(type,fn){events['window:'+type]=fn;}},innerHeight:1100,location:{host:'127.0.0.1:18765'},
+const sandbox={document:documentMock,window:{confirm:()=>true,addEventListener(type,fn){events['window:'+type]=fn;}},innerHeight:1100,location:privateTest?{protocol:'https:',host:'game.test.ts.net'}:{protocol:'http:',host:'127.0.0.1:18765'},
   WebSocket:Socket,Uint8Array,Uint8ClampedArray,atob:s=>Buffer.from(s,'base64').toString('binary'),
   setTimeout:(fn,ms)=>timeout(fn,ms),clearTimeout:id=>timers.delete(id),setInterval:(fn,ms)=>timeout(fn,ms,ms),clearInterval:id=>timers.delete(id)};
 vm.createContext(sandbox);vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),sandbox);
@@ -67,6 +71,14 @@ async function main(){
   element('resume').onclick();await flush();await advance(1000);
   assert.match(element('status').textContent,/Connected/);
   verifyPixels();
+  if(privateTest){
+    assert.equal(socket.url,'wss://game.test.ts.net/');assert.equal(element('secret').required,false);assert.equal(element('secret').closest().hidden,true);
+    assert(sent.filter(r=>r.type==='authenticate').every(r=>!('secret' in r)&&!('identity' in r)));
+    assert(sent.filter(r=>r.type==='reconnect').every(r=>!('token' in r)&&!('player_id' in r)));
+    const leave=element('leave').onclick();await advance(1000);await leave;await flush();
+    assert(sent.some(r=>r.type==='leave'));assert.equal(element('leave').disabled,true);assert.equal(element('connect').querySelector().disabled,false);
+    console.log('Private client: WSS, no shared secret or bearer reconnect proof, identity recovery, verified-identity reconnect UI, and confirmed Leave passed.');
+  }
   console.log('Playable client: exact RLE color decode, integer zoom, default mappings, form exclusion, held Enter, focus release, bounded overflow/repeat and reconnect affordance passed.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

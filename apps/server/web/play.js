@@ -2,9 +2,12 @@
 (() => {
   const $=id=>document.getElementById(id), canvas=$("display"), ctx=canvas.getContext("2d",{alpha:false,willReadFrequently:true});
   const audio=window.PfmeAudio?new window.PfmeAudio():null;
+  const privateMode=$("connect").dataset?.authMode==="serve";
+  if(privateMode){$("secret").required=false;$("secret").closest("label").hidden=true;}
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
+  let leaving=false;
   let ws=null, secret="", proof="", id=0, pending=null, playing=false, since="0", offset=0, chunks=[], total=0;
   let requests=[], held=new Set(), repeat=new Map(), scheduled=null, connecting=false, disconnectReason="";
   const status=text=>{$("status").textContent=text;};
@@ -58,13 +61,13 @@
     since=frame.frame;offset=0;total=0;chunks=[];
   }
   async function pump() {
-    if(!playing)return;
+    if(!playing||leaving)return;
     try {
       if(requests.length){const event=requests.shift();await rpc("input",event);}
       else applyFrame(await rpc("screen",{since,offset}));
     }catch(error){disconnectReason=error.message;status(disconnectReason);playing=false;releaseAll();ws?.close();return;}
     // At most ~14 requests/sec including controls, below the existing 20/sec cap.
-    scheduled=setTimeout(pump,75);
+    if(!leaving)scheduled=setTimeout(pump,75);
   }
   function enqueue(action,down) {
     if(!playing)return;
@@ -97,19 +100,33 @@
       const name=$("name").value;
       if(!resume){secret=$("secret").value.trim();proof="";}
       $("secret").value="";
-      if(!/^[0-9a-f]{64}$/.test(secret)||(!resume&&!/^[!-~]{1,15}$/.test(name)))throw new Error("Enter the 64-character development secret and a name without spaces.");
-      ws=new WebSocket(`ws://${location.host}/`);
+      if((!privateMode&&!/^[0-9a-f]{64}$/.test(secret))||(!resume&&!/^[!-~]{1,15}$/.test(name)))throw new Error("Enter the 64-character development secret and a name without spaces.");
+      ws=new WebSocket(`${location.protocol==="https:"?"wss":"ws"}://${location.host}/`);
       await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=()=>reject(new Error("Connection failed"));});
       ws.onmessage=event=>{try{const reply=JSON.parse(event.data);if(!reply.id)return;if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");if(reply.audio)audio?.apply(reply.audio);const p=pending;pending=null;clearTimeout(p.timeout);if(reply.ok)p.resolve(reply.data);else p.reject(new Error(reply.error?.code||"Server rejected command"));}catch(error){status(error.message);ws.close();}};
-      ws.onclose=()=>{audio?.pause();playing=false;releaseAll();clearTimeout(scheduled);if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}$("disconnect").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;status(disconnectReason||"Disconnected. The server retains this session in memory. Reconnect from this tab to resume.");};
-      await rpc("authenticate",{secret});
-      if(resume)await rpc("reconnect",{token:proof});else{const joined=await rpc("join",{name});proof=joined.reconnect_token;}
+      ws.onclose=()=>{if($("leave"))$("leave").disabled=true;audio?.pause();playing=false;releaseAll();clearTimeout(scheduled);if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}$("disconnect").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;status(disconnectReason||"Disconnected. The server retains this session in memory. Reconnect from this tab to resume.");};
+      await rpc("authenticate",privateMode?{}:{secret});
+      if(privateMode){
+        try{await rpc("reconnect");}catch(error){if(error.message!=="NoCharacter")throw error;await rpc("join",{name});}
+        proof="verified-identity";
+      }else if(resume)await rpc("reconnect",{token:proof});else{const joined=await rpc("join",{name});proof=joined.reconnect_token;}
       const runtime=await rpc("play");audio?.enable(runtime.audio===true);
       $("runtime-note").textContent=(runtime.audio&&audio?"Original music and sound effects play locally after using a game control. ":"Sound is silent in this runtime. ")+"Saves remain in server memory. Other connected party members continue during a disconnect. Keep this tab open to retain its reconnect credential; it is never saved to browser storage.";
+      if(privateMode)$("runtime-note").textContent="Verified private identity. Reconnect restores your character while this server process remains running. Authorization expires after 15 minutes; reconnect to verify again. Original sound starts with a game control.";
       clearFrame();requests=[];playing=true;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
+      if($("leave"))$("leave").disabled=false;
       status("Connected. Space starts New Game; Enter selects, arrows rotate. Saves are in memory only.");canvas.focus();pump();
     }catch(error){disconnectReason=error.message;status(disconnectReason);ws?.close();}finally{connecting=false;}
   }
   $("connect").onsubmit=event=>{event.preventDefault();audio?.unlock();connect(false);};$("resume").onclick=()=>{audio?.unlock();connect(true);};
+  if($("leave"))$("leave").onclick=async()=>{
+    if(!playing||!window.confirm("Leave this character permanently for this server session?"))return;
+    leaving=true;releaseAll();clearTimeout(scheduled);
+    // Wait for the existing one-in-flight RPC to complete before Leave.
+    while(pending)await new Promise(resolve=>setTimeout(resolve,20));
+    try{await rpc("input",{action:"release",down:false});await rpc("leave");proof="";audio?.pause();playing=false;ws?.close(1000,"left character");$("leave").disabled=true;}
+    catch(error){status(error.message);}
+    finally{leaving=false;if(playing)pump();}
+  };
   $("disconnect").onclick=()=>{audio?.pause();releaseAll();playing=false;clearTimeout(scheduled);ws?.close(1000,"user disconnect");};
 })();

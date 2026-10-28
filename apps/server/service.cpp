@@ -1,6 +1,7 @@
 #include "service.h"
 #include "server_limits.h"
 #include <stdexcept>
+#include <charconv>
 #ifdef PFME_HAS_PLAYABLE
 #include "runtime.h"
 #endif
@@ -14,7 +15,7 @@ json::object playerJson(const SessionPlayer& player)
 json::value roomJson(uint8_t room)
 { return room == NO_ROOM ? json::value(nullptr) : json::value(room); }
 }
-Service::Service(const SecretDigest& gate, uint32_t seed, bool partyMode) : gate_(gate)
+Service::Service(const SecretDigest& gate, uint32_t seed, bool partyMode,bool serveMode) : gate_(gate),serveMode_(serveMode)
 {
 #ifdef PFME_HAS_PLAYABLE
     seed_=seed;partyMode_=partyMode;
@@ -26,8 +27,8 @@ Service::Service(const SecretDigest& gate, uint32_t seed, bool partyMode) : gate
     (void)partyMode;
 #endif
 }
-std::string Service::hello()
-{ return json::serialize(response("", "hello", {{"authentication_required", true}, {"navigation", "topology-only"}})); }
+std::string Service::hello(bool serveMode)
+{ return json::serialize(response("", "hello", {{"authentication_required", true}, {"authentication",serveMode?"serve":"development"},{"navigation", "topology-only"}})); }
 void Service::tick()
 {
 #ifdef PFME_HAS_PLAYABLE
@@ -79,6 +80,21 @@ Reply Service::handle(ConnectionState& connection, std::string_view message)
         Request request;
         std::string error;
         if (!parseRequest(message, request, error)) return {json::serialize(failure(request.id, error)), false};
+        if(serveMode_) {
+            if(connection.verifiedPrincipal.empty())return {json::serialize(failure(request.id,"IdentityRequired")),true};
+            uint64_t sequence=0;const auto parsed=std::from_chars(request.id.data(),request.id.data()+request.id.size(),sequence);
+            if(request.id.empty()||request.id.front()=='0'||parsed.ec!=std::errc{}||parsed.ptr!=request.id.data()+request.id.size()||sequence<=connection.lastRequest)
+                return {json::serialize(failure(request.id,"ReplayRejected")),true};
+            connection.lastRequest=sequence;
+            auto found=principalBudgets_.find(connection.verifiedPrincipal);
+            if(found==principalBudgets_.end()) {
+                if(principalBudgets_.size()>=32)return {json::serialize(failure(request.id,"Capacity")),true};
+                found=principalBudgets_.emplace(connection.verifiedPrincipal,PrincipalBudget{}).first;
+            }
+            auto& budget=found->second;
+            if(now-budget.window>=std::chrono::seconds(1)){budget.window=now;budget.requests=0;}
+            if(++budget.requests>COMMANDS_PER_SECOND)return {json::serialize(failure(request.id,"RateLimited")),true};
+        }
         auto result = dispatch(connection, request);
 #ifdef PFME_HAS_PLAYABLE
         // Audio uses the existing authenticated reply channel and server-owned
@@ -114,6 +130,11 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
     if (request.type == "authenticate")
     {
         if (connection.authenticated) return fail("AlreadyAuthenticated");
+        if(serveMode_) {
+            if(!fieldsAre(request,{})||connection.verifiedPrincipal.empty())return fail("AuthenticationFailed");
+            connection.identity=randomCredential();connection.authenticated=true;
+            return ok({{"authentication","serve"}});
+        }
         std::string secret;
         SecretDigest candidate{};
         if (!fieldsAre(request, {"secret"}) || !textField(request, "secret", 64, secret) ||
@@ -135,6 +156,8 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
         std::string name;
         if (!fieldsAre(request, {"name"}) || !textField(request, "name", NETWORK_PLAYER_NAME_SIZE - 1, name))
             return fail("InvalidRequest");
+        if(serveMode_)for(const auto& p:participants_)
+            if(p.occupied&&p.ownerPrincipal==connection.verifiedPrincipal)return fail("ResumeRequired");
         const std::string token = randomCredential();
         SecretDigest proof{};
         if (!credentialDigest(token, proof)) return fail("InternalError");
@@ -148,12 +171,25 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
         participant.activeConnection = connection.serial;
         participant.handle = handle;
         participant.proof = proof;
+        if(serveMode_)participant.ownerPrincipal=connection.verifiedPrincipal;
         connection.player = player.id;
+        if(serveMode_)return ok({{"player",playerJson(player)},{"ownership","verified-identity"}});
         return ok({{"player", playerJson(player)}, {"reconnect_token", token}});
     }
     if (request.type == "reconnect")
     {
         if (isValidPlayerID(connection.player)) return fail("AlreadyBound");
+        if(serveMode_) {
+            if(!fieldsAre(request,{}))return fail("OwnershipRequired");
+            for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id) {
+                auto& p=participants_[id];if(!p.occupied||p.ownerPrincipal!=connection.verifiedPrincipal)continue;
+                if(p.activeConnection)return fail("AlreadyConnected");
+                const auto error=game_.reconnect(p.handle);if(error!=SessionError::Ok)return fail(sessionErrorName(error));
+                p.activeConnection=connection.serial;connection.player=id;
+                SessionPlayer player;game_.player(p.handle,player);return ok({{"player",playerJson(player)}});
+            }
+            return fail("NoCharacter");
+        }
         std::string token;
         SecretDigest proof{};
         if (!fieldsAre(request, {"token"}) || !textField(request, "token", 64, token) ||

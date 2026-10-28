@@ -1,6 +1,6 @@
 REVIEW ONLY. DO NOT RUN UNTIL THE APPROVAL GATES IN docs/PRIVATE_BROWSER_ACCESS.md PASS.
-The current pfme_server does not implement trusted Serve identity or HTTPS origin handling.
-Today's binary has no protected Unix listener. Identity mode is blocked until it is implemented and tested.
+Linux private mode implements kernel-verified identity and exact HTTPS origin handling.
+Use only the separately reviewed isolated runtime; see ops/private-playtest/activation.review.sh.
 
 Read-only baseline (safe now):
   tailscale version

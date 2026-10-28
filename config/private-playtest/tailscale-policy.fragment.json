@@ -1,13 +1,8 @@
 {
-  "hosts": {
-    "pfme-game": "100.64.0.10",
-    "pfme-game-v6": "fd7a:115c:a1e0::10",
-    "unrelated-node": "100.64.0.11"
-  },
   "grants": [
     {
       "src": [
-        "group:trusted-existing"
+        "owner@example.com"
       ],
       "dst": [
         "*"
@@ -15,81 +10,79 @@
       "ip": [
         "*"
       ]
-    },
+    }
+  ],
+  "ssh": [
     {
+      "action": "check",
       "src": [
-        "autogroup:shared"
+        "autogroup:member"
       ],
       "dst": [
-        "pfme-game",
-        "pfme-game-v6"
+        "autogroup:self"
       ],
-      "ip": [
-        "tcp:443"
+      "users": [
+        "autogroup:nonroot",
+        "root"
       ]
     }
   ],
   "tests": [
     {
-      "src": "invited-tester@example.com",
-      "proto": "tcp",
-      "accept": [
-        "pfme-game:443",
-        "pfme-game-v6:443"
-      ],
-      "deny": [
-        "pfme-game:22",
-        "pfme-game:80",
-        "pfme-game:139",
-        "pfme-game:445",
-        "pfme-game:2375",
-        "pfme-game:2376",
-        "pfme-game:3000",
-        "pfme-game:3001",
-        "pfme-game:4533",
-        "pfme-game:8080",
-        "pfme-game:8443",
-        "pfme-game:8765",
-        "pfme-game:18765",
-        "pfme-game-v6:22",
-        "pfme-game-v6:80",
-        "pfme-game-v6:139",
-        "pfme-game-v6:445",
-        "pfme-game-v6:2375",
-        "pfme-game-v6:2376",
-        "pfme-game-v6:3000",
-        "pfme-game-v6:3001",
-        "pfme-game-v6:4533",
-        "pfme-game-v6:8080",
-        "pfme-game-v6:8443",
-        "pfme-game-v6:8765",
-        "pfme-game-v6:18765",
-        "unrelated-node:443",
-        "unrelated-node:22",
-        "192.0.2.1:22"
-      ]
-    },
-    {
-      "src": "invited-tester@example.com",
-      "proto": "udp",
-      "deny": [
-        "pfme-game:443",
-        "pfme-game-v6:443"
-      ]
-    },
-    {
       "src": "owner@example.com",
       "proto": "tcp",
       "accept": [
-        "pfme-game:22",
-        "pfme-game:443",
-        "unrelated-node:22"
+        "100.64.0.10:22",
+        "100.64.0.10:443",
+        "100.64.0.10:3000",
+        "100.64.0.10:4533",
+        "[fd7a:115c:a1e0::10]:22",
+        "[fd7a:115c:a1e0::10]:443",
+        "[fd7a:115c:a1e0::10]:3000",
+        "[fd7a:115c:a1e0::10]:4533"
+      ]
+    },
+    {
+      "src": "not-invited@example.com",
+      "proto": "tcp",
+      "deny": [
+        "100.64.0.10:443",
+        "100.64.0.10:22",
+        "100.64.0.10:80",
+        "100.64.0.10:139",
+        "100.64.0.10:445",
+        "100.64.0.10:2375",
+        "100.64.0.10:2376",
+        "100.64.0.10:3000",
+        "100.64.0.10:3001",
+        "100.64.0.10:4533",
+        "100.64.0.10:8080",
+        "100.64.0.10:8443",
+        "100.64.0.10:8765",
+        "100.64.0.10:18765",
+        "[fd7a:115c:a1e0::10]:443",
+        "[fd7a:115c:a1e0::10]:22",
+        "[fd7a:115c:a1e0::10]:80",
+        "[fd7a:115c:a1e0::10]:139",
+        "[fd7a:115c:a1e0::10]:445",
+        "[fd7a:115c:a1e0::10]:2375",
+        "[fd7a:115c:a1e0::10]:2376",
+        "[fd7a:115c:a1e0::10]:3000",
+        "[fd7a:115c:a1e0::10]:3001",
+        "[fd7a:115c:a1e0::10]:4533",
+        "[fd7a:115c:a1e0::10]:8080",
+        "[fd7a:115c:a1e0::10]:8443",
+        "[fd7a:115c:a1e0::10]:8765",
+        "[fd7a:115c:a1e0::10]:18765"
+      ]
+    },
+    {
+      "src": "not-invited@example.com",
+      "proto": "udp",
+      "deny": [
+        "100.64.0.10:443",
+        "[fd7a:115c:a1e0::10]:443"
       ]
     }
-  ],
-  "groups": {
-    "group:trusted-existing": [
-      "owner@example.com"
-    ]
-  }
+  ]
 }
