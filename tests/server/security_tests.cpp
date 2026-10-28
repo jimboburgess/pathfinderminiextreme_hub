@@ -33,12 +33,15 @@ class Client
 {
 public:
     explicit Client(unsigned port, const char* origin = nullptr,
-                    const char* target = "/", const char* host = nullptr) : socket(io)
+                    const char* target = "/", const char* host = nullptr,
+                    const char* claimedHeader = nullptr) : socket(io)
     {
         socket.next_layer().connect({asio::ip::address_v4::loopback(), static_cast<unsigned short>(port)});
         socket.read_message_max(MAX_RESPONSE_BYTES);
-        if (origin) socket.set_option(ws::stream_base::decorator([origin](ws::request_type& req)
-            { req.set(beast::http::field::origin, origin); }));
+        if (origin || claimedHeader) socket.set_option(ws::stream_base::decorator([origin,claimedHeader](ws::request_type& req) {
+            if(origin)req.set(beast::http::field::origin,origin);
+            if(claimedHeader)req.set(claimedHeader,"claimed-user@example.com");
+        }));
         socket.handshake(host ? std::string(host) : "127.0.0.1:" + std::to_string(port), target);
         check(good(read()), "hello response");
     }
@@ -80,6 +83,17 @@ public:
 
 void authentication(unsigned port, const std::string& secret)
 {
+    {
+        Client claims(port);
+        check(code(claims.call("authenticate",{{"secret",secret},{"identity","claimed"}}))=="AuthenticationFailed", "shared gate plus identity is not verified identity");
+        check(code(claims.call("authenticate",{{"Tailscale-User-Login","claimed-user@example.com"}}))=="AuthenticationFailed", "JSON identity cannot authenticate");
+        check(good(claims.auth(secret)),"unsupported claims do not disable valid development admission");
+    }
+    for(const char* header : {"Tailscale-User-Login","tAiLsCaLe-UsEr-LoGiN","Tailscale-User-Name",
+        "Tailscale-User-Profile-Pic","Tailscale-App-Capabilities","X-Forwarded-User","Forwarded","X-Real-IP"}) {
+        bool rejected=false;try {Client forged(port,nullptr,"/",nullptr,header);}catch(...){rejected=true;}
+        check(rejected,"untrusted proxy identity rejected before WebSocket upgrade");
+    }
     Client client(port);
     check(code(client.call("players")) == "NotAuthenticated", "unauthenticated gameplay rejected");
     check(code(client.call("map")) == "NotAuthenticated", "unauthenticated map denied");
@@ -207,6 +221,8 @@ void multiplayer(unsigned port, const std::string& secret)
     check(json::serialize(observer.call("players")).find(token) == std::string::npos &&
           json::serialize(after).find(token) == std::string::npos, "queries do not leak ownership credentials");
     fighter.abort(); std::this_thread::sleep_for(100ms);
+    check(code(observer.call("reconnect",{{"token",secret}}))=="OwnershipRequired","development gate cannot take over disconnected character");
+    check(code(observer.call("reconnect",{{"token",token},{"identity","Fighter"}}))=="OwnershipRequired","client identity cannot augment reconnect proof");
     auto resumed = observer.call("reconnect", {{"token", token}});
     check(good(resumed) && number(resumed.at("data").at("player").at("room")) == 1,
           "abrupt disconnect and verified reconnect preserve room");

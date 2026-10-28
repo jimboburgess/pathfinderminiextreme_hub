@@ -1,5 +1,13 @@
 # Private browser access: small review checkpoint
 
+**Follow-up to 7482805:** the administrator console was readable and its active
+network grant allows every source/destination/protocol. The current TCP hop
+cannot attest Serve identity; forwarded claims are now rejected. Individual
+identity binding is NOT enabled. See [the trust-boundary finding and policy
+replacement](SERVE_IDENTITY_BOUNDARY.md) before using the older proposal below.
+The updated policy example REPLACES the observed grants array; appending it
+alongside the current wildcard rule would leave other services accessible.
+
 Status: preparation only. Starting master was clean at 3feaa75, following c4a8b7d.
 No gameplay, server source, packages, network settings or runtime are changed by
 this checkpoint. Discord is voice only. The examples are inactive review inputs,

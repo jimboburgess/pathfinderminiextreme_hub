@@ -90,6 +90,15 @@ def main():
                 assert b'240&times;240' in body and b'/audio.js' in body
                 assert all(str(scale).encode()+b'&times;' in body for scale in range(1,6))
             connection.close()
+        # The TCP listener cannot attest Serve identity, even for same-origin
+        # HTTP assets. Fail closed instead of trusting a plausible local header.
+        for header in ('Tailscale-User-Login','tAiLsCaLe-UsEr-LoGiN','Tailscale-App-Capabilities','X-Forwarded-User','Forwarded','X-Real-IP'):
+            connection=http.client.HTTPConnection('127.0.0.1',port,timeout=3)
+            connection.request('GET','/play',headers={header:'claimed-user@example.com'})
+            try:connection.getresponse();raise AssertionError('Untrusted identity header accepted')
+            except http.client.RemoteDisconnected:pass
+            finally:connection.close()
+        print('untrusted_proxy_identity_http=denied')
         print('fixed_http_assets=4 security_headers=passed no_embedded_credentials=true standalone_discord_dependencies=none')
         for invalid in ('null','https://untrusted.invalid',f'http://localhost:{port}',origin+'.invalid'):
             try:

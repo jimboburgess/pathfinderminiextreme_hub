@@ -1,14 +1,28 @@
 {
   "hosts": {
-    "pfme-game": "100.64.0.10"
+    "pfme-game": "100.64.0.10",
+    "pfme-game-v6": "fd7a:115c:a1e0::10",
+    "unrelated-node": "100.64.0.11"
   },
   "grants": [
+    {
+      "src": [
+        "group:trusted-existing"
+      ],
+      "dst": [
+        "*"
+      ],
+      "ip": [
+        "*"
+      ]
+    },
     {
       "src": [
         "autogroup:shared"
       ],
       "dst": [
-        "pfme-game"
+        "pfme-game",
+        "pfme-game-v6"
       ],
       "ip": [
         "tcp:443"
@@ -20,7 +34,8 @@
       "src": "invited-tester@example.com",
       "proto": "tcp",
       "accept": [
-        "pfme-game:443"
+        "pfme-game:443",
+        "pfme-game-v6:443"
       ],
       "deny": [
         "pfme-game:22",
@@ -35,8 +50,46 @@
         "pfme-game:8080",
         "pfme-game:8443",
         "pfme-game:8765",
-        "pfme-game:18765"
+        "pfme-game:18765",
+        "pfme-game-v6:22",
+        "pfme-game-v6:80",
+        "pfme-game-v6:139",
+        "pfme-game-v6:445",
+        "pfme-game-v6:2375",
+        "pfme-game-v6:2376",
+        "pfme-game-v6:3000",
+        "pfme-game-v6:3001",
+        "pfme-game-v6:4533",
+        "pfme-game-v6:8080",
+        "pfme-game-v6:8443",
+        "pfme-game-v6:8765",
+        "pfme-game-v6:18765",
+        "unrelated-node:443",
+        "unrelated-node:22",
+        "192.0.2.1:22"
+      ]
+    },
+    {
+      "src": "invited-tester@example.com",
+      "proto": "udp",
+      "deny": [
+        "pfme-game:443",
+        "pfme-game-v6:443"
+      ]
+    },
+    {
+      "src": "owner@example.com",
+      "proto": "tcp",
+      "accept": [
+        "pfme-game:22",
+        "pfme-game:443",
+        "unrelated-node:22"
       ]
     }
-  ]
+  ],
+  "groups": {
+    "group:trusted-existing": [
+      "owner@example.com"
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 REVIEW ONLY. DO NOT RUN UNTIL THE APPROVAL GATES IN docs/PRIVATE_BROWSER_ACCESS.md PASS.
 The current pfme_server does not implement trusted Serve identity or HTTPS origin handling.
-Starting this proxy against today's binary would not provide authenticated remote play.
+Today's binary has no protected Unix listener. Identity mode is blocked until it is implemented and tested.
 
 Read-only baseline (safe now):
   tailscale version
@@ -10,7 +10,7 @@ Read-only baseline (safe now):
   ss -ltn
 
 Proposed later, after policy, identity and isolation approval; foreground, no --bg:
-  tailscale serve --https=443 http://127.0.0.1:18765
+  tailscale serve --https=443 unix:/run/pfme-private/backend.sock
 
 Exact private browser URL: https://<approved-node>.<actual-tailnet>.ts.net/play
 Exact private game socket: wss://<approved-node>.<actual-tailnet>.ts.net/

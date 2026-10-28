@@ -1,11 +1,16 @@
 {
   "status": "PROPOSAL_ONLY_NOT_SUPPORTED_BY_CURRENT_SERVER",
   "transport": {
-    "listen": "127.0.0.1:18765",
+    "listen": "unix:/run/pfme-private/backend.sock",
     "public_origin": "https://pfme-node.example-tailnet.ts.net",
     "public_host": "pfme-node.example-tailnet.ts.net",
     "websocket_path": "/",
-    "trust_forwarded_headers": false
+    "trust_forwarded_headers": false,
+    "identity_provenance": "BLOCKED: TCP loopback cannot attest Serve; protected local socket plus kernel peer credentials required",
+    "trusted_ingress_implemented": false,
+    "legacy_development_listen": "127.0.0.1:18765",
+    "required_kernel_peer_uid": 0,
+    "required_kernel_peer_check": "SO_PEERCRED"
   },
   "admission": {
     "mode": "trusted-serve-identity",

@@ -156,6 +156,17 @@ void Peer::start()
     {
         if (ec || self->finished_) { self->finish(); return; }
         const auto& req = self->upgrade_.get();
+        // TCP loopback authenticates no proxy process. Never infer a verified
+        // person from forwarded headers on this development-only transport.
+        // A future Serve mode requires a separately authenticated local hop.
+        for (const auto& field : req) {
+            const auto name=field.name_string();
+            if (beast::iequals(name.substr(0,10),"Tailscale-") ||
+                beast::iequals(name.substr(0,12),"X-Forwarded-") ||
+                beast::iequals(name,"Forwarded") || beast::iequals(name,"X-Real-IP")) {
+                self->finish(); return;
+            }
+        }
         const auto host = req[http::field::host];
         const std::string expected = "127.0.0.1:" + std::to_string(self->port_);
         const std::string local = "localhost:" + std::to_string(self->port_);
