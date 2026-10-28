@@ -1,50 +1,46 @@
 #!/bin/sh
-# REVIEW ONLY: intentionally refuses execution. Activation needs explicit approval.
-# Replace STAGE, IMAGE and ORIGIN with the private reviewed artifact values.
-# Run the reviewed commands individually in the owner's terminal, not by deleting
-# this guard and blindly executing the file. Never run a policy reset or Funnel.
-echo 'Review only; activation is not authorized by preparing this file.' >&2
+# REVIEW ONLY. Provisioning is separate; live Serve always needs explicit approval.
+echo 'Review only; no activation is authorized by preparing this file.' >&2
 exit 2
 
-# STAGE=/home/jimbo/<reviewed-private-preparation-directory>
-# IMAGE=sha256:<reviewed-local-image-id>
+# RUN=/var/lib/pathfinder-stage1
+# IMAGE=sha256:<newly-reviewed-dedicated-image-id>
 # ORIGIN=https://<approved-node>.<actual-tailnet>.ts.net
-
-# Owner authorizes the real admission file; this is separate from tailnet policy.
-# sudo install -d -o root -g jimbo -m 0750 "$STAGE/policy"
-# sudo install -o root -g jimbo -m 0640 "$STAGE/owner-admission.pending.json" "$STAGE/policy/admission.json"
-
-# No ports, network, home, SSH keys or Docker socket are exposed to the game.
-# The socket directory already exists, UID 1000 and mode 0700.
-# docker run --detach --name pfme-private-stage1 --restart=no \
-#   --label pfme.private-stage1=stage1-review --cidfile "$STAGE/runtime.cid" \
+# SERVICE_UID=$(id -u pfme-stage1)
+# SERVICE_GID=$(id -g pfme-stage1)
+# Require locked account, sole primary group, current patched daemon, empty Serve/
+# Funnel configuration and unused TCP443. Root-managed paths must already exist.
+# Socket: service:service0700; policy directory root:service0750, file0640.
+# sudo docker run --detach --name pfme-private-stage1 --restart=no \
+#   --user "$SERVICE_UID:$SERVICE_GID" \
+#   --label pfme.private-stage1=stage1-review --cidfile /run/pathfinder-stage1/runtime.cid \
 #   --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
 #   --pids-limit=32 --memory=256m --cpus=1 --ulimit=nofile=128:128 \
-#   --mount "type=bind,src=$STAGE/socket,dst=/socket" \
-#   --mount "type=bind,src=$STAGE/policy,dst=/policy,readonly" \
+#   --mount "type=bind,src=$RUN/socket,dst=/socket" \
+#   --mount "type=bind,src=$RUN/policy,dst=/policy,readonly" \
 #   "$IMAGE" --runtime party --serve-socket /socket/backend.sock \
-#   --serve-origin "$ORIGIN" --serve-policy /policy/admission.json \
-#   --run-for-ms 3600000
-# docker logs pfme-private-stage1
+#   --serve-origin "$ORIGIN" --serve-policy /policy/admission.json --run-for-ms 3600000
+# Verify actual UID/GID, mounts, limits and socket0600 before approved ingress.
+# ONLY AFTER separate live-access approval, foreground, no --bg or Funnel:
+# sudo tailscale serve --https=443 --set-path=/ "unix:$RUN/socket/backend.sock"
+# Browser: $ORIGIN/play. WebSocket uses the same external hostname over WSS.
+# Backend Host localhost is checked only behind the trusted root Unix hop.
 
-# ONLY AFTER a separate explicit approval of this exact private endpoint:
-# sudo tailscale serve --https=443 "unix:$STAGE/socket/backend.sock"
-# Browser: $ORIGIN/play     WebSocket: wss://<same-host>/
-# No --bg, --tcp, --http, --tun, Funnel, router ports or unrelated mappings.
-
-# Scoped rollback: first close the one ingress, then the one owned runtime.
-# sudo tailscale serve --https=443 off
-# RUNTIME_ID=$(cat "$STAGE/runtime.cid")
+# Rollback: Ctrl+C in the exact foreground Serve session first.
+# Fallback ONLY after verifying that node:443 root handler matches this exact
+# Unix backend, and no unrelated configuration has replaced it:
+# sudo tailscale serve --https=443 --set-path=/ off
+# RUNTIME_ID=$(sudo cat /run/pathfinder-stage1/runtime.cid)
 # test "$(docker inspect --format '{{index .Config.Labels "pfme.private-stage1"}}' "$RUNTIME_ID")" = stage1-review
+# test "$(docker inspect --format '{{.Image}}' "$RUNTIME_ID")" = "$IMAGE"
+# test "$(docker inspect --format '{{.Config.User}}' "$RUNTIME_ID")" = "$SERVICE_UID:$SERVICE_GID"
+# Inspect exactly the two expected mounts, then:
 # docker stop --time 5 "$RUNTIME_ID"
 # docker rm "$RUNTIME_ID"
 # tailscale serve status --json
 # tailscale funnel status
-# Keep the owner's narrow policy. Never restore the old allow-all rule as an
-# automatic rollback, and never stop tailscaled or other NUC containers.
-
-# Administrator revocation: remove the login, increment revision, validate JSON,
-# install as root:root-or-game-group mode 0640 into policy/admission.next, then
-# atomically rename within policy/ to admission.json. Any policy revision closes
-# all old leases within about one second; remaining authorized users reconnect.
-# Do not reuse a lower revision or silently remap a login to another principal.
+# Preserve account/policy/inactive artifacts for review; no recursive cleanup,
+# Serve reset, tailscaled stop, policy restore, Docker prune or unrelated changes.
+# Revocation: root atomically replaces admission JSON with a higher revision;
+# all old leases close, retained authorized owners reconnect. Never reuse a
+# lower revision or silently assign another login an existing principal.

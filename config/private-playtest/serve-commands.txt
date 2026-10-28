@@ -18,10 +18,13 @@ Only TCP 443 on the shared node is granted to external shared users.
 No HTTP redirect listener, raw TCP proxy, Funnel, subnet route or exit node.
 
 Rollback of this one approved Serve listener (not a host-wide reset):
-  tailscale serve --https=443 off
+  tailscale serve --https=443 --set-path=/ off
   tailscale serve status --json
   tailscale funnel status
 
 Stop only the foreground Pathfinder process launched for this playtest.
 Remove only the playtest's shares/grant after review, preserving owner access.
 Never stop tailscaled, reset all Serve services, or alter other containers.
+
+Prefer Ctrl+C in the exact foreground Serve session. Before fallback off, verify
+the root mount still targets the exact approved Unix backend; never reset Serve.

@@ -25,7 +25,14 @@ int connectLocal(const char* path){int fd=::socket(AF_UNIX,SOCK_STREAM,0);if(fd<
 std::string str(const j::object& o,const char* key,const std::string& fallback=""){auto p=o.if_contains(key);return p?std::string(p->as_string()):fallback;}
 int main(int argc,char** argv){if(argc!=4)return 2;const std::string host=argv[3];std::string line;
 while(std::getline(std::cin,line)){try{const auto q=j::parse(line).as_object();const auto op=str(q,"op");j::object reply;
- if(op=="info")reply={{"uid",::getuid()},{"pid",::getpid()}};
+ if(op=="info")reply={{"uid",::getuid()},{"gid",::getgid()},{"pid",::getpid()}};
+ else if(op=="permissions"){
+  auto metadata=[](const std::string& path){struct stat s{};if(::lstat(path.c_str(),&s)!=0)throw std::runtime_error("stat");return j::object{{"uid",s.st_uid},{"gid",s.st_gid},{"mode",s.st_mode&07777},{"socket",bool(S_ISSOCK(s.st_mode))},{"regular",bool(S_ISREG(s.st_mode))},{"directory",bool(S_ISDIR(s.st_mode))}};};
+  const std::string socket=argv[1],policy=argv[2];
+  const auto directory=socket.substr(0,socket.find_last_of('/'));
+  const auto policyDirectory=policy.substr(0,policy.find_last_of('/'));
+  reply={{"socket",metadata(socket)},{"directory",metadata(directory)},{"policy",metadata(policy)},{"policy_directory",metadata(policyDirectory)},{"parent",metadata(directory.substr(0,directory.find_last_of('/')))}};
+ }
  else if(op=="isolation"){
   std::ifstream status("/proc/self/status");std::string text;bool nnp=false,caps=false;
   while(std::getline(status,text)){if(text.find("NoNewPrivs:")==0)nnp=text.find('1')!=std::string::npos;if(text.find("CapEff:")==0){std::istringstream parser(text.substr(7));unsigned long long value=1;parser>>std::hex>>value;caps=bool(parser)&&value==0;}}
@@ -48,10 +55,13 @@ while(std::getline(std::cin,line)){try{const auto q=j::parse(line).as_object();c
   const int slot=q.at("slot").to_number<int>();if(slot<0||slot>=8)throw std::runtime_error("slot");
   if(clients[slot]>=0){::close(clients[slot]);clients[slot]=-1;}
   int fd=connectLocal(argv[1]);clients[slot]=fd;const auto target=str(q,"path",op=="get"?"/play":"/");
-  std::string request="GET "+target+" HTTP/1.1\r\nHost: "+str(q,"host",host)+"\r\n";
+  std::string request="GET "+target+" HTTP/1.1\r\nHost: "+str(q,"host","localhost")+"\r\n";
+  if(q.contains("duplicate_host"))request+="Host: "+str(q,"duplicate_host")+"\r\n";
   if(q.contains("login"))request+="Tailscale-User-Login: "+str(q,"login")+"\r\n";
   if(q.contains("duplicate_login"))request+="Tailscale-User-Login: "+str(q,"duplicate_login")+"\r\n";
-  if(op=="open")request+="Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nOrigin: "+str(q,"origin","https://"+host)+"\r\n";
+  if(op=="open")request+="Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
+  if((op=="open"&&!q.contains("omit_origin"))||q.contains("origin"))request+="Origin: "+str(q,"origin","https://"+host)+"\r\n";
+  if(q.contains("duplicate_origin"))request+="Origin: "+str(q,"duplicate_origin")+"\r\n";
   request+="\r\n";sendAll(fd,request);std::string header;
   try{while(header.size()<8192 && (header.size()<4||header.substr(header.size()-4)!="\r\n\r\n"))header+=exact(fd,1);
    if(op=="open"){if(header.find(" 101 ")==std::string::npos)throw std::runtime_error("upgrade");reply={{"ok",true},{"hello",receive(fd)}};}

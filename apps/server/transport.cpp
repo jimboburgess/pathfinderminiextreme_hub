@@ -236,7 +236,7 @@ void Peer::start()
         const auto& req = self->upgrade_.get();
         // TCP loopback authenticates no proxy process. Never infer a verified
         // person from forwarded headers on this development-only transport.
-        // A future Serve mode requires a separately authenticated local hop.
+        // Private Unix mode checks kernel peer credentials before parsing HTTP.
         if(!self->owner_.privateMode())for (const auto& field : req) {
             const auto name=field.name_string();
             if (beast::iequals(name.substr(0,10),"Tailscale-") ||
@@ -246,7 +246,9 @@ void Peer::start()
             }
         }
         const auto host = req[http::field::host];
-        const std::string expected = self->owner_.privateMode()?self->owner_.options().origin.substr(8):"127.0.0.1:" + std::to_string(self->port_);
+        // Serve 1.104.4 rewrites Unix-backend Host to localhost; it does not
+        // change the browser Origin. Only the root-verified Unix hop uses this.
+        const std::string expected = self->owner_.privateMode()?"localhost":"127.0.0.1:" + std::to_string(self->port_);
         const std::string local = "localhost:" + std::to_string(self->port_);
         if(req.method()!=http::verb::get || (host!=expected && (self->owner_.privateMode()||host!=local)) ||
            req.count(http::field::host)!=1 || self->input_.size()!=0) { self->finish(); return; }
@@ -256,7 +258,8 @@ void Peer::start()
             self->hasLease_=true;self->connection_.verifiedPrincipal=self->lease_.principal;
         }
 #ifdef PFME_HAS_PLAYABLE
-        // Same-origin loopback only. SSH forwarding must preserve the local port.
+        // Development uses its loopback origin; private mode retains the exact
+        // configured external HTTPS origin despite the backend Host rewrite.
         if(req.count(http::field::origin)>1 || (req.count(http::field::origin)==1 &&
            req[http::field::origin] != (self->owner_.privateMode()?self->owner_.options().origin:"http://"+std::string(host)))) { self->finish(); return; }
         if(!websocket::is_upgrade(req)) {
@@ -272,7 +275,9 @@ void Peer::start()
             page.set(http::field::cache_control,"no-store");
             page.set("X-Content-Type-Options","nosniff");
             page.set("Referrer-Policy","no-referrer");
-            page.set("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src "+std::string(self->owner_.privateMode()?"wss://":"ws://")+std::string(host)+"; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+            const std::string websocketOrigin = self->owner_.privateMode()?
+                "wss://"+self->owner_.options().origin.substr(8):"ws://"+std::string(host);
+            page.set("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src "+websocketOrigin+"; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
             page.keep_alive(false); page.body()=body;
             if(self->owner_.privateMode() && body==play_html) {
                 const std::string marker="data-auth-mode=\"development\"";

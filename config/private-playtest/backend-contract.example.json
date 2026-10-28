@@ -1,7 +1,7 @@
 {
   "status": "IMPLEMENTED_LOCAL_VERIFICATION_ONLY_NOT_ACTIVATED",
   "transport": {
-    "listen": "unix:/run/pfme-private/backend.sock",
+    "listen": "unix:/socket/backend.sock",
     "public_origin": "https://pfme-node.example-tailnet.ts.net",
     "public_host": "pfme-node.example-tailnet.ts.net",
     "websocket_path": "/",
@@ -10,12 +10,13 @@
     "trusted_ingress_implemented": true,
     "legacy_development_listen": "127.0.0.1:18765",
     "required_kernel_peer_uid": 0,
-    "required_kernel_peer_check": "SO_PEERCRED"
+    "required_kernel_peer_check": "SO_PEERCRED",
+    "backend_host": "localhost"
   },
   "admission": {
     "mode": "trusted-serve-identity",
     "identity_header": "Tailscale-User-Login",
-    "allowlist_path": "/etc/pfme-private/invited-users.json",
+    "allowlist_path": "/policy/admission.json",
     "development_secret_fallback": false,
     "missing_or_duplicate_identity": "reject",
     "tagged_client_without_identity": "reject",
@@ -60,6 +61,7 @@
     "max_playtest_seconds": 3600,
     "unprivileged": true,
     "no_home_credentials": true,
-    "deny_lan_and_other_host_services": true
+    "deny_lan_and_other_host_services": true,
+    "service_identity": "pfme-stage1; explicit dedicated UID/GID, sole primary group, locked login"
   }
 }

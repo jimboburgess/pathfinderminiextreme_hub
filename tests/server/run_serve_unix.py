@@ -131,9 +131,18 @@ def main():
             assert all(v is True for k,v in isolation.items() if k!='uid'),isolation
             assert not bypass.send(op='open',slot=0,login=users[0]['login'])['ok'],'non-root local process bypass'
             bypass.stop()
-            for fields in [{},{'login':'unknown@example.com'},{'login':users[0]['login'],'duplicate_login':users[1]['login']},{'login':users[0]['login'],'host':'wrong.invalid'},{'login':users[0]['login'],'origin':'https://wrong.invalid'}]:
+            for fields in [{},{'login':'unknown@example.com'},{'login':users[0]['login'],'duplicate_login':users[1]['login']},{'login':users[0]['login'],'host':'wrong.invalid'},{'login':users[0]['login'],'host':HOST},{'login':users[0]['login'],'host':'localhost:443'},
+                {'login':users[0]['login'],'duplicate_host':'localhost'},
+                {'login':users[0]['login'],'omit_origin':True},
+                {'login':users[0]['login'],'origin':'http://'+HOST},
+                {'login':users[0]['login'],'origin':'https://localhost'},
+                {'login':users[0]['login'],'duplicate_origin':'https://'+HOST},
+                {'login':users[0]['login'],'origin':'https://wrong.invalid'}]:
                 assert not bridge.send(op='open',slot=7,**fields)['ok'],fields
             page=bridge.send(op='get',slot=7,login=users[0]['login']);assert page['ok'] and 'data-auth-mode="serve"' in page['body'] and 'connect-src wss://'+HOST in page['headers']
+            assert 'wss://localhost' not in page['headers'] and "script-src 'self'; style-src 'self'" in page['headers']
+            assert not bridge.send(op='get',slot=7,login=users[0]['login'],origin='https://wrong.invalid')['ok']
+            assert not bridge.send(op='get',slot=7,login=users[0]['login'],host=HOST)['ok']
             assert not bridge.send(op='get',slot=7,login='unknown@example.com')['ok']
             clients=[];views=[]
             for index in range(4):
@@ -195,7 +204,7 @@ def main():
             assert View(renewed).frame()==saved
             assert renewed.call('leave')['ok'] and renewed.call('reconnect')['error']['code']=='NoCharacter'
             stop(expiry_game)
-            report=dict(per_principal_websocket_limit=True,unsafe_policy_and_socket_paths_denied=True,kernel_uid_denial=True,trusted_root_fixture=True,identity_headers_checked=True,unauthorized_http_denied=True,principal_takeover_denied=True,
+            report=dict(serve_localhost_and_external_csp=True,per_principal_websocket_limit=True,unsafe_policy_and_socket_paths_denied=True,kernel_uid_denial=True,trusted_root_fixture=True,identity_headers_checked=True,unauthorized_http_denied=True,principal_takeover_denied=True,
                 four_owned_characters=True,independent_original_room_frames=True,room0_sha256=hashlib.sha256(room0).hexdigest(),room1_sha256=hashlib.sha256(room1).hexdigest(),
                 fifth_slot_preserved=True,reconnect_retained_frame=True,revision_revocation=True,rollback_policy_denied=True,absolute_expiry=True,renewed_character_retained=True,leave_revoked=True,
                 replay_rejected=True,isolation=isolation,serve_activated=False,real_tailscale_authentication_tested=False)

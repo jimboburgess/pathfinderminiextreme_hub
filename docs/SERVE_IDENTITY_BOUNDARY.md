@@ -123,8 +123,9 @@ forwarded identity, and test non-daemon UIDs on the real transport. This is not
 implemented here. No Unix listener or root helper was started.
 
 That explicit mode must have no parallel TCP trusted-identity listener. Preserve
-legacy Windows/loopback development mode. Use exact HTTPS Host/Origin and wss CSP;
-verify Serve's actual Host forwarding behavior rather than weakening checks.
+legacy Windows/loopback development mode. Serve 1.104.4 rewrites Unix-backend Host to localhost: validate that exact
+backend Host only after the root Unix-peer check, while retaining the exact
+external HTTPS Origin and deriving WSS CSP from the configured public origin.
 An isolated game node remains the fallback if the local trust/host-egress boundary
 cannot be proven. No new proxy framework or Discord dependency is needed.
 

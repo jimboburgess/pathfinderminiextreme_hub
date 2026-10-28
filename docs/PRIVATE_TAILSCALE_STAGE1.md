@@ -126,7 +126,15 @@ base-image pulls. It refuses existing output directories/tags and starts nothing
 The image contains no shell, proxy fixture, expiry fixture, SSH keys or credentials.
 Its binary/library hashes and immutable image ID are recorded for review.
 
-The reviewed runtime uses UID/GID 1000, no supplementary Docker group, no host
+The production runtime uses the locked `pfme-stage1` system account and its sole
+primary group, with no interactive shell/home or supplementary Docker group.
+`prepare_runtime.py --runtime-uid <service-uid> --runtime-gid <service-gid>` embeds
+that nonroot identity in the image; activation explicitly repeats `--user uid:gid`.
+The packaging operator remains separate. Active paths are root-managed under
+`/var/lib/pathfinder-stage1`: root:root 0750 parent, service-owned 0700 socket
+directory, root:service-group 0750 policy directory and 0640 admission file.
+Docker mounts only the two child directories; the game needs no access through
+the host parent or the operator home. The reviewed runtime has no host
 network, no published ports, no capabilities, no-new-privileges, read-only root,
 256 MiB RAM, 1 CPU, 32 PIDs and 128 file descriptors. The only mounts are its own
 0700 socket directory (writable) and a narrow root-managed admission directory
@@ -136,6 +144,12 @@ restricted process/container, not a guarantee against host/kernel vulnerabilitie
 Existing NUC containers and their settings are untouched.
 
 ## Verification and limits
+
+Serve 1.104.4 rewrites Unix proxy Host to exactly `localhost`. Only the already
+kernel-verified root Unix peer may use that backend Host. WebSocket Origin remains
+the exact configured external HTTPS origin. Private CSP uses that configured
+origin for WSS, never the rewritten Host or client-forwarded headers. Legacy TCP
+continues to reject identity forwarding headers. No wildcard origin is accepted.
 
 The real Linux protected-transport driver creates only temporary labelled scratch
 images/containers, with no network, and removes its own resources. It verifies
@@ -148,7 +162,9 @@ rooms over the protected protocol. The two-second expiry executable is explicitl
 test-only, excluded from normal builds and never installed/prepared in the
 production image. Production leases are 900 seconds.
 
-In-namespace probes verified UID 1000, zero capabilities, no-new-privileges,
+The disposable regression fixture uses UID1000; separate production-image
+verification uses the dedicated service UID/GID and root-managed paths.
+In-namespace probes verify zero capabilities, no-new-privileges,
 nonwritable image/policy, no Docker socket/home secrets and no external route.
 The proxy fixture is a narrowly mounted ROOT TEST CLIENT, with DAC_OVERRIDE only
 to access the protected socket; it is not the game runtime or an installed proxy.
@@ -165,7 +181,8 @@ are not repeated. See private task logs for exact results and source manifests.
 
 [activation.review.sh](../ops/private-playtest/activation.review.sh) is intentionally
 non-executable in effect: a guard exits before every commented command. The private
-approval report supplies actual STAGE, immutable IMAGE ID and ORIGIN. No command
+approval report supplies the actual runtime paths, service UID/GID, immutable
+IMAGE ID and ORIGIN. No command
 in it has activated Serve. Obtain explicit approval for root admission-file
 installation, the exact container, private HTTPS/certificate enablement and the
 one Serve mapping; do not infer approval from the owner's earlier policy Save.
@@ -178,8 +195,10 @@ remains tailnet-only. No Funnel, HTTP redirect port, raw TCP, subnet route,
 router forwarding or public DNS is introduced. Owner/admin SSH remains governed
 by the already preserved owner grant; activation does not touch SSH/firewalls.
 
-Rollback closes only that Serve port, then checks the recorded container ID and
-label before stopping/removing that runtime. Preserve the owner's narrow policy
+Rollback first stops the exact foreground Serve session. Fallback removes only
+the verified root mount with `--https=443 --set-path=/ off`, preserving other
+mounts. Check the recorded container ID, label, image, explicit identity and
+exact two mounts before stopping/removing that runtime. Preserve the owner's narrow policy
 and existing NUC services. Do not restore the old all-sources grant, reset all
 Serve mappings, stop tailscaled or prune unrelated Docker resources. Old image
 artifacts and admission backups remain available outside Git for review.
@@ -202,3 +221,15 @@ credential/privacy and diff checks passed. No firmware/shared-game source or
 configuration was changed. The live owner-only policy change was performed by
 the owner, not the assistant. No Serve/Funnel, permanent runtime or friend share
 was activated, and all eight existing NUC containers remained running.
+
+## Final compatibility and service-identity checkpoint
+
+The focused Windows transport/identity/private-browser tests passed 3/3, Ubuntu
+transport/identity CTest passed 2/2, and the actual Unix regression passed with
+localhost Host, external WSS CSP, malformed Host/Origin, ownership, reconnect,
+expiry, revocation and direct-peer denial. The dedicated production image was
+started only for a bounded network-isolated verification, checked with its real
+service UID/GID, restrictive socket/policy metadata and only the two approved
+mounts, then stopped and removed. The stopped image and root-managed account/
+paths remain prepared. Real Tailscale TLS/WSS identity forwarding is still a
+separate approval-gated owner-device test; no ingress has been activated.
