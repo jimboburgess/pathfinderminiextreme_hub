@@ -7,3 +7,8 @@ for name in ('html','js','css'):
     assert ')PFMEWEB"' not in text
     result.append('static const char play_'+name+'[] = R"PFMEWEB('+text+')PFMEWEB";\n')
 out.write_text(''.join(result),encoding='utf-8')
+
+text=(source/'audio.js').read_text(encoding='utf-8')
+assert ')PFMEWEB"' not in text
+with out.open('a',encoding='utf-8') as target:
+    target.write('static const char audio_js[] = R"PFMEWEB('+text+')PFMEWEB";\n')

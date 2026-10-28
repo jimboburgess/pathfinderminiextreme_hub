@@ -1,6 +1,7 @@
 "use strict";
 (() => {
   const $=id=>document.getElementById(id), canvas=$("display"), ctx=canvas.getContext("2d",{alpha:false,willReadFrequently:true});
+  const audio=window.PfmeAudio?new window.PfmeAudio():null;
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
@@ -71,6 +72,7 @@
     requests.push({action,down});
   }
   function press(action) {
+    audio?.unlock();
     if(!playing || held.has(action))return;
     held.add(action);enqueue(action,true);
     if(!held.has(action))return;
@@ -84,7 +86,7 @@
   function actionFor(key){return {ArrowDown:"cw",s:"cw",S:"cw",ArrowUp:"ccw",w:"ccw",W:"ccw",Enter:"encoder"," ":"a",Escape:"b"}[key];}
   document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;const a=actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a);}});
   document.addEventListener("keyup",event=>{const a=actionFor(event.key);if(a){release(a);if(playing)event.preventDefault();}});
-  window.addEventListener("blur",releaseAll);document.addEventListener("visibilitychange",()=>{if(document.hidden)releaseAll();});
+  window.addEventListener("blur",()=>{releaseAll();audio?.pause();});document.addEventListener("visibilitychange",()=>{if(document.hidden){releaseAll();audio?.pause();}});
   for(const button of $("controls").querySelectorAll("button")){
     button.addEventListener("pointerdown",event=>{event.preventDefault();button.setPointerCapture(event.pointerId);press(button.dataset.action);});
     button.addEventListener("pointerup",()=>release(button.dataset.action));button.addEventListener("pointercancel",releaseAll);
@@ -98,14 +100,16 @@
       if(!/^[0-9a-f]{64}$/.test(secret)||(!resume&&!/^[!-~]{1,15}$/.test(name)))throw new Error("Enter the 64-character development secret and a name without spaces.");
       ws=new WebSocket(`ws://${location.host}/`);
       await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=()=>reject(new Error("Connection failed"));});
-      ws.onmessage=event=>{try{const reply=JSON.parse(event.data);if(!reply.id)return;if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");const p=pending;pending=null;clearTimeout(p.timeout);if(reply.ok)p.resolve(reply.data);else p.reject(new Error(reply.error?.code||"Server rejected command"));}catch(error){status(error.message);ws.close();}};
-      ws.onclose=()=>{playing=false;releaseAll();clearTimeout(scheduled);if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}$("disconnect").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;status(disconnectReason||"Disconnected. The server retains this session in memory. Reconnect from this tab to resume.");};
+      ws.onmessage=event=>{try{const reply=JSON.parse(event.data);if(!reply.id)return;if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");if(reply.audio)audio?.apply(reply.audio);const p=pending;pending=null;clearTimeout(p.timeout);if(reply.ok)p.resolve(reply.data);else p.reject(new Error(reply.error?.code||"Server rejected command"));}catch(error){status(error.message);ws.close();}};
+      ws.onclose=()=>{audio?.pause();playing=false;releaseAll();clearTimeout(scheduled);if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}$("disconnect").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;status(disconnectReason||"Disconnected. The server retains this session in memory. Reconnect from this tab to resume.");};
       await rpc("authenticate",{secret});
       if(resume)await rpc("reconnect",{token:proof});else{const joined=await rpc("join",{name});proof=joined.reconnect_token;}
-      await rpc("play");clearFrame();requests=[];playing=true;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
+      const runtime=await rpc("play");audio?.enable(runtime.audio===true);
+      $("runtime-note").textContent=(runtime.audio&&audio?"Original music and sound effects play locally after using a game control. ":"Sound is silent in this runtime. ")+"Saves remain in server memory. Other connected party members continue during a disconnect. Keep this tab open to retain its reconnect credential; it is never saved to browser storage.";
+      clearFrame();requests=[];playing=true;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
       status("Connected. Space starts New Game; Enter selects, arrows rotate. Saves are in memory only.");canvas.focus();pump();
     }catch(error){disconnectReason=error.message;status(disconnectReason);ws?.close();}finally{connecting=false;}
   }
-  $("connect").onsubmit=event=>{event.preventDefault();connect(false);};$("resume").onclick=()=>connect(true);
-  $("disconnect").onclick=()=>{releaseAll();playing=false;clearTimeout(scheduled);ws?.close(1000,"user disconnect");};
+  $("connect").onsubmit=event=>{event.preventDefault();audio?.unlock();connect(false);};$("resume").onclick=()=>{audio?.unlock();connect(true);};
+  $("disconnect").onclick=()=>{audio?.pause();releaseAll();playing=false;clearTimeout(scheduled);ws?.close(1000,"user disconnect");};
 })();

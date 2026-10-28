@@ -29,6 +29,12 @@ const uint16_t* PartyRuntime::pixels(const PlayerHandle& handle,uint64_t serial)
     if(!impl_->resolve(handle,serial,player,state))return nullptr;
     return controllerPixels(player.id);
 }
+
+bool PartyRuntime::audio(const PlayerHandle& handle,uint64_t serial,uint64_t since,bool fresh,AudioBatch& out) {
+    SessionPlayer player;ControllerState* state=nullptr;
+    if(!impl_->resolve(handle,serial,player,state))return false;
+    out=readAudioStream(player.id,since,fresh);return true;
+}
 void PartyRuntime::detach(const PlayerHandle& handle,uint64_t serial) {
     SessionPlayer player;ControllerState* state=nullptr;
     if(!impl_->resolve(handle,serial,player,state))return;

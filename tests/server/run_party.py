@@ -15,6 +15,19 @@ sys.dont_write_bytecode=True
 from run_playable import Client
 from run_security import line_with_timeout,listening_addresses,stop
 
+def check_audio(reply, expected):
+    assert ('audio' in reply)==expected,reply
+    if not expected:return
+    audio=reply['audio'];assert set(audio)=={'cursor','now_ms','frequency','duty','reset','events'}
+    assert str(int(audio['cursor']))==audio['cursor'] and int(audio['cursor'])>=0
+    assert 0<=audio['now_ms']<=4294967295 and 0<=audio['frequency']<=65535
+    assert audio['duty'] in (128,256,512,768) and len(audio['events'])<=32
+    if audio['reset']:assert not audio['events']
+    previous=0
+    for event in audio['events']:
+        assert len(event)==4 and previous<int(event[0])<=int(audio['cursor'])
+        previous=int(event[0]);assert 0<=event[1]<=4294967295 and 0<=event[2]<=65535 and event[3] in (128,256,512,768)
+
 class View:
     def __init__(self,client):
         self.client=client;self.since='0';self.pixels=bytearray(115200)
@@ -23,6 +36,7 @@ class View:
         for _ in range(32):
             reply=self.client.call('screen',since=self.since,offset=offset)
             assert reply['ok'],reply
+            check_audio(reply,True)
             frame=reply['data']
             assert frame['base']==self.since and frame['offset']==offset and frame['total']<=230400
             data+=base64.b64decode(frame['pixels'],validate=True);offset=len(data)
@@ -61,7 +75,10 @@ def main():
             assert client.call('authenticate',secret=secret)['ok']
             joined=client.call('join',name=f'Party{index}');assert joined['ok'],joined
             proofs.append(joined['data']['reconnect_token'])
-            assert client.call('play')['data']['mode']=='original-handheld-party'
+            check_audio(client.call('ping'),False)
+            played=client.call('play');assert played['data']['mode']=='original-handheld-party' and played['data']['audio']
+            check_audio(played,True);assert played['audio']['reset']
+            assert client.call('input',action='a',down=True,audio_listener=0)['error']['code']=='InvalidRequest'
             view=View(client);views.append(view);title=view.frame();assert any(title)
             for _ in range(5):tap(client,'a')
             town=view.frame();assert town!=title

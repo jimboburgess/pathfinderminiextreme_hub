@@ -80,14 +80,17 @@ def main():
         line=line_with_timeout(process.stdout);assert line.startswith('listening=127.0.0.1:')
         port=int(line.split(':')[1].split()[0]);origin=f'http://127.0.0.1:{port}'
         assert listening_addresses(process.pid,port)==[f'127.0.0.1:{port}']
-        for path,kind in [('/play','text/html'),('/play.js','text/javascript'),('/play.css','text/css')]:
+        for path,kind in [('/play','text/html'),('/play.js','text/javascript'),('/play.css','text/css'),('/audio.js','text/javascript')]:
             connection=http.client.HTTPConnection('127.0.0.1',port,timeout=3);connection.request('GET',path);reply=connection.getresponse()
             body=reply.read();assert reply.status==200 and kind in reply.getheader('Content-Type')
             assert reply.getheader('Cache-Control')=='no-store' and reply.getheader('X-Content-Type-Options')=='nosniff'
             assert all(marker not in body for marker in (b"@discord/embedded-app-sdk",b"discordsays.com",b"/activity.js",b"pfmeActivity")), "Discord dependency in standalone assets"
             assert "frame-ancestors 'none'" in reply.getheader('Content-Security-Policy') and secret.encode() not in body
+            if path=='/play':
+                assert b'240&times;240' in body and b'/audio.js' in body
+                assert all(str(scale).encode()+b'&times;' in body for scale in range(1,6))
             connection.close()
-        print('fixed_http_assets=3 security_headers=passed no_embedded_credentials=true standalone_discord_dependencies=none')
+        print('fixed_http_assets=4 security_headers=passed no_embedded_credentials=true standalone_discord_dependencies=none')
         for invalid in ('null','https://untrusted.invalid',f'http://localhost:{port}',origin+'.invalid'):
             try:
                 invalid_client=Client(port,invalid);invalid_client.close();raise AssertionError('Foreign Origin accepted')

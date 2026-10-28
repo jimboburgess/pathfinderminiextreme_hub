@@ -1,12 +1,12 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pathfinder Mini EXTREME</title><link rel="stylesheet" href="/play.css">
-<main><header><h1>Pathfinder Mini EXTREME</h1><p>Private handheld session Â· original 240Ã—240 display</p></header>
+<main><header><h1>Pathfinder Mini EXTREME</h1><p>Private handheld session &middot; original 240&times;240 display</p></header>
 <form id="connect"><label>Development secret <input id="secret" type="password" autocomplete="off" maxlength="64" required></label>
 <label>Player name <input id="name" value="Adventurer" maxlength="15" required></label><button>Connect</button></form>
-<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1Ã—</option><option value="2">2Ã—</option><option value="3">3Ã—</option><option value="4">4Ã—</option><option value="5">5Ã—</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button></div>
+<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1&times;</option><option value="2">2&times;</option><option value="3">3&times;</option><option value="4">4&times;</option><option value="5">5&times;</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button></div>
 <div id="viewport"><canvas id="display" width="240" height="240" tabindex="0" aria-label="Pathfinder handheld game display"></canvas></div>
-<div id="controls"><button data-action="ccw">â†¶ Encoder</button><button data-action="encoder">Encoder press</button><button data-action="cw">â†· Encoder</button><button data-action="a">A</button><button data-action="b">B</button></div>
-<p>Down / S: clockwise Â· Up / W: counterclockwise Â· Enter: press encoder Â· Space: A Â· Escape: B. Hold Enter for the original long-press shortcut. Rotate to choose a direction, then press Enter to step.</p>
+<div id="controls"><button data-action="ccw">&#8630; Encoder</button><button data-action="encoder">Encoder press</button><button data-action="cw">&#8631; Encoder</button><button data-action="a">A</button><button data-action="b">B</button></div>
+<p>Down / S: clockwise &middot; Up / W: counterclockwise &middot; Enter: press encoder &middot; Space: A &middot; Escape: B. Hold Enter for the original long-press shortcut. Rotate to choose a direction, then press Enter to step.</p>
 <p id="status" role="status">Connect using the private access path supplied by your host.</p>
-<p id="runtime-note">Sound is silent. Saves survive only in this server process. Disconnect releases held inputs; other connected party members can continue. Keep this tab open to retain its reconnect credential; credentials are never saved to browser storage.</p>
-</main><script src="/play.js"></script></html>
+<p id="runtime-note">Original music and sound effects play locally after using a game control. Saves survive only in this server process. Disconnect releases held inputs; other connected party members can continue. Keep this tab open to retain its reconnect credential; credentials are never saved to browser storage.</p>
+</main><script src="/audio.js"></script><script src="/play.js"></script></html>

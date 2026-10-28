@@ -1,3 +1,4 @@
+#include "native_audio.h"
 #include "controller_slots.h"
 #include "context_fields.h"
 #include "native_rooms.h"
@@ -32,6 +33,7 @@ NativeSPI SPI;
 namespace {
 std::mt19937 rng;
 uint32_t nowMs=1;
+uint32_t audioMs=1;
 std::array<int,64> pins;
 bool initialized=false;
 bool multiController=false;
@@ -57,9 +59,18 @@ struct BoundController {
     BoundController() { pins.fill(HIGH); }
 };
 BoundController bound[MAX_MULTIPLAYER_PLAYERS];
+void tickAudioClock(uint32_t elapsed) {
+    for(uint32_t tick=0;tick<elapsed;++tick) {
+        ++nowMs;++audioMs;
+        for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)
+            if(bound[id].state)pfme::runtime::updateControllerAudio(id,audioMs);
+    }
+}
 }
 unsigned long millis() { return nowMs; }
-void delay(unsigned long elapsed) { nowMs+=static_cast<uint32_t>(elapsed); }
+// Native display delays are virtualized for gameplay. The audio hardware
+// timeline advances only from outer elapsed ticks, never once per drawing call.
+void delay(unsigned long elapsed) {nowMs+=static_cast<uint32_t>(elapsed);}
 uint32_t esp_random() { return static_cast<uint32_t>(rng()); }
 void randomSeed(unsigned long seed) { rng.seed(static_cast<uint32_t>(seed)); }
 long random(long upper) { return upper<=0?0:static_cast<long>(esp_random()%static_cast<uint32_t>(upper)); }
@@ -119,6 +130,7 @@ void storeController() {
 PlayerID selectedController() {return selected;}
 bool nativeRoomsActive() {return multiController;}
 uint32_t worldTime() {return nowMs;}
+uint32_t audioTime() {return multiController?audioMs:nowMs;}
 void initializeControllers(uint32_t seed) {
     initialize(seed);multiController=true;
 }
@@ -130,7 +142,7 @@ bool selectController(uint8_t id) {
     if(isValidPlayerID(selected)) tft.exchangeSurface(bound[selected].state->surface);
     if(isValidPlayerID(selected))switchPresentation(selected,id);
     else loadPresentation(id);
-    selected=id;player=bound[id].state->character;pins=bound[id].pins;
+    selected=id;selectAudioController(id);player=bound[id].state->character;pins=bound[id].pins;
     productionButtonState()=bound[id].state->input;
     productionCreationState()=bound[id].state->creation;
     menuState=bound[id].state->menu;
@@ -164,7 +176,7 @@ bool unbindController(uint8_t id) {
     if(nativeActor(id) && !leaveNativeRoom(dungeon))return false;
     storeController();tft.exchangeSurface(bound[id].state->surface);
     bound[id]=BoundController{};selected=INVALID_PLAYER_ID;
-    resetPresentation(id);retireNativeObserver(id);return true;
+    resetPresentation(id);retireNativeObserver(id);resetControllerAudio(id);resetAudioStream(id);selectAudioController(INVALID_PLAYER_ID);return true;
 }
 bool controllerInput(uint8_t id,const std::string& action,bool down) {
     if(!isValidPlayerID(id) || !bound[id].connected || !selectController(id))return false;
@@ -173,6 +185,31 @@ bool controllerInput(uint8_t id,const std::string& action,bool down) {
 const uint16_t* controllerPixels(uint8_t id) {
     if(!isValidPlayerID(id) || !bound[id].state)return nullptr;
     return id==selected?tft.getBuffer():bound[id].state->surface.getBuffer();
+}
+namespace {bool broadcastingAudio=false;}
+bool broadcastNativeSound(SoundEffect sound) {
+    if(!multiController || broadcastingAudio || !isValidPlayerID(selected))return false;
+    const bool roomSound=worldEvent || (gameState==GAME_DUNGEON &&
+        (sound>=SoundEffect::WALK || sound==SoundEffect::DUNGEON_THEME || sound==SoundEffect::COMBAT_THEME ||
+         sound==SoundEffect::BOSS_THEME || sound==SoundEffect::VICTORY_THEME));
+    const auto room=nativeActorRoom(selected);
+    if(!roomSound || room==NO_ROOM)return false;
+    broadcastingAudio=true;
+    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state && nativeActorRoom(id)==room) {
+        selectAudioController(id);playSound(sound);
+    }
+    selectAudioController(selected);broadcastingAudio=false;return true;
+}
+bool broadcastNativeTones(const uint16_t* frequencies,uint8_t count,uint16_t duration,uint16_t pause,AudioDuty duty,bool& result) {
+    if(!multiController || broadcastingAudio || !isValidPlayerID(selected) || nativeActorRoom(selected)==NO_ROOM)return false;
+    if(!frequencies || !count || count>MAX_RUNTIME_TONE_SEQUENCE || !duration)return false;
+    std::array<uint16_t,MAX_RUNTIME_TONE_SEQUENCE> notes{};
+    for(unsigned i=0;i<count;++i)notes[i]=frequencies[i];
+    const auto room=nativeActorRoom(selected);broadcastingAudio=true;result=false;
+    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state && nativeActorRoom(id)==room) {
+        selectAudioController(id);const bool accepted=playToneSequence(notes.data(),count,duration,pause,duty);if(id==selected)result=accepted;
+    }
+    selectAudioController(selected);broadcastingAudio=false;return true;
 }
 bool isNativeWorldEvent() {return multiController && worldEvent;}
 bool broadcastNativeMessage(const char* text) {
@@ -259,7 +296,7 @@ void advance(uint32_t elapsed) {
     if(!initialized) return;
     // Bounded 10 ms ticks preserve production timers and input debounce.
     elapsed=std::min(elapsed,100u);
-    while(elapsed) { const auto step=std::min(elapsed,10u); nowMs+=step; elapsed-=step;
+    while(elapsed) { const auto step=std::min(elapsed,10u); if(multiController)tickAudioClock(step);else nowMs+=step; elapsed-=step;
         if(!multiController)loop();
         else {
             const auto original=selected;

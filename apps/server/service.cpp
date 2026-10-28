@@ -80,6 +80,24 @@ Reply Service::handle(ConnectionState& connection, std::string_view message)
         std::string error;
         if (!parseRequest(message, request, error)) return {json::serialize(failure(request.id, error)), false};
         auto result = dispatch(connection, request);
+#ifdef PFME_HAS_PLAYABLE
+        // Audio uses the existing authenticated reply channel and server-owned
+        // cursor. A client cannot select a different listener or fetch history.
+        if(partyMode_ && connection.authenticated && isValidPlayerID(connection.player) && partyStarted_[connection.player]) {
+            const auto& participant=participants_[connection.player];runtime::AudioBatch batch;
+            if(participant.activeConnection==connection.serial &&
+               party_->audio(participant.handle,connection.serial,connection.audioCursor,!connection.audioReady,batch)) {
+                json::array events;
+                for(std::size_t i=0;i<batch.count;++i) {
+                    const auto& event=batch.events[i];
+                    events.push_back(json::array{std::to_string(event.sequence),event.at,event.frequency,event.duty});
+                }
+                result["audio"]=json::object{{"cursor",std::to_string(batch.cursor)},{"now_ms",batch.now},
+                    {"frequency",batch.frequency},{"duty",batch.duty},{"reset",batch.reset},{"events",std::move(events)}};
+                connection.audioCursor=batch.cursor;connection.audioReady=true;
+            }
+        }
+#endif
         auto text = json::serialize(result);
         if (text.size() > MAX_RESPONSE_BYTES) return {json::serialize(failure(request.id, "ResponseLimit")), true};
         return {std::move(text), connection.authFailures >= AUTH_FAILURE_LIMIT};

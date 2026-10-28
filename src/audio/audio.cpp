@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_audio.h"
+#endif
 //
 // Created by james on 7/12/2026.
 //
@@ -5,6 +8,12 @@
 #include <Arduino.h>
 #include "audio/audio.h"
 #include "config.h"
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#define PFME_AUDIO_NOW() pfme::runtime::audioTime()
+#else
+#define PFME_AUDIO_NOW() millis()
+#endif
+
 
 namespace
 {
@@ -522,11 +531,29 @@ struct AudioPlaybackState
     bool active = false;
 };
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+struct NativeAudioContext {
+    AudioPlaybackState state;
+    AudioCommand tones[MAX_RUNTIME_TONE_SEQUENCE * 2]{};
+    uint16_t frequency=0;AudioDuty duty=AudioDuty::DUTY_50;bool muted=false;
+};
+// The extra context serves the unchanged legacy native adapter. It is not a
+// party character slot and never receives another listener's stream.
+NativeAudioContext nativeAudioContexts[MAX_MULTIPLAYER_PLAYERS+1];
+unsigned selectedAudioIndex=MAX_MULTIPLAYER_PLAYERS;
+NativeAudioContext& currentNativeAudio() {return nativeAudioContexts[selectedAudioIndex];}
+#define playback (currentNativeAudio().state)
+#define runtimeToneSequence (currentNativeAudio().tones)
+#define hardwareFrequency (currentNativeAudio().frequency)
+#define hardwareDuty (currentNativeAudio().duty)
+#define audioMuted (currentNativeAudio().muted)
+#else
 AudioPlaybackState playback;
 AudioCommand runtimeToneSequence[MAX_RUNTIME_TONE_SEQUENCE * 2] = {};
 uint16_t hardwareFrequency = 0;
 AudioDuty hardwareDuty = AudioDuty::DUTY_50;
 bool audioMuted = false;
+#endif
 
 uint16_t getDutyValue(AudioDuty duty)
 {
@@ -551,7 +578,7 @@ uint16_t getDutyValue(AudioDuty duty)
 
 void audioHardwareInit()
 {
-#if !defined(AUDIO_ENGINE_TEST)
+#if !defined(AUDIO_ENGINE_TEST) && !defined(PFME_NATIVE_CONTROLLER_CONTEXT)
     ledcSetup(
         AUDIO_LEDC_CHANNEL,
         AUDIO_INITIAL_FREQUENCY,
@@ -566,7 +593,10 @@ void audioHardwareInit()
 
 void audioSilence()
 {
-#if !defined(AUDIO_ENGINE_TEST)
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    pfme::runtime::emitNativeAudio(pfme::runtime::audioController(),0,getDutyValue(hardwareDuty));
+#endif
+#if !defined(AUDIO_ENGINE_TEST) && !defined(PFME_NATIVE_CONTROLLER_CONTEXT)
     ledcWrite(AUDIO_LEDC_CHANNEL, 0);
 #endif
 
@@ -576,6 +606,9 @@ void audioSilence()
 
 void audioSetFrequency(uint16_t frequency, AudioDuty duty)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    const bool changed=frequency!=hardwareFrequency || duty!=hardwareDuty;
+#endif
     if (frequency == 0)
     {
         audioSilence();
@@ -584,7 +617,7 @@ void audioSetFrequency(uint16_t frequency, AudioDuty duty)
 
     if (frequency != hardwareFrequency)
     {
-#if !defined(AUDIO_ENGINE_TEST)
+#if !defined(AUDIO_ENGINE_TEST) && !defined(PFME_NATIVE_CONTROLLER_CONTEXT)
         // Arduino-ESP32 2.x exposes the channel-based LEDC API. Calling
         // ledcWriteTone() changes the timer frequency and restores 50% duty;
         // ledcWrite() immediately applies the requested retro duty cycle.
@@ -595,7 +628,7 @@ void audioSetFrequency(uint16_t frequency, AudioDuty duty)
 
     if (frequency != playback.currentFrequency || duty != hardwareDuty)
     {
-#if !defined(AUDIO_ENGINE_TEST)
+#if !defined(AUDIO_ENGINE_TEST) && !defined(PFME_NATIVE_CONTROLLER_CONTEXT)
         ledcWrite(AUDIO_LEDC_CHANNEL, getDutyValue(duty));
 #endif
         hardwareDuty = duty;
@@ -603,6 +636,9 @@ void audioSetFrequency(uint16_t frequency, AudioDuty duty)
 
     playback.currentFrequency = frequency;
     playback.currentDuty = duty;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(changed)pfme::runtime::emitNativeAudio(pfme::runtime::audioController(),frequency,getDutyValue(duty));
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -852,16 +888,23 @@ void initAudio()
 
 void playSound(SoundEffect sound)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::broadcastNativeSound(sound))return;
+#endif
     if (audioMuted)
         return;
 
-    playSoundAt(sound, millis());
+    playSoundAt(sound, PFME_AUDIO_NOW());
 }
 
 bool playToneSequence(const uint16_t* frequencies, uint8_t count,
                       uint16_t toneDurationMs, uint16_t pauseDurationMs,
                       AudioDuty duty)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    bool result=false;
+    if(pfme::runtime::broadcastNativeTones(frequencies,count,toneDurationMs,pauseDurationMs,duty,result))return result;
+#endif
     if (audioMuted || frequencies == nullptr || count == 0 ||
         count > MAX_RUNTIME_TONE_SEQUENCE || toneDurationMs == 0)
         return false;
@@ -882,13 +925,13 @@ bool playToneSequence(const uint16_t* frequencies, uint8_t count,
     playback.commandIndex = 0;
     playback.commandStarted = false;
     playback.active = true;
-    updateAudioAt(millis());
+    updateAudioAt(PFME_AUDIO_NOW());
     return true;
 }
 
 void updateAudio()
 {
-    updateAudioAt(millis());
+    updateAudioAt(PFME_AUDIO_NOW());
 }
 
 void stopSound()
@@ -918,3 +961,18 @@ void toggleAudioMuted()
 {
     setAudioMuted(!audioMuted);
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+namespace pfme { namespace runtime {
+void selectAudioController(PlayerID id) {selectedAudioIndex=isValidPlayerID(id)?id:MAX_MULTIPLAYER_PLAYERS;}
+PlayerID audioController() {return selectedAudioIndex<MAX_MULTIPLAYER_PLAYERS?static_cast<PlayerID>(selectedAudioIndex):INVALID_PLAYER_ID;}
+void updateControllerAudio(PlayerID id,uint32_t now) {
+    if(!isValidPlayerID(id))return;
+    const auto previous=selectedAudioIndex;selectedAudioIndex=id;
+    updateAudioAt(now);selectedAudioIndex=previous;
+}
+void resetControllerAudio(PlayerID id) {
+    if(isValidPlayerID(id))nativeAudioContexts[id]=NativeAudioContext{};
+}
+}}
+#endif

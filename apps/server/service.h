@@ -17,6 +17,8 @@ struct ConnectionState
     bool authenticated = false;
     std::string identity; // Issued after authentication; separate from socket serial/player ID.
     PlayerID player = INVALID_PLAYER_ID;
+    uint64_t audioCursor=0;
+    bool audioReady=false;
     unsigned authFailures = 0;
     unsigned commands = 0;
     std::chrono::steady_clock::time_point window = std::chrono::steady_clock::now();

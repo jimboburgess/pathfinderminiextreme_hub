@@ -149,3 +149,24 @@ ownership. Friends launch a normal browser through an approved private access
 path without SSH or development tools; Discord provides voice only. Approval,
 isolation and gameplay acceptance must pass before invitations. Local commits
 retain reviewable progress; no automatic push or deployment.
+
+
+### Phase 3I implementation update
+
+The native production runtime now supports one through four independently owned
+controllers in one resident dungeon. Original creation, full Character ownership,
+menus, tile movement, room transitions, per-view C++ rendering and shared combat
+use the existing gameplay code. Native, wire and generated combat tests cover
+all four party sizes, including state-preserving fifth-slot rejection. Four
+Chrome clients have exercised different rooms, reconnect and original Web Audio
+against Windows and Ubuntu. See [Phase 3I runtime](PHASE3I_RUNTIME.md) for evidence,
+commands, memory costs, explicit party-mode selection and remaining limitations.
+
+Next close the bounded gameplay gaps (party forest, broad puzzle/class/spell
+coverage, large multi-room encounter capacity and connected-AFK turn policy),
+then implement reviewed per-person standalone admission and approve isolated
+private browser access. Friends need only a browser and Discord voice once that
+access path is approved. Discord Activity and Embedded App SDK remain deferred.
+Do not activate external access or install network software as an implicit next
+step. Preserve the ESP32 and the unified master history; local checkpoints are
+not automatically pushed.

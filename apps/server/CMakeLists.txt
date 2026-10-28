@@ -60,7 +60,7 @@ if(PFME_BUILD_PLAYABLE)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc"
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/embed_web.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/web" "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc"
-        DEPENDS embed_web.py web/play.html web/play.js web/play.css VERBATIM)
+        DEPENDS embed_web.py web/play.html web/play.js web/play.css web/audio.js VERBATIM)
     target_sources(pfme_server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/web_assets.inc")
     target_include_directories(pfme_server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 endif()
@@ -113,4 +113,9 @@ if(BUILD_TESTING AND PFME_BUILD_PLAYABLE)
             "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/run_party.py" $<TARGET_FILE:pfme_server> ${party_size})
         set_tests_properties(pfme_party_wire_${party_size} PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE)
     endforeach()
+endif()
+
+if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
+    add_test(NAME pfme_browser_audio COMMAND "${PFME_CLIENT_NODE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/audio_client_tests.cjs" "${CMAKE_CURRENT_SOURCE_DIR}/web/audio.js")
 endif()

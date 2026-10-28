@@ -71,8 +71,7 @@ Separate Chrome windows have also exercised the existing browser client.
 
 This checkpoint is not production-secure. Standalone per-person admission and
 the final private ingress/isolation configuration remain pending. The development
-admission gate alone must not be used as invited-player identity. Browser audio
-is still pending at this checkpoint. Retiring a verified character clears its
+admission gate alone must not be used as invited-player identity. Browser audio is implemented through the original C++ command interpreter, as described below. Retiring a verified character clears its
 private observer caches before the numeric slot can be reused by another owner. Party forest travel is deliberately rejected
 before the legacy forest entry can reset global encounter state; the original
 single-controller and ESP32 forest paths remain available. Broader puzzle,
@@ -80,3 +79,70 @@ class/spell, simultaneous-room and adversarial playtesting is still required.
 
 No public endpoint, network installation, firewall change, service deployment,
 invitation or push is authorized by this implementation.
+
+## Original browser audio
+
+The native-only audio adapter retains the original 43 C++ music/sound programs,
+command interpreter, note frequencies, integer sweep/vibrato/noise modulation,
+dynamic bell sequences, duty settings, mute and single-channel interruption.
+Each occupied controller owns its playback state and a fixed 512-event ring.
+Replies carry at most 32 frequency/duty transitions, with a server-owned cursor;
+the authenticated capability and connection serial select the listener. There is
+no client-selected player or listener ID and no additional endpoint/protocol.
+Private UI tones stay local; world sounds reach listeners in the same room.
+Muted listeners retain their own setting. Other rooms receive no sound events.
+
+The presentation audio clock advances from elapsed runtime ticks. Virtual native
+rendering delays cannot rush the original hardware-duration notes. A late or
+reconnected listener resynchronizes to the current oscillator snapshot rather
+than replaying old history. Four fixed rings add approximately 32 KiB native RAM;
+all audio/controller additions are excluded from ESP32 builds.
+
+The fixed, locally served audio.js uses Web Audio PeriodicWave pulse coefficients
+for the original four LEDC duties and schedules the C++ frequency changes with
+120 ms lookahead. It interprets no gameplay rules or sound command programs in
+JavaScript. Browser oscillators are band-limited approximations of piezo drive,
+not recordings of the physical speaker; acoustics and precise network timing
+will differ. Nodes are capped at 32. User gestures unlock audio; lost focus,
+hidden tabs and disconnect stop/suspend it. Focus loss wins over an in-flight
+resume. No microphone, external media, CDN, autoplay bypass or new permission is
+used. Single-controller legacy native mode remains silent in the browser.
+
+## Verified implementation checkpoints
+
+The complete Windows CTest run passed 34/34. Ubuntu GCC 15.2.0 / CMake 4.2.3
+passed 30/30; four optional Node/browser logic tests are absent on that host
+because Node is not installed. The Windows run includes those four tests.
+Party sizes 1, 2, 3 and 4 pass production exploration, wire ownership/reconnect,
+and generated encounter fixtures. Four actual Chrome clients were also tested
+against both Windows and a temporary Ubuntu loopback server through an owned
+SSH forward: separate original views in different rooms, retained reconnect,
+240x240 / 3x nearest-neighbor display, and nonzero real Web Audio output for
+each client. This is controlled browser automation, not a friends playtest.
+All 43 original C++ sound traces were rendered through Chrome OfflineAudioContext.
+The original title reference still has zero differing pixels.
+
+ESP32 release and all 26 embedded compile targets are checked separately; there
+is no firmware upload or hardware execution. The verified release footprint is
+292704/327680 bytes RAM and 1050145/4128768 bytes flash, unchanged from the
+starting Phase 3I checkpoint. No PlatformIO configuration change is needed.
+
+## Remaining playtest gates
+
+This establishes independently playable dungeon exploration and generated shared
+encounters, not completion of every adventure, puzzle, boss or class/spell path.
+Party forest entry remains blocked. The original 16-combatant capacity needs
+explicit policy/testing for simultaneous large multi-room encounters. Connected
+players can still stall their own combat turn; disconnected players have the
+specified grace/yield policy. Saves and reconnect capabilities survive socket
+loss, not server-process restart; a tab's capability is deliberately memory-only.
+
+Per-person standalone admission, durable identity/session expiry/revocation,
+approved isolated runtime and a game-port-only private access path are still
+required before inviting friends. Development admission plus private character
+capabilities is not a substitute for verified individual accounts. The optional
+Discord Activity/SDK dependency is deferred and absent from active standalone
+assets; this work does not resolve its outstanding advisory. Do not enable it
+without rechecking and resolving its dependencies. No public connectivity,
+network installation, firewall change, existing-container change or push occurs
+as part of these verification checkpoints.

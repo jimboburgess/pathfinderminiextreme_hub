@@ -8,9 +8,9 @@ if(request.type=="play" || request.type=="input" || request.type=="screen") {
         if(request.type=="play") {
             if(!fieldsAre(request,{}))return fail("InvalidRequest");
             if(!party_->start(participant.handle,connection.serial))return fail("RuntimeUnavailable");
-            partyStarted_[id]=true;partyScreens_[id].reset();
+            partyStarted_[id]=true;partyScreens_[id].reset();connection.audioReady=false;
             partyLastInput_[id]=std::chrono::steady_clock::now();
-            return ok({{"mode","original-handheld-party"},{"width",240},{"height",240},{"capacity",MAX_MULTIPLAYER_PLAYERS},{"persistence","process-memory-only"}});
+            return ok({{"mode","original-handheld-party"},{"width",240},{"height",240},{"capacity",MAX_MULTIPLAYER_PLAYERS},{"audio",true},{"persistence","process-memory-only"}});
         }
         const auto* pixels=party_->pixels(participant.handle,connection.serial);
         if(!partyStarted_[id] || !pixels)return fail("OwnershipRequired");

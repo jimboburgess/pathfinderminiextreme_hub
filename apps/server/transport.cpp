@@ -169,6 +169,7 @@ void Peer::start()
             const char* body=nullptr; const char* type=nullptr;
             if(req.target()=="/play") { body=play_html; type="text/html; charset=utf-8"; }
             else if(req.target()=="/play.js") { body=play_js; type="text/javascript; charset=utf-8"; }
+            else if(req.target()=="/audio.js") { body=audio_js; type="text/javascript; charset=utf-8"; }
             else if(req.target()=="/play.css") { body=play_css; type="text/css; charset=utf-8"; }
             if(!body) { self->finish(); return; }
             self->page_=std::make_shared<http::response<http::string_body>>(http::status::ok,11);
