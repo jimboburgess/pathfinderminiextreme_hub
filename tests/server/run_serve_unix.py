@@ -144,6 +144,10 @@ def main():
                 joined=client.call('join',name=f'Player{index}');assert joined['ok'] and 'reconnect_token' not in joined['data']
                 assert client.call('play')['ok'];view=View(client);views.append(view);assert any(view.frame())
                 for _ in range(5):tap(client,'a')
+            assert clients[0].call('ping')['ok']
+            duplicate=Client(bridge,7,users[0]['login']);assert duplicate.call('authenticate')['ok']
+            assert not bridge.send(op='open',slot=5,login=users[0]['login'])['ok'],'third WebSocket for one principal'
+            assert duplicate.call('reconnect')['error']['code']=='AlreadyConnected';duplicate.close()
             fifth=Client(bridge,4,users[4]['login']);assert fifth.call('authenticate')['ok']
             before=clients[0].call('players')['data']['players']
             assert fifth.call('join',name='Fifth')['error']['code']=='Full'
@@ -191,7 +195,7 @@ def main():
             assert View(renewed).frame()==saved
             assert renewed.call('leave')['ok'] and renewed.call('reconnect')['error']['code']=='NoCharacter'
             stop(expiry_game)
-            report=dict(unsafe_policy_and_socket_paths_denied=True,kernel_uid_denial=True,trusted_root_fixture=True,identity_headers_checked=True,unauthorized_http_denied=True,principal_takeover_denied=True,
+            report=dict(per_principal_websocket_limit=True,unsafe_policy_and_socket_paths_denied=True,kernel_uid_denial=True,trusted_root_fixture=True,identity_headers_checked=True,unauthorized_http_denied=True,principal_takeover_denied=True,
                 four_owned_characters=True,independent_original_room_frames=True,room0_sha256=hashlib.sha256(room0).hexdigest(),room1_sha256=hashlib.sha256(room1).hexdigest(),
                 fifth_slot_preserved=True,reconnect_retained_frame=True,revision_revocation=True,rollback_policy_denied=True,absolute_expiry=True,renewed_character_retained=True,leave_revoked=True,
                 replay_rejected=True,isolation=isolation,serve_activated=False,real_tailscale_authentication_tested=False)

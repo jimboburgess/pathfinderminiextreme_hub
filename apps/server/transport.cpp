@@ -36,6 +36,7 @@ class Peer : public std::enable_shared_from_this<Peer>
 public:
     Peer(StreamSocket socket, Server& owner, uint64_t serial, uint16_t port);
     bool checkAdmission();
+    bool countsPrincipal(const std::string& principal) const {return principalCounted_&&!finished_&&connection_.verifiedPrincipal==principal;}
     void start();
     void stop();
     void finish();
@@ -46,7 +47,7 @@ private:
     void close(websocket::close_code code);
     websocket::stream<beast::basic_stream<StreamProtocol>> ws_;
     ServeLease lease_;
-    bool hasLease_=false;
+    bool hasLease_=false,principalCounted_=false;
     // Allow bounded framing/read-ahead slack; Beast enforces the logical 4 KiB message cap.
     beast::flat_buffer input_{MAX_REQUEST_BYTES * 2};
     http::request_parser<http::empty_body> upgrade_;
@@ -145,6 +146,10 @@ public:
     bool privateMode() const {return policy_!=nullptr;}
     ServePolicy* policy() {return policy_.get();}
     const ServeOptions& options() const {return options_;}
+    bool principalCapacity(const std::string& principal) const {
+        unsigned count=0;for(const auto& item:peers_)if(item.second->countsPrincipal(principal))++count;
+        return count<2;
+    }
 private:
     void tick() {
         gameClock_.expires_after(20ms);
@@ -285,6 +290,10 @@ void Peer::start()
 #endif
         if(self->owner_.privateMode() && req.count(http::field::origin)!=1){self->finish();return;}
         if(req.target()!="/" || !websocket::is_upgrade(req)) { self->finish(); return; }
+        if(self->owner_.privateMode()) {
+            if(!self->owner_.principalCapacity(self->connection_.verifiedPrincipal)){self->finish();return;}
+            self->principalCounted_=true;
+        }
         websocket::stream_base::timeout timeouts;
         timeouts.handshake_timeout = std::chrono::seconds(AUTH_SECONDS);
         timeouts.idle_timeout = std::chrono::seconds(IO_SECONDS);

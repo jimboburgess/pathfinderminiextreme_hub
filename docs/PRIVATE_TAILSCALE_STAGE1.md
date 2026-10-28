@@ -76,7 +76,9 @@ An explicit regrant to the same stable principal may recover its retained
 character; assigning that principal to another login is a trusted administrative
 ownership decision and must not happen silently. Invalid/duplicate mappings are
 rejected. Per-connection and per-principal command limits remain 20/sec, with
-8 total connections and bounded admission/budget storage. Character capacity is
+8 total connections, at most 2 WebSocket connections per principal (including
+pending authentication), and bounded admission/budget storage. HTTP assets use
+the global bound and existing short deadlines. Character capacity is
 4, distinct from connection count.
 
 State and ownership are persistent across socket/tab loss, not process restart.

@@ -50,9 +50,9 @@
     "write_seconds": 5
   },
   "additional_limits": {
-    "connections_per_principal": 2,
     "active_gameplay_connections_per_principal": 1,
-    "commands_per_principal_per_second": 20
+    "commands_per_principal_per_second": 20,
+    "websocket_connections_per_principal": 2
   },
   "runtime": {
     "mode": "party",
