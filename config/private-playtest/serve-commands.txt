@@ -1,0 +1,27 @@
+REVIEW ONLY. DO NOT RUN UNTIL THE APPROVAL GATES IN docs/PRIVATE_BROWSER_ACCESS.md PASS.
+The current pfme_server does not implement trusted Serve identity or HTTPS origin handling.
+Starting this proxy against today's binary would not provide authenticated remote play.
+
+Read-only baseline (safe now):
+  tailscale version
+  tailscale status
+  tailscale serve status --json
+  tailscale funnel status
+  ss -ltn
+
+Proposed later, after policy, identity and isolation approval; foreground, no --bg:
+  tailscale serve --https=443 http://127.0.0.1:18765
+
+Exact private browser URL: https://<approved-node>.<actual-tailnet>.ts.net/play
+Exact private game socket: wss://<approved-node>.<actual-tailnet>.ts.net/
+Only TCP 443 on the shared node is granted to external shared users.
+No HTTP redirect listener, raw TCP proxy, Funnel, subnet route or exit node.
+
+Rollback of this one approved Serve listener (not a host-wide reset):
+  tailscale serve --https=443 off
+  tailscale serve status --json
+  tailscale funnel status
+
+Stop only the foreground Pathfinder process launched for this playtest.
+Remove only the playtest's shares/grant after review, preserving owner access.
+Never stop tailscaled, reset all Serve services, or alter other containers.

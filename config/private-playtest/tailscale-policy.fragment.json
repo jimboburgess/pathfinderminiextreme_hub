@@ -1,0 +1,42 @@
+{
+  "hosts": {
+    "pfme-game": "100.64.0.10"
+  },
+  "grants": [
+    {
+      "src": [
+        "autogroup:shared"
+      ],
+      "dst": [
+        "pfme-game"
+      ],
+      "ip": [
+        "tcp:443"
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "src": "invited-tester@example.com",
+      "proto": "tcp",
+      "accept": [
+        "pfme-game:443"
+      ],
+      "deny": [
+        "pfme-game:22",
+        "pfme-game:80",
+        "pfme-game:139",
+        "pfme-game:445",
+        "pfme-game:2375",
+        "pfme-game:2376",
+        "pfme-game:3000",
+        "pfme-game:3001",
+        "pfme-game:4533",
+        "pfme-game:8080",
+        "pfme-game:8443",
+        "pfme-game:8765",
+        "pfme-game:18765"
+      ]
+    }
+  ]
+}

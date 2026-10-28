@@ -1,0 +1,59 @@
+{
+  "status": "PROPOSAL_ONLY_NOT_SUPPORTED_BY_CURRENT_SERVER",
+  "transport": {
+    "listen": "127.0.0.1:18765",
+    "public_origin": "https://pfme-node.example-tailnet.ts.net",
+    "public_host": "pfme-node.example-tailnet.ts.net",
+    "websocket_path": "/",
+    "trust_forwarded_headers": false
+  },
+  "admission": {
+    "mode": "trusted-serve-identity",
+    "identity_header": "Tailscale-User-Login",
+    "allowlist_path": "/etc/pfme-private/invited-users.json",
+    "development_secret_fallback": false,
+    "missing_or_duplicate_identity": "reject",
+    "tagged_client_without_identity": "reject",
+    "max_authorization_seconds": 900,
+    "revocation_check_seconds": 1,
+    "one_character_per_principal": true,
+    "reconnect_requires_same_principal": true,
+    "browser_reconnect_proof": false
+  },
+  "routes": {
+    "GET": [
+      "/play",
+      "/play.js",
+      "/play.css",
+      "/audio.js"
+    ],
+    "WEBSOCKET": [
+      "/"
+    ],
+    "other_routes": "reject"
+  },
+  "existing_limits": {
+    "characters": 4,
+    "connections": 8,
+    "request_bytes": 4096,
+    "response_bytes": 16384,
+    "json_depth": 8,
+    "commands_per_connection_per_second": 20,
+    "authentication_seconds": 3,
+    "io_seconds": 15,
+    "write_seconds": 5
+  },
+  "additional_limits": {
+    "connections_per_principal": 2,
+    "active_gameplay_connections_per_principal": 1,
+    "commands_per_principal_per_second": 20
+  },
+  "runtime": {
+    "mode": "party",
+    "persistent_service": false,
+    "max_playtest_seconds": 3600,
+    "unprivileged": true,
+    "no_home_credentials": true,
+    "deny_lan_and_other_host_services": true
+  }
+}
