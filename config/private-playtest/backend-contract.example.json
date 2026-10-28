@@ -25,7 +25,7 @@
     "one_character_per_principal": true,
     "reconnect_requires_same_principal": true,
     "browser_reconnect_proof": false,
-    "revision_changes_revoke": "all old leases; remaining allowed identities reconnect"
+    "revision_changes_revoke": "removed/remapped identities only; unchanged leases keep their absolute expiry; invalid policy fails closed"
   },
   "routes": {
     "GET": [

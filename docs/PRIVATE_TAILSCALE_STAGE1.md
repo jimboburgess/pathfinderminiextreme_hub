@@ -68,7 +68,14 @@ allowed. Policy reload occurs at most one second apart and validity is checked
 before actions and on idle ticks. Invalid/unreadable policy fails closed.
 
 The owner atomically replaces admission.json with a higher revision. Any
-revision change invalidates ALL old leases: remaining allowed players reconnect,
+revision change preserves leases for unchanged login/principal mappings. Only
+removed or remapped identities lose their leases; their characters are retained.
+A regrant requires fresh authorization and cannot resurrect an old lease.
+Unchanged leases keep their original absolute expiry. Invalid policy still fails
+closed for all connections. To revoke every user, publish an empty users list
+and wait for the revocation check before explicitly regranting. Previously, a
+revision change invalidated all leases; that owner-only behavior was corrected
+for group play. Remaining retained players reconnect only when necessary,
 removed users cannot reauthenticate. This intentionally simple four-player policy
 avoids stale authorizations. Lower revisions, or changed bytes with the same
 revision, fail closed. Revocation is an owner file operation, never a player RPC.

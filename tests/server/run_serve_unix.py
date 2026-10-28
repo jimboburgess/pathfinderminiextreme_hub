@@ -168,6 +168,15 @@ def main():
             assert replacement.call('join',name='Duplicate')['error']['code']=='ResumeRequired'
             assert replacement.call('reconnect')['ok'] and replacement.call('play')['ok']
             clients[1]=replacement;views[1]=View(replacement);assert views[1].frame()==retained
+            # A waiting identity may occupy a safely released slot, never a disconnected owner's slot.
+            assert clients[2].call('leave')['ok']
+            assert clients[2].call('reconnect')['error']['code']=='NoCharacter'
+            clients[2].close()
+            waiting=Client(bridge,4,users[4]['login']);assert waiting.call('authenticate')['ok']
+            joined=waiting.call('join',name='Waiting');assert joined['ok'] and joined['data']['player']['player_id']==2
+            clients[2]=waiting;assert waiting.call('play')['ok'];views[2]=View(waiting)
+            for _ in range(5):tap(waiting,'a')
+            assert any(views[2].frame())
             # Production menus, movement and separate original views through the protected transport.
             for index,client in enumerate(clients):
                 tap(client,'cw');tap(client,'cw');tap(client,'a')
@@ -180,11 +189,14 @@ def main():
             assert replay_client.call('ping')['ok']
             replay=bridge.send(op='rpc',slot=4,request=dict(v=1,id=str(replay_client.identifier),type='join',name='Replay'))
             assert replay.get('response',{}).get('error',{}).get('code')=='ReplayRejected'
-            # Any policy revision invalidates all old leases, and removal denies new handshakes.
+            # Removal revokes only the changed identity; unchanged live peers keep their leases.
             assert replacement.call('ping')['ok'],'revocation fixture must be live before policy update'
+            assert clients[0].call('ping')['ok'],'unaffected owner fixture must also be live'
             bridge.send(op='policy',value=policy_value(2,[u for i,u in enumerate(users) if i!=1]));time.sleep(1.25)
             assert bridge.send(op='rpc',slot=6,request=dict(v=1,id=str(replacement.identifier+1),type='ping')).get('closed')
             assert not bridge.send(op='open',slot=7,login=users[1]['login'])['ok']
+            assert clients[0].call('ping')['ok'],'unaffected original connection must not be revoked'
+            assert any(views[0].frame()),'unaffected owner keeps authorized original view'
             # A stale root policy is not a way to restore authorization.
             bridge.send(op='policy',value=policy_value(1,users));time.sleep(1.25)
             assert not bridge.send(op='open',slot=7,login=users[0]['login'])['ok']
@@ -204,7 +216,7 @@ def main():
             assert View(renewed).frame()==saved
             assert renewed.call('leave')['ok'] and renewed.call('reconnect')['error']['code']=='NoCharacter'
             stop(expiry_game)
-            report=dict(serve_localhost_and_external_csp=True,per_principal_websocket_limit=True,unsafe_policy_and_socket_paths_denied=True,kernel_uid_denial=True,trusted_root_fixture=True,identity_headers_checked=True,unauthorized_http_denied=True,principal_takeover_denied=True,
+            report=dict(waiting_identity_joins_after_verified_leave=True,individual_revocation_preserves_other_connections=True,serve_localhost_and_external_csp=True,per_principal_websocket_limit=True,unsafe_policy_and_socket_paths_denied=True,kernel_uid_denial=True,trusted_root_fixture=True,identity_headers_checked=True,unauthorized_http_denied=True,principal_takeover_denied=True,
                 four_owned_characters=True,independent_original_room_frames=True,room0_sha256=hashlib.sha256(room0).hexdigest(),room1_sha256=hashlib.sha256(room1).hexdigest(),
                 fifth_slot_preserved=True,reconnect_retained_frame=True,revision_revocation=True,rollback_policy_denied=True,absolute_expiry=True,renewed_character_retained=True,leave_revoked=True,
                 replay_rejected=True,isolation=isolation,serve_activated=False,real_tailscale_authentication_tested=False)

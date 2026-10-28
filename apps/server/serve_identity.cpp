@@ -64,14 +64,25 @@ bool parseServePolicy(std::string_view text,ServeSnapshot& result) {
             const std::string login(u.at("login").as_string()),principal(u.at("principal").as_string());
             if(!printable(login,254)||!printable(principal,64)||!std::all_of(principal.begin(),principal.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='_';}) ||
                !candidate.users.emplace(login,principal).second || !principals.insert(principal).second)return false;
+            candidate.authorizationRevisions.emplace(login,candidate.revision);
         }
         result=std::move(candidate);return true;
     } catch(...) {return false;}
 }
+void retainUnchangedServeAuthorizations(const ServeSnapshot& previous,ServeSnapshot& next) {
+    for(const auto& user:next.users) {
+        const auto prior=previous.users.find(user.first);
+        const auto generation=previous.authorizationRevisions.find(user.first);
+        if(prior!=previous.users.end() && prior->second==user.second && generation!=previous.authorizationRevisions.end())
+            next.authorizationRevisions[user.first]=generation->second;
+    }
+}
 bool serveLeaseValid(const ServeSnapshot& current,const ServeLease& lease,ServeClock::time_point now) {
     const auto user=current.users.find(lease.login);
-    return lease.revision!=0 && lease.revision==current.revision && now<lease.expires &&
-           user!=current.users.end()&&user->second==lease.principal;
+    const auto generation=current.authorizationRevisions.find(lease.login);
+    return lease.revision!=0 && lease.revision<=current.revision && now<lease.expires &&
+           user!=current.users.end()&&user->second==lease.principal &&
+           generation!=current.authorizationRevisions.end()&&generation->second==lease.revision;
 }
 ServePolicy::ServePolicy(std::string path):path_(std::move(path)) {refresh();if(!healthy_)throw std::runtime_error("invalid admission policy");}
 void ServePolicy::refresh() {
@@ -80,6 +91,7 @@ void ServePolicy::refresh() {
         auto text=rootPolicy(path_);ServeSnapshot next;
         if(!parseServePolicy(text,next)||next.revision<snapshot_.revision ||
            (next.revision==snapshot_.revision && text!=lastText_))throw std::runtime_error("invalid policy revision");
+        retainUnchangedServeAuthorizations(snapshot_,next);
         snapshot_=std::move(next);lastText_=std::move(text);healthy_=true;
     }catch(...){healthy_=false;}
 }
@@ -91,7 +103,7 @@ bool ServePolicy::admit(std::string_view login,ServeLease& lease) {
 #else
     constexpr unsigned lifetime=900;
 #endif
-    lease={it->first,it->second,snapshot_.revision,ServeClock::now()+std::chrono::seconds(lifetime)};return true;
+    lease={it->first,it->second,snapshot_.authorizationRevisions.at(it->first),ServeClock::now()+std::chrono::seconds(lifetime)};return true;
 }
 bool ServePolicy::valid(const ServeLease& lease) const {return healthy_&&serveLeaseValid(snapshot_,lease,ServeClock::now());}
 }

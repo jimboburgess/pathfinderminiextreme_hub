@@ -42,5 +42,6 @@ exit 2
 # Preserve account/policy/inactive artifacts for review; no recursive cleanup,
 # Serve reset, tailscaled stop, policy restore, Docker prune or unrelated changes.
 # Revocation: root atomically replaces admission JSON with a higher revision;
-# all old leases close, retained authorized owners reconnect. Never reuse a
+# only removed/remapped identities lose leases; unchanged players keep their
+# original expiry. Invalid/rollback policy still fails closed. Never reuse a
 # lower revision or silently assign another login an existing principal.
