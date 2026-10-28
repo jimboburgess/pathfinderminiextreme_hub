@@ -57,13 +57,16 @@ while(std::getline(std::cin,line)){try{const auto q=j::parse(line).as_object();c
   int fd=connectLocal(argv[1]);clients[slot]=fd;const auto target=str(q,"path",op=="get"?"/play":"/");
   std::string request="GET "+target+" HTTP/1.1\r\nHost: "+str(q,"host","localhost")+"\r\n";
   if(q.contains("duplicate_host"))request+="Host: "+str(q,"duplicate_host")+"\r\n";
+  if(q.contains("jwt"))request+="Cf-Access-Jwt-Assertion: "+str(q,"jwt")+"\r\n";
+  if(q.contains("verified_identity"))request+="Pfme-Verified-Identity: "+str(q,"verified_identity")+"\r\n";
+  if(q.contains("email"))request+="Cf-Access-Authenticated-User-Email: "+str(q,"email")+"\r\n";
   if(q.contains("login"))request+="Tailscale-User-Login: "+str(q,"login")+"\r\n";
   if(q.contains("duplicate_login"))request+="Tailscale-User-Login: "+str(q,"duplicate_login")+"\r\n";
   if(op=="open")request+="Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
   if((op=="open"&&!q.contains("omit_origin"))||q.contains("origin"))request+="Origin: "+str(q,"origin","https://"+host)+"\r\n";
   if(q.contains("duplicate_origin"))request+="Origin: "+str(q,"duplicate_origin")+"\r\n";
-  request+="\r\n";sendAll(fd,request);std::string header;
-  try{while(header.size()<8192 && (header.size()<4||header.substr(header.size()-4)!="\r\n\r\n"))header+=exact(fd,1);
+  request+="\r\n";std::string header;
+  try{sendAll(fd,request);while(header.size()<8192 && (header.size()<4||header.substr(header.size()-4)!="\r\n\r\n"))header+=exact(fd,1);
    if(op=="open"){if(header.find(" 101 ")==std::string::npos)throw std::runtime_error("upgrade");reply={{"ok",true},{"hello",receive(fd)}};}
    else{std::string body;char bytes[4096];ssize_t n;while((n=::recv(fd,bytes,sizeof(bytes),0))>0){body.append(bytes,n);if(body.size()>65536)throw std::runtime_error("body");}reply={{"ok",header.find(" 200 ")!=std::string::npos},{"headers",header},{"body",body}};::close(fd);clients[slot]=-1;}
   }catch(...){::close(fd);clients[slot]=-1;reply={{"ok",false}};}

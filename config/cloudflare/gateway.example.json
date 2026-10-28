@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "issuer": "https://replace-team.cloudflareaccess.com",
+  "audience": "REPLACE_WITH_EXACT_ACCESS_APPLICATION_AUD",
+  "origin": "https://game.example.com",
+  "frontend": "/front/gateway.sock",
+  "backend": "/back/backend.sock",
+  "connector_uid": 1002,
+  "frontend_gid": 1002,
+  "keys": "/keys/jwks.json"
+}

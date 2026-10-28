@@ -31,6 +31,8 @@ int main(){try {
     check(serveLeaseValid(remapped,lease,now)&&!serveLeaseValid(remapped,friendLease,now),"remapping revokes only changed identity");
     check(!serveLeaseValid(remapped,lease,now+std::chrono::seconds(900)),"updates never extend absolute expiry");
     for(const auto* invalid:{R"({"version":1,"revision":0,"users":[]})",R"({"version":1,"revision":1,"users":[{"login":"a","principal":"same"},{"login":"b","principal":"same"}]})",R"({"version":1,"revision":1,"users":[{"login":"a","principal":"one"},{"login":"a","principal":"two"}]})",R"({"version":1,"revision":1,"users":[],"fallback":true})"})check(!parseServePolicy(invalid,policy),"invalid policy rejected");
+    check(validCloudflareOrigin("https://game.example.com"),"Cloudflare public HTTPS origin");
+    for(auto bad:{"http://game.example.com","https://*.example.com","https://game.example.com/","https://game.example.com:443","https://game.example.com@evil.invalid","https://game..example.com","https://game.example.com."})check(!validCloudflareOrigin(bad),"invalid Cloudflare origin");
     check(validServeOrigin("https://game.test.ts.net"),"private HTTPS origin");
     for(auto origin:{"http://game.test.ts.net","https://game.test.ts.net/","https://game.test.ts.net:443","https://game.test.ts.net@evil.invalid","https://*.ts.net"})check(!validServeOrigin(origin),"ambiguous origin denied");
     SecretDigest gate{};Service service(gate,12345,false,true);

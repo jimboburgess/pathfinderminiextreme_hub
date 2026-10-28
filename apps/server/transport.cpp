@@ -81,11 +81,14 @@ public:
         if(serve) {
 #ifdef __linux__
             if(::geteuid()==0)throw std::runtime_error("game runtime must be unprivileged");
+            if(serve->cloudflare && (serve->peerUid==0||serve->peerUid==::geteuid()||serve->peerGid==0))
+                throw std::runtime_error("separate unprivileged gateway identity required");
             options_=*serve;policy_=std::make_unique<ServePolicy>(options_.policy);
             const std::filesystem::path path(options_.socket),parent=path.parent_path();struct stat directory{},existing{};
             if(!path.is_absolute() || path.lexically_normal()!=path || options_.socket.size()>=100 ||
                std::filesystem::canonical(parent)!=parent || ::lstat(parent.c_str(),&directory)!=0 ||
-               !S_ISDIR(directory.st_mode)||directory.st_uid!=::geteuid()||(directory.st_mode&0077)!=0 ||
+               !S_ISDIR(directory.st_mode)||directory.st_uid!=::geteuid()||
+               (serve->cloudflare?(directory.st_gid!=serve->peerGid||(directory.st_mode&0777)!=0710):(directory.st_mode&0077)!=0) ||
                ::lstat(options_.socket.c_str(),&existing)==0 || errno!=ENOENT)
                 throw std::runtime_error("unsafe local socket path");
             ::umask(0077);
@@ -93,7 +96,7 @@ public:
             localAcceptor_->open();localAcceptor_->bind(asio::local::stream_protocol::endpoint(options_.socket));
             struct stat bound{};if(::lstat(options_.socket.c_str(),&bound)!=0)throw std::runtime_error("socket creation failed");
             ownedPath_=std::make_unique<OwnedSocketPath>(options_.socket,bound.st_dev,bound.st_ino);
-            if(::chmod(options_.socket.c_str(),0600)!=0)throw std::runtime_error("socket permissions failed");
+            if(::chmod(options_.socket.c_str(),serve->cloudflare?0660:0600)!=0)throw std::runtime_error("socket permissions failed");
             localAcceptor_->listen(static_cast<int>(MAX_CONNECTIONS));return;
 #else
             throw std::runtime_error("Serve requires Linux");
@@ -170,7 +173,8 @@ private:
                 if(stopped_)return;
                 struct ucred credentials{};socklen_t size=sizeof(credentials);
                 if(!ec && ::getsockopt(socket.native_handle(),SOL_SOCKET,SO_PEERCRED,&credentials,&size)==0 &&
-                   size==sizeof(credentials)&&credentials.uid==0)admit(StreamSocket(std::move(socket)),0);
+                   size==sizeof(credentials) && (options_.cloudflare?
+                       (credentials.uid==options_.peerUid&&credentials.gid==options_.peerGid):credentials.uid==0))admit(StreamSocket(std::move(socket)),0);
                 accept();
             });return;
         }
@@ -253,8 +257,11 @@ void Peer::start()
         if(req.method()!=http::verb::get || (host!=expected && (self->owner_.privateMode()||host!=local)) ||
            req.count(http::field::host)!=1 || self->input_.size()!=0) { self->finish(); return; }
         if(self->owner_.privateMode()) {
-            if(req.count("Tailscale-User-Login")!=1 ||
-               !self->owner_.policy()->admit(std::string(req["Tailscale-User-Login"]),self->lease_)) {self->finish();return;}
+            const bool cloudflare=self->owner_.options().cloudflare;
+            const char* identityHeader=cloudflare?"Pfme-Verified-Identity":"Tailscale-User-Login";
+            if(req.count(identityHeader)!=1 || req.count(cloudflare?"Tailscale-User-Login":"Pfme-Verified-Identity")!=0 ||
+               req.count("Cf-Access-Jwt-Assertion")!=0 ||
+               !self->owner_.policy()->admit(std::string(req[identityHeader]),self->lease_)) {self->finish();return;}
             self->hasLease_=true;self->connection_.verifiedPrincipal=self->lease_.principal;
         }
 #ifdef PFME_HAS_PLAYABLE

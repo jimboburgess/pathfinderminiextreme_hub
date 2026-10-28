@@ -6,7 +6,7 @@
 #include <string_view>
 namespace pfme::server {
 using ServeClock=std::chrono::steady_clock;
-struct ServeOptions {std::string socket,origin,policy;};
+struct ServeOptions {std::string socket,origin,policy;bool cloudflare=false;uint32_t peerUid=0,peerGid=0;};
 struct ServeSnapshot {
     uint64_t revision=0;
     std::map<std::string,std::string> users;
@@ -21,6 +21,7 @@ bool parseServePolicy(std::string_view,ServeSnapshot&);
 void retainUnchangedServeAuthorizations(const ServeSnapshot& previous,ServeSnapshot& next);
 bool serveLeaseValid(const ServeSnapshot&,const ServeLease&,ServeClock::time_point);
 bool validServeOrigin(std::string_view);
+bool validCloudflareOrigin(std::string_view);
 class ServePolicy {
 public:
     explicit ServePolicy(std::string path);

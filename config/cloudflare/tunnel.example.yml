@@ -1,0 +1,16 @@
+# REVIEW ONLY. No tunnel or DNS record exists by preparing this example.
+tunnel: REPLACE_TUNNEL_UUID
+credentials-file: /run/secrets/tunnel.json
+protocol: http2
+edge-ip-version: "4"
+no-autoupdate: true
+ingress:
+  - hostname: game.example.com
+    service: unix:/front/gateway.sock
+    originRequest:
+      httpHostHeader: game.example.com
+      http2Origin: false
+  - service: http_status:404
+# Access must protect the WHOLE hostname, including / and all asset paths.
+# Gateway independently validates the Access assertion; no email-header trust.
+# No SSH/TCP/SOCKS ingress, wildcard hostname, private route, LAN or extra origin.

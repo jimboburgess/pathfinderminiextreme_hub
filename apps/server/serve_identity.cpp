@@ -39,6 +39,19 @@ std::string rootPolicy(const std::string& path) {
 #endif
 }
 }
+bool validCloudflareOrigin(std::string_view origin) {
+    if(origin.substr(0,8)!="https://")return false;
+    const auto host=origin.substr(8);if(host.size()>253||host.find('.')==std::string_view::npos)return false;
+    std::size_t start=0;
+    while(start<host.size()) {
+        const auto end=host.find('.',start);const auto label=host.substr(start,end==std::string_view::npos?host.size()-start:end-start);
+        if(label.empty()||label.size()>63||label.front()=='-'||label.back()=='-'||
+           !std::all_of(label.begin(),label.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='-';}))return false;
+        if(end==std::string_view::npos)return true;
+        start=end+1;
+    }
+    return false;
+}
 bool validServeOrigin(std::string_view origin) {
     constexpr std::string_view prefix="https://";
     if(origin.substr(0,prefix.size())!=prefix)return false;
