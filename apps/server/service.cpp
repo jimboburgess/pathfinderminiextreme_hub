@@ -14,12 +14,17 @@ json::object playerJson(const SessionPlayer& player)
 json::value roomJson(uint8_t room)
 { return room == NO_ROOM ? json::value(nullptr) : json::value(room); }
 }
-Service::Service(const SecretDigest& gate, uint32_t seed) : gate_(gate)
+Service::Service(const SecretDigest& gate, uint32_t seed, bool partyMode) : gate_(gate)
 {
 #ifdef PFME_HAS_PLAYABLE
-    seed_=seed;
+    seed_=seed;partyMode_=partyMode;
 #endif
     if (game_.initialize(seed) != SessionError::Ok) throw std::runtime_error("session initialization failed");
+#ifdef PFME_HAS_PLAYABLE
+    if(partyMode_)party_=std::make_unique<runtime::PartyRuntime>(game_,seed);
+#else
+    (void)partyMode;
+#endif
 }
 std::string Service::hello()
 { return json::serialize(response("", "hello", {{"authentication_required", true}, {"navigation", "topology-only"}})); }
@@ -29,6 +34,16 @@ void Service::tick()
     const auto now=std::chrono::steady_clock::now();
     const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-lastTick_).count();
     lastTick_=now;
+    if(partyMode_) {
+        bool connected=false;
+        for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(partyStarted_[id] && participants_[id].activeConnection) {
+            connected=true;
+            if(now-partyLastInput_[id]>std::chrono::milliseconds(1500))
+                party_->input(participants_[id].handle,participants_[id].activeConnection,"release",false);
+        }
+        if(connected)party_->tick(static_cast<uint32_t>(std::min<int64_t>(elapsed,100)));
+        return;
+    }
     if(isValidPlayerID(playOwner_) && !playRetired_ && participants_[playOwner_].activeConnection) {
         if(now-lastInput_>std::chrono::milliseconds(1500)) runtime::releaseInputs();
         runtime::advance(static_cast<uint32_t>(std::min<int64_t>(elapsed,100)));
@@ -43,7 +58,8 @@ void Service::detach(ConnectionState& connection)
         if (participant.occupied && participant.activeConnection == connection.serial)
         {
 #ifdef PFME_HAS_PLAYABLE
-            if(connection.player==playOwner_) runtime::releaseInputs();
+            if(partyMode_ && partyStarted_[connection.player])party_->detach(participant.handle,connection.serial);
+            else if(connection.player==playOwner_) runtime::releaseInputs();
 #endif
             game_.disconnect(participant.handle);
             participant.activeConnection = 0;
@@ -92,7 +108,7 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
     if (!connection.authenticated) return fail("NotAuthenticated");
 #ifdef PFME_HAS_PLAYABLE
 #include "playable_service.inc"
-    if(isValidPlayerID(playOwner_) && (request.type=="move" || request.type=="map" || request.type=="events"))
+    if((partyMode_ || isValidPlayerID(playOwner_)) && (request.type=="move" || request.type=="map" || request.type=="events"))
         return fail("RuntimeMode");
 #endif
     if (request.type == "join")
@@ -152,8 +168,16 @@ json::object Service::dispatch(ConnectionState& connection, const Request& reque
         if (request.type == "disconnect") { detach(connection); return ok(); }
         if (request.type == "leave")
         {
-            const auto result = game_.leave(participant.handle);
-            if (result != SessionError::Ok) return fail(sessionErrorName(result));
+#ifdef PFME_HAS_PLAYABLE
+            if(partyMode_ && partyStarted_[connection.player]) {
+                if(!party_->leave(participant.handle,connection.serial))return fail("AdventureBusy");
+                partyStarted_[connection.player]=false;partyScreens_[connection.player].reset();
+            } else
+#endif
+            {
+                const auto result=game_.leave(participant.handle);
+                if(result!=SessionError::Ok)return fail(sessionErrorName(result));
+            }
 #ifdef PFME_HAS_PLAYABLE
             if(connection.player==playOwner_) { runtime::releaseInputs(); playRetired_=true; }
 #endif

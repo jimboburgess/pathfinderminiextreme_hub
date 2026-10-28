@@ -4,6 +4,6 @@
 #include <cstdint>
 namespace pfme::server
 {
-int runServer(uint16_t port, uint32_t seed, uint32_t runMilliseconds, const SecretDigest& gate);
+int runServer(uint16_t port, uint32_t seed, uint32_t runMilliseconds, const SecretDigest& gate, bool partyMode=false);
 }
 #endif

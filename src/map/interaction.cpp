@@ -415,3 +415,10 @@ bool tryInteractWithFacingEntity()
     openCorpseLootMenu(*target);
     return true;
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(lockedChest);
+PFME_CONTEXT_FIELD(selectedFountain);
+PFME_CONTEXT_FIELD(selectedRiddleDoorDirection);
+#endif

@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 //
 // Created by james on 7/20/2026.
 //
@@ -214,6 +217,9 @@ static void initForest()
 
 void enterForest()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive()) {setGameMessage("Party forest travel is not available.");return;}
+#endif
     // Forest runs are regenerated, but they must never inherit a dungeon or
     // prior forest encounter's initiative/targeting state.
     abortCombat();

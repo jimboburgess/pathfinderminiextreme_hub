@@ -106,3 +106,11 @@ if(BUILD_TESTING)
             $<TARGET_FILE:pfme_server> $<TARGET_FILE:pfme_ws_security_tests>)
     set_tests_properties(pfme_websocket_security PROPERTIES TIMEOUT 90)
 endif()
+
+if(BUILD_TESTING AND PFME_BUILD_PLAYABLE)
+    foreach(party_size RANGE 1 4)
+        add_test(NAME pfme_party_wire_${party_size} COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/run_party.py" $<TARGET_FILE:pfme_server> ${party_size})
+        set_tests_properties(pfme_party_wire_${party_size} PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE)
+    endforeach()
+endif()

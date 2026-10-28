@@ -176,3 +176,13 @@ void startBertramCatRetry()
         ? "I'll give you another guess if you catch my cat."
         : "There is nowhere for the cat to run.");
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(activeRiddle);
+PFME_CONTEXT_FIELD(answerItems);
+PFME_CONTEXT_FIELD(riddleMenu);
+PFME_CONTEXT_FIELD(retryPayTitle);
+PFME_CONTEXT_FIELD(retryItems);
+PFME_CONTEXT_FIELD(retryMenu);
+#endif

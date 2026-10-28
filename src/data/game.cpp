@@ -43,3 +43,16 @@ const DirectionOffset directionOffsets[] =
     { -1, -1 }  // Northwest
 };
 
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(gameState);
+PFME_CONTEXT_FIELD(townSelection);
+PFME_CONTEXT_FIELD(moveDirection);
+PFME_CONTEXT_FIELD(previousPlayerPosition);
+PFME_CONTEXT_FIELD(previousMoveDirection);
+PFME_CONTEXT_FIELD(lastMoveWasDiagonal);
+PFME_CONTEXT_FIELD(fullRedrawNeeded);
+PFME_CONTEXT_FIELD(needsRedraw);
+PFME_CONTEXT_FIELD(redrawType);
+#endif

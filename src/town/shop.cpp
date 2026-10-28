@@ -345,3 +345,18 @@ void sellShopItem(uint8_t menuIndex)
     playSound(SoundEffect::ITEM_PICKUP);
     requestShopRedraw();
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(shopGoldText);
+PFME_CONTEXT_FIELD(shopStatus);
+PFME_CONTEXT_FIELD(buyLabels);
+PFME_CONTEXT_FIELD(buyMenuItems);
+PFME_CONTEXT_FIELD(buyStockIndices);
+PFME_CONTEXT_FIELD(sellLabels);
+PFME_CONTEXT_FIELD(sellMenuItems);
+PFME_CONTEXT_FIELD(sellInventoryIndices);
+PFME_CONTEXT_FIELD(shopMenu);
+PFME_CONTEXT_FIELD(buyMenu);
+PFME_CONTEXT_FIELD(sellMenu);
+#endif

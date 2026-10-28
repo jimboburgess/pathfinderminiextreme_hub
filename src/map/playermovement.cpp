@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 //
 // Created by james on 7/12/2026.
 //
@@ -265,8 +268,12 @@ bool tryMovePlayer(Dungeon &dungeon)
         return multiplayerMoved;
 
     bool roomChanged = false;
+    PlayerID owner=SINGLE_PLAYER_ID;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())owner=pfme::runtime::selectedController();
+#endif
     return tryMovePlayerAuthoritative(
-        dungeon, SINGLE_PLAYER_ID, moveDirection, true, roomChanged);
+        dungeon, owner, moveDirection, true, roomChanged);
 }
 
 bool tryMovePlayerAuthoritative(
@@ -297,6 +304,9 @@ bool tryMovePlayerAuthoritative(
 
     if (player == nullptr)
         return false;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active && getCurrentCombatant()!=player)return false;
+#endif
 
     // A defeated player may open the recovery menu, but cannot move or
     // interact with the dungeon until Return to Town restores them.
@@ -609,7 +619,11 @@ bool tryMovePlayerAuthoritative(
             // would discard its combatants. Forest exploration has no room
             // transition escape route, so keep dungeon combat locked to the
             // active map until it ends.
-            if (combat.active)
+            if (combat.active
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                && !pfme::runtime::nativeRoomsActive()
+#endif
+            )
             {
                 playSound(SoundEffect::BUMP);
                 return false;

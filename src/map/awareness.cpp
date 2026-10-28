@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "map/awareness.h"
 
 #include <Arduino.h>
@@ -273,6 +276,40 @@ void updateMonsterVisibility()
     }
 }
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+bool scanPlayerMonsterAwareness(Entity* player,Entity* entities,uint8_t entityCount)
+{
+    for (uint8_t i = 0; i < entityCount; i++)
+    {
+        Entity& monster = entities[i];
+        if (!isHostileLivingMonster(monster) || monster.monster == nullptr)
+            continue;
+
+        const int distance = getEntityGridDistance(*player, monster);
+        tryPlayerDetectMonster(*player, monster);
+
+        if (distance > COMBAT_DETECTION_RANGE)continue;
+        if(monster.awareOfPlayer) {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if(pfme::runtime::nativeRoomsActive()){startCombat();return true;}
+#endif
+            continue;
+        }
+
+        if (tryMonsterDetectPlayer(monster, *player))
+        {
+            char message[64];
+            snprintf(message, sizeof(message), "%s looks your way!", getEntityName(&monster));
+            setGameMessage(message);
+            startCombat();
+            return true;
+        }
+    }
+    return false;
+}
+
+#endif
+
 void updateAwareness()
 {
     // Rogue trapfinding is event-gated by persistent per-trap attempt state.
@@ -293,6 +330,9 @@ void updateAwareness()
     if (entities == nullptr || player == nullptr || player->character.state != STATE_ALIVE)
         return;
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive()) {pfme::runtime::scanNativeRoomAwareness();return;}
+#endif
     for (uint8_t i = 0; i < entityCount; i++)
     {
         Entity& monster = entities[i];
@@ -315,3 +355,8 @@ void updateAwareness()
         }
     }
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_ROOM_FIELD(lastAwarenessCheck);
+#endif

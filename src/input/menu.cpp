@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 //
 // Created by james on 7/24/2026.
 //
@@ -2121,6 +2124,14 @@ void drawMenu()
 
 bool isMenuItemVisible(MenuAction action)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive()) {
+        if(action>=MENU_MULTIPLAYER && action<=MENU_MULTIPLAYER_TRAVEL_DECLINE)return false;
+        if(action==MENU_DUNGEON_START_NEW || action==MENU_DUNGEON_START_NEW_YES)return false;
+        if(combat.active && action==MENU_RETURN_TO_TOWN)return false;
+        if(combat.active && !isPlayerTurn() && action>=MENU_CHEST_PICK_LOCK && action<=MENU_RIDDLE_RETRY_LEAVE)return false;
+    }
+#endif
     Character* character = getMenuCharacter();
 
     if (character == nullptr)
@@ -2307,3 +2318,10 @@ bool isMenuItemEnabled(MenuAction action)
 {
     return isMenuItemVisible(action);
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+// MenuState is owned directly by ControllerState and borrowed by the adapter.
+PFME_CONTEXT_FIELD(spellMenuItems);
+PFME_CONTEXT_FIELD(spellMenu);
+#endif

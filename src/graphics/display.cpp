@@ -273,9 +273,16 @@ void drawStartScreen()
     tft.print(getGameMessage());
 }
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+static bool nativeTitleLastFrame = false;
+#endif
 void drawStartAnimation()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    bool& lastFrame = nativeTitleLastFrame;
+#else
     static bool lastFrame = false;
+#endif
 
     bool frame = (millis() / 800) % 2;
 
@@ -1331,3 +1338,11 @@ void drawSpriteGrayscaleTransparent(
     }
     tft.endWrite();
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(nativeTitleLastFrame);
+PFME_CONTEXT_FIELD(dirtyTiles);
+PFME_CONTEXT_FIELD(dirtyTileCount);
+PFME_CONTEXT_FIELD(backgroundNeedsRedraw);
+#endif

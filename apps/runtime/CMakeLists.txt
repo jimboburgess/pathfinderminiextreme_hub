@@ -1,11 +1,11 @@
 # Compile production gameplay and presentation directly; only ESP-NOW hardware is replaced.
 file(GLOB_RECURSE handheld_sources CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp")
 list(FILTER handheld_sources EXCLUDE REGEX "/(espnow_transport|game_session|combat_rules|dungeontopology|riddles|multiplayer_snapshot|network_protocol)\\.cpp$")
-add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp controller_slots.cpp
+add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp controller_slots.cpp context_fields.cpp party_runtime.cpp
     ../browser/third_party/adafruit_gfx/Adafruit_GFX.cpp)
 target_include_directories(pfme_handheld_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
     PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx "${PROJECT_SOURCE_DIR}/src")
-target_compile_definitions(pfme_handheld_runtime PRIVATE ARDUINO=100)
+target_compile_definitions(pfme_handheld_runtime PRIVATE ARDUINO=100 PFME_NATIVE_CONTROLLER_CONTEXT=1)
 target_compile_features(pfme_handheld_runtime PRIVATE cxx_std_17)
 target_link_libraries(pfme_handheld_runtime PUBLIC pfme_portable_leaf)
 add_executable(pfme_runtime_probe probe.cpp)
@@ -26,4 +26,27 @@ if(BUILD_TESTING)
     target_link_libraries(pfme_controller_tests PRIVATE pfme_handheld_runtime)
     target_compile_definitions(pfme_controller_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_controller_isolation COMMAND pfme_controller_tests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(pfme_multicontroller_tests multicontroller_tests.cpp)
+    target_include_directories(pfme_multicontroller_tests PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_multicontroller_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_multicontroller_tests PRIVATE ARDUINO=100)
+    foreach(party_size RANGE 1 4)
+        add_test(NAME pfme_exploration_${party_size} COMMAND pfme_multicontroller_tests ${party_size})
+    endforeach()
+endif()
+
+if(BUILD_TESTING)
+    add_test(NAME pfme_party_mixed_classes COMMAND pfme_multicontroller_tests 4 mixed 2)
+    add_test(NAME pfme_party_world_effects COMMAND pfme_multicontroller_tests 2 world-effects 2)
+    add_test(NAME pfme_party_lifecycle COMMAND pfme_multicontroller_tests 4 lifecycle 2)
+    add_test(NAME pfme_party_combat_1 COMMAND pfme_multicontroller_tests 1 combat 2)
+    add_test(NAME pfme_party_combat_2 COMMAND pfme_multicontroller_tests 2 combat 0)
+    add_test(NAME pfme_party_combat_3 COMMAND pfme_multicontroller_tests 3 combat 1)
+    add_test(NAME pfme_party_combat_4 COMMAND pfme_multicontroller_tests 4 combat 2)
+    set_tests_properties(pfme_exploration_1 pfme_exploration_2 pfme_exploration_3 pfme_exploration_4
+        pfme_party_combat_1 pfme_party_combat_2 pfme_party_combat_3 pfme_party_combat_4
+        PROPERTIES RUN_SERIAL TRUE TIMEOUT 120)
 endif()

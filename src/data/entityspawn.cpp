@@ -4,6 +4,10 @@
 
 #include "entityspawn.h"
 #include "../dungeon/monsters.h"
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#include "dungeon/combat.h"
+#endif
 
 Entity* findFreeEntity(
     Entity entities[],
@@ -11,8 +15,12 @@ Entity* findFreeEntity(
 {
     for (uint8_t i = 0; i < entityCount; i++)
     {
-        if (!entities[i].active)
+        if (!entities[i].active) {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if(pfme::runtime::nativeRoomsActive() && isCombatParticipant(entities[i]))continue;
+#endif
             return &entities[i];
+        }
     }
 
     return nullptr;
@@ -233,8 +241,13 @@ Entity* getPlayerEntity(
         if (!entities[i].active)
             continue;
 
-        if (entities[i].type == ENTITY_PLAYER)
+        if (entities[i].type == ENTITY_PLAYER) {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if (pfme::runtime::nativeRoomsActive() &&
+                entities[i].ownerPlayerID != pfme::runtime::selectedController()) continue;
+#endif
             return &entities[i];
+        }
     }
 
     return nullptr;
@@ -249,8 +262,13 @@ const Entity* getPlayerEntity(
         if (!entities[i].active)
             continue;
 
-        if (entities[i].type == ENTITY_PLAYER)
+        if (entities[i].type == ENTITY_PLAYER) {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if (pfme::runtime::nativeRoomsActive() &&
+                entities[i].ownerPlayerID != pfme::runtime::selectedController()) continue;
+#endif
             return &entities[i];
+        }
     }
 
     return nullptr;

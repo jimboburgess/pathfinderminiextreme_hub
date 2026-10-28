@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 //
 // Created by james on 7/14/2026.
 //
@@ -27,8 +30,13 @@ static CharacterCreationModel creation;
 
 void enterCharacterCreation()
 {
-    abortCombat();
-    resetDungeonRun(dungeon);
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if (!pfme::runtime::nativeRoomsActive())
+#endif
+    {
+        abortCombat();
+        resetDungeonRun(dungeon);
+    }
     creation.enter();
     resetButtonStates();
     needsRedraw = true;
@@ -285,3 +293,8 @@ void menuSelect()
 
     needsRedraw = true;
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+namespace pfme { namespace runtime { CharacterCreationModel& productionCreationState() {return creation;} }}
+#endif

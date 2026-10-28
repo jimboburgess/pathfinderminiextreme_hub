@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 //
 // Created by james on 7/25/2026.
 //
@@ -82,6 +85,9 @@ static void showNextMessageLine()
 
 void setGameMessage(const char* message)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && pfme::runtime::broadcastNativeMessage(message))return;
+#endif
     strncpy(pendingMessage, message, sizeof(pendingMessage) - 1);
     pendingMessage[sizeof(pendingMessage) - 1] = '\0';
     messagePosition = 0;
@@ -128,3 +134,11 @@ void clearGameMessage()
     currentMessage[0] = '\0';
     messagePosition = 0;
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(pendingMessage);
+PFME_CONTEXT_FIELD(currentMessage);
+PFME_CONTEXT_FIELD(messagePosition);
+PFME_CONTEXT_FIELD(lineStartTime);
+#endif

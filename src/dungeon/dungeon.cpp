@@ -1,3 +1,7 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#include "context_fields.h"
+#endif
 //
 // Created by james on 7/12/2026.
 //
@@ -211,7 +215,11 @@ void updateRoomCompletion(Dungeon& dungeon, uint8_t roomIndex)
         return;
 
     const bool roomIsActive = dungeon.loadedRoom == roomIndex &&
-        dungeon.entities == dungeon.activeDungeonEntities;
+        (dungeon.entities == dungeon.activeDungeonEntities
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+         || pfme::runtime::nativeRoomsActive()
+#endif
+        );
     bool hasLivingMonster = false;
     if (roomIsActive)
     {
@@ -578,6 +586,21 @@ DungeonRubblePlan createDungeonRubblePlan(
 
 void enterDungeon()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if (pfme::runtime::nativeRoomsActive()) {
+        if (combat.active) { setGameMessage("Wait for the encounter to finish.");return; }
+        dungeon.currentRoom=0;
+        if (!dungeon.runActive) generateDungeon(dungeon);
+        else if (!loadRoom(dungeon,ENTRY_START)) { setGameMessage("Dungeon entry unavailable.");return; }
+        if (!pfme::runtime::nativeActor(pfme::runtime::selectedController())) return;
+        gameState=GAME_DUNGEON;moveDirection=DIR_EAST;
+        previousMoveDirection=moveDirection;
+        auto* actor=pfme::runtime::nativeActor(pfme::runtime::selectedController());
+        previousPlayerPosition={actor->x,actor->y};
+        backgroundNeedsRedraw=true;redrawType=REDRAW_FULL;needsRedraw=true;
+        setGameMessage("Entered dungeon");return;
+    }
+#endif
     // Entering a map must never inherit a stale encounter. Return to Town is
     // the primary cleanup path; this is the requested defensive safety net.
     abortCombat();
@@ -817,6 +840,10 @@ bool persistActiveDungeonRoom(Dungeon& dungeon)
 
 bool loadRoom(Dungeon& dungeon, RoomEntry entry)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if (pfme::runtime::nativeRoomsActive())
+        return pfme::runtime::travelNativeRoom(dungeon,entry);
+#endif
     if (dungeon.currentRoom >= dungeon.roomCount)
         return false;
 
@@ -922,6 +949,9 @@ bool loadRoom(Dungeon& dungeon, RoomEntry entry)
 
 bool suspendDungeonRun(Dungeon& dungeon)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())return pfme::runtime::leaveNativeRoom(dungeon);
+#endif
     if (!dungeon.runActive)
         return false;
 
@@ -935,6 +965,10 @@ bool suspendDungeonRun(Dungeon& dungeon)
 
 void resetDungeonRun(Dungeon& dungeon)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    // An ordinary participant cannot discard the shared adventure.
+    if(pfme::runtime::nativeRoomsActive() && dungeon.runActive)return;
+#endif
     dungeon.runActive = false;
     dungeon.entities = nullptr;
     dungeon.entityCount = 0;
@@ -1024,3 +1058,132 @@ void markDungeonCompletedOnTownReturn(Dungeon& dungeon)
         dungeon.completed = true;
 }
 
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+namespace pfme { namespace runtime {
+namespace {
+// One authoritative resident collection per room, not per player. Addresses
+// remain stable across view selection. Only actual travel moves an actor.
+struct ResidentRoom { Entity entities[MAX_ENTITIES]{};uint8_t count=0;bool ready=false; };
+ResidentRoom residentRooms[MAX_ROOMS];
+struct ObserverEntity {
+    bool revealed=false,visible=false,lineOfSight=false,known=false;
+    uint8_t x=0,y=0;
+};
+ObserverEntity views[MAX_MULTIPLAYER_PLAYERS][MAX_ROOMS][MAX_ENTITIES];
+PlayerID loadedObserver=INVALID_PLAYER_ID;
+uint8_t observedRoom=NO_ROOM;
+Entity* actors[MAX_MULTIPLAYER_PLAYERS]{};
+uint8_t actorRooms[MAX_MULTIPLAYER_PLAYERS]{};
+void bindRoom(Dungeon& world,uint8_t index) {
+    switchRoomFields(index);
+    auto& room=residentRooms[index];
+    world.currentRoom=world.loadedRoom=index;
+    world.entities=room.entities;world.entityCount=room.count;
+    loadedObserver=selectedController();observedRoom=index;
+    if(isValidPlayerID(loadedObserver))for(unsigned i=0;i<room.count;++i) {
+        auto& e=room.entities[i];const auto& v=views[loadedObserver][index][i];
+        e.revealedToPlayer=v.revealed;e.visibleToPlayer=v.visible;
+        e.playerHasLineOfSight=v.lineOfSight;e.hasLastKnownPosition=v.known;
+        e.lastKnownX=v.x;e.lastKnownY=v.y;
+    }
+}
+}
+void saveNativeRoomView(Dungeon& world) {
+    if(!isValidPlayerID(loadedObserver) || observedRoom>=MAX_ROOMS ||
+       world.entities!=residentRooms[observedRoom].entities)return;
+    residentRooms[observedRoom].count=world.entityCount;
+    for(unsigned i=0;i<world.entityCount;++i) {
+        const auto& e=world.entities[i];auto& v=views[loadedObserver][observedRoom][i];
+        v={e.revealedToPlayer,e.visibleToPlayer,e.playerHasLineOfSight,e.hasLastKnownPosition,e.lastKnownX,e.lastKnownY};
+    }
+}
+uint8_t nativeEntityRoom(const Entity* entity) {
+    for(uint8_t room=0;room<MAX_ROOMS;++room)if(residentRooms[room].ready)
+        for(unsigned i=0;i<residentRooms[room].count;++i)
+            if(entity==&residentRooms[room].entities[i])return room;
+    return NO_ROOM;
+}
+bool hasLivingNativePlayers() {
+    for(auto* actor:actors)if(actor && actor->active && actor->character.state==STATE_ALIVE && actor->character.health.currentHP>0)return true;
+    return false;
+}
+void retireNativeObserver(PlayerID id) {
+    if(!isValidPlayerID(id))return;
+    for(auto& room:views[id])for(auto& view:room)view=ObserverEntity{};
+}
+uint8_t nativeActorRoom(PlayerID id) {return isValidPlayerID(id)&&actors[id]?actorRooms[id]:NO_ROOM;}
+bool leaveNativeRoom(Dungeon& world) {
+    auto id=selectedController();if(!isValidPlayerID(id)||!actors[id]||combat.active)return false;
+    saveNativeRoomView(world);player=actors[id]->character;actors[id]->active=false;actors[id]=nullptr;
+    closeInventoryMenu();clearInteractionEntityReferences();closeMenu();
+    world.entities=nullptr;world.entityCount=0;world.loadedRoom=NO_ROOM;return true;
+}
+Entity* nativeActor(PlayerID id) { return isValidPlayerID(id)?actors[id]:nullptr; }
+bool bindNativeWorldRoom(Dungeon& world,uint8_t room) {
+    if(room>=MAX_ROOMS || !residentRooms[room].ready)return false;
+    saveNativeRoomView(world);bindRoom(world,room);return true;
+}
+void bindNativeRoom(Dungeon& world,PlayerID id) {
+    if (isValidPlayerID(id) && actors[id]) bindRoom(world,actorRooms[id]);
+    else { world.entities=nullptr;world.entityCount=0;world.loadedRoom=NO_ROOM; }
+}
+bool travelNativeRoom(Dungeon& world,RoomEntry entry) {
+    const auto id=selectedController();const auto destination=world.currentRoom;
+    if (!isValidPlayerID(id) || destination>=world.roomCount)return false;
+    if(combat.active && (!combat.waitingForPlayer || getCurrentCombatant()!=actors[id] ||
+                        actors[id]->turn.movementRemaining==0))return false;
+    saveNativeRoomView(world);
+    auto* previous=actors[id];
+    auto& target=residentRooms[destination];
+    const bool initializing=!target.ready;
+    if (!target.ready) {
+        // Reuse the original spawn rules exactly once. No pointers to this
+        // temporary spawn workspace escape before the resident copy is made.
+        world.entities=world.activeDungeonEntities;
+        initializeRoomEntities(world,world.rooms[destination],world.roomRuntime[destination]);
+        target.count=world.entityCount;
+        for(unsigned i=0;i<target.count;++i)target.entities[i]=world.activeDungeonEntities[i];
+        target.ready=true;
+        auto& runtime=world.roomRuntime[destination];
+        const auto& puzzle=world.rooms[destination].numberPuzzle;
+        runtime.numberPreviousDigit=puzzle.seedA;
+        runtime.numberCurrentDigit=puzzle.rule==NUMBER_RULE_PREVIOUS_PLUS_CURRENT_MOD_10?puzzle.seedB:puzzle.seedA;
+    }
+    bindRoom(world,destination);
+    uint8_t x=ROOM_WIDTH/2,y=ROOM_HEIGHT/2;
+    getRoomEntryPosition(world.rooms[destination],entry,x,y);
+    if (world.rooms[destination].map.tiles[y][x]!=TILE_FLOOR ||
+        getEntityAt(world.entities,world.entityCount,x,y)!=nullptr) {
+        if(!findSafePlayerEntry(world,world.rooms[destination],x,y,x,y)) {
+            bindNativeRoom(world,id);return false;
+        }
+    }
+    Entity* targetActor=nullptr;
+    for(unsigned i=0;i<target.count;++i)if(!target.entities[i].active) {targetActor=&target.entities[i];break;}
+    if (!targetActor && target.count<MAX_ENTITIES)targetActor=&target.entities[target.count++];
+    if (!targetActor) {bindNativeRoom(world,id);return false;}
+    Entity value=previous?*previous:Entity{};
+    if(!previous)value.character=player;
+    value.type=ENTITY_PLAYER;value.active=true;value.ownerPlayerID=id;
+    value.sprite=getPlayerSprite(value.character.characterClass);value.x=x;value.y=y;
+    // Commit the move only after destination/capacity checks have succeeded.
+    if(previous)previous->active=false;
+    *targetActor=value;actors[id]=targetActor;actorRooms[id]=destination;
+    if(combat.active && previous) {
+        // Actual travel is a bounded transaction. Resident monster addresses
+        // never change; retarget every combat pointer to this moved actor.
+        for(unsigned i=0;i<combat.combatantCount;++i)
+            if(combat.initiativeOrder[i]==previous)combat.initiativeOrder[i]=targetActor;
+        for(Entity** reference:{&combat.pendingAttackTarget,&combat.abilityCaster,
+                                &combat.attackingMonster,&combat.monsterAttackTarget})
+            if(*reference==previous)*reference=targetActor;
+        --targetActor->turn.movementRemaining;
+        if(!targetActor->turn.movementRemaining)targetActor->turn.moveActionUsed=true;
+    }
+    closeInventoryMenu();clearInteractionEntityReferences();closeMenu();
+    world.entityCount=target.count;world.rooms[destination].discovered=true;
+    player=value.character;if(initializing)resetAwarenessTimer();return true;
+}
+}}
+#endif

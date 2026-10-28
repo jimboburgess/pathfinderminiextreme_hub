@@ -127,3 +127,12 @@ bool isTownRestActive()
 {
     return resting;
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(townHomeOpen);
+PFME_CONTEXT_FIELD(townHomeSelection);
+PFME_CONTEXT_FIELD(resting);
+PFME_CONTEXT_FIELD(restResultShown);
+PFME_CONTEXT_FIELD(restStageTime);
+#endif

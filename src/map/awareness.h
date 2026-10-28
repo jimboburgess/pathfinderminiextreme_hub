@@ -53,4 +53,9 @@ inline bool combatParticipationGrantsVisibility(
            (!openingAttackInProgress || awareOfPlayer);
 }
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+// Shared native scan calls the original detection rules for each observer.
+bool scanPlayerMonsterAwareness(Entity* player,Entity* entities,uint8_t entityCount);
+#endif
+
 #endif

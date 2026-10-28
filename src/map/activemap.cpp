@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "map/activemap.h"
 
 #include <stdlib.h>
@@ -41,6 +44,9 @@ Entity* getActiveMapPlayer()
     Entity* entities = getActiveMapEntities(entityCount);
 
     if (entities == nullptr) return nullptr;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())return getPlayerEntityByOwner(entities,entityCount,pfme::runtime::selectedController());
+#endif
     if (multiplayerSession.isActive())
     {
         Entity* local = getPlayerEntityByOwner(

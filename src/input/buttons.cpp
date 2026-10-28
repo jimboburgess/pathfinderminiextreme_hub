@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 //
 // Created by james on 7/12/2026.
 //
@@ -636,7 +639,11 @@ void handleMapButtons()
 
             // A dead monster at the normal facing cursor is a context
             // interaction, not a reason to open the general menu.
-            if (tryInteractWithFacingEntity())
+            if (
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                !(pfme::runtime::nativeRoomsActive() && combat.active && !isPlayerTurn()) &&
+#endif
+                tryInteractWithFacingEntity())
             {
                 playSound(SoundEffect::MENU_SELECT);
                 return;
@@ -761,3 +768,8 @@ void handleButtons()
             break;
     }
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+namespace pfme { namespace runtime { ButtonInputState& productionButtonState() {return handheldInput;} }}
+#endif

@@ -58,3 +58,9 @@ bool drawElementalVisualOverlay(int x,int y)
     }
     return false;
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(effect);
+PFME_CONTEXT_FIELD(lastRedraw);
+#endif

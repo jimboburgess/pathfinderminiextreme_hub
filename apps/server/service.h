@@ -6,6 +6,7 @@
 #include <chrono>
 #ifdef PFME_HAS_PLAYABLE
 #include "screen_stream.h"
+#include "party_runtime.h"
 #endif
 
 namespace pfme::server
@@ -26,7 +27,7 @@ struct Reply { std::string text; bool close = false; };
 class Service
 {
 public:
-    Service(const SecretDigest& gate, uint32_t seed);
+    Service(const SecretDigest& gate, uint32_t seed, bool partyMode=false);
     Reply handle(ConnectionState& connection, std::string_view message);
     void detach(ConnectionState& connection);
     static std::string hello();
@@ -42,6 +43,11 @@ private:
     json::object dispatch(ConnectionState& connection, const Request& request);
 #ifdef PFME_HAS_PLAYABLE
     uint32_t seed_ = 0;
+    bool partyMode_=false;
+    std::unique_ptr<runtime::PartyRuntime> party_;
+    ScreenStream partyScreens_[MAX_MULTIPLAYER_PLAYERS];
+    bool partyStarted_[MAX_MULTIPLAYER_PLAYERS]{};
+    std::chrono::steady_clock::time_point partyLastInput_[MAX_MULTIPLAYER_PLAYERS];
     PlayerID playOwner_ = INVALID_PLAYER_ID;
     bool playRetired_ = false;
     ScreenStream screen_;

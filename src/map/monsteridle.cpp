@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "map/monsteridle.h"
 
 #include <Arduino.h>
@@ -85,6 +88,9 @@ bool footprintsOverlapAt(
 
 bool explorationIsModal()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())return false;
+#endif
     return menuState.isOpen || isInventoryMenuOpen() ||
            isCharacterSheetVisible() || isInspectingEntities() ||
            isPlayerTargetingAttack() || isPlayerAttackResolving() ||
@@ -122,6 +128,19 @@ bool attemptIdleStep(
     // Detect direct contact before the ordinary occupancy check rejects it.
     // Contact reveals both sides and hands control to the existing combat
     // startup without granting an exploration attack.
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive()) {
+        uint8_t count=0;auto* entities=getActiveMapEntities(count);
+        for(unsigned i=0;entities && i<count;++i) {
+            auto& actor=entities[i];
+            if(actor.active && actor.type==ENTITY_PLAYER && actor.character.state==STATE_ALIVE &&
+               footprintsOverlapAt(monster,targetX,targetY,actor)) {
+                if(isHostileToPlayer(monster,actor)) {monster.awareOfPlayer=true;startCombat();}
+                return false;
+            }
+        }
+    }
+#endif
     if (footprintsOverlapAt(monster, targetX, targetY, player))
     {
         if (isHostileToPlayer(monster, player))
@@ -262,3 +281,9 @@ void updateMonsterIdleBehavior()
         }
     }
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_ROOM_FIELD(idleSuspendedByCombat);
+PFME_ROOM_FIELD(idleSuspendedByModal);
+#endif

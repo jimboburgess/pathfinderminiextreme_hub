@@ -53,8 +53,8 @@ private:
 class Server
 {
 public:
-    Server(asio::io_context& io, uint16_t port, uint32_t seed, const SecretDigest& gate)
-        : service(gate, seed), io_(io), acceptor_(io), signals_(io, SIGINT, SIGTERM), shutdown_(io), lifetime_(io), gameClock_(io)
+    Server(asio::io_context& io, uint16_t port, uint32_t seed, const SecretDigest& gate, bool partyMode)
+        : service(gate, seed, partyMode), io_(io), acceptor_(io), signals_(io, SIGINT, SIGTERM), shutdown_(io), lifetime_(io), gameClock_(io)
     {
 #ifdef _WIN32
         signals_.add(SIGBREAK);
@@ -269,10 +269,10 @@ void Peer::finish()
     owner_.service.detach(connection_);
     owner_.removed(connection_.serial);
 }
-int runServer(uint16_t port, uint32_t seed, uint32_t duration, const SecretDigest& gate)
+int runServer(uint16_t port, uint32_t seed, uint32_t duration, const SecretDigest& gate, bool partyMode)
 {
     asio::io_context io(1);
-    Server server(io, port, seed, gate);
+    Server server(io, port, seed, gate, partyMode);
     server.run(duration);
     io.run();
     std::cout << "stopped\n" << std::flush;

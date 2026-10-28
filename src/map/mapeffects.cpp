@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "map/mapeffects.h"
 
 #include <stdlib.h>
@@ -173,6 +176,9 @@ bool removeMapEffect(MapEffect& effect)
 
 void clearMapEffects()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::clearNativeMapEffects())return;
+#endif
     for (uint8_t i = 0; i < MAX_MAP_EFFECTS; i++)
     {
         if (activeMapEffects[i].active)
@@ -713,3 +719,8 @@ void markMapEffectTilesDirty(const MapEffect& effect)
         for (int x = effect.x - effect.radius; x <= effect.x + effect.radius; x++)
             if (isInsideActiveMap(x, y)) markTileDirty(x, y);
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_ROOM_FIELD(activeMapEffects);
+#endif

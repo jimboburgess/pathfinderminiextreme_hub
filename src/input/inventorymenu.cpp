@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "inventorymenu.h"
 
 #include <cstdio>
@@ -482,6 +485,11 @@ void useSelectedPlayerItem()
 
 void takeSelectedCorpseLoot()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active && !isPlayerTurn()) {
+        setInventoryStatus("Wait for your turn.");return;
+    }
+#endif
     Entity* corpse = inventoryMenu.corpse;
 
     if (!isValidLootCorpse(corpse) || inventoryMenu.character == nullptr)
@@ -907,3 +915,8 @@ void drawInventoryMenu()
         }
     }
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(inventoryMenu);
+#endif

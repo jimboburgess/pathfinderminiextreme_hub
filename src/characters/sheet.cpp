@@ -679,3 +679,15 @@ bool isCharacterSheetVisible()
 {
     return isCharacterSheetOpen;
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "context_fields.h"
+PFME_CONTEXT_FIELD(currentCharacter);
+PFME_CONTEXT_FIELD(scrollOffset);
+PFME_CONTEXT_FIELD(characterView);
+PFME_CONTEXT_FIELD(equipmentEditState);
+PFME_CONTEXT_FIELD(equipmentSlotCursor);
+PFME_CONTEXT_FIELD(equipmentItemCursor);
+PFME_CONTEXT_FIELD(equipmentStatus);
+PFME_CONTEXT_FIELD(isCharacterSheetOpen);
+#endif

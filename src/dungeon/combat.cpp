@@ -1,3 +1,6 @@
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "combat.h"
 
 #include <algorithm>
@@ -561,6 +564,9 @@ static DefeatResult finalizeDefeat(Entity& defeated)
     {
         defeated.character.state = STATE_UNCONSCIOUS;
         markEntityFootprintDirty(defeated);
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+        if(pfme::runtime::nativeRoomsActive() && pfme::runtime::hasLivingNativePlayers())return result;
+#endif
         abortCombat();
         return result;
     }
@@ -803,6 +809,10 @@ void presentAbilityResolution(
     combat.abilityCaster = &caster;
     combat.abilityEndedCombat = resolution.targetDefeated &&
         (target.type == ENTITY_PLAYER || areAllCombatMonstersDefeated());
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && target.type==ENTITY_PLAYER)
+        combat.abilityEndedCombat=!pfme::runtime::hasLivingNativePlayers();
+#endif
     combat.abilityResultTime = millis();
 
     if (caster.type == ENTITY_PLAYER)
@@ -877,6 +887,9 @@ void presentGroundAbilityResolution(
 
 static bool isInspectableEntity(const Entity& entity)
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && entity.type==ENTITY_MONSTER && !entity.visibleToPlayer)return false;
+#endif
     if (!entity.active)
         return false;
 
@@ -1202,6 +1215,9 @@ static void updateMonsterAttack()
                 {
                     DefeatResult defeatResult = finalizeDefeat(*target);
                     combat.monsterDefeatedPlayer = true;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                    if(pfme::runtime::nativeRoomsActive())combat.monsterDefeatedPlayer=!pfme::runtime::hasLivingNativePlayers();
+#endif
 
                     if (combat.monsterSneakAttack)
                     {
@@ -1334,6 +1350,21 @@ void findCombatants()
         combat.initiativeOrder,
         MAX_COMBATANTS);
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive()) {
+        // All occupied living dungeon characters share one initiative. Leave
+        // room for the party before appending the production hostile roster.
+        Entity* roster[MAX_COMBATANTS]{};uint8_t count=0;
+        for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id) {
+            auto* actor=pfme::runtime::nativeActor(id);
+            if(actor && actor->active && actor->character.state==STATE_ALIVE)roster[count++]=actor;
+        }
+        for(unsigned i=0;i<combat.combatantCount && count<MAX_COMBATANTS;++i)
+            if(combat.initiativeOrder[i]->type!=ENTITY_PLAYER)roster[count++]=combat.initiativeOrder[i];
+        combat.combatantCount=count;
+        for(unsigned i=0;i<count;++i)combat.initiativeOrder[i]=roster[i];
+    }
+#endif
     for (uint8_t i = 0; i < combat.combatantCount; i++)
         combat.initiativeOrder[i]->reinforcementJoinedRound = 0;
 
@@ -1468,11 +1499,18 @@ bool isPlayerTurn()
     if (current == nullptr)
         return false;
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())return current->type==ENTITY_PLAYER &&
+        current->ownerPlayerID==pfme::runtime::selectedController();
+#endif
     return (current->type == ENTITY_PLAYER);
 }
 
 void startCombat()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active)return;
+#endif
     if (isMultiplayerExplorationActive())
     {
         startMultiplayerCombatFromCurrentRoom();
@@ -1558,6 +1596,9 @@ static void finishTurnStart(Entity* entity)
 
         if (entity->type == ENTITY_PLAYER)
         {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if(pfme::runtime::nativeRoomsActive() && pfme::runtime::hasLivingNativePlayers()) {nextTurn();return;}
+#endif
             combat.monsterDefeatedPlayer = true;
             combat.phase = COMBAT_END;
         }
@@ -1897,9 +1938,15 @@ void nextTurn()
         if (combat.currentTurnIndex >= combat.combatantCount)
         {
             combat.combatRound++;
-            tickMapEffects();
-            updateElementalTrapCharges();
-            checkReinforcementAwareness();
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if(pfme::runtime::nativeRoomsActive())pfme::runtime::tickNativeCombatRooms();
+            else
+#endif
+            {
+                tickMapEffects();
+                updateElementalTrapCharges();
+                checkReinforcementAwareness();
+            }
             combat.currentTurnIndex = 0;
         }
 
@@ -1915,11 +1962,17 @@ void nextTurn()
 
     combat.nextMonsterStep = millis();
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())pfme::runtime::prepareNativeCombatant(getCurrentCombatant());
+#endif
     resetActions(getCurrentCombatant());
 }
 
 void endPlayerTurn()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && !isPlayerTurn())return;
+#endif
     if (isMultiplayerCombatActive())
     {
         if (requestMultiplayerCombatEndTurn())
@@ -2365,12 +2418,18 @@ void beginOutOfCombatAttack(CombatAttackType attackType)
 
 bool isPlayerTargetingAttack()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active && !isPlayerTurn())return false;
+#endif
     return combat.attackType != COMBAT_ATTACK_NONE &&
            !combat.attackResolutionPending;
 }
 
 bool isPlayerAttackResolving()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active && !isPlayerTurn())return false;
+#endif
     return combat.attackResolutionPending;
 }
 
@@ -3155,6 +3214,9 @@ void continuePlayerAbilityWithDamageType(DamageType damageType)
 
 bool isPlayerTargetingAbility()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active && !isPlayerTurn())return false;
+#endif
     return combat.selectedAbility != ABILITY_NONE &&
            !combat.abilityResolutionPending;
 }
@@ -3173,6 +3235,9 @@ bool isPlayerTargetingDirectionalAbility()
 
 bool isAbilityResolving()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive() && combat.active && !isPlayerTurn())return false;
+#endif
     return combat.abilityResolutionPending;
 }
 
