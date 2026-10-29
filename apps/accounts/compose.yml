@@ -18,7 +18,7 @@ services:
     user: "999:980"
     network_mode: none
     volumes: [back:/back, "policy:/policy:ro"]
-    command: ["--runtime", "party", "--cloudflare-socket", "/back/backend.sock", "--cloudflare-origin", "https://game.noburdenmusics.com", "--cloudflare-policy", "/policy/admission.json", "--cloudflare-peer-uid", "995", "--cloudflare-peer-gid", "980", "--run-for-ms", "14400000"]
+    command: ["--runtime", "party", "--cloudflare-socket", "/back/backend.sock", "--cloudflare-origin", "https://game.noburdenmusics.com", "--cloudflare-policy", "/policy/admission.json", "--cloudflare-peer-uid", "995", "--cloudflare-peer-gid", "980", "--run-for-ms", "3600000"]
   accounts:
     <<: *bounds
     image: ${PFME_ACCOUNTS_IMAGE:?Pin the tested account image}
@@ -40,7 +40,7 @@ services:
       - "./resolv.conf:/etc/resolv.conf:ro"
     environment: {PFME_GATE_NONCE: "${PFME_GATE_NONCE:?Generate a fresh run nonce}"}
     entrypoint: ["/connector_gate"]
-    command: ["/gate/release", "${PFME_GATE_NONCE}", "/cloudflared", "tunnel", "--no-autoupdate", "--edge-ip-version", "4", "--management-diagnostics=false", "--metrics", "127.0.0.1:0", "run", "--protocol", "http2", "--token-file", "/run/secrets/tunnel-token"]
+    command: ["/gate/release", "${PFME_GATE_NONCE}", "/cloudflared", "tunnel", "--no-autoupdate", "--edge-ip-version", "4", "--management-diagnostics=false", "--metrics", "127.0.0.1:0", "run", "--protocol", "quic", "--token-file", "/run/secrets/tunnel-token"]
   filter:
     <<: *bounds
     profiles: [admin]
@@ -49,8 +49,22 @@ services:
     cap_add: [NET_ADMIN]
     network_mode: service:connector
     environment: {PFME_GATE_NONCE: "${PFME_GATE_NONCE}"}
-    volumes: [gate:/gate]
+    volumes: [gate:/gate, "./connector.nft:/app/connector.nft:ro"]
     command: ["-m", "pfme_accounts.filter"]
+  monitor-filter:
+    <<: *bounds
+    profiles: [monitor]
+    image: ${PFME_ACCOUNTS_IMAGE}
+    user: "0:980"
+    cap_add: [NET_ADMIN]
+    network_mode: service:status
+    command:
+      - -c
+      - |
+        import subprocess
+        rules = 'table inet pfme_status { chain input { type filter hook input priority 0; policy drop; iifname "lo" accept; ct state established,related accept; tcp dport 8080 accept; } chain output { type filter hook output priority 0; policy drop; oifname "lo" accept; ct state established,related accept; } }'
+        subprocess.run(['nft','-f','-'], input=rules.replace('} ', '}\n')+'\n', text=True, check=True)
+        print('Private status namespace: outbound connections blocked.')
   init:
     <<: *bounds
     profiles: [admin]
@@ -93,7 +107,7 @@ services:
     command: ["-m", "pfme_accounts.status_server"]
 networks:
   egress: {}
-  monitor: {internal: true}
+  monitor: {}
 volumes:
   state: {}
   policy: {}

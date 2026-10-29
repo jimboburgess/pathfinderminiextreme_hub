@@ -62,9 +62,9 @@ sh pfme.sh restart
 `start` initializes only owned volumes, starts the network-disabled game/accounts,
 starts cloudflared behind the root-controlled gate, installs its namespace-only
 default-drop filter and checks forbidden host/LAN destinations BEFORE releasing
-the gate. No host firewall change. Only Cloudflare tunnel TCP7844 and public DNS
+the gate. No host firewall change. Only Cloudflare tunnel UDP7844 (QUIC) and public DNS
 egress are allowed. Exceptions stop the owned deployment. Initial game lifetime
-is four hours; explicit restart begins a NEW in-memory adventure.
+is one hour; explicit restart begins a NEW in-memory adventure.
 
 Players visit `https://game.noburdenmusics.com`, enter their own credentials, then
 Connect. Original graphics, integer zoom, handheld controls and Web Audio remain.
@@ -83,7 +83,7 @@ After approval/start: `sh pfme.sh homepage` appends ONLY a Pathfinder section to
 sets the result mode0640. No existing container restart or other dashboard edit.
 Homepage's server fetches bearer-protected
 `http://192.168.1.216:18766/status`. This LAN-only endpoint is NOT in the tunnel;
-game `/status` returns404. Only the status container has that private TCP listener.
+game `/status` returns404. Only the status container has that private TCP listener. Its dedicated namespace filter blocks new outbound connections; it has no game socket or account-database mount.
 
 The tile reports backend online/offline, active characters out of4, signed-in
 account count and active usernames. Its private JSON includes player/game display
@@ -114,3 +114,9 @@ Do not describe the system as production-secure based on tests. Host/Docker and
 Cloudflare administration remain trusted. Back up account volumes privately;
 adventure state is still process-memory-only. No ESP32/shared firmware sources,
 saves or ESP-NOW configuration are changed by this account wrapper.
+
+The live Unix WebSocket route requires QUIC: HTTP2 produced cloudflared's
+'http: no Host in request URL' during the owner test. The connector Dockerfile
+reuses the pinned binary and CA bundle, with directories 0755 and the public
+CA file 0444. Record the resulting image ID in the private .env before starting.
+The native --run-for-ms limit is one hour; accounts have separate four-hour leases.

@@ -7,7 +7,7 @@ def main():
     if not 32<=len(token)<=128 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in token):raise SystemExit('Invalid private status token.')
     if path.is_symlink() or not path.is_file():raise SystemExit('Expected regular Homepage services.yaml.')
     old=path.read_text()
-    if 'Pathfinder Mini EXTREME' in old:raise SystemExit('Pathfinder section already exists; review instead of duplicating.')
+    if '\n- Pathfinder:' in '\n'+old:raise SystemExit('Pathfinder section already exists; review instead of duplicating.')
     backup=path.with_name(path.name+'.before-pathfinder')
     if backup.exists():raise SystemExit('Backup exists; inspect before modifying.')
     fd=os.open(backup,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)

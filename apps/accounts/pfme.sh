@@ -31,6 +31,7 @@ case "${1:-help}" in
     dc up -d --force-recreate connector
     if ! dc --profile admin run --rm --no-deps filter; then dc stop connector accounts game; exit 1; fi
     dc --profile monitor up -d status
+    dc --profile admin --profile monitor run --rm -T --no-deps monitor-filter
     dc ps
     activated=1
     ;;

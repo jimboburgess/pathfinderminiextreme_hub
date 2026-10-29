@@ -1,5 +1,5 @@
 # REVIEW ONLY. Apply exclusively inside the OWNED connector network namespace.
-# Force HTTP2/IPv4. No host firewall changes. No generic HTTPS egress.
+# Force QUIC/IPv4. No host firewall changes. No generic HTTPS egress.
 # Official Cloudflare global tunnel endpoints checked 2026-10-29.
 table inet pfme_cf_connector {
   set edges4 {
@@ -19,7 +19,7 @@ table inet pfme_cf_connector {
     type filter hook output priority 0; policy drop;
     ct state established,related accept
     oifname "lo" accept
-    ip daddr @edges4 tcp dport 7844 accept
+    ip daddr @edges4 udp dport 7844 accept
     ip daddr { 1.1.1.1, 1.0.0.1 } udp dport 53 accept
     ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 53 accept
   }
