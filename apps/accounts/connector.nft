@@ -1,0 +1,27 @@
+# REVIEW ONLY. Apply exclusively inside the OWNED connector network namespace.
+# Force HTTP2/IPv4. No host firewall changes. No generic HTTPS egress.
+# Official Cloudflare global tunnel endpoints checked 2026-10-29.
+table inet pfme_cf_connector {
+  set edges4 {
+    type ipv4_addr
+    elements = { 198.41.192.167, 198.41.192.67, 198.41.192.57, 198.41.192.107,
+      198.41.192.27, 198.41.192.7, 198.41.192.227, 198.41.192.47,
+      198.41.192.37, 198.41.192.77, 198.41.200.13, 198.41.200.193,
+      198.41.200.33, 198.41.200.233, 198.41.200.53, 198.41.200.63,
+      198.41.200.113, 198.41.200.73, 198.41.200.43, 198.41.200.23 }
+  }
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iifname "lo" accept
+  }
+  chain output {
+    type filter hook output priority 0; policy drop;
+    ct state established,related accept
+    oifname "lo" accept
+    ip daddr @edges4 tcp dport 7844 accept
+    ip daddr { 1.1.1.1, 1.0.0.1 } udp dport 53 accept
+    ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 53 accept
+  }
+  chain forward { type filter hook forward priority 0; policy drop; }
+}

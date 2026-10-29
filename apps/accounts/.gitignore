@@ -1,0 +1,5 @@
+.env
+.public-activation-approved
+__pycache__/
+*.sqlite3*
+*.key

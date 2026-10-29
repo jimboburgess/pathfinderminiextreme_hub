@@ -1,0 +1,105 @@
+name: pfme-friends
+x-bounds: &bounds
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 64
+  mem_limit: 512m
+  cpus: 1.0
+  ulimits:
+    nofile: {soft: 128, hard: 128}
+  restart: "no"
+  pull_policy: never
+  logging: {driver: local, options: {max-size: "1m", max-file: "2"}}
+services:
+  game:
+    <<: *bounds
+    image: ${PFME_GAME_IMAGE:?Pin the verified game image}
+    user: "999:980"
+    network_mode: none
+    volumes: [back:/back, "policy:/policy:ro"]
+    command: ["--runtime", "party", "--cloudflare-socket", "/back/backend.sock", "--cloudflare-origin", "https://game.noburdenmusics.com", "--cloudflare-policy", "/policy/admission.json", "--cloudflare-peer-uid", "995", "--cloudflare-peer-gid", "980", "--run-for-ms", "14400000"]
+  accounts:
+    <<: *bounds
+    image: ${PFME_ACCOUNTS_IMAGE:?Pin the tested account image}
+    user: "995:980"
+    group_add: ["979"]
+    network_mode: none
+    environment: {PFME_ORIGIN: "https://game.noburdenmusics.com"}
+    volumes: [state:/state, "policy:/policy:ro", front:/front, "back:/back:ro", status:/status]
+    depends_on: [game]
+  connector:
+    <<: *bounds
+    image: ${PFME_CONNECTOR_IMAGE:?Pin the tested connector image}
+    user: "994:979"
+    networks: [egress]
+    volumes:
+      - "front:/front:ro"
+      - "gate:/gate:ro"
+      - "tunnel_secret:/run/secrets:ro"
+      - "./resolv.conf:/etc/resolv.conf:ro"
+    environment: {PFME_GATE_NONCE: "${PFME_GATE_NONCE:?Generate a fresh run nonce}"}
+    entrypoint: ["/connector_gate"]
+    command: ["/gate/release", "${PFME_GATE_NONCE}", "/cloudflared", "tunnel", "--no-autoupdate", "--edge-ip-version", "4", "--management-diagnostics=false", "--metrics", "127.0.0.1:0", "run", "--protocol", "http2", "--token-file", "/run/secrets/tunnel-token"]
+  filter:
+    <<: *bounds
+    profiles: [admin]
+    image: ${PFME_ACCOUNTS_IMAGE}
+    user: "0:979"
+    cap_add: [NET_ADMIN]
+    network_mode: service:connector
+    environment: {PFME_GATE_NONCE: "${PFME_GATE_NONCE}"}
+    volumes: [gate:/gate]
+    command: ["-m", "pfme_accounts.filter"]
+  init:
+    <<: *bounds
+    profiles: [admin]
+    image: ${PFME_ACCOUNTS_IMAGE}
+    user: "0:0"
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    network_mode: none
+    volumes: [state:/state, policy:/policy, front:/front, back:/back, status:/status, gate:/gate]
+    command: ["-m", "pfme_accounts.init"]
+  admin:
+    <<: *bounds
+    profiles: [admin]
+    image: ${PFME_ACCOUNTS_IMAGE}
+    user: "995:980"
+    network_mode: none
+    stdin_open: true
+    tty: true
+    environment: {PFME_ORIGIN: "https://game.noburdenmusics.com"}
+    volumes: [state:/state, policy:/policy]
+    command: ["manage.py", "friend", "list"]
+  secrets:
+    <<: *bounds
+    profiles: [admin]
+    image: ${PFME_ACCOUNTS_IMAGE}
+    user: "0:0"
+    cap_add: [CHOWN, FOWNER]
+    network_mode: none
+    stdin_open: true
+    tty: true
+    volumes: [tunnel_secret:/tunnel_secret, status_secret:/status_secret]
+    command: ["-m", "pfme_accounts.secrets_init"]
+  status:
+    <<: *bounds
+    profiles: [monitor]
+    image: ${PFME_ACCOUNTS_IMAGE}
+    user: "995:980"
+    networks: [monitor]
+    ports: ["192.168.1.216:18766:8080"]
+    volumes: ["status:/status:ro", "status_secret:/run/secrets:ro"]
+    command: ["-m", "pfme_accounts.status_server"]
+networks:
+  egress: {}
+  monitor: {internal: true}
+volumes:
+  state: {}
+  policy: {}
+  front: {}
+  back: {}
+  status: {}
+  gate: {}
+  tunnel_secret: {}
+  status_secret: {}

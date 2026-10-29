@@ -1,0 +1,13 @@
+{
+  "config": {
+    "ingress": [
+      {
+        "hostname": "game.noburdenmusics.com",
+        "service": "unix:/front/gateway.sock",
+        "originRequest": {"httpHostHeader": "game.noburdenmusics.com", "http2Origin": false}
+      },
+      {"service": "http_status:404"}
+    ],
+    "warp-routing": {"enabled": false}
+  }
+}

@@ -2,6 +2,8 @@
 (() => {
   const $=id=>document.getElementById(id), canvas=$("display"), ctx=canvas.getContext("2d",{alpha:false,willReadFrequently:true});
   const audio=window.PfmeAudio?new window.PfmeAudio():null;
+  const accountMode=$("connect").dataset?.accountAuth==="true";
+  if(accountMode)setInterval(()=>{fetch('/accounts/presence/',{credentials:'same-origin',cache:'no-store'}).then(r=>{if(r.status===401){ws?.close();status('Your login expired. Refresh to sign in again.');}}).catch(()=>{});},15000);
   const privateMode=$("connect").dataset?.authMode==="serve";
   if(privateMode){$("secret").required=false;$("secret").closest("label").hidden=true;}
   ctx.imageSmoothingEnabled=false;
@@ -103,7 +105,7 @@
       if((!privateMode&&!/^[0-9a-f]{64}$/.test(secret))||(!resume&&!/^[!-~]{1,15}$/.test(name)))throw new Error("Enter the 64-character development secret and a name without spaces.");
       ws=new WebSocket(`${location.protocol==="https:"?"wss":"ws"}://${location.host}/`);
       await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=()=>reject(new Error("Connection failed"));});
-      ws.onmessage=event=>{try{const reply=JSON.parse(event.data);if(!reply.id)return;if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");if(reply.audio)audio?.apply(reply.audio);const p=pending;pending=null;clearTimeout(p.timeout);if(reply.ok)p.resolve(reply.data);else p.reject(new Error(reply.error?.code||"Server rejected command"));}catch(error){status(error.message);ws.close();}};
+      ws.onmessage=event=>{try{const reply=JSON.parse(event.data);if(!reply.id)return;if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");if(reply.audio)audio?.apply(reply.audio);const p=pending;pending=null;clearTimeout(p.timeout);if(reply.ok)p.resolve(reply.data);else p.reject(new Error(reply.error?.code==="Full"?"Party Full: all four character slots are occupied. You remain signed in. Retry after someone uses Leave character; disconnect alone retains their slot.":reply.error?.code||"Server rejected command"));}catch(error){status(error.message);ws.close();}};
       ws.onclose=()=>{if($("leave"))$("leave").disabled=true;audio?.pause();playing=false;releaseAll();clearTimeout(scheduled);if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}$("disconnect").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;status(disconnectReason||"Disconnected. The server retains this session in memory. Reconnect from this tab to resume.");};
       await rpc("authenticate",privateMode?{}:{secret});
       if(privateMode){
@@ -113,6 +115,7 @@
       const runtime=await rpc("play");audio?.enable(runtime.audio===true);
       $("runtime-note").textContent=(runtime.audio&&audio?"Original music and sound effects play locally after using a game control. ":"Sound is silent in this runtime. ")+"Saves remain in server memory. Other connected party members continue during a disconnect. Keep this tab open to retain its reconnect credential; it is never saved to browser storage.";
       if(privateMode)$("runtime-note").textContent="Verified private identity. Reconnect restores your character while this server process remains running. Authorization expires after 15 minutes; reconnect to verify again. Original sound starts with a game control.";
+      if(accountMode)$("runtime-note").textContent="Signed in to your own Pathfinder account. Refresh or reconnect restores your character while this game process remains running. Disconnect retains your slot; Leave character releases it. Original audio starts with a game control.";
       clearFrame();requests=[];playing=true;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
       if($("leave"))$("leave").disabled=false;
       status("Connected. Space starts New Game; Enter selects, arrows rotate. Saves are in memory only.");canvas.focus();pump();
