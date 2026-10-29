@@ -79,6 +79,7 @@ install(FILES "${pfme_boost_SOURCE_DIR}/LICENSE_1_0.txt" DESTINATION share/licen
 install(FILES "${PFME_MONOCYPHER_DIR}/LICENCE.md" DESTINATION share/licenses/pfme_server/monocypher)
 if(BUILD_TESTING)
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME pfme_server_lifetime COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/server/run_lifetime.py" "$<TARGET_FILE:pfme_server>")
     if(PFME_BUILD_PLAYABLE)
         add_executable(pfme_playable_service_tests ../../tests/server/playable_service_tests.cpp)
         target_link_libraries(pfme_playable_service_tests PRIVATE pfme_server_support)

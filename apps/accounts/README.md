@@ -64,7 +64,7 @@ starts cloudflared behind the root-controlled gate, installs its namespace-only
 default-drop filter and checks forbidden host/LAN destinations BEFORE releasing
 the gate. No host firewall change. Only Cloudflare tunnel UDP7844 (QUIC) and public DNS
 egress are allowed. Exceptions stop the owned deployment. Initial game lifetime
-is one hour; explicit restart begins a NEW in-memory adventure.
+is eight hours; explicit restart begins a NEW in-memory adventure.
 
 Players visit `https://game.noburdenmusics.com`, enter their own credentials, then
 Connect. Original graphics, integer zoom, handheld controls and Web Audio remain.
@@ -122,4 +122,4 @@ The live Unix WebSocket route requires QUIC: HTTP2 produced cloudflared's
 'http: no Host in request URL' during the owner test. The connector Dockerfile
 reuses the pinned binary and CA bundle, with directories 0755 and the public
 CA file 0444. Record the resulting image ID in the private .env before starting.
-The native --run-for-ms limit is one hour; accounts have separate four-hour leases.
+The native --run-for-ms maximum is 24 hours; this deployment uses eight hours; accounts have separate four-hour leases.

@@ -43,7 +43,7 @@ int main(int argc, char** argv)
         else if(option=="--runtime") {const std::string mode=argv[i+1];valid=mode=="single" || mode=="party";partyMode=mode=="party";}
         else if (option == "--port") {portSpecified=true;valid = number(argv[i + 1], 65535, port) && (port == 0 || port >= 1024);}
         else if (option == "--seed") valid = number(argv[i + 1], UINT32_MAX, seed);
-        else if (option == "--run-for-ms") valid = number(argv[i + 1], 3600000, duration) && duration > 0;
+        else if (option == "--run-for-ms") valid = number(argv[i + 1], 86400000, duration) && duration > 0;
         if (!valid) { std::cerr << "invalid startup option\n"; return 2; }
     }
     pfme::server::SecretDigest gate{};
