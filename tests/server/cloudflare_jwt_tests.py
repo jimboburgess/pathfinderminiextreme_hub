@@ -73,6 +73,23 @@ class AccessTests(unittest.TestCase):
                        dict(alg='RS256',kid='current',typ='JWT',crit=['evil'])):
             self.denied(token(self.key, header=header))
 
+    def test_optional_typ_retains_all_security_checks(self):
+        # RFC7519 section5.1: typ is optional. alg/kid and signature remain required.
+        header = dict(alg='RS256', kid='current')
+        expected = self.validator.verify(token(self.key), NOW)
+        self.assertEqual(self.validator.verify(token(self.key, header=header), NOW), expected)
+        self.denied(token(self.other, header=header))
+        for claims in ({'iss':'https://wrong.cloudflareaccess.com'}, {'aud':['wrong']},
+                       {'exp':NOW}, {'nbf':NOW+1}, {'type':'org'}, {'sub':''}):
+            with self.subTest(claims=claims): self.denied(token(self.key, claims, header))
+        for extra in ({'typ':None}, {'typ':''}, {'typ':'at+jwt'}, {'typ':False},
+                      {'jku':'https://evil.invalid/keys'}, {'jwk':{}}, {'crit':[]},
+                      {'x5u':'https://evil.invalid/cert'}):
+            with self.subTest(extra=extra): self.denied(token(self.key, header={**header, **extra}))
+        for invalid in ({'alg':'RS256'}, {'kid':'current'}, {'alg':'none','kid':'current'},
+                        {'alg':'HS256','kid':'current'}, {'alg':'RS256','kid':'unknown'}):
+            with self.subTest(header=invalid): self.denied(token(self.key, header=invalid))
+
     def test_malformed_and_duplicate_fields(self):
         for value in ('', 'a.b', 'a.b.c.d', 'a.'*5000, token(self.key)+'=', 'a.b.c', None): self.denied(value)
         self.denied(token(self.key, payload=b'{"iss":"x","iss":"y"}'))

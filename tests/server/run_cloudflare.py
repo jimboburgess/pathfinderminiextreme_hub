@@ -85,7 +85,7 @@ else:
             cmd=['docker','run','--rm','-i',*limits,'--cap-add=CHOWN','--cap-add=FOWNER','--cap-add=DAC_OVERRIDE',*sum((mount(n) for n in ('front','back','config','keys','policy','gate')),[]),image,python,'-c',code]
             result=subprocess.run(cmd,input=json.dumps({'files':files or {},'cleanup':cleanup}),text=True,capture_output=True);assert result.returncode==0,result.stderr
         def claims(sub,seconds=600):return dict(iss=ISSUER,sub=sub,email=sub+'@example.com',iat=int(time.time())-1,nbf=int(time.time())-1,exp=int(time.time())+seconds)
-        def proof(index,signer=key,kid='current',seconds=600):return token(signer,claims('fixture-'+str(index),seconds),dict(alg='RS256',kid=kid,typ='JWT'))
+        def proof(index,signer=key,kid='current',seconds=600):return token(signer,claims('fixture-'+str(index),seconds),dict(alg='RS256',kid=kid))
         users=[dict(login=identity_login(ISSUER,'fixture-'+str(i)),principal='fixture-principal-'+str(i)) for i in range(5)]
         conf=dict(version=1,issuer=ISSUER,audience='fixture-audience',origin='https://'+HOST,frontend='/front/gateway.sock',backend='/back/backend.sock',connector_uid=1002,frontend_gid=1002,keys='/keys/jwks.json')
         manage({'/config/gateway.json':conf,'/keys/jwks.json':dict(issuer=ISSUER,fetched_at=int(time.time()),keys=[jwk(key)]),'/policy/admission.json':dict(version=1,revision=1,users=users)})

@@ -62,8 +62,10 @@ change if a user is deleted/re-added or moved to a different organization.
 
 The gateway validates `Cf-Access-Jwt-Assertion` with cryptography's RSA
 PKCS1v1.5/SHA256 verification, not custom cryptographic algorithms. Header is
-strict RS256/JWT/kid; no none/HMAC, key URLs, embedded public keys or critical
-extensions. Verify signature, exact configured issuer/audience, application type,
+strict RS256 and kid; optional typ must equal JWT when present ([RFC7519 section5.1](https://www.rfc-editor.org/rfc/rfc7519.html#section-5.1)).
+Only alg/kid and optional typ are allowed; no none/HMAC, key URLs, embedded public
+keys or critical extensions. Missing typ never bypasses signature or claim checks.
+Verify signature, exact configured issuer/audience, application type,
 nonempty subject, integer exp/iat, optional integer nbf and current clock. Reject
 malformed/noncanonical base64url, duplicate JSON fields, excess size/depth, unknown
 kid, service tokens, expired/future tokens, wrong issuer/audience/signature.

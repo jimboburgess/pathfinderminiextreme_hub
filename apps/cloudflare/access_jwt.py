@@ -147,8 +147,8 @@ class Validator:
         try:
             header = strict_json(unbase64(parts[0]), 1024)
             claims = strict_json(unbase64(parts[1]), 6144)
-            if (not isinstance(header, dict) or set(header) != {'alg', 'kid', 'typ'} or
-                    header['alg'] != 'RS256' or header['typ'] != 'JWT' or
+            if (not isinstance(header, dict) or set(header) not in ({'alg', 'kid'}, {'alg', 'kid', 'typ'}) or
+                    header['alg'] != 'RS256' or header.get('typ', 'JWT') != 'JWT' or
                     not printable(header['kid'], 128) or header['kid'] not in self.keys or
                     not isinstance(claims, dict)):
                 raise Denied('unsupported assertion')
