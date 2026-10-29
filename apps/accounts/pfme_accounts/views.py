@@ -4,6 +4,9 @@ from django.conf import settings
 from django.http import JsonResponse,HttpResponse,HttpResponseForbidden,HttpResponseRedirect
 from django.contrib.auth.views import LoginView,LogoutView,PasswordChangeView
 from django.core.cache import cache
+from django.utils import timezone
+from datetime import timedelta
+from .forms import PlayerAuthenticationForm
 from django.middleware.csrf import get_token
 from asgiref.sync import sync_to_async
 
@@ -26,7 +29,14 @@ def limited(key,maximum):
 
 class PlayerLogin(LoginView):
     template_name='login.html'
+    authentication_form=PlayerAuthenticationForm
     redirect_authenticated_user=True
+    def form_valid(self,form):
+        response=super().form_valid(form)
+        seconds=7*24*3600 if form.cleaned_data['remember_me'] else settings.SESSION_COOKIE_AGE
+        # Fixed deadline; presence heartbeats and reconnects never extend it.
+        self.request.session.set_expiry(timezone.now()+timedelta(seconds=seconds))
+        return response
     def post(self,request,*args,**kwargs):
         # Global budget bounds random-user attacks; per-name budget bounds guessing.
         import hashlib

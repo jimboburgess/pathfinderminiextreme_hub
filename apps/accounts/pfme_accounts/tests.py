@@ -76,3 +76,50 @@ class AccountsTests(TestCase):
         for operation in ('disable','enable'):call_command('friend',operation,'friend0',stdout=StringIO())
         self.assertIsNone(authenticated(cookie))
         self.assertTrue(self.client_for().login(username='friend0',password=self.password))
+
+    def test_remember_me_is_optional_and_uses_fixed_expiration(self):
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+        for remember,seconds in ((False,14400),(True,604800)):
+            c=self.client_for()
+            page=c.get('/accounts/login/',secure=True)
+            self.assertContains(page,'Remember me for 7 days')
+            self.assertFalse(page.context['form'].fields['remember_me'].initial)
+            data={'username':'friend0','password':self.password}
+            if remember:data['remember_me']='on'
+            r=c.post('/accounts/login/',data,secure=True)
+            self.assertEqual(r.status_code,302)
+            cookie=r.cookies['__Host-pfme_session']
+            self.assertTrue(cookie['secure']);self.assertTrue(cookie['httponly'])
+            self.assertEqual(cookie['samesite'],'Strict')
+            self.assertAlmostEqual(int(cookie['max-age']),seconds,delta=2)
+            session=Session.objects.get(session_key=cookie.value)
+            self.assertAlmostEqual((session.expire_date-timezone.now()).total_seconds(),seconds,delta=2)
+            deadline=session.expire_date
+            c.get('/accounts/presence/',secure=True)
+            session.refresh_from_db();self.assertEqual(session.expire_date,deadline)
+            # A new browser client can reuse this device's persistent cookie.
+            reopened=self.client_for();reopened.cookies['__Host-pfme_session']=cookie.value
+            self.assertEqual(reopened.get('/accounts/presence/',secure=True).status_code,200)
+
+    def test_remembered_session_expiry_and_individual_revocation(self):
+        from .asgi import authenticated
+        from django.contrib.sessions.models import Session
+        from django.core.management import call_command
+        from django.utils import timezone
+        from datetime import timedelta
+        from io import StringIO
+        other=self.client_for();other.login(username='friend1',password=self.password)
+        other_cookie='__Host-pfme_session='+other.cookies['__Host-pfme_session'].value
+        for action in ('expire','logout','password','disable'):
+            u=User.objects.get(username='friend0');u.is_active=True;u.set_password(self.password);u.save()
+            c=self.client_for();r=c.post('/accounts/login/',{'username':u.username,'password':self.password,'remember_me':'on'},secure=True)
+            self.assertEqual(r.status_code,302)
+            key=c.cookies['__Host-pfme_session'].value;cookie='__Host-pfme_session='+key
+            self.assertIsNotNone(authenticated(cookie))
+            if action=='expire':Session.objects.filter(session_key=key).update(expire_date=timezone.now()-timedelta(seconds=1))
+            elif action=='logout':c.post('/accounts/logout/',secure=True)
+            elif action=='password':u.set_password(secrets.token_urlsafe(24));u.save()
+            else:call_command('friend','disable',u.username,stdout=StringIO())
+            self.assertIsNone(authenticated(cookie))
+            self.assertIsNotNone(authenticated(other_cookie))

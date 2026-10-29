@@ -74,7 +74,10 @@ account deployment does not accept Cloudflare/Tailscale identities or shared
 development secrets. On the protected connector socket, Cloudflare-overwritten
 X-Forwarded-Proto must be HTTPS; HTTP redirects to the canonical HTTPS site and
 missing/unknown protocol fails closed. No identity comes from forwarding headers. Cookie sessions are Secure/HttpOnly/SameSiteStrict, four
-hours. Native connection leases are15min; Reconnect/refresh revalidates ownership.
+hours by default. The unchecked Remember me option grants a fixed seven-day login
+on a personal device; logout, disabling and password reset still revoke access.
+Existing logins keep their original deadline. This does not extend the adventure
+lifetime or persist dungeon state. Native connection leases are15min; Reconnect/refresh revalidates ownership.
 
 ## Private Homepage tile
 
