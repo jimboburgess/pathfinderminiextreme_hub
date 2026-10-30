@@ -23,7 +23,8 @@ def register(request):
             except OperationalError:form.add_error(None,'Registration is busy. Please retry shortly.')
         status=400
     response=render(request,'register.html',{'form':form,'posted':request.method=='POST'},status=status)
-    response['Referrer-Policy']='no-referrer'
+    # Preserve the real Origin on browser form POSTs; fragments never enter referrers.
+    response['Referrer-Policy']='same-origin'
     return response
 
 

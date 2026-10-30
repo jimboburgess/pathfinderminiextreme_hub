@@ -180,7 +180,7 @@ class InvitationTests(TestCase):
         self.assertEqual(c.post('/accounts/register/',{},secure=True).status_code,403)
         self.assertEqual(self.client_for().get('/accounts/register/',secure=True,HTTP_ORIGIN='https://evil.invalid').status_code,403)
         page=self.client_for().get('/accounts/register/',secure=True)
-        self.assertContains(page,'id="registration"');self.assertEqual(page['Referrer-Policy'],'no-referrer')
+        self.assertContains(page,'id="registration"');self.assertEqual(page['Referrer-Policy'],'same-origin')
         script=self.client_for().get('/accounts/register.js',secure=True)
         self.assertContains(script,'history.replaceState');self.assertNotContains(script,'localStorage')
     def test_revoke_is_individual_and_used_invitation_is_not_account_disable(self):
@@ -197,3 +197,18 @@ class InvitationTests(TestCase):
     def test_registration_rate_limit(self):
         for _ in range(20):self.assertEqual(self.post(token='f'*64).status_code,400)
         self.assertEqual(self.post(token='f'*64).status_code,429)
+
+    def test_browser_registration_origin_and_csrf(self):
+        import re
+        from django.conf import settings
+        c=Client(enforce_csrf_checks=True,HTTP_HOST='game.noburdenmusics.com')
+        page=c.get('/accounts/register/',secure=True)
+        self.assertEqual(page['Referrer-Policy'],'same-origin')
+        csrf=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',page.content.decode()).group(1)
+        data={'token':self.token,'username':'browserfriend','password1':self.password,'password2':self.password,'csrfmiddlewaretoken':csrf}
+        for origin in ('null','https://evil.invalid'):
+            self.assertEqual(c.post('/accounts/register/',data,secure=True,HTTP_ORIGIN=origin).status_code,403)
+            self.invite.refresh_from_db();self.assertIsNone(self.invite.redeemed_at)
+        response=c.post('/accounts/register/',data,secure=True,HTTP_ORIGIN=settings.ORIGIN,HTTP_REFERER=settings.ORIGIN+'/accounts/register/')
+        self.assertEqual(response.status_code,302)
+        self.assertTrue(User.objects.get(username='browserfriend').check_password(self.password))
