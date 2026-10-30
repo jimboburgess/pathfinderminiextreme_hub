@@ -1656,6 +1656,9 @@ void menuActivate()
 }
 void menuCancel()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::cancelNativePartyMenu())return;
+#endif
     if (getCurrentMenu() == &resistEnergyMenu)
     {
         cancelPlayerAbility();

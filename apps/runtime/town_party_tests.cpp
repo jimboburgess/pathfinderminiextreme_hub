@@ -40,7 +40,7 @@ void board(unsigned id){
  for(unsigned n=0;townSelection!=TOWN_BULLETIN_BOARD && n<5;++n)tap(id,"cw");
  tap(id,"a");
 }
-void join(unsigned id,const char* code){board(id);choose(id,"Join Party");for(unsigned i=0;i<5;++i){char letter[2]={code[i],0};choose(id,letter);}PartySnapshot s;check(nativePartySnapshot(id,s),"joined through code menu");tap(id,"b");}
+void join(unsigned id,const char* code){board(id);choose(id,"Join Party");for(unsigned i=0;i<5;++i){char letter[2]={code[i],0};choose(id,letter);}PartySnapshot s;check(nativePartySnapshot(id,s),"joined through code menu");tap(id,"b");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Bulletin Board","Back restores Bulletin Board");tap(id,"b");}
 bool selectAction(unsigned id,MenuAction action) {
     selectController(id);
     if(!menuState.isOpen || !menuState.depth)return false;
@@ -233,8 +233,8 @@ int main(int argc,char** argv){try{
  choose(0,"Sell");const auto goldBought=player.inventory.gold;tap(0,"a");check(player.inventory.gold>goldBought,"production shop sale");tap(0,"b");choose(0,"Leave");
  original[0]=player;
  }
- board(0);choose(0,"Create Party");PartySnapshot owner;check(nativePartySnapshot(0,owner)&&owner.memberCount==1,"party created");tap(0,"b");
- for(unsigned id=1;id<count;++id){if(separate){board(id);choose(id,"Create Party");tap(id,"b");}else join(id,owner.joinCode);}
+ board(0);choose(0,"Join Party");tap(0,"b");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Bulletin Board","code cancellation returns to board");choose(0,"Create Party");PartySnapshot owner;check(nativePartySnapshot(0,owner)&&owner.memberCount==1,"party created");tap(0,"b");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Bulletin Board","status Back returns to board");tap(0,"b");
+ for(unsigned id=1;id<count;++id){if(separate){board(id);choose(id,"Create Party");tap(id,"b");tap(id,"b");}else join(id,owner.joinCode);}
  if(!separate){check(nativePartySnapshot(0,owner)&&owner.memberCount==count,"all members");
   if(count>1){setControllerConnected(1,false);check(nativePartySnapshot(0,owner)&&!owner.members[1].connected,"disconnect retained member");setControllerConnected(1,true);check(nativePartySnapshot(0,owner)&&owner.members[1].connected,"secure adapter reconnect");}
  }

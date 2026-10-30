@@ -17,6 +17,7 @@ void assignNativeWorld(PlayerID,unsigned);
 void initializeNativeParties(uint32_t);
 void openNativePartyMenu();
 bool activateNativePartyMenu();
+bool cancelNativePartyMenu();
 void refreshNativePartyMenu();
 bool startNativePartyAdventure(bool forest);
 void nativePartyReturnedToTown();

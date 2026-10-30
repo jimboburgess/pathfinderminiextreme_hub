@@ -20,7 +20,8 @@ Service/GameSession. No networking or account infrastructure changes are needed.
 
 In Town, open Bulletin Board. Create Party makes you leader and displays its
 code. Another character selects Join Party, rotates to each of the five code
-characters, and presses A/encoder to enter each. B cancels. Party Status displays
+characters, and presses A/encoder to enter each. B cancels back to the Bulletin
+Board; B again returns to Town. Party Status has the same Back behavior. Party Status displays
 code, activity, names, class, level, leader (`*`) and location/offline status.
 
 All members must be connected, alive and in Town before leader travel. Enter

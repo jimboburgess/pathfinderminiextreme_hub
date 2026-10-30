@@ -130,6 +130,11 @@ void nativePartyCharacterName(PlayerID id,const char* name){if(!isValidPlayerID(
 }
 bool nativePartySnapshot(PlayerID id,PartySnapshot& snapshot){return registry && isValidPlayerID(id) && social[id].member && registry->snapshot(social[id].party,snapshot)==PartyError::Ok;}
 void openNativePartyMenu(){if(registry)build(selectedController(),Social::Board);}
+bool cancelNativePartyMenu(){
+ const auto id=selectedController();
+ if(!registry || !isValidPlayerID(id) || currentMenu()!=&social[id].menu || social[id].pane==Social::Board)return false;
+ build(id,Social::Board);return true;
+}
 bool activateNativePartyMenu(){
  const auto id=selectedController();if(!registry||!isValidPlayerID(id)||currentMenu()!=&social[id].menu)return false;
  auto& s=social[id];const auto index=menuState.cursorIndex;

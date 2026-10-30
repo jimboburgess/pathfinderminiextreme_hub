@@ -74,7 +74,7 @@ def form_town_party(clients):
     for _ in range(4):tap(clients[0],'cw')
     tap(clients[0],'a');tap(clients[0],'a')
     party=clients[0].call('party_status');assert party['ok'],party
-    code=party['data']['code'];tap(clients[0],'b')
+    code=party['data']['code'];tap(clients[0],'b');tap(clients[0],'b')
     alphabet='23456789ABCDEFGHJKMNPQRSTUVWXYZ'
     for client in clients[1:]:
         for _ in range(4):tap(client,'cw')
@@ -83,7 +83,7 @@ def form_town_party(clients):
             for _ in range(alphabet.index(character)):tap(client,'cw')
             tap(client,'a')
         joined=client.call('party_status');assert joined['ok'] and joined['data']['code']==code,joined
-        tap(client,'b')
+        tap(client,'b');tap(client,'b')
     # Bulletin Board selection -> Enter Dungeon (counterclockwise twice).
     for client in clients:
         tap(client,'ccw');tap(client,'ccw')
