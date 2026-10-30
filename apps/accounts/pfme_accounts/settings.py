@@ -18,10 +18,7 @@ MIDDLEWARE=['pfme_accounts.views.BoundaryMiddleware','django.middleware.security
  'django.contrib.auth.middleware.AuthenticationMiddleware','django.middleware.clickjacking.XFrameOptionsMiddleware']
 DATABASES={'default':{'ENGINE':'django.db.backends.sqlite3','NAME':str(STATE/'accounts.sqlite3'),'OPTIONS':{'timeout':10}}}
 PASSWORD_HASHERS=['django.contrib.auth.hashers.Argon2PasswordHasher']
-AUTH_PASSWORD_VALIDATORS=[{'NAME':'django.contrib.auth.password_validation.MinimumLengthValidator','OPTIONS':{'min_length':12}},
- {'NAME':'django.contrib.auth.password_validation.CommonPasswordValidator'},
- {'NAME':'django.contrib.auth.password_validation.NumericPasswordValidator'},
- {'NAME':'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'}]
+AUTH_PASSWORD_VALIDATORS=[{'NAME':'django.contrib.auth.password_validation.MinimumLengthValidator','OPTIONS':{'min_length':2}}]
 TEMPLATES=[{'BACKEND':'django.template.backends.django.DjangoTemplates','DIRS':[BASE_DIR/'templates'],
  'APP_DIRS':True,'OPTIONS':{'context_processors':['django.template.context_processors.csrf','django.template.context_processors.request']}}]
 SESSION_COOKIE_NAME='__Host-pfme_session'

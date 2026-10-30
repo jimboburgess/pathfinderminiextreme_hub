@@ -13,7 +13,7 @@ class PlayerAuthenticationForm(AuthenticationForm):
 class InvitationRegistrationForm(forms.Form):
     token=forms.RegexField(regex=r'^[0-9a-f]{64}$',widget=forms.HiddenInput)
     username=forms.RegexField(regex=r'^[a-z][a-z0-9_-]{2,31}$',max_length=32,help_text='3-32 lowercase letters, digits, underscore or hyphen; start with a letter.',widget=forms.TextInput(attrs={'autocomplete':'username'}))
-    password1=forms.CharField(label='Password',strip=False,widget=forms.PasswordInput(attrs={'autocomplete':'new-password'}))
+    password1=forms.CharField(label='Password',strip=False,help_text='At least 2 characters. No other password requirements.',widget=forms.PasswordInput(attrs={'autocomplete':'new-password'}))
     password2=forms.CharField(label='Repeat password',strip=False,widget=forms.PasswordInput(attrs={'autocomplete':'new-password'}))
     def clean_username(self):
         from django.contrib.auth.models import User

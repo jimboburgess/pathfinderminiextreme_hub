@@ -20,7 +20,7 @@ sh pfme.sh friend list
 ```
 
 Create/reset prompts for a password privately in the administrator terminal; no
-password arguments. Use a unique passphrase (minimum12 characters). Deliver it
+password arguments. Passwords must contain at least 2 characters; there are no common-word, numeric or similarity restrictions. Deliver it
 privately to that friend. They can change it at `/accounts/password/` after login.
 
 ```sh
@@ -146,8 +146,8 @@ and revoked invitation accounts; the host can review these if this limit is met.
 The browser clears the token fragment from the address bar before submitting it
 with a CSRF-protected form. URL fragments are not sent to the tunnel or ordinary
 HTTP request logs. Registration validates passwords and assigns no administrative
-permissions. The friend chooses a lowercase username and a unique password of at
-least 12 characters, then signs in normally (Remember me remains optional).
+permissions. The friend chooses a lowercase username and any password of at
+least 2 characters, then signs in normally (Remember me remains optional).
 
 The host creates an unusable-password account with a random internal username and
 stable principal first, and synchronizes its admission through the existing

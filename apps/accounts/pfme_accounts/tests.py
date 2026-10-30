@@ -175,7 +175,7 @@ class InvitationTests(TestCase):
         self.policy.write_text('{"users":[]}');self.assertEqual(self.post().status_code,400)
         self.invite.refresh_from_db();self.assertIsNone(self.invite.redeemed_at)
     def test_password_rules_csrf_origin_and_no_invitation_in_url(self):
-        self.assertEqual(self.post(password1='short',password2='short').status_code,400)
+        self.assertEqual(self.post(password1='x',password2='x').status_code,400)
         c=Client(enforce_csrf_checks=True,HTTP_HOST='game.noburdenmusics.com')
         self.assertEqual(c.post('/accounts/register/',{},secure=True).status_code,403)
         self.assertEqual(self.client_for().get('/accounts/register/',secure=True,HTTP_ORIGIN='https://evil.invalid').status_code,403)
@@ -212,3 +212,45 @@ class InvitationTests(TestCase):
         response=c.post('/accounts/register/',data,secure=True,HTTP_ORIGIN=settings.ORIGIN,HTTP_REFERER=settings.ORIGIN+'/accounts/register/')
         self.assertEqual(response.status_code,302)
         self.assertTrue(User.objects.get(username='browserfriend').check_password(self.password))
+
+    def test_invitation_registration_accepts_two_numeric_characters(self):
+        self.assertEqual(self.post(password1='12',password2='12').status_code,302)
+        user=User.objects.get(username='newfriend')
+        self.assertTrue(user.check_password('12'))
+        self.assertTrue(user.password.startswith('argon2$argon2id$'))
+
+
+class PasswordPolicyTests(TestCase):
+    def setUp(self):cache.clear()
+    def test_only_minimum_two_characters_is_required(self):
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError
+        from .forms import InvitationRegistrationForm
+        for password in ('12','aa','password','policy_user','  ','éé'):
+            validate_password(password,User(username='policy_user'))
+            form=InvitationRegistrationForm({'token':'0'*64,'username':'policy_user','password1':password,'password2':password})
+            self.assertTrue(form.is_valid(),form.errors.as_json())
+        for password in ('','x'):
+            with self.assertRaises(ValidationError):validate_password(password)
+            form=InvitationRegistrationForm({'token':'0'*64,'username':'policy_user','password1':password,'password2':password})
+            self.assertFalse(form.is_valid())
+    def test_password_change_accepts_short_numeric_password(self):
+        old=secrets.token_urlsafe(24)
+        user=User.objects.create_user('policy_user',password=old);AccountProfile.objects.create(user=user)
+        c=Client(HTTP_HOST='game.noburdenmusics.com',secure=True);self.assertTrue(c.login(username=user.username,password=old))
+        r=c.post('/accounts/password/',{'old_password':old,'new_password1':'12','new_password2':'12'},secure=True)
+        self.assertEqual(r.status_code,302)
+        user.refresh_from_db();self.assertTrue(user.check_password('12'))
+        self.assertTrue(user.password.startswith('argon2$argon2id$'))
+    def test_host_create_and_reset_use_same_policy(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+        from django.core.exceptions import ValidationError
+        from io import StringIO
+        for operation,password in (('create','aa'),('reset','12')):
+            with patch('sys.stdin.isatty',return_value=True),patch('getpass.getpass',side_effect=[password,password]):
+                call_command('friend',operation,'policy_user',stdout=StringIO())
+            self.assertTrue(User.objects.get(username='policy_user').check_password(password))
+        with patch('sys.stdin.isatty',return_value=True),patch('getpass.getpass',side_effect=['x','x']):
+            with self.assertRaises(ValidationError):call_command('friend','reset','policy_user',stdout=StringIO())
+        self.assertTrue(User.objects.get(username='policy_user').check_password('12'))
