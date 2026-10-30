@@ -1,10 +1,20 @@
 // Included inside Service::dispatch after authentication. No client state is authoritative.
-if(request.type=="play" || request.type=="input" || request.type=="screen") {
+if(request.type=="play" || request.type=="input" || request.type=="screen" || request.type=="party_status") {
     if(!isValidPlayerID(connection.player)) return fail("NotBound");
     auto& participant=participants_[connection.player];
     if(!participant.occupied || participant.activeConnection!=connection.serial) return fail("OwnershipRequired");
     if(partyMode_) {
         const auto id=connection.player;
+        if(request.type=="party_status"){
+            if(!fieldsAre(request,{}))return fail("InvalidRequest");
+            PartySnapshot party;
+            if(!partyStarted_[id] || !party_->status(participant.handle,connection.serial,party))return fail("NotInParty");
+            json::array members;
+            for(const auto& member:party.members)if(member.occupied)members.push_back(json::object{
+                {"name",member.profile.displayName},{"class",partyCharacterClassName(member.profile.characterClass)},
+                {"level",member.profile.level},{"leader",member.leader},{"connected",member.connected},{"location",partyLocationName(member.location)}});
+            return ok({{"code",party.joinCode},{"activity",partyActivityName(party.activity)},{"locked",party.locked},{"members",std::move(members)}});
+        }
         if(request.type=="play") {
             if(!fieldsAre(request,{}))return fail("InvalidRequest");
             if(!party_->start(participant.handle,connection.serial))return fail("RuntimeUnavailable");
@@ -30,6 +40,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen") {
         if(!partyScreens_[id].next(pixels,since,static_cast<size_t>(position),frame))return fail("InvalidCursor");
         return ok(std::move(frame));
     }
+    if(request.type=="party_status")return fail("RuntimeMode");
     if(request.type=="play") {
         if(!fieldsAre(request,{})) return fail("InvalidRequest");
         if(playRetired_) return fail("RuntimeRetired");

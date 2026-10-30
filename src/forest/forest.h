@@ -20,7 +20,11 @@ void beginAuthoritativeForest();
 
 void enterForest();
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+extern Entity* forestEntities;
+#else
 extern Entity forestEntities[MAX_ENTITIES];
+#endif
 extern uint8_t forestEntityCount;
 
 

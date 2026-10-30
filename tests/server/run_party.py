@@ -51,17 +51,50 @@ class View:
             self.since=frame['frame'];return bytes(self.pixels)
         raise AssertionError('Unbounded frame')
 
+_party_heartbeats=[]
+_party_last_heartbeat=0
+
 def tap(client,action):
+    global _party_last_heartbeat
+    if _party_heartbeats and time.monotonic()-_party_last_heartbeat>10:
+        for peer in _party_heartbeats:assert peer.call('ping')['ok']
+        _party_last_heartbeat=time.monotonic()
     assert client.call('input',action=action,down=True)['ok']
+    if action in ('cw','ccw'):
+        # Real browser rotary detents send only down; keep below 20 requests/s.
+        time.sleep(.14);return
     time.sleep(.04)
     assert client.call('input',action=action,down=False)['ok']
     time.sleep(.34)
+
+def form_town_party(clients):
+    global _party_heartbeats,_party_last_heartbeat
+    _party_heartbeats=list(clients);_party_last_heartbeat=0
+    # Town: Bulletin Board -> Create Party. Read only this caller's party code.
+    for _ in range(4):tap(clients[0],'cw')
+    tap(clients[0],'a');tap(clients[0],'a')
+    party=clients[0].call('party_status');assert party['ok'],party
+    code=party['data']['code'];tap(clients[0],'b')
+    alphabet='23456789ABCDEFGHJKMNPQRSTUVWXYZ'
+    for client in clients[1:]:
+        for _ in range(4):tap(client,'cw')
+        tap(client,'a');tap(client,'cw');tap(client,'a')
+        for character in code:
+            for _ in range(alphabet.index(character)):tap(client,'cw')
+            tap(client,'a')
+        joined=client.call('party_status');assert joined['ok'] and joined['data']['code']==code,joined
+        tap(client,'b')
+    # Bulletin Board selection -> Enter Dungeon (counterclockwise twice).
+    for client in clients:
+        tap(client,'ccw');tap(client,'ccw')
+    _party_heartbeats=[]
+    return code
 
 def main():
     executable=sys.argv[1];count=int(sys.argv[2]) if len(sys.argv)>2 else 2
     assert 1<=count<=4
     secret=secrets.token_hex(32);env=os.environ.copy();env['PFME_DEV_SECRET']=secret
-    process=subprocess.Popen([executable,'--port','0','--seed','2','--runtime','party','--run-for-ms','180000'],
+    process=subprocess.Popen([executable,'--port','0','--seed','2','--runtime','party','--run-for-ms','300000'],
         env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name=='nt' else 0)
     clients=[];proofs=[];views=[]
@@ -72,21 +105,23 @@ def main():
         for index in range(count):
             client=Client(port,origin);clients.append(client)
             assert client.call('screen',since='0',offset=0)['error']['code']=='NotAuthenticated'
+            assert client.call('party_status')['error']['code']=='NotAuthenticated'
             assert client.call('authenticate',secret=secret)['ok']
             joined=client.call('join',name=f'Party{index}');assert joined['ok'],joined
             proofs.append(joined['data']['reconnect_token'])
             check_audio(client.call('ping'),False)
             played=client.call('play');assert played['data']['mode']=='original-handheld-party' and played['data']['audio']
             check_audio(played,True);assert played['audio']['reset']
+            assert client.call('party_status',player_id=0)['error']['code']=='InvalidRequest'
+            assert client.call('party_status')['error']['code']=='NotInParty'
             assert client.call('input',action='a',down=True,audio_listener=0)['error']['code']=='InvalidRequest'
             view=View(client);views.append(view);title=view.frame();assert any(title)
             for _ in range(5):tap(client,'a')
             town=view.frame();assert town!=title
         # Each accepted Fighter has a complete production Character; the native
         # gameplay tests assert HP/inventory and exact tile coordinates.
-        for index,client in enumerate(clients):
-            tap(client,'cw');tap(client,'cw');tap(client,'a')
-            if index:tap(client,'a') # Original Resume Dungeon menu.
+        form_town_party(clients)
+        tap(clients[0],'a') # Leader embarks every connected member once.
         for client in clients:
             assert client.call('input',action='encoder',down=True,player_id=0)['error']['code']=='InvalidRequest'
         if count==4:

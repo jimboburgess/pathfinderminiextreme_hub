@@ -570,6 +570,23 @@ PartyError PartyRegistry::startDungeon(const PartyMemberHandle& caller)
     return startActivity(caller, PartyActivity::Dungeon);
 }
 
+PartyError PartyRegistry::updateMember(const PartyMemberHandle& handle,const PartyPlayerProfile& profile,MultiplayerMemberLocation location)
+{
+    PartySlot* party=nullptr;MemberSlot* member=nullptr;
+    auto error=validateMember(handle,party,member);if(error!=PartyError::Ok)return error;
+    if(!validName(profile.displayName)||!validClass(profile.characterClass)||!profile.level||profile.level>MAX_CHARACTER_LEVEL)return PartyError::InvalidProfile;
+    member->profile=profile;if(member->connected)member->location=location;return PartyError::Ok;
+}
+PartyError PartyRegistry::returnToTown(const PartyMemberHandle& handle)
+{
+    PartySlot* party=nullptr;MemberSlot* member=nullptr;
+    auto error=validateMember(handle,party,member);if(error!=PartyError::Ok)return error;
+    for(const auto& slot:party->members)if(slot.occupied && slot.location!=MultiplayerMemberLocation::TOWN && slot.location!=MultiplayerMemberLocation::DISCONNECTED)return PartyError::NotInTown;
+    party->activity=PartyActivity::Town;party->locked=false;
+    for(auto& slot:party->members)slot.participating=false;
+    return PartyError::Ok;
+}
+
 PartyError PartyRegistry::closeParty(const PartyMemberHandle& caller)
 {
     PartySlot* party = nullptr;

@@ -1,5 +1,7 @@
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
 #include "native_rooms.h"
+#include "native_party.h"
+#include "context_fields.h"
 #endif
 //
 // Created by james on 7/20/2026.
@@ -25,7 +27,12 @@
 
 
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+static TileType partyForestMaps[pfme::runtime::NATIVE_WORLD_CAPACITY][FOREST_HEIGHT][FOREST_WIDTH];
+#define forestMap partyForestMaps[pfme::runtime::nativeWorldIndex()]
+#else
 static TileType forestMap[FOREST_HEIGHT][FOREST_WIDTH];
+#endif
 
 enum ForestEncounterTheme
 {
@@ -218,7 +225,8 @@ static void initForest()
 void enterForest()
 {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
-    if(pfme::runtime::nativeRoomsActive()) {setGameMessage("Party forest travel is not available.");return;}
+    if(pfme::runtime::startNativePartyAdventure(true))return;
+    if(pfme::runtime::nativeRoomsActive()){pfme::runtime::enterNativeForestController(true);return;}
 #endif
     // Forest runs are regenerated, but they must never inherit a dungeon or
     // prior forest encounter's initiative/targeting state.
@@ -246,5 +254,32 @@ void enterForest()
     needsRedraw = true;
 }
 
+#ifndef PFME_NATIVE_CONTROLLER_CONTEXT
 Entity forestEntities[MAX_ENTITIES];
 uint8_t forestEntityCount = 0;
+#else
+namespace pfme { namespace runtime {
+namespace {Entity forestResidents[NATIVE_WORLD_CAPACITY][MAX_ENTITIES]{};uint8_t counts[NATIVE_WORLD_CAPACITY]{};}
+}}
+Entity* forestEntities=pfme::runtime::forestResidents[0];
+uint8_t forestEntityCount=0;
+namespace pfme { namespace runtime {
+void resetNativeForest(){for(unsigned i=0;i<MAX_ENTITIES;++i)forestEntities[i]=Entity{};forestEntityCount=0;counts[nativeWorldIndex()]=0;}
+void selectNativeForestWorld(unsigned previous,unsigned next){counts[previous]=forestEntityCount;forestEntities=forestResidents[next];forestEntityCount=counts[next];}
+bool enterNativeForestController(bool fresh){
+ const auto id=selectedController();if(!isValidPlayerID(id))return false;
+ switchRoomFields(MAX_ROOMS);
+ if(fresh){abortCombat();gameState=GAME_FOREST;initForest();auto* first=getPlayerEntity(forestEntities,forestEntityCount);if(first)first->ownerPlayerID=id;}
+ auto* actor=getPlayerEntityByOwner(forestEntities,forestEntityCount,id);
+ if(!actor){
+  for(int y=FOREST_HEIGHT-2;y>0 && !actor;--y)for(int x=FOREST_WIDTH/2;x<FOREST_WIDTH && !actor;++x)
+   if(getForestTile(x,y)==TILE_GRASS && !getEntityAt(forestEntities,forestEntityCount,x,y))actor=spawnEntity(forestEntities,forestEntityCount,ENTITY_PLAYER,x,y);
+  if(!actor)return false;actor->ownerPlayerID=id;actor->character=player;actor->sprite=getPlayerSprite(player.characterClass);
+ }
+ adoptNativeForestActor(id,actor);gameState=GAME_FOREST;closeMenu();
+ previousPlayerPosition={actor->x,actor->y};previousMoveDirection=moveDirection;
+ resetAwarenessTimer();backgroundNeedsRedraw=true;redrawType=REDRAW_FULL;needsRedraw=true;
+ setGameMessage("Entered forest");return true;
+}
+}}
+#endif

@@ -51,14 +51,18 @@ public:
     virtual ~RoomContextField()=default;
     virtual void save(unsigned)=0;
     virtual void load(unsigned)=0;
+    virtual void reset(unsigned)=0;
     RoomContextField* next=nullptr;
 };
 void switchRoomFields(unsigned next);
-template<class T> class RoomField final : public RoomContextField, public ValueBank<T,MAX_ROOMS> {
+void resetNativeRoomFields();
+constexpr unsigned NATIVE_ROOM_BANK_COUNT=(MAX_ROOMS+1)*MAX_MULTIPLAYER_PLAYERS;
+template<class T> class RoomField final : public RoomContextField, public ValueBank<T,NATIVE_ROOM_BANK_COUNT> {
 public:
-    explicit RoomField(T& value):ValueBank<T,MAX_ROOMS>(value){}
-    void save(unsigned i) override {ValueBank<T,MAX_ROOMS>::save(i);}
-    void load(unsigned i) override {ValueBank<T,MAX_ROOMS>::load(i);}
+    explicit RoomField(T& value):ValueBank<T,NATIVE_ROOM_BANK_COUNT>(value){}
+    void save(unsigned i) override {ValueBank<T,NATIVE_ROOM_BANK_COUNT>::save(i);}
+    void load(unsigned i) override {ValueBank<T,NATIVE_ROOM_BANK_COUNT>::load(i);}
+    void reset(unsigned i) override {ValueBank<T,NATIVE_ROOM_BANK_COUNT>::reset(i);}
 };
 }}
 #define PFME_ROOM_FIELD(name) static pfme::runtime::RoomField<decltype(name)> roomContext_##name(name)

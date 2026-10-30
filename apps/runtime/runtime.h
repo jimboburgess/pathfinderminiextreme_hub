@@ -5,7 +5,7 @@ namespace pfme { namespace runtime {
 struct ControllerState;
 // Internal migration API. The authenticated Service still retains its guard
 // until gameplay, visibility and combat routing are verified end to end.
-void initializeControllers(uint32_t seed);
+void initializeControllers(uint32_t seed,bool socialParties=false);
 bool bindController(uint8_t id,ControllerState& state);
 void setControllerConnected(uint8_t id,bool connected);
 bool unbindController(uint8_t id);

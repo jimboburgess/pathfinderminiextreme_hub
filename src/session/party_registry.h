@@ -212,6 +212,9 @@ public:
     PartyError startForest(const PartyMemberHandle& caller);
     PartyError startDungeon(const PartyMemberHandle& caller);
     PartyError closeParty(const PartyMemberHandle& caller);
+    // Authoritative runtime observations, never deserialized browser claims.
+    PartyError updateMember(const PartyMemberHandle&,const PartyPlayerProfile&,MultiplayerMemberLocation);
+    PartyError returnToTown(const PartyMemberHandle&);
 
     PartyError snapshot(const PartyHandle& party, PartySnapshot& result) const;
     PartyError snapshot(const char* joinCode, PartySnapshot& result) const;

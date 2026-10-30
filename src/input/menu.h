@@ -158,7 +158,8 @@ enum MenuRedrawType
 {
     MENU_REDRAW_FULL,        // Draw entire menu window
     MENU_REDRAW_VISIBLE_ITEMS,        // Redraw all visible menu items
-    MENU_REDRAW_SELECTION    // Redraw only old/new highlighted rows
+    MENU_REDRAW_SELECTION,   // Redraw only old/new highlighted rows
+    MENU_REDRAW_NONE         // Menu pixels are current
 };
 
 struct Menu;
@@ -234,6 +235,7 @@ void openDungeonEntryMenu();
 
 void updateMenu();
 void drawMenu();
+void requestMenuRedraw(MenuRedrawType redraw = MENU_REDRAW_FULL);
 
 //--------------------------------------------------
 // Navigation

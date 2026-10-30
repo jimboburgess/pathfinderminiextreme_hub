@@ -1,5 +1,6 @@
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
 #include "native_rooms.h"
+#include "native_party.h"
 #include "context_fields.h"
 #endif
 //
@@ -7,6 +8,9 @@
 //
 
 #include "dungeon.h"
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "forest/forest.h"
+#endif
 #include <Arduino.h>
 #include "roomgen.h"
 #include "dungeongraph.h"
@@ -587,6 +591,9 @@ DungeonRubblePlan createDungeonRubblePlan(
 void enterDungeon()
 {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::startNativePartyAdventure(false))return;
+#endif
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if (pfme::runtime::nativeRoomsActive()) {
         if (combat.active) { setGameMessage("Wait for the encounter to finish.");return; }
         dungeon.currentRoom=0;
@@ -1065,12 +1072,13 @@ namespace {
 // One authoritative resident collection per room, not per player. Addresses
 // remain stable across view selection. Only actual travel moves an actor.
 struct ResidentRoom { Entity entities[MAX_ENTITIES]{};uint8_t count=0;bool ready=false; };
-ResidentRoom residentRooms[MAX_ROOMS];
+ResidentRoom partyResidentRooms[NATIVE_WORLD_CAPACITY][MAX_ROOMS];
+#define residentRooms partyResidentRooms[nativeWorldIndex()]
 struct ObserverEntity {
     bool revealed=false,visible=false,lineOfSight=false,known=false;
     uint8_t x=0,y=0;
 };
-ObserverEntity views[MAX_MULTIPLAYER_PLAYERS][MAX_ROOMS][MAX_ENTITIES];
+ObserverEntity views[MAX_MULTIPLAYER_PLAYERS][MAX_ROOMS+1][MAX_ENTITIES];
 PlayerID loadedObserver=INVALID_PLAYER_ID;
 uint8_t observedRoom=NO_ROOM;
 Entity* actors[MAX_MULTIPLAYER_PLAYERS]{};
@@ -1089,7 +1097,17 @@ void bindRoom(Dungeon& world,uint8_t index) {
     }
 }
 }
+void resetNativeResidentRooms(){
+    for(auto& room:residentRooms)room=ResidentRoom{};
+    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(nativeControllerWorld(id)==nativeWorldIndex())retireNativeObserver(id);
+    invalidateNativeRoomView();
+}
+void invalidateNativeRoomView(){loadedObserver=INVALID_PLAYER_ID;observedRoom=NO_ROOM;}
 void saveNativeRoomView(Dungeon& world) {
+    if(isValidPlayerID(loadedObserver) && observedRoom==NATIVE_FOREST_ROOM){
+        for(unsigned i=0;i<forestEntityCount;++i){const auto& e=forestEntities[i];auto& v=views[loadedObserver][NATIVE_FOREST_ROOM][i];v={e.revealedToPlayer,e.visibleToPlayer,e.playerHasLineOfSight,e.hasLastKnownPosition,e.lastKnownX,e.lastKnownY};}
+        return;
+    }
     if(!isValidPlayerID(loadedObserver) || observedRoom>=MAX_ROOMS ||
        world.entities!=residentRooms[observedRoom].entities)return;
     residentRooms[observedRoom].count=world.entityCount;
@@ -1099,33 +1117,40 @@ void saveNativeRoomView(Dungeon& world) {
     }
 }
 uint8_t nativeEntityRoom(const Entity* entity) {
+    for(unsigned i=0;i<forestEntityCount;++i)if(entity==&forestEntities[i])return NATIVE_FOREST_ROOM;
     for(uint8_t room=0;room<MAX_ROOMS;++room)if(residentRooms[room].ready)
         for(unsigned i=0;i<residentRooms[room].count;++i)
             if(entity==&residentRooms[room].entities[i])return room;
     return NO_ROOM;
 }
 bool hasLivingNativePlayers() {
-    for(auto* actor:actors)if(actor && actor->active && actor->character.state==STATE_ALIVE && actor->character.health.currentHP>0)return true;
+    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id){auto* actor=nativeActor(id);if(actor && actor->active && actor->character.state==STATE_ALIVE && actor->character.health.currentHP>0)return true;}
     return false;
 }
 void retireNativeObserver(PlayerID id) {
     if(!isValidPlayerID(id))return;
     for(auto& room:views[id])for(auto& view:room)view=ObserverEntity{};
 }
-uint8_t nativeActorRoom(PlayerID id) {return isValidPlayerID(id)&&actors[id]?actorRooms[id]:NO_ROOM;}
+uint8_t nativeActorRoom(PlayerID id) {return nativeActor(id)?actorRooms[id]:NO_ROOM;}
+void adoptNativeForestActor(PlayerID id,Entity* entity){actors[id]=entity;actorRooms[id]=NATIVE_FOREST_ROOM;}
 bool leaveNativeRoom(Dungeon& world) {
     auto id=selectedController();if(!isValidPlayerID(id)||!actors[id]||combat.active)return false;
     saveNativeRoomView(world);player=actors[id]->character;actors[id]->active=false;actors[id]=nullptr;
     closeInventoryMenu();clearInteractionEntityReferences();closeMenu();
     world.entities=nullptr;world.entityCount=0;world.loadedRoom=NO_ROOM;return true;
 }
-Entity* nativeActor(PlayerID id) { return isValidPlayerID(id)?actors[id]:nullptr; }
+Entity* nativeActor(PlayerID id) { return isValidPlayerID(id) && nativeControllerWorld(id)==nativeWorldIndex()?actors[id]:nullptr; }
 bool bindNativeWorldRoom(Dungeon& world,uint8_t room) {
     if(room>=MAX_ROOMS || !residentRooms[room].ready)return false;
     saveNativeRoomView(world);bindRoom(world,room);return true;
 }
 void bindNativeRoom(Dungeon& world,PlayerID id) {
-    if (isValidPlayerID(id) && actors[id]) bindRoom(world,actorRooms[id]);
+    if (nativeActor(id) && actorRooms[id]<MAX_ROOMS) bindRoom(world,actorRooms[id]);
+    else if(nativeActor(id) && actorRooms[id]==NATIVE_FOREST_ROOM){
+        switchRoomFields(MAX_ROOMS);world.entities=nullptr;world.entityCount=0;world.loadedRoom=NO_ROOM;
+        loadedObserver=id;observedRoom=NATIVE_FOREST_ROOM;
+        for(unsigned i=0;i<forestEntityCount;++i){auto& e=forestEntities[i];const auto& v=views[id][NATIVE_FOREST_ROOM][i];e.revealedToPlayer=v.revealed;e.visibleToPlayer=v.visible;e.playerHasLineOfSight=v.lineOfSight;e.hasLastKnownPosition=v.known;e.lastKnownX=v.x;e.lastKnownY=v.y;}
+    }
     else { world.entities=nullptr;world.entityCount=0;world.loadedRoom=NO_ROOM; }
 }
 bool travelNativeRoom(Dungeon& world,RoomEntry entry) {

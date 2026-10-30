@@ -3,7 +3,7 @@ import subprocess,uuid,json,secrets,time,sys,hashlib,os,argparse
 from pathlib import Path
 sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from run_party import View,tap
+from run_party import View,tap,form_town_party
 parser=argparse.ArgumentParser();parser.add_argument('--image',required=True);parser.add_argument('--game-image',required=True);parser.add_argument('--game-duration-ms',type=int,default=300000)
 options=parser.parse_args();assert sys.platform=='linux';assert 0<=options.game_duration_ms<=86400000
 IMAGE=options.image;GAME=options.game_image
@@ -93,9 +93,8 @@ print(json.dumps(result))
         assert c.call('join',name='Waiting')['error']['code']=='Full';assert b(op='close',slot=i)['result']['closed']
     report['four_original_characters_and_six_waiting_accounts']=True
     assert players[0].call('input',action='a',down=True,player_id=ids[1])['error']['code']=='InvalidRequest'
-    for i,c in enumerate(players):
-        tap(c,'cw');tap(c,'cw');tap(c,'a')
-        if i:tap(c,'a')
+    form_town_party(players)
+    tap(players[0],'a')
     for _ in range(11):tap(players[3],'encoder')
     a=views[0].frame();d=views[3].frame();assert a!=d
     report['separate_rooms_original_rgb565_frames']=[hashlib.sha256(a).hexdigest(),hashlib.sha256(d).hexdigest()]
@@ -104,6 +103,9 @@ print(json.dumps(result))
     assert players[3].call('leave')['ok'];b(op='close',slot=3)
     assert b(op='open',slot=4,cookie=cookies[4])['result']['opened'];waiting=Client(4);assert waiting.call('authenticate')['ok'];assert waiting.call('join',name='Waiting')['ok'];assert waiting.call('play')['ok'];assert any(View(waiting).frame())
     report['waiting_account_joins_after_safe_leave']=True
+    # Normal /play tabs refresh account presence every 15s even while Party Full.
+    # Rotary join-code entry lengthens this fixture; renew the waiting tabs too.
+    for cookie in cookies:assert b(op='http',path='/accounts/presence/',cookie=cookie)['result']['status']==200
     time.sleep(1.2);s=status(app);assert s['active_players']==4,s
     assert s['connected_accounts']==10 and len(s['waiting_usernames'])==6,s
     report.update(private_status_active_players=4,private_status_signed_in_accounts=10,private_status_waiting_accounts=6)

@@ -1,5 +1,6 @@
 #pragma once
 #include "session/game_session.h"
+#include "session/party_registry.h"
 #include "audio_stream.h"
 #include <memory>
 #include <string>
@@ -17,6 +18,7 @@ public:
     void detach(const PlayerHandle&,uint64_t serial);
     bool leave(const PlayerHandle&,uint64_t serial);
     void tick(uint32_t milliseconds);
+    bool status(const PlayerHandle&,uint64_t serial,PartySnapshot&);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

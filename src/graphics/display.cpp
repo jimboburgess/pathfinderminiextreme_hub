@@ -1239,14 +1239,16 @@ void refreshDisplay()
             break;
 
         case GAME_TOWN:
-            if (!menuState.isOpen ||
-                menuState.redrawType == MENU_REDRAW_FULL)
+            if (!menuState.isOpen)
             {
                 drawTownScreen();
             }
             break;
 
         case GAME_FOREST:
+
+            if (menuState.isOpen)
+                break;
 
             if (redrawType == REDRAW_FULL)
             {
@@ -1261,6 +1263,9 @@ void refreshDisplay()
             break;
 
         case GAME_DUNGEON:
+
+            if (menuState.isOpen)
+                break;
 
             if (redrawType == REDRAW_FULL)
             {

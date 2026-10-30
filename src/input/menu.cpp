@@ -1,5 +1,6 @@
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
 #include "native_rooms.h"
+#include "native_party.h"
 #endif
 //
 // Created by james on 7/24/2026.
@@ -1062,15 +1063,17 @@ void openMenu(const Menu* menu)
     menuState.cursorIndex = 0;
     menuState.previousCursorIndex = 0;
     menuState.firstVisibleIndex = 0;
-    menuState.redrawType = MENU_REDRAW_FULL;
     menuState.isOpen = true;
 
     suppressMenuInputUntilRelease();
-    needsRedraw = true;     // <-- add this
+    requestMenuRedraw();
 }
 
 void openMultiplayerMenu()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::socialPartiesEnabled()){pfme::runtime::openNativePartyMenu();return;}
+#endif
     rebuildMultiplayerStatusMenu();
     openMenu(&multiplayerMenu);
 }
@@ -1105,10 +1108,8 @@ bool pushMenu(const Menu* menu)
     menuState.cursorIndex = 0;
     menuState.previousCursorIndex = 0;
     menuState.firstVisibleIndex = 0;
-    menuState.redrawType = MENU_REDRAW_FULL;
-
     suppressMenuInputUntilRelease();
-    needsRedraw = true;
+    requestMenuRedraw();
     return true;
 }
 
@@ -1145,6 +1146,12 @@ void updateMenu()
     // Reserved for future menu animation.
 }
 
+void requestMenuRedraw(MenuRedrawType redraw)
+{
+    menuState.redrawType = redraw;
+    needsRedraw = true;
+}
+
 void menuCursorDown()
 {
     const Menu* menu = getCurrentMenu();
@@ -1161,19 +1168,16 @@ void menuCursorDown()
     menuState.previousCursorIndex = menuState.cursorIndex;
     menuState.cursorIndex++;
 
-    // Did the visible window scroll?
+    // Keep the complete menu frame self-contained. Native observers can
+    // repaint the world between inputs, so relying on untouched display RAM
+    // leaves unrelated rows missing after a selection change.
     if (menuState.cursorIndex >=
         menuState.firstVisibleIndex + MENU_VISIBLE_ITEMS)
     {
         menuState.firstVisibleIndex++;
-        menuState.redrawType = MENU_REDRAW_VISIBLE_ITEMS;
-    }
-    else
-    {
-        menuState.redrawType = MENU_REDRAW_SELECTION;
     }
 
-    needsRedraw = true;
+    requestMenuRedraw();
 }
 void menuCursorUp()
 {
@@ -1184,22 +1188,19 @@ void menuCursorUp()
     menuState.previousCursorIndex = menuState.cursorIndex;
     menuState.cursorIndex--;
 
-    // Did the visible window scroll?
     if (menuState.cursorIndex < menuState.firstVisibleIndex)
     {
         menuState.firstVisibleIndex--;
-        menuState.redrawType = MENU_REDRAW_VISIBLE_ITEMS;
-    }
-    else
-    {
-        menuState.redrawType = MENU_REDRAW_SELECTION;
     }
 
-    needsRedraw = true;
+    requestMenuRedraw();
 }
 
 void menuActivate()
 {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::activateNativePartyMenu())return;
+#endif
     const Menu* menu = getCurrentMenu();
 
     if (menu == nullptr)
@@ -1215,6 +1216,11 @@ void menuActivate()
     // Open submenu
     //--------------------------------------------------
 
+    #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(item->action==MENU_MULTIPLAYER && pfme::runtime::socialPartiesEnabled()){
+        pfme::runtime::openNativePartyMenu();return;
+    }
+#endif
     if (item->child != nullptr)
     {
         if (item->action == MENU_CAST_SPELL)
@@ -1514,10 +1520,18 @@ void menuActivate()
             else
             {
                 // Leaving a non-dungeon encounter is not combat victory.
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                if(pfme::runtime::nativeRoomsActive()) {
+                    if(!pfme::runtime::leaveNativeRoom(dungeon)){setGameMessage("Wait for combat to end.");break;}
+                } else
+#endif
                 abortCombat();
             }
 
             gameState = GAME_TOWN;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            pfme::runtime::nativePartyReturnedToTown();
+#endif
             townSelection = TOWN_STAY_HOME;
 
             redrawType = REDRAW_FULL;
@@ -1594,6 +1608,9 @@ void menuActivate()
             break;
 
         case MENU_DUNGEON_START_NEW_YES:
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            if(pfme::runtime::socialPartiesEnabled() && !pfme::runtime::resetNativePartyAdventure())break;
+#endif
             closeMenu();
             resetDungeonRun(dungeon);
             if (!requestMultiplayerTravel(
@@ -1654,9 +1671,8 @@ void menuCancel()
         menuState.previousCursorIndex = 0;
         menuState.firstVisibleIndex = 0;
 
-        menuState.redrawType = MENU_REDRAW_FULL;
         suppressMenuInputUntilRelease();
-        needsRedraw = true;
+        requestMenuRedraw();
     }
     else
     {
@@ -2036,9 +2052,13 @@ void drawMenu()
 
     switch (menuState.redrawType)
     {
+        case MENU_REDRAW_NONE:
+            return;
+
         case MENU_REDRAW_SELECTION:
         {
             drawMenuSelection();
+            menuState.redrawType = MENU_REDRAW_NONE;
             return;
         }
 
@@ -2052,6 +2072,7 @@ void drawMenu()
                     menuState.cursorIndex);
 
             drawDescription(selected);
+            menuState.redrawType = MENU_REDRAW_NONE;
             return;
         }
 
@@ -2119,6 +2140,7 @@ void drawMenu()
         footerY);
 
     tft.print("B Back");
+    menuState.redrawType = MENU_REDRAW_NONE;
 }
 
 
@@ -2126,8 +2148,9 @@ bool isMenuItemVisible(MenuAction action)
 {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if(pfme::runtime::nativeRoomsActive()) {
-        if(action>=MENU_MULTIPLAYER && action<=MENU_MULTIPLAYER_TRAVEL_DECLINE)return false;
-        if(action==MENU_DUNGEON_START_NEW || action==MENU_DUNGEON_START_NEW_YES)return false;
+        if(action>=MENU_MULTIPLAYER && action<=MENU_MULTIPLAYER_TRAVEL_DECLINE)
+            return pfme::runtime::socialPartiesEnabled() && action==MENU_MULTIPLAYER;
+        if(action==MENU_DUNGEON_START_NEW || action==MENU_DUNGEON_START_NEW_YES)return pfme::runtime::canResetNativePartyAdventure();
         if(combat.active && action==MENU_RETURN_TO_TOWN)return false;
         if(combat.active && !isPlayerTurn() && action>=MENU_CHEST_PICK_LOCK && action<=MENU_RIDDLE_RETRY_LEAVE)return false;
     }

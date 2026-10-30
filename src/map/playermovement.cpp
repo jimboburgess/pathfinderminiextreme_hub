@@ -286,6 +286,10 @@ bool tryMovePlayerAuthoritative(
     roomChanged = false;
     if (gameState == GAME_FOREST)
     {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+        if(pfme::runtime::nativeRoomsActive() && combat.active &&
+           (!getCurrentCombatant() || getCurrentCombatant()->ownerPlayerID!=ownerPlayerID || getCurrentCombatant()->type!=ENTITY_PLAYER))return false;
+#endif
         Entity* forestPlayer = getPlayerEntityByOwner(
             forestEntities, forestEntityCount, ownerPlayerID);
         if (forestPlayer == nullptr && ownerPlayerID == SINGLE_PLAYER_ID)
