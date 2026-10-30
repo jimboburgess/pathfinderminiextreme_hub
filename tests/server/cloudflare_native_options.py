@@ -6,6 +6,7 @@ import sys
 env = dict(os.environ, PFME_DEV_SECRET=secrets.token_hex(32))
 for args in (
     ['--cloudflare-peer-uid','1001','--cloudflare-peer-gid','981'],
+    ['--cloudflare-socket','/socket/backend.sock','--cloudflare-origin','https://game.example.com','--cloudflare-policy','/policy/admission.json','--cloudflare-peer-uid','1001','--cloudflare-peer-gid','981','--runtime','party'],
     ['--cloudflare-peer-uid','0'],
     ['--cloudflare-origin','https://game.example.com/'],
     ['--serve-origin','https://game.example.com'],

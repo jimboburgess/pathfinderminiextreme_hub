@@ -22,12 +22,12 @@ bool number(const char* text, uint64_t maximum, uint64_t& result)
 int main(int argc, char** argv)
 {
     uint64_t port = 8765, seed = 12345, duration = 0;
-    bool partyMode=false,portSpecified=false,serveSpecified=false,cloudflareSpecified=false;
+    bool partyMode=false,portSpecified=false,serveSpecified=false,cloudflareSpecified=false,durationSpecified=false;
     pfme::server::ServeOptions serve;
     for (int i = 1; i < argc; i += 2)
     {
         if (i + 1 >= argc)
-        { std::cerr << "usage: pfme_server [--port N] [--seed N] [--run-for-ms N] [--runtime single|party] [--serve-socket PATH --serve-origin HTTPS_URL --serve-policy PATH --run-for-ms N] [--cloudflare-socket PATH --cloudflare-origin HTTPS_URL --cloudflare-policy PATH --cloudflare-peer-uid N --cloudflare-peer-gid N --runtime party --run-for-ms N]\n"; return 2; }
+        { std::cerr << "usage: pfme_server [--port N] [--seed N] [--run-for-ms N] [--runtime single|party] [--serve-socket PATH --serve-origin HTTPS_URL --serve-policy PATH --run-for-ms N] [--cloudflare-socket PATH --cloudflare-origin HTTPS_URL --cloudflare-policy PATH --cloudflare-peer-uid N --cloudflare-peer-gid N --runtime party --run-for-ms N] (N=0 runs until stopped)\n"; return 2; }
         const std::string option = argv[i];
         bool valid = false;
         if(option.rfind("--serve-",0)==0)serveSpecified=true;
@@ -43,7 +43,7 @@ int main(int argc, char** argv)
         else if(option=="--runtime") {const std::string mode=argv[i+1];valid=mode=="single" || mode=="party";partyMode=mode=="party";}
         else if (option == "--port") {portSpecified=true;valid = number(argv[i + 1], 65535, port) && (port == 0 || port >= 1024);}
         else if (option == "--seed") valid = number(argv[i + 1], UINT32_MAX, seed);
-        else if (option == "--run-for-ms") valid = number(argv[i + 1], 86400000, duration) && duration > 0;
+        else if (option == "--run-for-ms") { durationSpecified=true; valid = number(argv[i + 1], 86400000, duration); }
         if (!valid) { std::cerr << "invalid startup option\n"; return 2; }
     }
     pfme::server::SecretDigest gate{};
@@ -52,7 +52,7 @@ int main(int argc, char** argv)
     if((serveSpecified&&cloudflareSpecified)||(cloudflareSpecified&&(!serve.peerUid||!serve.peerGid)))
     {std::cerr<<"conflicting or incomplete Cloudflare configuration\n";return 2;}
     const bool privateMode=serveSpecified||cloudflareSpecified;
-    if(privateMode && (serve.socket.empty()||serve.origin.empty()||serve.policy.empty()||portSpecified||!partyMode||duration==0))
+    if(privateMode && (serve.socket.empty()||serve.origin.empty()||serve.policy.empty()||portSpecified||!partyMode||!durationSpecified))
     {std::cerr<<"incomplete or conflicting Serve configuration\n";return 2;}
 #ifndef __linux__
     if(privateMode){std::cerr<<"Serve mode requires Linux\n";return 2;}

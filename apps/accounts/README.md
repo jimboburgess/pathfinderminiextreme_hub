@@ -63,8 +63,7 @@ sh pfme.sh restart
 starts cloudflared behind the root-controlled gate, installs its namespace-only
 default-drop filter and checks forbidden host/LAN destinations BEFORE releasing
 the gate. No host firewall change. Only Cloudflare tunnel UDP7844 (QUIC) and public DNS
-egress are allowed. Exceptions stop the owned deployment. Initial game lifetime
-is eight hours; explicit restart begins a NEW in-memory adventure.
+egress are allowed. Exceptions stop the owned deployment. The game has no scheduled shutdown (`--run-for-ms 0`); explicit restart begins a NEW in-memory adventure.
 
 Players visit `https://game.noburdenmusics.com`, enter their own credentials, then
 Connect. Original graphics, integer zoom, handheld controls and Web Audio remain.
@@ -122,7 +121,7 @@ The live Unix WebSocket route requires QUIC: HTTP2 produced cloudflared's
 'http: no Host in request URL' during the owner test. The connector Dockerfile
 reuses the pinned binary and CA bundle, with directories 0755 and the public
 CA file 0444. Record the resulting image ID in the private .env before starting.
-The native --run-for-ms maximum is 24 hours; this deployment uses eight hours; accounts have separate four-hour leases.
+Finite --run-for-ms durations still have a 24-hour maximum. Explicit zero runs until an operator stops it. Protected modes require this flag explicitly, so omitting it fails closed. Account logins have separate four-hour defaults and optional seven-day Remember me sessions.
 
 
 ## Invite friends to choose their own credentials
@@ -161,3 +160,14 @@ Leave character releases its slot. Revoking a used invitation does not silently
 disable an existing player: use `friend disable USERNAME` instead. Password reset
 and disable retain the stable ownership mapping. No emails or invitations are
 sent automatically. Real multi-friend playtesting is still required.
+
+
+## Keep the game running; stop it yourself
+
+The game runs without a lifetime timer. Authentication, revocation and connection
+leases still expire as before; staying online does not make logins permanent.
+Use `sh /home/jimbo/pathfinder-friends/pfme.sh stop` to take Pathfinder down,
+`start` to bring it back, or `restart` to begin a fresh adventure. These commands
+only affect Pathfinder. Account/invitation volumes persist; adventure state is
+still in memory and is lost when the game process stops. Docker restart policy
+remains `no`: this change does not add a boot service or automatic crash recovery.

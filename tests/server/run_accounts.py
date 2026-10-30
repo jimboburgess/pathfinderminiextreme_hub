@@ -4,10 +4,10 @@ from pathlib import Path
 sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from run_party import View,tap
-parser=argparse.ArgumentParser();parser.add_argument('--image',required=True);parser.add_argument('--game-image',required=True)
-options=parser.parse_args();assert sys.platform=='linux'
+parser=argparse.ArgumentParser();parser.add_argument('--image',required=True);parser.add_argument('--game-image',required=True);parser.add_argument('--game-duration-ms',type=int,default=300000)
+options=parser.parse_args();assert sys.platform=='linux';assert 0<=options.game_duration_ms<=86400000
 IMAGE=options.image;GAME=options.game_image
-nonce=uuid.uuid4().hex[:10];prefix='pfme-accounts-test-'+nonce;containers=[];volumes={};bridge=None
+nonce=uuid.uuid4().hex[:10];prefix='pfme-accounts-test-'+nonce;containers=[];volumes={};bridge=None;game=None
 baseline=subprocess.check_output(['docker','ps','-q'],text=True).splitlines()
 def run(args,input=None):
     p=subprocess.run(args,input=input,text=True,capture_output=True)
@@ -50,7 +50,7 @@ print(json.dumps(result))
 """
     invitation_tokens=json.loads(oneshot(['-c',code],input=json.dumps(fixture)))
     oneshot(['manage.py','sync_admission'],user='0:980')
-    game=start(GAME,['--runtime','party','--seed','2','--cloudflare-socket','/back/backend.sock','--cloudflare-origin','https://game.noburdenmusics.com','--cloudflare-policy','/policy/admission.json','--cloudflare-peer-uid','995','--cloudflare-peer-gid','980','--run-for-ms','300000'],'999:980',[('back',False),('policy',True)])
+    game=start(GAME,['--runtime','party','--seed','2','--cloudflare-socket','/back/backend.sock','--cloudflare-origin','https://game.noburdenmusics.com','--cloudflare-policy','/policy/admission.json','--cloudflare-peer-uid','995','--cloudflare-peer-gid','980','--run-for-ms',str(options.game_duration_ms)],'999:980',[('back',False),('policy',True)])
     app=start(IMAGE,['-m','pfme_accounts.server'],'995:980',[('state',False),('policy',True),('front',False),('back',True),('status',False)],['--group-add=979'])
     time.sleep(3)
     bridge=subprocess.Popen(['docker','run','--rm','-i',*limits,'--user=994:979',*mount('front',True),'--mount','type=bind,src='+str(Path(__file__).with_name('accounts_client.py'))+',dst=/test_client.py,readonly',IMAGE,'/test_client.py'],text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -125,7 +125,10 @@ finally:
         except subprocess.TimeoutExpired:bridge.terminate();bridge.wait(timeout=5)
     for cid in reversed(containers):
         info=json.loads(run(['docker','inspect',cid]))[0];assert info['Config']['Labels']['pfme.accounts.test']==nonce
-        run(['docker','stop','--timeout','3',cid]);run(['docker','rm',cid])
+        run(['docker','stop','--timeout','3',cid])
+        if cid==game and options.game_duration_ms==0:
+            ended=json.loads(run(['docker','inspect',cid]))[0];assert ended['State']['ExitCode']==0,'Untimed game failed graceful stop'
+        run(['docker','rm',cid])
     # Client --rm closes on EOF; remove ONLY our labeled leftover on abnormal exit.
     leftovers=run(['docker','ps','-aq','--filter','label=pfme.accounts.test='+nonce]).splitlines()
     for cid in leftovers:
@@ -134,4 +137,5 @@ finally:
         info=json.loads(run(['docker','volume','inspect',v]))[0];assert info['Labels']['pfme.accounts.test']==nonce;run(['docker','volume','rm',v])
     assert all(json.loads(run(['docker','inspect',cid]))[0]['State']['Running'] for cid in baseline)
 report['existing_containers_running']=True
+report['game_duration_ms']=options.game_duration_ms
 print(json.dumps(report,sort_keys=True))
