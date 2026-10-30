@@ -15,6 +15,11 @@ case "${1:-help}" in
     dc --profile admin run --rm --no-deps admin manage.py friend "$@"
     dc --profile admin run --rm -T --no-deps --user 0:980 admin manage.py sync_admission
     ;;
+  invite)
+    shift
+    dc --profile admin run --rm --no-deps admin manage.py invite "$@"
+    dc --profile admin run --rm -T --no-deps --user 0:980 admin manage.py sync_admission
+    ;;
   start)
     test -f .public-activation-approved || { echo 'Live activation requires the final reviewed approval.' >&2; exit 1; }
     PFME_GATE_NONCE=$(python3 -c 'import secrets;print(secrets.token_hex(32))')
@@ -44,5 +49,5 @@ case "${1:-help}" in
     dc --profile monitor exec -T status python -c "from pathlib import Path;print(Path('/run/secrets/status-token').read_text(),end='')" |
       python3 pfme_accounts/homepage_tile.py /home/jimbo/homepage/config/services.yaml
     ;;
-  *) echo 'Commands: init, secrets, friend create/reset/disable/enable/list [username], start, stop, restart, logs, status, homepage' ;;
+  *) echo 'Commands: init, secrets, friend create/reset/disable/enable/list [username], invite create/list/revoke [label-or-id], start, stop, restart, logs, status, homepage' ;;
 esac

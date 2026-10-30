@@ -42,18 +42,27 @@ try:
     fixture=[{'username':'friend'+str(i),'password':secrets.token_urlsafe(24)} for i in range(10)]
     code="""import os,json,sys;os.environ['DJANGO_SETTINGS_MODULE']='pfme_accounts.settings'
 import django;django.setup()
-from django.contrib.auth.models import User
-from pfme_accounts.models import AccountProfile
+from pfme_accounts.invitations import issue
+result=[]
 for f in json.load(sys.stdin):
- u=User.objects.create_user(f['username'],password=f['password']);AccountProfile.objects.create(user=u)
-print('Created10 generated test accounts; no passwords logged.')
+ invitation,token=issue(f['username']);result.append(token)
+print(json.dumps(result))
 """
-    oneshot(['-c',code],input=json.dumps(fixture));oneshot(['manage.py','sync_admission'],user='0:980')
+    invitation_tokens=json.loads(oneshot(['-c',code],input=json.dumps(fixture)))
+    oneshot(['manage.py','sync_admission'],user='0:980')
     game=start(GAME,['--runtime','party','--seed','2','--cloudflare-socket','/back/backend.sock','--cloudflare-origin','https://game.noburdenmusics.com','--cloudflare-policy','/policy/admission.json','--cloudflare-peer-uid','995','--cloudflare-peer-gid','980','--run-for-ms','300000'],'999:980',[('back',False),('policy',True)])
     app=start(IMAGE,['-m','pfme_accounts.server'],'995:980',[('state',False),('policy',True),('front',False),('back',True),('status',False)],['--group-add=979'])
     time.sleep(3)
     bridge=subprocess.Popen(['docker','run','--rm','-i',*limits,'--user=994:979',*mount('front',True),'--mount','type=bind,src='+str(Path(__file__).with_name('accounts_client.py'))+',dst=/test_client.py,readonly',IMAGE,'/test_client.py'],text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     cookies=[]
+    race=b(op='register_race',token=invitation_tokens[0],**fixture[0])['result']
+    assert sorted(race['statuses'])==[302,400],race
+    report['concurrent_claim_consumes_invitation_once']=True
+    for i,f in enumerate(fixture[1:],start=1):
+        response=b(op='register',token=invitation_tokens[i],**f)
+        assert response.get('result',{}).get('status')==302,'Invitation registration failed'
+    assert b(op='register',token=invitation_tokens[0],username='takeover',password=secrets.token_urlsafe(24))['result']['status']==400
+    report['ten_single_use_invitations_redeemed_over_real_http']=True
     for f in fixture:
         response=b(op='login',**f);assert 'result' in response,response;result=response['result'];assert result['status']==302,result
         cookies.append('; '.join(k+'='+v for k,v in result['cookies'].items()))

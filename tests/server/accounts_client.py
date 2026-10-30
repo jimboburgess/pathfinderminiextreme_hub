@@ -46,6 +46,17 @@ async def main():
                     token=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',first['body']).group(1)
                     result=http('/accounts/login/','__Host-pfme_csrf='+csrf,{'username':q['username'],'password':q['password'],'csrfmiddlewaretoken':token})
                     result.pop('body',None)
+                elif op=='register':
+                    first=http('/accounts/register/');csrf=first['cookies'].get('__Host-pfme_csrf','')
+                    token=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',first['body']).group(1)
+                    result=http('/accounts/register/','__Host-pfme_csrf='+csrf,{'token':q['token'],'username':q['username'],'password1':q['password'],'password2':q['password'],'csrfmiddlewaretoken':token})
+                    result.pop('body',None)
+                elif op=='register_race':
+                    def attempt():
+                        first=http('/accounts/register/');csrf=first['cookies'].get('__Host-pfme_csrf','')
+                        token=re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"',first['body']).group(1)
+                        return http('/accounts/register/','__Host-pfme_csrf='+csrf,{'token':q['token'],'username':q['username'],'password1':q['password'],'password2':q['password'],'csrfmiddlewaretoken':token})['status']
+                    result={'statuses':await asyncio.gather(asyncio.to_thread(attempt),asyncio.to_thread(attempt))}
                 elif op=='http':result=http(q['path'],q.get('cookie',''),q.get('form'),q.get('origin',ORIGIN),q.get('proto','https'))
                 elif op=='open':
                     ws=await unix_connect('/front/gateway.sock',uri='ws://'+HOST+'/',origin=q.get('origin',ORIGIN),compression=None,

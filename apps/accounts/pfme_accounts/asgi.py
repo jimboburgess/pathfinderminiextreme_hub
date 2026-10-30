@@ -145,7 +145,7 @@ async def application(scope,receive,send):
                     return {'type':'http.request','body':bytes(body),'more_body':False}
                 return await original_receive()
             receive=receive_body
-        if scope.get('method')=='POST' and scope['path'] in ('/accounts/login/','/accounts/password/'):
+        if scope.get('method')=='POST' and scope['path'] in ('/accounts/login/','/accounts/password/','/accounts/register/'):
             try:await asyncio.wait_for(password_budget.acquire(),2)
             except TimeoutError:
                 await send({'type':'http.response.start','status':503,'headers':[(b'content-type',b'text/plain')]})

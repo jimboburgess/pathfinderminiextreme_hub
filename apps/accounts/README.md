@@ -123,3 +123,41 @@ The live Unix WebSocket route requires QUIC: HTTP2 produced cloudflared's
 reuses the pinned binary and CA bundle, with directories 0755 and the public
 CA file 0444. Record the resulting image ID in the private .env before starting.
 The native --run-for-ms maximum is 24 hours; this deployment uses eight hours; accounts have separate four-hour leases.
+
+
+## Invite friends to choose their own credentials
+
+Run these only in your own NUC SSH terminal:
+
+```sh
+sh /home/jimbo/pathfinder-friends/pfme.sh invite create "Alex"
+sh /home/jimbo/pathfinder-friends/pfme.sh invite list
+sh /home/jimbo/pathfinder-friends/pfme.sh invite revoke INVITATION-ID
+```
+
+The label is for your records, not a verified identity. After admission sync
+succeeds, share the generated link privately with that friend. Anyone holding an
+unused link can claim it, so do not paste links into logs, Git or public channels.
+Links expire after 48 hours, work once, and cannot be recovered from the database;
+only their SHA256 digests are stored. Revoke an unused invitation by its ID.
+If lost/expired, create a replacement. The 32-account ceiling includes reserved
+and revoked invitation accounts; the host can review these if this limit is met.
+
+The browser clears the token fragment from the address bar before submitting it
+with a CSRF-protected form. URL fragments are not sent to the tunnel or ordinary
+HTTP request logs. Registration validates passwords and assigns no administrative
+permissions. The friend chooses a lowercase username and a unique password of at
+least 12 characters, then signs in normally (Remember me remains optional).
+
+The host creates an unusable-password account with a random internal username and
+stable principal first, and synchronizes its admission through the existing
+root-only helper. Registration only renames and sets a password for that reserved
+account. The public adapter cannot write the native admission policy. A failed
+sync leaves the link unusable until the host finishes synchronization.
+
+Account creation does not occupy a character slot. Four characters may play;
+additional authorized accounts see Party Full. Disconnect retains the character;
+Leave character releases its slot. Revoking a used invitation does not silently
+disable an existing player: use `friend disable USERNAME` instead. Password reset
+and disable retain the stable ownership mapping. No emails or invitations are
+sent automatically. Real multi-friend playtesting is still required.

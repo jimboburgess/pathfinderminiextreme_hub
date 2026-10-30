@@ -123,3 +123,77 @@ class AccountsTests(TestCase):
             else:call_command('friend','disable',u.username,stdout=StringIO())
             self.assertIsNone(authenticated(cookie))
             self.assertIsNotNone(authenticated(other_cookie))
+
+
+class InvitationTests(TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from .invitations import issue
+        cache.clear();self.directory=tempfile.TemporaryDirectory(prefix='pfme-invite-test-');self.addCleanup(self.directory.cleanup)
+        self.policy=Path(self.directory.name)/'admission.json'
+        self.override=override_settings(PFME_ADMISSION_FILE=str(self.policy));self.override.enable();self.addCleanup(self.override.disable)
+        self.invite,self.token=issue('Test friend');self.profile=self.invite.user.accountprofile
+        self.policy.write_text(json.dumps({'users':[{'login':self.profile.login,'principal':self.profile.principal}]}))
+        self.password=secrets.token_urlsafe(24)
+    def client_for(self):return Client(HTTP_HOST='game.noburdenmusics.com',secure=True)
+    def post(self,token=None,username='newfriend',**extra):
+        return self.client_for().post('/accounts/register/',{'token':self.token if token is None else token,'username':username,'password1':self.password,'password2':self.password,**extra},secure=True)
+    def test_reserved_account_and_token_storage(self):
+        self.assertFalse(self.invite.user.has_usable_password())
+        self.assertNotEqual(self.invite.token_digest,self.token)
+        self.assertNotIn(self.token,json.dumps(list(__import__('pfme_accounts.models',fromlist=['Invitation']).Invitation.objects.values()),default=str))
+        self.assertFalse(self.invite.user.is_staff);self.assertFalse(self.invite.user.is_superuser)
+        from django.utils import timezone
+        self.assertAlmostEqual((self.invite.expires_at-timezone.now()).total_seconds(),48*3600,delta=3)
+    def test_claim_preserves_native_principal_and_requires_separate_login(self):
+        before=self.policy.read_bytes();stable=self.profile.stable_id;uid=self.invite.user_id
+        r=self.post(is_staff='true',is_superuser='true',user_id='999',principal='owner')
+        self.assertEqual(r.status_code,302);self.assertEqual(r['Location'],'/accounts/login/?registered=1')
+        u=User.objects.get(username='newfriend');self.assertEqual(u.pk,uid);self.assertTrue(u.check_password(self.password))
+        self.assertFalse(u.is_staff);self.assertFalse(u.is_superuser);self.assertEqual(u.accountprofile.stable_id,stable)
+        self.assertEqual(self.policy.read_bytes(),before)
+        self.assertNotIn('__Host-pfme_session',r.cookies)
+        self.invite.refresh_from_db();self.assertIsNotNone(self.invite.redeemed_at)
+        c=self.client_for();self.assertTrue(c.login(username='newfriend',password=self.password))
+    def test_replay_cannot_rename_or_take_over_existing_account(self):
+        owner=User.objects.create_user('owner',password=secrets.token_urlsafe(24));original=owner.password
+        self.assertEqual(self.post(username='owner').status_code,400)
+        self.invite.refresh_from_db();self.assertIsNone(self.invite.redeemed_at)
+        self.assertEqual(self.post().status_code,302)
+        self.assertEqual(self.post(username='thief').status_code,400)
+        owner.refresh_from_db();self.assertEqual(owner.password,original);self.assertFalse(User.objects.filter(username='thief').exists())
+    def test_missing_malformed_expired_and_revoked_invites(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        self.assertEqual(self.post(token='').status_code,400);self.assertEqual(self.post(token='f'*64).status_code,400)
+        self.invite.expires_at=timezone.now()-timedelta(seconds=1);self.invite.save()
+        self.assertEqual(self.post().status_code,400)
+        self.invite.expires_at=timezone.now()+timedelta(hours=1);self.invite.revoked_at=timezone.now();self.invite.save()
+        self.assertEqual(self.post().status_code,400);self.assertFalse(User.objects.filter(username='newfriend').exists())
+    def test_unadmitted_invitation_cannot_be_consumed(self):
+        self.policy.write_text('{"users":[]}');self.assertEqual(self.post().status_code,400)
+        self.invite.refresh_from_db();self.assertIsNone(self.invite.redeemed_at)
+    def test_password_rules_csrf_origin_and_no_invitation_in_url(self):
+        self.assertEqual(self.post(password1='short',password2='short').status_code,400)
+        c=Client(enforce_csrf_checks=True,HTTP_HOST='game.noburdenmusics.com')
+        self.assertEqual(c.post('/accounts/register/',{},secure=True).status_code,403)
+        self.assertEqual(self.client_for().get('/accounts/register/',secure=True,HTTP_ORIGIN='https://evil.invalid').status_code,403)
+        page=self.client_for().get('/accounts/register/',secure=True)
+        self.assertContains(page,'id="registration"');self.assertEqual(page['Referrer-Policy'],'no-referrer')
+        script=self.client_for().get('/accounts/register.js',secure=True)
+        self.assertContains(script,'history.replaceState');self.assertNotContains(script,'localStorage')
+    def test_revoke_is_individual_and_used_invitation_is_not_account_disable(self):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        from io import StringIO
+        from .invitations import issue
+        other,_=issue('Other friend')
+        call_command('invite','revoke',str(other.pk),stdout=StringIO())
+        other.refresh_from_db();self.assertFalse(other.user.is_active)
+        self.assertEqual(self.post().status_code,302)
+        with self.assertRaises(CommandError):call_command('invite','revoke',str(self.invite.pk),stdout=StringIO())
+        self.assertTrue(User.objects.get(username='newfriend').is_active)
+    def test_registration_rate_limit(self):
+        for _ in range(20):self.assertEqual(self.post(token='f'*64).status_code,400)
+        self.assertEqual(self.post(token='f'*64).status_code,429)
