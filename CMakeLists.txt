@@ -9,6 +9,7 @@ add_library(pfme_portable_leaf STATIC
     src/multiplayer/multiplayer_snapshot.cpp
     src/multiplayer/network_protocol.cpp
     src/session/game_session.cpp
+    src/session/party_registry.cpp
 )
 
 target_include_directories(pfme_portable_leaf

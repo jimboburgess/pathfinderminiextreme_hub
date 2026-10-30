@@ -1,13 +1,54 @@
-# Pathfinder development roadmap — private browser playtest
+# Pathfinder development roadmap â€” private browser playtest
 
 Updated 2026-10-27. Immediate target: a real private browser adventure for any
 party size **1, 2, 3 or 4**, hosted on the Ubuntu NUC. Discord is voice chat only.
 Discord Activities, Embedded App SDK and Discord OAuth are postponed. No fixed
 party composition, four-player start barrier or three-player optimization.
 
+## Online Multiplayer Stage 1 â€” server-side parties
+
+The portable native layer now includes a fixed-capacity `PartyRegistry` for up
+to 16 simultaneous independent parties. Each party owns one authoritative
+`GameSession`, uses the existing four `PlayerID` slots, and exposes a compact
+roster snapshot. Five-character uppercase join codes use the unambiguous
+`23456789ABCDEFGHJKMNPQRSTUVWXYZ` alphabet; codes are invitation/discovery
+secrets, not authentication credentials. Internal 128-bit party IDs are kept
+separate from manually shared codes.
+
+Player 0 creates the party and is its social leader. That permits party lock,
+unlock, close, and Forest/Dungeon start requests only. It does **not** make
+Player 0 authoritative for RNG, movement, combat, damage, loot, monsters, or
+dungeon state. Those responsibilities remain with the NUC-owned `GameSession`.
+All connected members travel when the leader starts an activity; a full party
+is never required. Disconnected members retain their slot and may reconnect
+with a separate opaque token. Leave invalidates that token and frees a non-host
+slot. Player 0 leaving permanently closes the party; host migration is deferred.
+
+Party lifecycle events have their own bounded 32-event history and monotonic
+sequence numbers, separate from gameplay `SessionEvent` history. The trusted
+`pfme_headless --interactive` administrator can create, list, inspect, join,
+disconnect, reconnect, leave, lock, start, close, and inspect events without
+opening a listener.
+
+**NO INTERNET TRANSPORT YET for the Stage 1 party registry.** It opens no port,
+has no socket/HTTP/WebSocket/TLS/browser/Discord dependency, and is not wired to
+the repository's separate optional single-session Phase 3F adapter. Join codes
+do not replace future connection authentication, and reconnect tokens are not
+`PlayerHandle` serialization.
+
+The next party-specific stages are:
+
+1. Stage 2: versioned party protocol plus an in-process transport test double.
+2. Stage 3: WebSocket adapter and authenticated connection lifecycle.
+3. Stage 4: browser/Discord Bulletin Board clients.
+4. Stage 5: authoritative gameplay commands and snapshots over that transport.
+
+These stages describe future integration of `PartyRegistry`; none is implemented
+by Stage 1. Existing experimental/private transport code remains isolated.
+
 ## Current implementation and limits
 
-- Phases 2–3D: portable native foundation/headless execution verified on Windows
+- Phases 2â€“3D: portable native foundation/headless execution verified on Windows
   and Ubuntu; ESP32 remains supported.
 - Phase 3E: GameSession owns four generation-checked participant capabilities,
   topology-level room locations, bounded events and disconnect/reconnect/leave.
@@ -15,7 +56,7 @@ party composition, four-player start barrier or three-player optimization.
 - Phase 3F: authenticated loopback WebSockets, ownership proofs and bounded
   requests/connections/deadlines; no remote administrator/reset API.
 - Phase 3G: original production C++ setup/loop, character creation, dungeon,
-  movement, AI, combat and 240×240 rendering run natively. One playable controller
+  movement, AI, combat and 240Ã—240 rendering run natively. One playable controller
   owns the original global runtime; native sound output is currently silent.
 - Phase 3H: optional Discord authentication adapter and offline security harness
   are retained, but deferred. Its SDK/Zod advisory remains unresolved. The
@@ -29,13 +70,13 @@ party composition, four-player start barrier or three-player optimization.
 Do not describe graph navigation, separate character allocations or four logins
 as completed playable multiplayer.
 
-## Priority 1 — finish the multi-controller gameplay runtime
+## Priority 1 â€” finish the multi-controller gameplay runtime
 
 1. Finish the PlayerRuntime context seam through existing input handlers, menus,
    sheets, inventory/riddle/shop state and rendering. Each controller owns its
-   own decoder/timers/UI and original 240×240 surface. Keep the existing 750 ms
+   own decoder/timers/UI and original 240Ã—240 surface. Keep the existing 750 ms
    encoder hold and all five handheld actions; release only that player's inputs
-   on blur/disconnect. Keep integer 1×–5× and Fit without state resets.
+   on blur/disconnect. Keep integer 1Ã—â€“5Ã— and Fit without state resets.
 2. Give one SessionWorld the real generated dungeon, full canonical actors,
    monster/room/effect state, clock/RNG and shared messages. Use the existing
    owner-aware production movement, room persistence and ESP-NOW host mechanisms;
@@ -68,7 +109,7 @@ Keep the original ESP32 singleton wrappers, saves, graphics and ESP-NOW formats.
 Native party surfaces/state never become four copies in firmware. Start solo
 immediately; the same authority path must work at every supported party size.
 
-## Priority 2 — original sound in the browser
+## Priority 2 â€” original sound in the browser
 
 Keep C++ AudioCommand definitions and playback semantics as the source of truth.
 Add a native audio output sink and bounded, owner/room-filtered audio events,
@@ -82,7 +123,7 @@ resynchronizes without replaying stale effects, and is independent per listener.
 Test timing/output traces from the production interpreter and actual audible
 browser behavior. No unbounded media backlog or authentication bypass.
 
-## Priority 3 — invite-only browser access, then approval
+## Priority 3 â€” invite-only browser access, then approval
 
 See [PRIVATE_BROWSER_ACCESS.md](PRIVATE_BROWSER_ACCESS.md) for the evaluated
 options, identity boundary, approval checklist and proposed friend launch flow.
@@ -99,7 +140,7 @@ admission, retain per-identity limits and protect reconnect capabilities. The
 shared development password alone is not a player identity. Discord OAuth is
 not required for the standalone build.
 
-## Priority 4 — isolation and operational playtest
+## Priority 4 â€” isolation and operational playtest
 
 Use a dedicated nonroot game VM/sandbox on the NUC with no personal directories,
 SSH credentials, Docker socket or host networking; read-only filesystem where
@@ -135,8 +176,8 @@ release and all embedded compile targets whenever shared source changes.
 
 ## Later, explicitly deferred
 
-Discord Activity/SDK/OAuth, public hosting, multiple concurrent session registries,
-new rendering/UI, production persistence/HA and broad infrastructure work are not
+Discord Activity/SDK/OAuth, public hosting, new rendering/UI, production
+persistence/HA and broad infrastructure work are not
 prerequisites for this private standalone trial. Preserve useful Phase 3H security
 work as an optional reference. Resolve its dependency advisory before ever
 reactivating it; do not ship the SDK in the standalone page.

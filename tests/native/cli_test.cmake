@@ -5,7 +5,8 @@ if(NOT result EQUAL 0 OR output MATCHES "error=")
     message(FATAL_ERROR "Interactive executable failed: ${result}\n${output}\n${error}")
 endif()
 foreach(expected "trusted local administrator" "player=1 name=Wizard room=0"
-        "players=3 connected=3" "type=reconnected" "bye")
+        "players=3 connected=3" "type=reconnected" "party-created code="
+        "activity=town members=1/4 connected=1 locked=no" "bye")
     string(FIND "${output}" "${expected}" found)
     if(found EQUAL -1)
         message(FATAL_ERROR "Missing ${expected}: ${output}")

@@ -251,6 +251,12 @@ bool cliBehavior()
     CHECK(runInteractive(binary, out) == 0);
     CHECK(out.str().find("control character") != std::string::npos);
     CHECK(out.str().find("initialized=false") != std::string::npos);
+    std::istringstream partyInput("party-create Alice fighter 5\nparty-list\nquit\n");
+    out.str(""); out.clear();
+    CHECK(runInteractive(partyInput, out) == 0);
+    CHECK(out.str().find("party-created code=") != std::string::npos);
+    CHECK(out.str().find("activity=town members=1/4 connected=1 locked=no") != std::string::npos);
+    CHECK(out.str().find("reconnect=retained") != std::string::npos);
     std::istringstream bad;
     bad.setstate(std::ios::badbit);
     CHECK(runInteractive(bad, out) == 1);

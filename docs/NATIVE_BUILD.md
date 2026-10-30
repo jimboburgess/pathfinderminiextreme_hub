@@ -18,6 +18,8 @@ display, audio, GPIO, Wi-Fi, or ESP-NOW implementation dependency:
   `src/characters/combat_rules.cpp`;
 - portable session ownership and topology navigation from
   `src/session/game_session.cpp`;
+- fixed-capacity server-side party ownership, join codes, reconnect credentials,
+  snapshots, and bounded lobby events from `src/session/party_registry.cpp`;
 - the header-only quadrature decoder from `src/input/encoderdecoder.h`.
 
 No source is copied into a native-only implementation. PlatformIO and CMake
@@ -180,8 +182,66 @@ refresh full state before resuming. A cursor beyond the newest event returns
 movement operations emit events; rejected operations emit none. A new session
 starts a new sequence namespace, so clients must discard previous cursors.
 
+## Server-side party registry (Online Stage 1)
+
+`PartyRegistry` owns at most 16 simultaneous parties in fixed arrays. Each party
+owns one initialized `GameSession` and maps its party slots directly to the
+existing `PlayerID` values 0 through 3. Player 0 is the social leader, while the
+server-side `GameSession` remains gameplay authority. A party can start Forest or
+Dungeon with any connected size from one through four; all connected members are
+selected automatically and disconnected reserved members do not block travel.
+
+Join codes are five normalized uppercase characters using
+`23456789ABCDEFGHJKMNPQRSTUVWXYZ`. Collision retries are bounded and tested.
+Opaque 128-bit reconnect tokens preserve the same Player ID across disconnect,
+are invalidated by leave/party closure, and are distinct from in-process
+`PlayerHandle` capabilities. Production adapters must provide operating-system
+entropy; deterministic entropy is available for tests. The join code is a
+discovery secret, not authentication.
+
+Additional trusted local commands are available in `pfme_headless --interactive`:
+
+```text
+party-create <name> [fighter|rogue|wizard|cleric <level>]
+party-list
+party-status <code>
+party-join <code> <name> [fighter|rogue|wizard|cleric <level>]
+party-disconnect <code> <player-id>
+party-reconnect <code> <player-id>
+party-leave <code> <player-id>
+party-lock <code>
+party-unlock <code>
+party-start-forest <code>
+party-start-dungeon <code>
+party-close <code>
+party-events <code> [last-seen-sequence]
+```
+
+For example, create a party, copy the returned code, and inspect it:
+
+```text
+party-create Alice fighter 5
+party-status K7M4Q
+party-join K7M4Q Bob cleric 5
+party-disconnect K7M4Q 1
+party-reconnect K7M4Q 1
+party-start-dungeon K7M4Q
+party-events K7M4Q
+```
+
+The CLI retains reconnect tokens internally and deliberately does not print full
+tokens. It is a local development/admin interface, not a player protocol. This
+stage opens no network port and adds no socket, HTTP, WebSocket, TLS, browser, or
+Discord dependency. **There is no Internet transport for `PartyRegistry` yet.**
+Future work is a versioned party protocol and in-process transport double, then
+an authenticated WebSocket lifecycle, Bulletin Board clients, and finally
+authoritative gameplay commands/snapshots over that transport.
+
 CTest includes production session/CLI checks and a separate scripted invocation
-of the actual executable. The original six test targets remain present.
+of the actual executable. `pfme_party_tests` covers creation, code validation and
+collision exhaustion, capacity, locking, disconnect/reconnect/leave, all four
+party sizes, activity start, event history gaps, multiple parties, and backing
+session isolation.
 
 The actual Phase 3E NUC verification workspace can be launched over SSH:
 

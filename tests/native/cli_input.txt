@@ -8,4 +8,6 @@ disconnect 0
 reconnect 0
 events
 status
+party-create Alice fighter 5
+party-list
 quit
