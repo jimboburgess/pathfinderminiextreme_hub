@@ -38,5 +38,6 @@ bool configureRotatingPuzzleRoom(
     uint8_t rollCount);
 
 bool isDungeonPuzzleComplete(const DungeonRoom& room);
+const char* getUnsolvedPuzzleEntryInstruction(const DungeonRoom& room);
 
 #endif

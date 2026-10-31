@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "dungeon/riddles.h"
+#include "dungeon/puzzleinstructions.h"
 #include "input/encoderdecoder.h"
 #include "multiplayer/multiplayer_activity.h"
 #include "multiplayer/network_protocol.h"
@@ -295,6 +296,25 @@ bool testEncoderBounceAndInvalidTransitionsDoNotCreateSteps()
     return true;
 }
 
+bool testPuzzleEntryInstructionsAreCentralizedAndBounded()
+{
+    CHECK(std::strcmp(getPuzzleEntryInstruction(PUZZLE_BELLS),
+        "Match the tones. Ring the bells in the same order.") == 0);
+    CHECK(std::strcmp(getPuzzleEntryInstruction(PUZZLE_NUMBER_TILES),
+        "Follow the rule. Cross using only the correct numbers.") == 0);
+    CHECK(std::strcmp(getPuzzleEntryInstruction(PUZZLE_BRAZIERS),
+        "Light all the braziers at the same time.") == 0);
+    CHECK(getPuzzleEntryInstruction(PUZZLE_RIDDLEMAN) == nullptr);
+    CHECK(getPuzzleEntryInstruction(PUZZLE_NONE) == nullptr);
+    CHECK(std::strlen(getPuzzleEntryInstruction(PUZZLE_BELLS)) <
+        SHARED_MESSAGE_TEXT_SIZE);
+    CHECK(std::strlen(getPuzzleEntryInstruction(PUZZLE_NUMBER_TILES)) <
+        SHARED_MESSAGE_TEXT_SIZE);
+    CHECK(std::strlen(getPuzzleEntryInstruction(PUZZLE_BRAZIERS)) <
+        SHARED_MESSAGE_TEXT_SIZE);
+    return true;
+}
+
 struct TestCase
 {
     const char* name;
@@ -315,6 +335,7 @@ int main()
         {"riddle answer persistence", testRiddleResultsArePersistentAndRejectInvalidInput},
         {"encoder detents and inversion", testEncoderDetentsAndInversion},
         {"encoder bounce rejection", testEncoderBounceAndInvalidTransitionsDoNotCreateSteps},
+        {"puzzle entry instructions", testPuzzleEntryInstructionsAreCentralizedAndBounded},
     };
 
     size_t failures = 0;

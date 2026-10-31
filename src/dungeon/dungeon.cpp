@@ -856,6 +856,8 @@ bool loadRoom(Dungeon& dungeon, RoomEntry entry)
 
     const uint8_t targetRoom = dungeon.currentRoom;
     const uint8_t previousRoom = dungeon.loadedRoom;
+    const bool enteredRoom = previousRoom == NO_ROOM ||
+        targetRoom != previousRoom;
     DungeonRoomRuntime& targetRuntime = dungeon.roomRuntime[targetRoom];
 
     // Validate an existing destination before disturbing the current room.
@@ -951,6 +953,11 @@ bool loadRoom(Dungeon& dungeon, RoomEntry entry)
     room.discovered = true;
     dungeon.loadedRoom = targetRoom;
     resetAwarenessTimer();
+    if (enteredRoom && !isMultiplayerExplorationActive())
+    {
+        const char* instruction = getUnsolvedPuzzleEntryInstruction(room);
+        if (instruction != nullptr) setGameMessage(instruction);
+    }
     return true;
 }
 
@@ -1160,6 +1167,7 @@ bool travelNativeRoom(Dungeon& world,RoomEntry entry) {
                         actors[id]->turn.movementRemaining==0))return false;
     saveNativeRoomView(world);
     auto* previous=actors[id];
+    const bool enteredRoom=previous==nullptr || actorRooms[id]!=destination;
     auto& target=residentRooms[destination];
     const bool initializing=!target.ready;
     if (!target.ready) {
@@ -1208,7 +1216,12 @@ bool travelNativeRoom(Dungeon& world,RoomEntry entry) {
     }
     closeInventoryMenu();clearInteractionEntityReferences();closeMenu();
     world.entityCount=target.count;world.rooms[destination].discovered=true;
-    player=value.character;if(initializing)resetAwarenessTimer();return true;
+    player=value.character;if(initializing)resetAwarenessTimer();
+    const char* instruction = enteredRoom
+        ? getUnsolvedPuzzleEntryInstruction(world.rooms[destination])
+        : nullptr;
+    if(instruction != nullptr)setGameMessage(instruction);
+    return true;
 }
 }}
 #endif

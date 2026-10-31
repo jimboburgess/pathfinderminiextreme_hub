@@ -5,6 +5,7 @@ project(pathfinder_mini_extreme_native LANGUAGES CXX)
 add_library(pfme_portable_leaf STATIC
     src/characters/combat_rules.cpp
     src/dungeon/dungeontopology.cpp
+    src/dungeon/puzzleinstructions.cpp
     src/dungeon/riddles.cpp
     src/multiplayer/multiplayer_snapshot.cpp
     src/multiplayer/network_protocol.cpp

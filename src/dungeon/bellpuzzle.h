@@ -4,18 +4,10 @@
 #include <stdint.h>
 
 #include "data/game.h"
+#include "dungeon/puzzletypes.h"
 
 struct DungeonRoom;
 struct Entity;
-
-enum DungeonPuzzleType : uint8_t
-{
-    PUZZLE_NONE,
-    PUZZLE_RIDDLEMAN,
-    PUZZLE_BELLS,
-    PUZZLE_NUMBER_TILES,
-    PUZZLE_BRAZIERS
-};
 
 enum BellToneID : uint8_t
 {

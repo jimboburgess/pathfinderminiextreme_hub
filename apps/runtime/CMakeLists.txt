@@ -1,6 +1,6 @@
 # Compile production gameplay and presentation directly; only ESP-NOW hardware is replaced.
 file(GLOB_RECURSE handheld_sources CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp")
-list(FILTER handheld_sources EXCLUDE REGEX "/(espnow_transport|game_session|party_registry|combat_rules|dungeontopology|riddles|multiplayer_snapshot|network_protocol)\\.cpp$")
+list(FILTER handheld_sources EXCLUDE REGEX "/(espnow_transport|game_session|party_registry|combat_rules|dungeontopology|puzzleinstructions|riddles|multiplayer_snapshot|network_protocol)\\.cpp$")
 add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp controller_slots.cpp context_fields.cpp party_runtime.cpp native_worlds.cpp native_party.cpp audio_stream.cpp
     ../browser/third_party/adafruit_gfx/Adafruit_GFX.cpp)
 target_include_directories(pfme_handheld_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -28,7 +28,17 @@ if(BUILD_TESTING)
     target_compile_definitions(pfme_menu_render_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_menu_rendering COMMAND pfme_menu_render_tests)
     set_tests_properties(pfme_menu_rendering PROPERTIES TIMEOUT 30)
-endif()
+
+    add_executable(pfme_puzzle_entry_tests puzzle_entry_tests.cpp)
+    target_include_directories(pfme_puzzle_entry_tests PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_puzzle_entry_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_puzzle_entry_tests PRIVATE ARDUINO=100)
+    foreach(puzzle bell number brazier riddleman)
+        add_test(NAME pfme_puzzle_entry_${puzzle}
+            COMMAND pfme_puzzle_entry_tests ${puzzle})
+        set_tests_properties(pfme_puzzle_entry_${puzzle} PROPERTIES TIMEOUT 30)
+    endforeach()
+
     add_executable(pfme_action_economy_runtime_tests action_economy_tests.cpp)
     target_include_directories(pfme_action_economy_runtime_tests PRIVATE
         host ../browser/host ../browser/third_party/adafruit_gfx)
@@ -39,7 +49,7 @@ endif()
     add_test(NAME pfme_action_economy_runtime
         COMMAND pfme_action_economy_runtime_tests)
     set_tests_properties(pfme_action_economy_runtime PROPERTIES TIMEOUT 30)
-
+endif()
 
 if(BUILD_TESTING)
     add_executable(pfme_town_party_tests town_party_tests.cpp)

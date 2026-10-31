@@ -2,6 +2,7 @@
 #include <unity.h>
 
 #include "audio/audio.h"
+#include "dungeon/puzzleinstructions.h"
 #include "dungeon/puzzleroom.h"
 
 Dungeon dungeon{};
@@ -60,6 +61,7 @@ Entity* spawnEntity(Entity entities[], uint8_t& count, EntityType type,
 #include "../../src/dungeon/bellpuzzle.cpp"
 #include "../../src/dungeon/numbertilepuzzle.cpp"
 #include "../../src/dungeon/brazierpuzzle.cpp"
+#include "../../src/dungeon/puzzleinstructions.cpp"
 #include "../../src/dungeon/puzzleroom.cpp"
 
 namespace
@@ -260,6 +262,21 @@ void test_completion_dispatch_never_completes_an_unsolved_empty_puzzle_room()
     TEST_ASSERT_FALSE(isDungeonPuzzleComplete(room));
 }
 
+void test_entry_instruction_dispatch_preserves_riddleman_dialogue()
+{
+    TEST_ASSERT_EQUAL_STRING(
+        "Match the tones. Ring the bells in the same order.",
+        getPuzzleEntryInstruction(PUZZLE_BELLS));
+    TEST_ASSERT_EQUAL_STRING(
+        "Follow the rule. Cross using only the correct numbers.",
+        getPuzzleEntryInstruction(PUZZLE_NUMBER_TILES));
+    TEST_ASSERT_EQUAL_STRING(
+        "Light all the braziers at the same time.",
+        getPuzzleEntryInstruction(PUZZLE_BRAZIERS));
+    TEST_ASSERT_NULL(getPuzzleEntryInstruction(PUZZLE_RIDDLEMAN));
+    TEST_ASSERT_NULL(getPuzzleEntryInstruction(PUZZLE_NONE));
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -269,6 +286,7 @@ void setup()
     RUN_TEST(test_ineligible_preference_tries_each_other_type_once);
     RUN_TEST(test_no_eligible_type_falls_back_to_plain_traversable_empty_room);
     RUN_TEST(test_completion_dispatch_never_completes_an_unsolved_empty_puzzle_room);
+    RUN_TEST(test_entry_instruction_dispatch_preserves_riddleman_dialogue);
     UNITY_END();
 }
 

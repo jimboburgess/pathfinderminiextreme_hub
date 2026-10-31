@@ -4,6 +4,7 @@
 #include "dungeon/brazierpuzzle.h"
 #include "dungeon/numbertilepuzzle.h"
 #include "dungeon/npcs.h"
+#include "dungeon/puzzleinstructions.h"
 
 namespace
 {
@@ -145,4 +146,11 @@ bool isDungeonPuzzleComplete(const DungeonRoom& room)
         default:
             return false;
     }
+}
+
+const char* getUnsolvedPuzzleEntryInstruction(const DungeonRoom& room)
+{
+    if (room.type != ROOM_PUZZLE || isDungeonPuzzleComplete(room))
+        return nullptr;
+    return getPuzzleEntryInstruction(room.puzzleType);
 }

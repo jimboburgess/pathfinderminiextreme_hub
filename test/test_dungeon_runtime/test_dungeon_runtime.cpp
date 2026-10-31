@@ -23,6 +23,8 @@ static uint8_t mapEffectClearCount = 0;
 static uint8_t inventoryCloseCount = 0;
 static uint8_t menuCloseCount = 0;
 static uint8_t interactionClearCount = 0;
+static uint8_t gameMessageCount = 0;
+static char gameMessage[128] = {};
 static Entity* activeTestEntities = nullptr;
 static uint8_t activeTestEntityCount = 0;
 
@@ -76,8 +78,11 @@ bool removeCondition(Character& character, ConditionType type)
     return false;
 }
 
-void setGameMessage(const char*)
+void setGameMessage(const char* message)
 {
+    gameMessageCount++;
+    strncpy(gameMessage, message, sizeof(gameMessage) - 1);
+    gameMessage[sizeof(gameMessage) - 1] = '\0';
 }
 
 int healCharacter(Character& character, int healing)
@@ -319,6 +324,7 @@ Entity* getEntityAt(
 #include "../../src/dungeon/dungeongraph.cpp"
 #include "../../src/dungeon/riddles.cpp"
 #include "../../src/dungeon/entitypersistence.cpp"
+#include "../../src/dungeon/puzzleinstructions.cpp"
 
 bool configureRiddlemanPuzzleRoom(
     DungeonRoom& room, Direction direction, RiddleID id, const uint8_t rolls[3])
@@ -452,6 +458,8 @@ void setUp()
     inventoryCloseCount = 0;
     menuCloseCount = 0;
     interactionClearCount = 0;
+    gameMessageCount = 0;
+    gameMessage[0] = '\0';
     activeTestEntities = nullptr;
     activeTestEntityCount = 0;
     combat = Combat{};
@@ -1488,6 +1496,86 @@ void test_abort_clears_combat_only_state_and_preserves_characters()
     TEST_ASSERT_FALSE(nonParticipant.turn.moveActionUsed);
 }
 
+static void preparePuzzleDestination(DungeonPuzzleType puzzleType)
+{
+    configureLoadedRoom(0);
+    DungeonRoom& room = dungeon.rooms[1];
+    room = DungeonRoom{};
+    room.type = ROOM_PUZZLE;
+    room.puzzleType = puzzleType;
+    for (uint8_t y = 0; y < ROOM_HEIGHT; ++y)
+        for (uint8_t x = 0; x < ROOM_WIDTH; ++x)
+            room.map.tiles[y][x] = TILE_FLOOR;
+    if (puzzleType == PUZZLE_BELLS)
+        room.bellPuzzle.progress = BELL_PUZZLE_UNSOLVED;
+    else if (puzzleType == PUZZLE_NUMBER_TILES)
+        room.numberPuzzle.progress = NUMBER_PUZZLE_UNSOLVED;
+    else if (puzzleType == PUZZLE_BRAZIERS)
+        room.brazierPuzzle.progress = BRAZIER_PUZZLE_UNSOLVED;
+    else if (puzzleType == PUZZLE_RIDDLEMAN)
+        room.npcSpawn.puzzleState = RIDDLE_ROOM_UNSOLVED;
+}
+
+static void enterPreparedPuzzleRoom()
+{
+    dungeon.currentRoom = 1;
+    TEST_ASSERT_TRUE(loadRoom(dungeon, ENTRY_START));
+    TEST_ASSERT_EQUAL_UINT8(1, dungeon.currentRoom);
+    TEST_ASSERT_NOT_NULL(getPlayerEntity(dungeon.entities, dungeon.entityCount));
+}
+
+void test_each_unsolved_puzzle_entry_emits_one_instruction()
+{
+    const DungeonPuzzleType types[] = {
+        PUZZLE_BELLS, PUZZLE_NUMBER_TILES, PUZZLE_BRAZIERS};
+    const char* instructions[] = {
+        "Match the tones. Ring the bells in the same order.",
+        "Follow the rule. Cross using only the correct numbers.",
+        "Light all the braziers at the same time."};
+    for (uint8_t index = 0; index < 3; ++index)
+    {
+        preparePuzzleDestination(types[index]);
+        gameMessageCount = 0;
+        enterPreparedPuzzleRoom();
+        TEST_ASSERT_EQUAL_UINT8(1, gameMessageCount);
+        TEST_ASSERT_EQUAL_STRING(instructions[index], gameMessage);
+        for (uint8_t update = 0; update < 5; ++update)
+            updateCurrentDungeonRoomCompletion(dungeon);
+        TEST_ASSERT_EQUAL_UINT8(1, gameMessageCount);
+        TEST_ASSERT_TRUE(loadRoom(dungeon, ENTRY_START));
+        TEST_ASSERT_EQUAL_UINT8(1, gameMessageCount);
+    }
+}
+
+void test_unsolved_reentry_repeats_but_solved_reentry_does_not()
+{
+    preparePuzzleDestination(PUZZLE_BELLS);
+    gameMessageCount = 0;
+    enterPreparedPuzzleRoom();
+    TEST_ASSERT_EQUAL_UINT8(1, gameMessageCount);
+
+    dungeon.currentRoom = 0;
+    TEST_ASSERT_TRUE(loadRoom(dungeon, ENTRY_START));
+    enterPreparedPuzzleRoom();
+    TEST_ASSERT_EQUAL_UINT8(2, gameMessageCount);
+
+    dungeon.rooms[1].bellPuzzle.progress = BELL_PUZZLE_COMPLETE;
+    dungeon.currentRoom = 0;
+    TEST_ASSERT_TRUE(loadRoom(dungeon, ENTRY_START));
+    enterPreparedPuzzleRoom();
+    TEST_ASSERT_EQUAL_UINT8(2, gameMessageCount);
+}
+
+void test_riddleman_entry_does_not_replace_bertram_presentation()
+{
+    preparePuzzleDestination(PUZZLE_RIDDLEMAN);
+    gameMessageCount = 0;
+    gameMessage[0] = '\0';
+    enterPreparedPuzzleRoom();
+    TEST_ASSERT_EQUAL_UINT8(0, gameMessageCount);
+    TEST_ASSERT_EQUAL_STRING("", gameMessage);
+}
+
 void setup()
 {
     UNITY_BEGIN();
@@ -1518,6 +1606,9 @@ void setup()
     RUN_TEST(test_puzzle_npc_cat_and_key_use_compact_room_persistence);
     RUN_TEST(test_entrance_fountain_is_one_persistent_multi_tile_healing_object);
     RUN_TEST(test_abort_clears_combat_only_state_and_preserves_characters);
+    RUN_TEST(test_each_unsolved_puzzle_entry_emits_one_instruction);
+    RUN_TEST(test_unsolved_reentry_repeats_but_solved_reentry_does_not);
+    RUN_TEST(test_riddleman_entry_does_not_replace_bertram_presentation);
     UNITY_END();
 }
 

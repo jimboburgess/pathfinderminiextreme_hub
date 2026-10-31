@@ -16,6 +16,7 @@
 #include "dungeon/furniture.h"
 #include "dungeon/monsterscripts.h"
 #include "dungeon/numbertilepuzzle.h"
+#include "dungeon/puzzleroom.h"
 #include "dungeon/riddlepuzzle.h"
 #include "dungeon/traps.h"
 #include "forest/forest.h"
@@ -2096,7 +2097,13 @@ void finishClientLoading()
     setFullMapRedraw();
     sendActivityReady(runtime.clientRoomLoading);
     runtime.lastReadyAt = millis();
-    setGameMessage("Area ready. Waiting for host...");
+    const char* instruction = runtime.type == MultiplayerActivityType::DUNGEON &&
+        runtime.clientRoomLoading && dungeon.currentRoom < dungeon.roomCount
+            ? getUnsolvedPuzzleEntryInstruction(
+                dungeon.rooms[dungeon.currentRoom])
+            : nullptr;
+    setGameMessage(instruction != nullptr
+        ? instruction : "Area ready. Waiting for host...");
     MP_DEBUG("ACTIVITY_READY sent");
 }
 
@@ -2186,21 +2193,21 @@ bool beginIndependentRoomTransition(
                 reference.roomID = destinationRoom;
                 if (multiplayerCombat->slots[index].movementRemaining > 0)
                     --multiplayerCombat->slots[index].movementRemaining;
+                multiplayerCombat->slots[index].moveActionUsed = true;
                 Entity* movedEntity = resolveVisibleCombatant(reference);
                 if (movedEntity != nullptr)
                 {
                     movedEntity->turn.turnActive = true;
                     movedEntity->turn.movementRemaining =
                         multiplayerCombat->slots[index].movementRemaining;
+                    movedEntity->turn.moveActionUsed = true;
                 }
-                multiplayerCombat->slots[index].moveActionUsed = true;
             }
         }
 
     announcePlayerRoomChange(movingPlayer);
     char message[64] = {};
     snprintf(message, sizeof(message), "%s moves to Room %u.",
-                    movedEntity->turn.moveActionUsed = true;
              participantCharacter(movingPlayer).displayName[0] != '\0'
                 ? participantCharacter(movingPlayer).displayName
                 : "Adventurer",
@@ -2214,6 +2221,9 @@ bool beginIndependentRoomTransition(
         runtime.currentRoom = destinationRoom;
         dungeon.currentRoom = destinationRoom;
         setFullMapRedraw();
+        const char* instruction = getUnsolvedPuzzleEntryInstruction(
+            dungeon.rooms[destinationRoom]);
+        if (instruction != nullptr) setGameMessage(instruction);
         return true;
     }
 
@@ -3734,6 +3744,15 @@ bool emitCombatEvent(
     event.eventType = eventType;
     event.currentTurnIndex = multiplayerCombat->currentTurnIndex;
     event.round = multiplayerCombat->round;
+    const MultiplayerCombatSlot& currentSlot = multiplayerCombat->slots[
+        multiplayerCombat->currentTurnIndex];
+    event.movementRemaining = currentSlot.movementRemaining;
+    if (currentSlot.moveActionUsed)
+        event.actionFlags |= MULTIPLAYER_COMBAT_MOVE_ACTION_USED;
+    if (currentSlot.standardActionUsed)
+        event.actionFlags |= MULTIPLAYER_COMBAT_STANDARD_ACTION_USED;
+    if (currentSlot.fullDefense)
+        event.actionFlags |= MULTIPLAYER_COMBAT_FULL_DEFENSE;
     fillCombatEventState(event, actor, true);
     fillCombatEventState(event, target, false);
     if (runtime.type == MultiplayerActivityType::DUNGEON &&
@@ -3744,15 +3763,6 @@ bool emitCombatEvent(
         char combined[SHARED_MESSAGE_TEXT_SIZE] = {};
         snprintf(combined, sizeof(combined), "%s", message);
         if (eventType != MultiplayerCombatEventType::COMBAT_ENDED)
-    const MultiplayerCombatSlot& currentSlot = multiplayerCombat->slots[
-        multiplayerCombat->currentTurnIndex];
-    event.movementRemaining = currentSlot.movementRemaining;
-    if (currentSlot.moveActionUsed)
-        event.actionFlags |= MULTIPLAYER_COMBAT_MOVE_ACTION_USED;
-    if (currentSlot.standardActionUsed)
-        event.actionFlags |= MULTIPLAYER_COMBAT_STANDARD_ACTION_USED;
-    if (currentSlot.fullDefense)
-        event.actionFlags |= MULTIPLAYER_COMBAT_FULL_DEFENSE;
         {
             const MultiplayerCombatantRef* next = currentCombatRef();
             if (next != nullptr)
@@ -3965,6 +3975,7 @@ bool resolveMultiplayerAttack(
     MultiplayerCombatSlot& combatSlot = multiplayerCombat->slots[
         multiplayerCombat->currentTurnIndex];
     combatSlot.standardActionUsed = true;
+    actor->turn.standardActionUsed = true;
     const uint8_t roomID = request.actor.roomID;
     saveCombatRoomAndRestoreHost(roomID);
     if (!hasLivingMultiplayerHostile())
@@ -3975,7 +3986,6 @@ bool resolveMultiplayerAttack(
                         request.actor, request.target, "Combat ends.");
         return true;
     }
-    actor->turn.standardActionUsed = true;
     if (shouldAdvanceAfterStandardAction(combatSlot.moveActionUsed))
         advanceMultiplayerTurn();
     return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
@@ -4065,6 +4075,10 @@ bool processAuthoritativeCombatAction(
     if (request.action == MultiplayerCombatActionType::FULL_DEFENSE &&
         (currentSlot.standardActionUsed || currentSlot.moveActionUsed))
         return false;
+    if (request.action == MultiplayerCombatActionType::DOUBLE_MOVE &&
+        !canUseDoubleMove(currentSlot.moveActionUsed,
+                          currentSlot.standardActionUsed))
+        return false;
     switch (request.action)
     {
         case MultiplayerCombatActionType::MOVE:
@@ -4075,10 +4089,6 @@ bool processAuthoritativeCombatAction(
             {
                 restoreHostDungeonRoom();
                 return false;
-    if (request.action == MultiplayerCombatActionType::DOUBLE_MOVE &&
-        !canUseDoubleMove(currentSlot.moveActionUsed,
-                          currentSlot.standardActionUsed))
-        return false;
             }
             MultiplayerCombatSlot& slot = multiplayerCombat->slots[
                 multiplayerCombat->currentTurnIndex];
@@ -4113,6 +4123,11 @@ bool processAuthoritativeCombatAction(
             snprintf(message, sizeof(message), moved ? "%s moves." :
                      "%s cannot move there.",
                      combatantDisplayName(request.actor, actor));
+            if (moved && shouldAdvanceAfterMovement(
+                    slot.moveActionUsed,
+                    slot.standardActionUsed,
+                    slot.movementRemaining))
+                advanceMultiplayerTurn();
             return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
                 MultiplayerCombatEventType::ACTION_RESULT,
                 request.actor, MultiplayerCombatantRef{}, message);
@@ -4123,21 +4138,6 @@ bool processAuthoritativeCombatAction(
             return resolveMultiplayerAttack(request, true);
         case MultiplayerCombatActionType::CAST_ABILITY:
             return resolveMultiplayerAbility(request);
-            if (moved && shouldAdvanceAfterMovement(
-                    slot.moveActionUsed,
-                    slot.standardActionUsed,
-                    slot.movementRemaining))
-                advanceMultiplayerTurn();
-        case MultiplayerCombatActionType::FULL_DEFENSE:
-        {
-            if (!prepareCombatantRoom(request.actor)) return false;
-            Entity* actor = resolveVisibleCombatant(request.actor);
-            if (actor == nullptr)
-            {
-                restoreHostDungeonRoom();
-                return false;
-            }
-            actor->turn.fullDefense = true;
         case MultiplayerCombatActionType::DOUBLE_MOVE:
         {
             if (!prepareCombatantRoom(request.actor)) return false;
@@ -4170,6 +4170,16 @@ bool processAuthoritativeCombatAction(
                 MultiplayerCombatEventType::ACTION_RESULT,
                 request.actor, MultiplayerCombatantRef{}, message);
         }
+        case MultiplayerCombatActionType::FULL_DEFENSE:
+        {
+            if (!prepareCombatantRoom(request.actor)) return false;
+            Entity* actor = resolveVisibleCombatant(request.actor);
+            if (actor == nullptr)
+            {
+                restoreHostDungeonRoom();
+                return false;
+            }
+            actor->turn.fullDefense = true;
             MultiplayerCombatSlot& slot = multiplayerCombat->slots[
                 multiplayerCombat->currentTurnIndex];
             slot.standardActionUsed = true;
@@ -4988,6 +4998,14 @@ bool requestMultiplayerCombatMove(uint8_t direction)
     return submitMultiplayerCombatRequest(request);
 }
 
+bool requestMultiplayerDoubleMove()
+{
+    MultiplayerCombatActionRequestPayload request{};
+    request.action = MultiplayerCombatActionType::DOUBLE_MOVE;
+    request.direction = static_cast<uint8_t>(moveDirection);
+    return submitMultiplayerCombatRequest(request);
+}
+
 bool requestMultiplayerCombatAbility(
     uint16_t abilityID,
     const Entity* target,
@@ -4998,14 +5016,6 @@ bool requestMultiplayerCombatAbility(
     uint8_t flags)
 {
     MultiplayerCombatActionRequestPayload request{};
-bool requestMultiplayerDoubleMove()
-{
-    MultiplayerCombatActionRequestPayload request{};
-    request.action = MultiplayerCombatActionType::DOUBLE_MOVE;
-    request.direction = static_cast<uint8_t>(moveDirection);
-    return submitMultiplayerCombatRequest(request);
-}
-
     request.action = MultiplayerCombatActionType::CAST_ABILITY;
     if (target != nullptr) request.target = combatRefForEntity(*target);
     request.abilityID = abilityID;

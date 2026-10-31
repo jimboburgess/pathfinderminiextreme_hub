@@ -1,0 +1,15 @@
+#ifndef PATHFINDERMINIEXTREME_025_PUZZLETYPES_H
+#define PATHFINDERMINIEXTREME_025_PUZZLETYPES_H
+
+#include <stdint.h>
+
+enum DungeonPuzzleType : uint8_t
+{
+    PUZZLE_NONE,
+    PUZZLE_RIDDLEMAN,
+    PUZZLE_BELLS,
+    PUZZLE_NUMBER_TILES,
+    PUZZLE_BRAZIERS
+};
+
+#endif
