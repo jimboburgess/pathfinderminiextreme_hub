@@ -19,6 +19,7 @@
 #include "map/interaction.h"
 #include "map/skillactions.h"
 #include "dungeon/abilityresolver.h"
+#include "dungeon/actioneconomy.h"
 #include "dungeon/dungeon.h"
 #include "forest/forest.h"
 #include "graphics/messagelog.h"
@@ -996,7 +997,7 @@ const MenuItem combatMenuItems[] =
 },
     {
         "Double Move",
-        "Move up to twice your speed.",
+        "Use your standard action to move again.",
         MENU_DOUBLE_MOVE,
         nullptr,
         MENU_CLASS_ALL
@@ -2192,6 +2193,8 @@ bool isMenuItemVisible(MenuAction action)
                     canPlayerAttackOutsideCombat(COMBAT_ATTACK_MELEE) ||
                     canPlayerAttackOutsideCombat(COMBAT_ATTACK_RANGED)) &&
                    canCharacterAct(*character) &&
+                   (!combat.active ||
+                    canUseStandardAction(getCurrentCombatant()->turn)) &&
                    (getEquippedMeleeWeapon(*character) != nullptr ||
                     getEquippedRangedWeapon(*character) != nullptr);
 
@@ -2199,12 +2202,16 @@ bool isMenuItemVisible(MenuAction action)
             return (isPlayerCombatTurn() ||
                     canPlayerAttackOutsideCombat(COMBAT_ATTACK_MELEE)) &&
                    canCharacterAct(*character) &&
+                   (!combat.active ||
+                    canUseStandardAction(getCurrentCombatant()->turn)) &&
                    getEquippedMeleeWeapon(*character) != nullptr;
 
         case MENU_RANGED_ATTACK:
             return (isPlayerCombatTurn() ||
                     canPlayerAttackOutsideCombat(COMBAT_ATTACK_RANGED)) &&
                    canCharacterAct(*character) &&
+                   (!combat.active ||
+                    canUseStandardAction(getCurrentCombatant()->turn)) &&
                    getEquippedRangedWeapon(*character) != nullptr;
 
         case MENU_CAST_SPELL:
@@ -2223,7 +2230,10 @@ bool isMenuItemVisible(MenuAction action)
             }
 
             return hasKnownAbilityInCategory(
-                *character, ABILITY_CATEGORY_CLASS_FEATURE);
+                       *character, ABILITY_CATEGORY_CLASS_FEATURE) &&
+                   (!combat.active ||
+                    (isPlayerCombatTurn() &&
+                     canUseStandardAction(getCurrentCombatant()->turn)));
 
         case MENU_POWER_ATTACK:
         {
@@ -2301,9 +2311,7 @@ bool isMenuItemVisible(MenuAction action)
             return isPlayerCombatTurn() &&
                    character->state == STATE_ALIVE &&
                    canCharacterAct(*character) &&
-                   !getCurrentCombatant()->turn.standardActionUsed &&
-                   getCurrentCombatant()->turn.movementRemaining ==
-                       character->speed;
+                   canUseDoubleMove(getCurrentCombatant()->turn);
 
         case MENU_TOTAL_DEFENSE:
             return isPlayerCombatTurn() &&

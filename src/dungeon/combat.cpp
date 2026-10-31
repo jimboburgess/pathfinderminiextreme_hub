@@ -11,6 +11,7 @@
 #include "multiplayer/multiplayer_activity.h"
 #include "abilityresolver.h"
 #include "combatpolicy.h"
+#include "actioneconomy.h"
 #include "characters/combat_rules.h"
 #include "loot.h"
 #include "map/awareness.h"
@@ -3636,19 +3637,24 @@ void cancelInspection()
 
 void beginDoubleMove()
 {
+    if (isMultiplayerCombatActive())
+    {
+        if (!requestMultiplayerDoubleMove())
+            setGameMessage("Double Move unavailable.");
+        return;
+    }
+
     Entity* player = getCurrentCombatant();
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
-        !combat.waitingForPlayer || player->turn.standardActionUsed ||
-        player->turn.movementRemaining != getEffectiveSpeed(player->character) ||
-        !canCharacterAct(player->character))
+        !combat.waitingForPlayer || !canCharacterAct(player->character) ||
+        !tryBeginDoubleMove(
+            player->turn, getEffectiveSpeed(player->character)))
     {
         setGameMessage("Double Move unavailable.");
         return;
     }
 
-    player->turn.movementRemaining = getEffectiveSpeed(player->character) * 2;
-    player->turn.standardActionUsed = true;
     setGameMessage("Double Move: use encoder to move.");
     requestCombatTileRedraw();
 }

@@ -90,6 +90,7 @@ void updateMultiplayerCombat(uint32_t now);
 Entity* getVisibleMultiplayerCurrentCombatant();
 bool isLocalPlayersMultiplayerTurn();
 bool requestMultiplayerCombatMove(uint8_t direction);
+bool requestMultiplayerDoubleMove();
 bool requestMultiplayerCombatAttack(bool ranged, const Entity* target);
 bool requestMultiplayerCombatAbility(
     uint16_t abilityID,

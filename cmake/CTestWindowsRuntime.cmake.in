@@ -1,0 +1,7 @@
+# CTest does not automatically inherit the selected MinGW toolchain's runtime
+# directory. Keep test execution aligned with the compiler chosen by CMake.
+set(_pfme_windows_cxx_runtime_dir "@PFME_WINDOWS_CXX_RUNTIME_DIR@")
+if(NOT "$ENV{PATH}" MATCHES "(^|;)${_pfme_windows_cxx_runtime_dir}($|;)")
+    set(ENV{PATH} "${_pfme_windows_cxx_runtime_dir};$ENV{PATH}")
+endif()
+unset(_pfme_windows_cxx_runtime_dir)

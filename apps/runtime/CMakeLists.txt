@@ -29,6 +29,17 @@ if(BUILD_TESTING)
     add_test(NAME pfme_menu_rendering COMMAND pfme_menu_render_tests)
     set_tests_properties(pfme_menu_rendering PROPERTIES TIMEOUT 30)
 endif()
+    add_executable(pfme_action_economy_runtime_tests action_economy_tests.cpp)
+    target_include_directories(pfme_action_economy_runtime_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_action_economy_runtime_tests PRIVATE
+        pfme_handheld_runtime)
+    target_compile_definitions(pfme_action_economy_runtime_tests PRIVATE
+        ARDUINO=100)
+    add_test(NAME pfme_action_economy_runtime
+        COMMAND pfme_action_economy_runtime_tests)
+    set_tests_properties(pfme_action_economy_runtime PROPERTIES TIMEOUT 30)
+
 
 if(BUILD_TESTING)
     add_executable(pfme_town_party_tests town_party_tests.cpp)

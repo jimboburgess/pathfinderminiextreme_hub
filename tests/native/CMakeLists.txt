@@ -99,3 +99,15 @@ add_test(NAME pfme_party_tests COMMAND pfme_party_tests)
 add_test(NAME pfme_cli_script
     COMMAND ${CMAKE_COMMAND} -DPROGRAM=$<TARGET_FILE:pfme_headless>
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cli_test.cmake)
+
+add_executable(pfme_action_economy_tests action_economy_tests.cpp)
+target_link_libraries(pfme_action_economy_tests PRIVATE pfme_portable_leaf)
+set_target_properties(pfme_action_economy_tests PROPERTIES
+    CXX_STANDARD 11 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+if(MSVC)
+    target_compile_options(pfme_action_economy_tests PRIVATE /W4)
+else()
+    target_compile_options(pfme_action_economy_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME pfme_action_economy_tests COMMAND pfme_action_economy_tests)

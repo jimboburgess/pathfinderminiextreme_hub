@@ -1204,7 +1204,7 @@ bool travelNativeRoom(Dungeon& world,RoomEntry entry) {
                                 &combat.attackingMonster,&combat.monsterAttackTarget})
             if(*reference==previous)*reference=targetActor;
         --targetActor->turn.movementRemaining;
-        if(!targetActor->turn.movementRemaining)targetActor->turn.moveActionUsed=true;
+        targetActor->turn.moveActionUsed=true;
     }
     closeInventoryMenu();clearInteractionEntityReferences();closeMenu();
     world.entityCount=target.count;world.rooms[destination].discovered=true;

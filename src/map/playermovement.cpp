@@ -74,11 +74,12 @@ void finishPlayerMovement(
     if (combat.active)
     {
         spendMovementCost(player, resolvedMovementCost);
+        player.turn.moveActionUsed = true;
 
         if (player.turn.movementRemaining == 0)
         {
-            player.turn.moveActionUsed = true;
-            checkEndPlayerTurn();
+            if (!isMultiplayerCombatActive())
+                checkEndPlayerTurn();
         }
     }
 
@@ -227,13 +228,14 @@ bool tryPlayerAcrobaticsTraversal(
     player.x = beyondX;
     player.y = beyondY;
     player.turn.movementRemaining -= 4;
+    player.turn.moveActionUsed = true;
     bool trapTriggered = false;
     handleEnteredTile(player, beyondX, beyondY, &trapTriggered);
 
     if (player.turn.movementRemaining == 0)
     {
-        player.turn.moveActionUsed = true;
-        checkEndPlayerTurn();
+        if (!isMultiplayerCombatActive())
+            checkEndPlayerTurn();
     }
 
     markTileDirty(oldX, oldY);

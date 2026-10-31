@@ -314,6 +314,8 @@ void test_combat_action_and_result_round_trip_are_host_authoritative()
     result.eventType = MultiplayerCombatEventType::ACTION_RESULT;
     result.currentTurnIndex = 2;
     result.round = 1;
+    result.movementRemaining = 4;
+    result.actionFlags = MULTIPLAYER_COMBAT_MOVE_ACTION_USED;
     result.actor = action.actor;
     result.target = action.target;
     result.actorHP = 20;
@@ -330,7 +332,20 @@ void test_combat_action_and_result_round_trip_are_host_authoritative()
         bytes, size, decodedResult));
     TEST_ASSERT_EQUAL_INT16(0, decodedResult.targetHP);
     TEST_ASSERT_EQUAL_UINT16(8, decodedResult.roomRevision);
+    TEST_ASSERT_EQUAL_UINT8(4, decodedResult.movementRemaining);
+    TEST_ASSERT_EQUAL_UINT8(
+        MULTIPLAYER_COMBAT_MOVE_ACTION_USED, decodedResult.actionFlags);
     TEST_ASSERT_EQUAL_STRING(result.text, decodedResult.text);
+
+    action.action = MultiplayerCombatActionType::DOUBLE_MOVE;
+    action.target = MultiplayerCombatantRef{};
+    TEST_ASSERT_TRUE(encodeMultiplayerCombatActionRequest(
+        action, bytes, sizeof(bytes), size));
+    TEST_ASSERT_TRUE(decodeMultiplayerCombatActionRequest(
+        bytes, size, decodedAction));
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(MultiplayerCombatActionType::DOUBLE_MOVE),
+        static_cast<uint8_t>(decodedAction.action));
 }
 
 void test_combat_move_is_bounded_and_invalid_stable_refs_are_rejected()

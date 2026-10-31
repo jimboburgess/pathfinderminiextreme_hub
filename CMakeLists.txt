@@ -62,6 +62,17 @@ install(TARGETS pfme_headless RUNTIME DESTINATION bin)
 
 include(CTest)
 
+if(BUILD_TESTING AND WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    get_filename_component(
+        PFME_WINDOWS_CXX_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    configure_file(
+        cmake/CTestWindowsRuntime.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/CTestWindowsRuntime.cmake"
+        @ONLY)
+    set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/CTestWindowsRuntime.cmake")
+endif()
+
 if(BUILD_TESTING)
     add_test(NAME pfme_headless_smoke COMMAND pfme_headless)
     add_subdirectory(tests/native)

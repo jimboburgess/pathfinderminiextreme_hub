@@ -1034,7 +1034,7 @@ bool encodeMultiplayerCombatActionRequest(
     const uint8_t action = static_cast<uint8_t>(payload.action);
     if (payload.activityID == 0 || payload.combatID == 0 ||
         action == 0 ||
-        action > static_cast<uint8_t>(MultiplayerCombatActionType::END_TURN) ||
+        action > static_cast<uint8_t>(MultiplayerCombatActionType::DOUBLE_MOVE) ||
         payload.direction >= 8 ||
         !writer.writeU32(payload.activityID) ||
         !writer.writeU16(payload.combatID) ||
@@ -1072,7 +1072,7 @@ bool decodeMultiplayerCombatActionRequest(
     payload.targetX = static_cast<int8_t>(targetX);
     payload.targetY = static_cast<int8_t>(targetY);
     return payload.activityID != 0 && payload.combatID != 0 && action != 0 &&
-        action <= static_cast<uint8_t>(MultiplayerCombatActionType::END_TURN) &&
+        action <= static_cast<uint8_t>(MultiplayerCombatActionType::DOUBLE_MOVE) &&
         payload.direction < 8;
 }
 
@@ -1091,6 +1091,8 @@ bool encodeMultiplayerCombatEvent(
         !writer.writeU16(payload.eventSequence) || !writer.writeU8(eventType) ||
         !writer.writeU8(payload.currentTurnIndex) ||
         !writer.writeU16(payload.round) ||
+        !writer.writeU8(payload.movementRemaining) ||
+        !writer.writeU8(payload.actionFlags) ||
         !writeOptionalCombatantRef(writer, payload.actor) ||
         !writeOptionalCombatantRef(writer, payload.target) ||
         !writer.writeU8(payload.actorX) || !writer.writeU8(payload.actorY) ||
@@ -1120,6 +1122,8 @@ bool decodeMultiplayerCombatEvent(
         !reader.readU16(payload.eventSequence) || !reader.readU8(eventType) ||
         !reader.readU8(payload.currentTurnIndex) ||
         !reader.readU16(payload.round) ||
+        !reader.readU8(payload.movementRemaining) ||
+        !reader.readU8(payload.actionFlags) ||
         !readOptionalCombatantRef(reader, payload.actor) ||
         !readOptionalCombatantRef(reader, payload.target) ||
         !reader.readU8(payload.actorX) || !reader.readU8(payload.actorY) ||
@@ -1138,7 +1142,8 @@ bool decodeMultiplayerCombatEvent(
     payload.actorHP = static_cast<int16_t>(actorHP);
     payload.targetHP = static_cast<int16_t>(targetHP);
     payload.text[payload.textLength] = '\0';
-    return payload.activityID != 0 && payload.combatID != 0;
+    return payload.activityID != 0 && payload.combatID != 0 &&
+        (payload.actionFlags & ~MULTIPLAYER_COMBAT_ACTION_FLAGS_MASK) == 0;
 }
 
 bool encodeMultiplayerCombatAck(

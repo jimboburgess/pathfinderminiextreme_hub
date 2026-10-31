@@ -6,7 +6,7 @@
 
 #include "multiplayer_types.h"
 
-constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 4;
+constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 5;
 constexpr uint16_t MULTIPLAYER_PACKET_MAGIC = 0x504D;
 constexpr size_t ESPNOW_MAX_PACKET_SIZE = 250;
 constexpr size_t NETWORK_PACKET_HEADER_SIZE = 14;
@@ -184,8 +184,17 @@ enum class MultiplayerCombatActionType : uint8_t
     FIVE_FOOT_STEP,
     FULL_DEFENSE,
     DELAY,
-    END_TURN
+    END_TURN,
+    DOUBLE_MOVE
 };
+
+constexpr uint8_t MULTIPLAYER_COMBAT_MOVE_ACTION_USED = 0x01;
+constexpr uint8_t MULTIPLAYER_COMBAT_STANDARD_ACTION_USED = 0x02;
+constexpr uint8_t MULTIPLAYER_COMBAT_FULL_DEFENSE = 0x04;
+constexpr uint8_t MULTIPLAYER_COMBAT_ACTION_FLAGS_MASK =
+    MULTIPLAYER_COMBAT_MOVE_ACTION_USED |
+    MULTIPLAYER_COMBAT_STANDARD_ACTION_USED |
+    MULTIPLAYER_COMBAT_FULL_DEFENSE;
 
 enum class MultiplayerCombatEventType : uint8_t
 {
@@ -446,6 +455,8 @@ struct MultiplayerCombatEventPayload
     MultiplayerCombatEventType eventType = MultiplayerCombatEventType::STATE;
     uint8_t currentTurnIndex = 0;
     uint16_t round = 1;
+    uint8_t movementRemaining = 0;
+    uint8_t actionFlags = 0;
     MultiplayerCombatantRef actor{};
     MultiplayerCombatantRef target{};
     uint8_t actorX = 0;
