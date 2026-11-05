@@ -368,6 +368,39 @@ platformio test -e waveshare_esp32s3_zero_n8r8 \
 The second command compiles embedded test targets only; it does not upload or
 execute them on hardware.
 
+## Character names and save slots
+
+Character creation now ends with a bounded name step. Names contain at most 15
+visible letters, numbers, or spaces plus a null terminator; an empty name becomes
+`Adventurer`. Native/browser play accepts ordinary keyboard characters,
+Backspace, and Enter. The handheld uses an encoder character wheel, A to append,
+B to backspace, and encoder press to finish.
+
+Save format version 10 adds that character name and provides exactly three
+fixed slots. Each slot summary reads name, class, and level without replacing
+the active character. Selecting an occupied or corrupt slot for saving opens an
+overwrite prompt whose default is No. Versions 1-9 remain readable: the former
+single `player` record appears as Slot 1 with the fallback name and is copied to
+the new Slot 1 record only after a successful load/write. The legacy source is
+removed only after that new record is safely installed.
+
+ESP32 builds store the three versioned blobs in the existing `pathfinder`
+Preferences/NVS namespace under `player0`, `player1`, and `player2`. Native
+builds use atomic temporary-file replacement and these paths:
+
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/pathfinder-mini-extreme/`
+- Windows: `%LOCALAPPDATA%\PathfinderMiniExtreme\`
+
+The filenames are `save_slot_1.dat`, `save_slot_2.dat`, and
+`save_slot_3.dat`. Native tests set `PFME_SAVE_DIR` to a temporary directory so
+they never touch a player's real saves.
+
+The payload remains the pre-existing character-only save coverage: class,
+level/XP, ability scores, HP, equipment, inventory/gold, current MP, known
+abilities, active spell study, and Fighter weapon specialization, now plus the
+name. Dungeon/forest runs, combat, position, multiplayer sessions, transient
+conditions, and runtime class-resource uses are not persisted.
+
 ## Phase 3G playable native composition
 
 `PFME_BUILD_PLAYABLE=ON` now compiles the original handheld game loop, input

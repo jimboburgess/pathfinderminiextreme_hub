@@ -67,7 +67,7 @@ bool knownAbilitySlotsAreEmpty(const MagicData& magic)
 
 bool hasNonPersistentCharacterPayload(const Character& character)
 {
-    if (character.name.length() != 0 || character.level != 0 ||
+    if (hasCharacterName(character) || character.level != 0 ||
         character.xp != 0 || character.speed != 0 ||
         character.initiative != 0 ||
         character.health.currentHP != 0 ||
@@ -109,7 +109,7 @@ bool monsterStaticStateIsRepresentable(const Entity& source)
            actual.trainedWeaponGroup == base.trainedWeaponGroup &&
            actual.magic.maxMP == base.magic.maxMP &&
            sameEquipment(actual.equipment, base.equipment) &&
-           actual.name.length() == 0 && actual.xp == 0 &&
+           !hasCharacterName(actual) && actual.xp == 0 &&
            actual.magic.knownAbilityCount == 0 &&
            knownAbilitySlotsAreEmpty(actual.magic) &&
            !actual.magic.arcaneCaster && !actual.magic.divineCaster &&

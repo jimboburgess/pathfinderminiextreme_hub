@@ -7,6 +7,48 @@
 #include "data/progression.h"
 #include "graphics/sprites.h"
 
+#include <cstring>
+
+bool isSupportedCharacterNameCharacter(char character)
+{
+    return (character >= 'A' && character <= 'Z') ||
+           (character >= 'a' && character <= 'z') ||
+           (character >= '0' && character <= '9') ||
+           character == ' ';
+}
+
+void setCharacterName(Character& character, const char* name)
+{
+    char sanitized[CHARACTER_NAME_SIZE] = {};
+    uint8_t length = 0;
+    uint8_t consumed = 0;
+    bool hasVisibleCharacter = false;
+
+    if (name != nullptr)
+    {
+        while (*name != '\0' && consumed + 1 < CHARACTER_NAME_SIZE)
+        {
+            consumed++;
+            if (isSupportedCharacterNameCharacter(*name))
+            {
+                sanitized[length++] = *name;
+                if (*name != ' ')
+                    hasVisibleCharacter = true;
+            }
+            name++;
+        }
+    }
+
+    const char* source = hasVisibleCharacter
+        ? sanitized : DEFAULT_CHARACTER_NAME;
+#if defined(ARDUINO_ARCH_ESP32)
+    character.name = source;
+#else
+    std::strncpy(character.name, source, CHARACTER_NAME_SIZE - 1);
+    character.name[CHARACTER_NAME_SIZE - 1] = '\0';
+#endif
+}
+
 bool hasFighterFeature(const Character& character, FighterFeature feature)
 {
     return hasFighterFeatureAtLevel(

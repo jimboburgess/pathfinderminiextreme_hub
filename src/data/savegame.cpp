@@ -2,13 +2,15 @@
 
 #include <Preferences.h>
 
+#include <cstring>
+
 #include "progression.h"
 
 namespace
 {
 constexpr uint32_t SAVE_MAGIC = 0x50464D45; // PFME
-constexpr uint8_t SAVE_VERSION = 9;
-constexpr uint8_t WEAPON_PROPERTY_FLAGS_SAVE_VERSION = 9;
+constexpr uint8_t SAVE_VERSION = 10;
+constexpr uint8_t PREVIOUS_SAVE_WITHOUT_NAME_VERSION = 9;
 constexpr uint8_t PREVIOUS_ITEM_PROPERTY_SAVE_VERSION = 8;
 constexpr uint8_t FIGHTER_WEAPON_GROUP_SAVE_VERSION = 7;
 constexpr uint8_t PREVIOUS_MAGIC_SAVE_VERSION = 6;
@@ -19,6 +21,26 @@ constexpr uint8_t ITEM_SLOT_SAVE_VERSION = 2;
 constexpr uint8_t LEGACY_SAVE_VERSION = 1;
 
 struct SavedCharacter
+{
+    uint32_t magic;
+    uint8_t version;
+    char characterName[CHARACTER_NAME_SIZE];
+    CharacterClass characterClass;
+    uint8_t level;
+    uint32_t xp;
+    AbilityScores abilities;
+    HealthData health;
+    EquipmentData equipment;
+    InventoryData inventory;
+    int16_t currentMP;
+    uint8_t knownAbilityCount;
+    AbilityID knownAbilities[MAX_KNOWN_ABILITIES];
+    SpellLearningData learning;
+    uint32_t trainedWeaponGroup;
+};
+
+// Version 9 had the current item/property layout but no character name.
+struct UnnamedSavedCharacter
 {
     uint32_t magic;
     uint8_t version;
@@ -104,7 +126,8 @@ struct PreviousSavedCharacter
 };
 
 static_assert(
-    sizeof(SavedCharacter) != sizeof(FighterDefaultSavedCharacter) &&
+    sizeof(SavedCharacter) != sizeof(UnnamedSavedCharacter) &&
+    sizeof(UnnamedSavedCharacter) != sizeof(FighterDefaultSavedCharacter) &&
     sizeof(FighterDefaultSavedCharacter) != sizeof(CurrentMPSavedCharacter) &&
     sizeof(CurrentMPSavedCharacter) != sizeof(PreviousSavedCharacter),
     "Persisted magic versions must have distinct save layouts.");
@@ -482,7 +505,8 @@ bool restoreCharacter(Character& character,
                        uint8_t savedKnownAbilityCount = 0,
                        const SpellLearningData* savedLearning = nullptr,
                        bool hasSavedWeaponGroup = false,
-                       WeaponGroup savedWeaponGroup = WEAPON_GROUP_NONE)
+                       WeaponGroup savedWeaponGroup = WEAPON_GROUP_NONE,
+                       const char* savedName = nullptr)
 {
     if (!isValidCharacterData(characterClass, level, health) ||
         !isValidEquipment(equipment) ||
@@ -497,6 +521,7 @@ bool restoreCharacter(Character& character,
     // The save format intentionally contains only data that can be persisted
     // safely. Rebuild the runtime-only player identity and status here.
     Character loaded = {};
+    setCharacterName(loaded, savedName);
     loaded.characterClass = characterClass;
     loaded.creatureType = CREATURE_PLAYER;
     loaded.team = TEAM_PLAYER;
@@ -553,11 +578,13 @@ bool restoreCharacter(Character& character,
 }
 }
 
-bool saveGame(const Character& character)
+bool saveGameWithKey(const Character& character, const char* key)
 {
     SavedCharacter saved = {};
     saved.magic = SAVE_MAGIC;
     saved.version = SAVE_VERSION;
+    std::strncpy(saved.characterName, getCharacterName(character),
+                 CHARACTER_NAME_SIZE - 1);
     saved.characterClass = character.characterClass;
     saved.level = character.level;
     saved.xp = character.xp;
@@ -580,33 +607,69 @@ bool saveGame(const Character& character)
         return false;
 
     size_t bytesWritten = preferences.putBytes(
-        "player", &saved, sizeof(saved));
+        key, &saved, sizeof(saved));
     preferences.end();
 
     return bytesWritten == sizeof(saved);
 }
 
-bool loadGame(Character& character)
+bool loadGameWithKey(Character& character, const char* key)
 {
     Preferences preferences;
 
     if (!preferences.begin("pathfinder", true))
         return false;
 
-    size_t savedSize = preferences.getBytesLength("player");
+    size_t savedSize = preferences.getBytesLength(key);
 
     if (savedSize == sizeof(SavedCharacter))
     {
         SavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
+        preferences.end();
+
+        if (bytesRead != sizeof(saved) ||
+            saved.magic != SAVE_MAGIC ||
+            saved.version != SAVE_VERSION ||
+            saved.characterName[CHARACTER_NAME_SIZE - 1] != '\0' ||
+            !isValidSavedWeaponGroup(
+                saved.characterClass, saved.trainedWeaponGroup))
+        {
+            return false;
+        }
+
+        return restoreCharacter(
+            character,
+            saved.characterClass,
+            saved.level,
+            saved.xp,
+            saved.abilities,
+            saved.health,
+            saved.equipment,
+            saved.inventory,
+            true,
+            saved.currentMP,
+            saved.knownAbilities,
+            saved.knownAbilityCount,
+            &saved.learning,
+            true,
+            static_cast<WeaponGroup>(saved.trainedWeaponGroup),
+            saved.characterName);
+    }
+
+    if (savedSize == sizeof(UnnamedSavedCharacter))
+    {
+        UnnamedSavedCharacter saved = {};
+        size_t bytesRead = preferences.getBytes(
+            key, &saved, sizeof(saved));
         preferences.end();
 
         const bool legacyProperties =
             saved.version == PREVIOUS_ITEM_PROPERTY_SAVE_VERSION;
         if (bytesRead != sizeof(saved) ||
             saved.magic != SAVE_MAGIC ||
-            (saved.version != WEAPON_PROPERTY_FLAGS_SAVE_VERSION &&
+            (saved.version != PREVIOUS_SAVE_WITHOUT_NAME_VERSION &&
              !legacyProperties) ||
             !isValidSavedWeaponGroup(
                 saved.characterClass, saved.trainedWeaponGroup))
@@ -639,7 +702,7 @@ bool loadGame(Character& character)
     {
         FighterDefaultSavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
         preferences.end();
 
         if (bytesRead != sizeof(saved) || saved.magic != SAVE_MAGIC ||
@@ -660,7 +723,7 @@ bool loadGame(Character& character)
     if (savedSize == sizeof(PreviousMagicSavedCharacter))
     {
         PreviousMagicSavedCharacter saved = {};
-        size_t bytesRead = preferences.getBytes("player", &saved, sizeof(saved));
+        size_t bytesRead = preferences.getBytes(key, &saved, sizeof(saved));
         preferences.end();
         if (bytesRead != sizeof(saved) || saved.magic != SAVE_MAGIC ||
             saved.version != PREVIOUS_MAGIC_SAVE_VERSION)
@@ -676,7 +739,7 @@ bool loadGame(Character& character)
     {
         CurrentMPSavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
         preferences.end();
 
         if (bytesRead != sizeof(saved) ||
@@ -705,7 +768,7 @@ bool loadGame(Character& character)
     {
         PreviousSavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
         preferences.end();
 
         if (bytesRead != sizeof(saved) ||
@@ -732,7 +795,7 @@ bool loadGame(Character& character)
     {
         ItemInstanceSavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
         preferences.end();
 
         if (bytesRead != sizeof(saved) ||
@@ -767,7 +830,7 @@ bool loadGame(Character& character)
     {
         ItemSlotSavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
         preferences.end();
 
         if (bytesRead != sizeof(saved) ||
@@ -803,7 +866,7 @@ bool loadGame(Character& character)
     {
         LegacySavedCharacter saved = {};
         size_t bytesRead = preferences.getBytes(
-            "player", &saved, sizeof(saved));
+            key, &saved, sizeof(saved));
         preferences.end();
 
         if (bytesRead != sizeof(saved) ||
@@ -837,4 +900,118 @@ bool loadGame(Character& character)
 
     preferences.end();
     return false;
+}
+
+namespace
+{
+const char* getSlotKey(uint8_t slot)
+{
+    static const char* const keys[SAVE_SLOT_COUNT] =
+    {
+        "player0", "player1", "player2"
+    };
+    return slot < SAVE_SLOT_COUNT ? keys[slot] : nullptr;
+}
+
+size_t getStoredSize(const char* key)
+{
+    Preferences preferences;
+    if (key == nullptr || !preferences.begin("pathfinder", true))
+        return 0;
+    const size_t size = preferences.getBytesLength(key);
+    preferences.end();
+    return size;
+}
+}
+
+bool saveGameToSlot(const Character& character, uint8_t slot)
+{
+    const char* key = getSlotKey(slot);
+    return key != nullptr && saveGameWithKey(character, key);
+}
+
+bool loadGameFromSlot(Character& character, uint8_t slot)
+{
+    const char* key = getSlotKey(slot);
+    if (key == nullptr)
+        return false;
+
+    if (getStoredSize(key) != 0)
+        return loadGameWithKey(character, key);
+
+    if (slot != 0 || getStoredSize("player") == 0)
+        return false;
+
+    Character migrated = {};
+    if (!loadGameWithKey(migrated, "player"))
+        return false;
+
+    // Keep the legacy record until the new Slot 1 write succeeds.
+    if (!saveGameWithKey(migrated, key))
+        return false;
+
+    Preferences preferences;
+    if (preferences.begin("pathfinder", false))
+    {
+        preferences.remove("player");
+        preferences.end();
+    }
+
+    character = migrated;
+    return true;
+}
+
+SaveSlotState getSaveSlotSummary(uint8_t slot, SaveSlotSummary& summary)
+{
+    summary = {};
+    const char* key = getSlotKey(slot);
+    if (key == nullptr)
+    {
+        summary.state = SaveSlotState::Corrupt;
+        return summary.state;
+    }
+
+    const bool useLegacy = slot == 0 && getStoredSize(key) == 0 &&
+                           getStoredSize("player") != 0;
+    const char* sourceKey = useLegacy ? "player" : key;
+    if (getStoredSize(sourceKey) == 0)
+        return summary.state;
+
+    Character loaded = {};
+    if (!loadGameWithKey(loaded, sourceKey))
+    {
+        summary.state = SaveSlotState::Corrupt;
+        return summary.state;
+    }
+
+    summary.state = SaveSlotState::Occupied;
+    std::strncpy(summary.characterName, getCharacterName(loaded),
+                 CHARACTER_NAME_SIZE - 1);
+    summary.characterClass = loaded.characterClass;
+    summary.level = loaded.level;
+    return summary.state;
+}
+
+bool deleteSaveSlot(uint8_t slot)
+{
+    const char* key = getSlotKey(slot);
+    if (key == nullptr)
+        return false;
+
+    Preferences preferences;
+    if (!preferences.begin("pathfinder", false))
+        return false;
+    const bool removed = preferences.remove(key);
+    preferences.end();
+    return removed;
+}
+
+bool saveGame(const Character& character)
+{
+    return saveGameToSlot(character, 0);
+}
+
+bool loadGame(Character& character)
+{
+    return loadGameFromSlot(character, 0);
 }

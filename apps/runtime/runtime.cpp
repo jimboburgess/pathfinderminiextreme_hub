@@ -109,7 +109,7 @@ void renderController() {
     refreshNativePartyMenu();
     updateMonsterVisibility();updateElementalVisualEffect();updateGameMessage();updateTownRest();
     if(needsRedraw)refreshDisplay();
-    if(gameState==GAME_START)drawStartAnimation();
+    if(gameState==GAME_START && !menuState.isOpen)drawStartAnimation();
 }
 void inputStep() {
     if(!multiController) {loop();return;}
@@ -342,6 +342,10 @@ void advance(uint32_t elapsed) {
 void releaseInputs() { pins[ENCODER_SW]=pins[BUTTON_A]=pins[BUTTON_B]=HIGH; }
 bool input(const std::string& action,bool down) {
     if(!initialized) return false;
+    if(action.size()==5 && action.compare(0,4,"key:")==0) {
+        if(!down || !isCharacterNameEntryActive())return down;
+        return appendCharacterNameCharacter(action[4]);
+    }
     if(action=="release") { releaseInputs(); inputStep(); return true; }
     if(action=="cw" || action=="ccw") {
         if(!down) return true;
@@ -355,6 +359,7 @@ bool input(const std::string& action,bool down) {
     if(pin<0) return false;
     pins[pin]=down?LOW:HIGH; inputStep(); return true;
 }
+bool textInputActive() { return isCharacterNameEntryActive(); }
 const uint16_t* pixels() { return tft.getBuffer(); }
 std::string diagnostic() {
     std::ostringstream out;

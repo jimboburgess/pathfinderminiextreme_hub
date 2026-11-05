@@ -24,6 +24,7 @@
 #include "forest/forest.h"
 #include "graphics/messagelog.h"
 #include "input/inventorymenu.h"
+#include "input/savemenu.h"
 #include "input/riddlemenu.h"
 #include "town/shop.h"
 #include "data/progression.h"
@@ -38,6 +39,7 @@ MenuState menuState =
     0,
     false
 };
+char menuBodyScratch[128] = {};
 
 static const Menu* getCurrentMenu()
 {
@@ -555,7 +557,6 @@ char nearbyPlayerTitles[MAX_NEARBY_ADVENTURERS][32] = {};
 char nearbyPlayerDescriptions[MAX_NEARBY_ADVENTURERS][64] = {};
 MenuItem nearbyPlayerItems[MAX_NEARBY_ADVENTURERS] = {};
 uint8_t nearbyPlayerLookup[MAX_NEARBY_ADVENTURERS] = {};
-char multiplayerStatusBody[128] = {};
 char multiplayerTravelBody[96] = {};
 
 const char* networkClassName(uint8_t characterClass)
@@ -596,7 +597,7 @@ Menu multiplayerStatusMenu =
     sizeof(multiplayerStatusItems) / sizeof(MenuItem),
     nullptr,
     nullptr,
-    multiplayerStatusBody,
+    menuBodyScratch,
     112
 };
 
@@ -728,15 +729,15 @@ static void rebuildNearbyPlayersMenu()
 
 static void rebuildMultiplayerStatusMenu()
 {
-    size_t used = snprintf(multiplayerStatusBody,
-                           sizeof(multiplayerStatusBody),
+    size_t used = snprintf(menuBodyScratch,
+                           sizeof(menuBodyScratch),
                            "Party: %u/%u\n",
                            multiplayerSession.getConnectedPlayerCount(),
                            MAX_MULTIPLAYER_PLAYERS);
     for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
     {
         const SessionMember* member = multiplayerSession.getMember(playerID);
-        if (member == nullptr || used >= sizeof(multiplayerStatusBody)) continue;
+        if (member == nullptr || used >= sizeof(menuBodyScratch)) continue;
         const MultiplayerMemberLocation location =
             getMultiplayerMemberLocation(playerID);
         char locationText[12] = {};
@@ -748,8 +749,8 @@ static void rebuildMultiplayerStatusMenu()
         else
             snprintf(locationText, sizeof(locationText), "%s",
                      multiplayerMemberLocationName(location));
-        used += snprintf(multiplayerStatusBody + used,
-                         sizeof(multiplayerStatusBody) - used,
+        used += snprintf(menuBodyScratch + used,
+                         sizeof(menuBodyScratch) - used,
                          "%s %s%s %s\n",
                          member->profile.displayName,
                          networkClassName(member->profile.characterClass),
@@ -1253,6 +1254,9 @@ void menuActivate()
     //--------------------------------------------------
     // Execute action
     //--------------------------------------------------
+
+    if (activateSaveMenuAction(item->action))
+        return;
 
     switch (item->action)
     {

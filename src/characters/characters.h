@@ -17,6 +17,8 @@
 
 constexpr uint8_t MAX_INVENTORY = 64;
 constexpr uint32_t STARTING_GOLD = 100;
+constexpr uint8_t CHARACTER_NAME_SIZE = 16;
+constexpr const char* DEFAULT_CHARACTER_NAME = "Adventurer";
 
 
 //==================================================
@@ -213,7 +215,13 @@ struct Character
     //==================================================
     // Identity
     //==================================================
+#if defined(ARDUINO_ARCH_ESP32)
+    // Keep the pre-existing 12-byte String object on the RAM-constrained
+    // handheld; setCharacterName still enforces the shared 15-character cap.
     String name;
+#else
+    char name[CHARACTER_NAME_SIZE] = {};
+#endif
 
     CharacterClass characterClass;
     CreatureType creatureType;
@@ -432,6 +440,35 @@ enum EquipResult
     EQUIP_INVENTORY_ERROR,
     EQUIP_TWO_HANDED_CONFLICT
 };
+
+bool isSupportedCharacterNameCharacter(char character);
+void setCharacterName(Character& character, const char* name);
+inline void clearCharacterName(Character& character)
+{
+#if defined(ARDUINO_ARCH_ESP32)
+    character.name = "";
+#else
+    character.name[0] = '\0';
+#endif
+}
+inline const char* getCharacterName(const Character& character)
+{
+#if defined(ARDUINO_ARCH_ESP32)
+    return character.name.length() != 0
+        ? character.name.c_str() : DEFAULT_CHARACTER_NAME;
+#else
+    return character.name[0] != '\0'
+        ? character.name : DEFAULT_CHARACTER_NAME;
+#endif
+}
+inline bool hasCharacterName(const Character& character)
+{
+#if defined(ARDUINO_ARCH_ESP32)
+    return character.name.length() != 0;
+#else
+    return character.name[0] != '\0';
+#endif
+}
 
 bool isSupportedEquipmentSlot(EquipmentSlot slot);
 bool isItemCompatibleWithEquipmentSlot(const ItemInstance& item,

@@ -219,13 +219,13 @@ int main(int argc,char** argv){try{
  check(count>=1 && count<=4,"party count");initializeControllers(2,true);
  ControllerState states[4];Character original[4];
  for(unsigned id=0;id<count;++id){check(bindController(id,states[id]),"bind");nativePartyCharacterName(id,("Tester"+std::to_string(id)).c_str());
-  tap(id,"a");for(unsigned n=0;n<(combatTest?0:id%4);++n)tap(id,"cw");tap(id,"a");if(getCharacterCreationState()==CCS_WEAPON_STYLE_SELECT)tap(id,"a");tap(id,"a");tap(id,"a");
+  tap(id,"a");for(unsigned n=0;n<(combatTest?0:id%4);++n)tap(id,"cw");tap(id,"a");if(getCharacterCreationState()==CCS_WEAPON_STYLE_SELECT)tap(id,"a");tap(id,"a");tap(id,"a");tap(id,"encoder");
   check(gameState==GAME_TOWN,"original character creation");original[id]=player;
  }
  if(!combatTest){
  selectController(0);check(townSelection==TOWN_STAY_HOME,"home selection");tap(0,"a");
  check(isTownHomeOpen(),"Stay Home opens original menu");tap(0,"a");wait(6500);check(!isTownRestActive(),"original rest completes");
- tap(0,"cw");tap(0,"a");check(std::string(getGameMessage())=="Game saved.","save retained in character-owned memory");
+ tap(0,"cw");tap(0,"a");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Save Game","save opens three-slot selector");tap(0,"b");
  tap(0,"cw");tap(0,"a");check(isCharacterSheetVisible(),"home character sheet");tap(0,"b");
  tap(0,"b");check(!isTownHomeOpen(),"home cancel");
  for(unsigned n=0;townSelection!=TOWN_SHOP&&n<5;++n)tap(0,"cw");tap(0,"a");choose(0,"Buy");

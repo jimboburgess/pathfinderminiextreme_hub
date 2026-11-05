@@ -134,9 +134,12 @@ by the browser.
     terminal. The server should print `stopped`. No daemon or public listener is
     created. All server state ends with the process.
 
-Town Save/Load retains the original serialization code backed by process-memory
-Preferences. It survives only within that server process. It is not an ESP32 save
-import/export mechanism, and no persistence across server restarts is claimed.
+Town Save/Load uses the shared three-slot serializer and native file-backed
+Preferences adapter. Saves persist across process restarts in the per-user data
+directory documented in `NATIVE_BUILD.md`; authenticated multiplayer ownership
+and reconnect credentials remain process-local and are not save credentials.
+Browser character creation reports text-input mode with each frame so ordinary
+keyboard characters, Backspace, and Enter drive the same bounded creation model.
 
 ## Build from the current source
 
@@ -171,7 +174,7 @@ is preserved as a reference artifact; it is not the playable client.
 | `display/roomdraw/sheet/menu/inventory/elementalvisual` → ST7789/GFX | Native-only ST7789 facade backed by GFXcanvas16; actual drawing code, assets and font |
 | Arduino time/RNG/String/Serial | Controlled monotonic native tick clock, seeded MT19937 modulo bounded draws, std::string, silent serial sink |
 | Audio/LEDC | Original audio sequence timing runs against silent hardware calls |
-| Preferences | Bounded in-memory key/value backing for original save/settings code |
+| Preferences | Atomic per-user files for three character slots; non-save settings retain bounded native key/value backing |
 | ESP-NOW/Wi-Fi/FreeRTOS | Unavailable native radio adapter; existing code reports unavailable initialization |
 
 The only production source edit is removing a redundant, incorrectly cased

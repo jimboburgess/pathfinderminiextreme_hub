@@ -49,6 +49,14 @@ if(BUILD_TESTING)
     add_test(NAME pfme_action_economy_runtime
         COMMAND pfme_action_economy_runtime_tests)
     set_tests_properties(pfme_action_economy_runtime PROPERTIES TIMEOUT 30)
+
+    add_executable(pfme_save_slot_tests save_slot_tests.cpp)
+    target_include_directories(pfme_save_slot_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_save_slot_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_save_slot_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_save_slots COMMAND pfme_save_slot_tests)
+    set_tests_properties(pfme_save_slots PROPERTIES TIMEOUT 30)
 endif()
 
 if(BUILD_TESTING)

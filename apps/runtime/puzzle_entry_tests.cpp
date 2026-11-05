@@ -45,6 +45,7 @@ void enterTestDungeon()
     tap("a");
     tap("a");
     tap("a");
+    tap("encoder");
     check(gameState == GAME_TOWN, "town");
     tap("cw");
     tap("cw");

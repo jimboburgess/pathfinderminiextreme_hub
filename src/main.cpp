@@ -24,6 +24,7 @@
 #include "multiplayer/multiplayer_activity.h"
 
 #include "input/buttons.h"
+#include "input/menu.h"
 
 #if defined(PFME_HARDWARE_DIAGNOSTICS)
 static void printHardwareMemoryDiagnostics()
@@ -122,7 +123,7 @@ void loop()
         refreshDisplay();
     }
 
-    if (gameState == GAME_START)
+    if (gameState == GAME_START && !menuState.isOpen)
     {
         drawStartAnimation();
     }

@@ -30,6 +30,7 @@
 #include "data/savegame.h"
 #include "data/settings.h"
 #include "input/inventorymenu.h"
+#include "input/savemenu.h"
 #include "input/buttonstate.h"
 
 //======================================
@@ -56,6 +57,33 @@ EncoderDirection readEncoder()
 
 void handleStartButtons()
 {
+    if (menuState.isOpen)
+    {
+        const EncoderDirection direction = readEncoder();
+        if (direction == ENCODER_CLOCKWISE)
+        {
+            menuCursorDown();
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        else if (direction == ENCODER_COUNTERCLOCKWISE)
+        {
+            menuCursorUp();
+            playSound(SoundEffect::MENU_MOVE);
+        }
+
+        if (encoderPressed() || buttonAPressed())
+        {
+            playSound(SoundEffect::MENU_SELECT);
+            menuActivate();
+        }
+        if (buttonBPressed())
+        {
+            playSound(SoundEffect::MENU_BACK);
+            menuCancel();
+        }
+        return;
+    }
+
     if (buttonAPressed())
     {
         playSound(SoundEffect::MENU_SELECT);
@@ -66,26 +94,8 @@ void handleStartButtons()
 
     if (buttonBPressed())
     {
-        if (!loadGame(player))
-        {
-            playSound(SoundEffect::ERROR);
-            setGameMessage("No saved game found.");
-            return;
-        }
-
-        // Dungeon runs are runtime-only and belong to the character that
-        // created them. Loading a character starts with no retained run.
-        abortCombat();
-        resetDungeonRun(dungeon);
-
         playSound(SoundEffect::MENU_SELECT);
-        clearGameMessage();
-        resetButtonStates();
-
-        townSelection = TOWN_STAY_HOME;
-        redrawType = REDRAW_FULL;
-        gameState = GAME_TOWN;
-        needsRedraw = true;
+        openLoadGameMenu();
     }
 }
 
@@ -140,6 +150,14 @@ void handleCharacterCreationButtons()
 
                 playSound(SoundEffect::MENU_MOVE);
                 break;
+
+            case CCS_NAME_ENTRY:
+                if (direction == ENCODER_CLOCKWISE)
+                    rotateCharacterNameCW();
+                else
+                    rotateCharacterNameCCW();
+                playSound(SoundEffect::MENU_MOVE);
+                break;
         }
     }
 
@@ -171,6 +189,10 @@ void handleCharacterCreationButtons()
 
                 // Menu options are confirmed with the A button so the
                 // encoder remains navigation-only during character creation.
+                break;
+
+            case CCS_NAME_ENTRY:
+                acceptCharacter();
                 break;
         }
     }
@@ -205,6 +227,11 @@ void handleCharacterCreationButtons()
                 createPreviewCharacter();
                 playSound(SoundEffect::MENU_SELECT);
                 break;
+
+            case CCS_NAME_ENTRY:
+                appendSelectedCharacterNameCharacter();
+                playSound(SoundEffect::MENU_SELECT);
+                break;
         }
     }
 
@@ -236,6 +263,11 @@ void handleCharacterCreationButtons()
             case CCS_MENU:
 
                 closeCharacterMenu();
+                playSound(SoundEffect::MENU_BACK);
+                break;
+
+            case CCS_NAME_ENTRY:
+                backspaceCharacterName();
                 playSound(SoundEffect::MENU_BACK);
                 break;
         }
@@ -312,10 +344,7 @@ void handleTownButtons() {
                     break;
 
                 case TOWN_HOME_SAVE_GAME:
-                    setGameMessage(saveGame(player)
-                        ? "Game saved."
-                        : "Unable to save game.");
-                    needsRedraw = true;
+                    openSaveGameMenu();
                     break;
 
                 case TOWN_HOME_CHARACTER_SHEET:

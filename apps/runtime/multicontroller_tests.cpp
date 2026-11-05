@@ -188,7 +188,7 @@ int main(int argc,char** argv) {
    for(unsigned rotation=0;rotation<classIndex;++rotation)tap(id,"cw");
    tap(id,"a");if(getCharacterCreationState()==CCS_WEAPON_STYLE_SELECT)tap(id,"a");
    check(getCharacterCreationState()==CCS_VIEW_STATS,"original rolled class preview");
-   tap(id,"a");tap(id,"a");
+   tap(id,"a");tap(id,"a");tap(id,"encoder");
    check(gameState==GAME_TOWN&&player.health.currentHP>0,"production character accepted");
    check(player.characterClass==classIndex && player.level==1 && player.xp==0 && player.inventory.gold==STARTING_GOLD,"full original character progression and inventory");
    check(player.magic.currentMP==player.magic.maxMP,"production MP retained");

@@ -42,7 +42,7 @@
 
 - Buttons and encoder input are polled centrally, then dispatched by game state. Map input calls movement directly and menus invoke gameplay actions directly.
 - The existing stack-based menu system is retained. Stage 1 adds a Multiplayer submenu without redesigning it.
-- Saves use versioned `Preferences`/NVS records for the one global character. Dungeon runs and multiplayer sessions are runtime-only. The current saved character record does not persist a display name.
+- Saves use three versioned `Preferences`/NVS slots. Version 10 persists the bounded character name used to populate the existing multiplayer display-name field. Dungeon runs and multiplayer sessions remain runtime-only.
 
 ### Connectivity and memory
 

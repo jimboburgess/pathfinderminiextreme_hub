@@ -45,7 +45,8 @@ int main(int argc,char** argv) {
         tap("a");check(getCharacterCreationState()==CCS_WEAPON_STYLE_SELECT,"Fighter weapon style");
         tap("a");check(getCharacterCreationState()==CCS_VIEW_STATS,"Production rolled statistics");capture("play-stats.rgb565");
         tap("a");check(isCharacterMenuOpen(),"Original character menu");
-        tap("a");check(gameState==GAME_TOWN && player.health.currentHP>0,"Accepted character enters town");capture("play-town.rgb565");
+        tap("a");check(isCharacterNameEntryActive(),"Character naming follows acceptance");
+        tap("encoder");check(gameState==GAME_TOWN && player.health.currentHP>0,"Accepted character enters town");capture("play-town.rgb565");
         pfme::runtime::input("encoder",true);wait(800);check(isCharacterSheetVisible(),"Long press opens original sheet");
         pfme::runtime::input("encoder",false);wait(350);tap("b");check(!isCharacterSheetVisible(),"B closes sheet");
         tap("cw");tap("cw");tap("a");

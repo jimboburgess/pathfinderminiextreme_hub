@@ -113,6 +113,8 @@ void createCharacter(Character &character,
                      CharacterClass characterClass,
                      WeaponGroup fighterWeaponGroup)
 {
+    character = {};
+    setCharacterName(character, DEFAULT_CHARACTER_NAME);
     int scores[6];
 
     rollAbilities(scores);

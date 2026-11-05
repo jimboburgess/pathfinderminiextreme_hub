@@ -27,7 +27,8 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
         if(request.type=="input") {
             std::string action;const auto* down=request.fields.if_contains("down");
             if(!fieldsAre(request,{"action","down"}) || !textField(request,"action",8,action) || !down || !down->is_bool())return fail("InvalidRequest");
-            if(action!="cw" && action!="ccw" && action!="encoder" && action!="a" && action!="b" && action!="release")return fail("InvalidAction");
+            const bool textKey=action.size()==5 && action.compare(0,4,"key:")==0;
+            if(action!="cw" && action!="ccw" && action!="encoder" && action!="a" && action!="b" && action!="release" && !textKey)return fail("InvalidAction");
             if(!party_->input(participant.handle,connection.serial,action,down->as_bool()))return fail("InvalidAction");
             partyLastInput_[id]=std::chrono::steady_clock::now();return ok();
         }
@@ -38,6 +39,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
         if(position>230400)return fail("InvalidCursor");
         json::object frame;
         if(!partyScreens_[id].next(pixels,since,static_cast<size_t>(position),frame))return fail("InvalidCursor");
+        frame["text_input"]=runtime::textInputActive();
         return ok(std::move(frame));
     }
     if(request.type=="party_status")return fail("RuntimeMode");
@@ -56,7 +58,8 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
         std::string action;
         const auto* down=request.fields.if_contains("down");
         if(!fieldsAre(request,{"action","down"}) || !textField(request,"action",8,action) || !down || !down->is_bool()) return fail("InvalidRequest");
-        if(action!="cw" && action!="ccw" && action!="encoder" && action!="a" && action!="b" && action!="release") return fail("InvalidAction");
+        const bool textKey=action.size()==5 && action.compare(0,4,"key:")==0;
+        if(action!="cw" && action!="ccw" && action!="encoder" && action!="a" && action!="b" && action!="release" && !textKey) return fail("InvalidAction");
         if(!runtime::input(action,down->as_bool())) return fail("InvalidAction");
         lastInput_=std::chrono::steady_clock::now();
         return ok();
@@ -69,5 +72,6 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
     if(position>230400) return fail("InvalidCursor");
     json::object frame;
     if(!screen_.next(runtime::pixels(),since,static_cast<size_t>(position),frame)) return fail("InvalidCursor");
+    frame["text_input"]=runtime::textInputActive();
     return ok(std::move(frame));
 }

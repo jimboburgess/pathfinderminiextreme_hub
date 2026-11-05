@@ -95,6 +95,34 @@ static void drawClassSelection() {
     tft.print("Encoder = Select");
 }
 
+static void drawNameEntry()
+{
+    tft.fillScreen(ST77XX_BLACK);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setTextSize(2);
+    tft.setCursor(28, 18);
+    tft.println("Name Your Hero");
+
+    tft.drawRect(18, 60, 204, 42, ST77XX_WHITE);
+    tft.setCursor(28, 73);
+    tft.print(getCharacterName(creation.preview));
+
+    tft.setTextSize(1);
+    tft.setCursor(28, 112);
+    tft.print(hasCharacterName(creation.preview)
+        ? "Current name" : "Empty uses Adventurer");
+
+    tft.setTextSize(4);
+    tft.setCursor(104, 140);
+    tft.print(creation.currentNameCharacter());
+
+    tft.setTextSize(1);
+    tft.setCursor(8, 205);
+    tft.print("Turn=Character  A=Add  B=Backspace");
+    tft.setCursor(48, 220);
+    tft.print("Encoder Press=Done");
+}
+
 static void drawPreview()
 {
     drawCharacterSheet();
@@ -151,7 +179,11 @@ bool isCharacterMenuOpen()
 
 void drawCharacterCreationScreen()
 {
-    if (creation.creationState == CCS_WEAPON_STYLE_SELECT)
+    if (creation.creationState == CCS_NAME_ENTRY)
+    {
+        drawNameEntry();
+    }
+    else if (creation.creationState == CCS_WEAPON_STYLE_SELECT)
     {
         drawWeaponStyleSelection();
     }
@@ -217,6 +249,57 @@ void acceptCharacter() {
     needsRedraw=true;
 }
 
+void beginCharacterNameEntry()
+{
+    creation.beginNameEntry();
+    suppressMenuInputUntilRelease();
+    needsRedraw = true;
+}
+
+void rotateCharacterNameCW()
+{
+    creation.rotateNameCharacter(true);
+    needsRedraw = true;
+}
+
+void rotateCharacterNameCCW()
+{
+    creation.rotateNameCharacter(false);
+    needsRedraw = true;
+}
+
+void appendSelectedCharacterNameCharacter()
+{
+    creation.appendSelectedNameCharacter();
+    needsRedraw = true;
+}
+
+bool appendCharacterNameCharacter(char character)
+{
+    const bool appended = creation.appendNameCharacter(character);
+    if (appended)
+        needsRedraw = true;
+    return appended;
+}
+
+void backspaceCharacterName()
+{
+    if (!creation.backspaceName())
+        creation.cancelNameEntry();
+    needsRedraw = true;
+}
+
+void cancelCharacterNameEntry()
+{
+    creation.cancelNameEntry();
+    needsRedraw = true;
+}
+
+bool isCharacterNameEntryActive()
+{
+    return creation.creationState == CCS_NAME_ENTRY;
+}
+
 void openCharacterMenu()
 {
     Serial.println("Open Menu");
@@ -271,7 +354,7 @@ void menuSelect()
     switch (creation.selectedMenu)
     {
         case MENU_ACCEPT:
-            acceptCharacter();
+            beginCharacterNameEntry();
             break;
 
         case MENU_REROLL:

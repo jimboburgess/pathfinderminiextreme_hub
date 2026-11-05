@@ -339,7 +339,7 @@ void copyCharacterToNetwork(
     destination = NetworkCharacterState{};
     destination.playerID = playerID;
     strncpy(destination.displayName,
-            source.name.length() > 0 ? source.name.c_str() : "Adventurer",
+            getCharacterName(source),
             NETWORK_PLAYER_NAME_SIZE - 1);
     destination.characterClass = static_cast<uint8_t>(source.characterClass);
     destination.level = source.level;
@@ -396,7 +396,7 @@ void applyNetworkCharacter(
     Character& destination)
 {
     destination = Character{};
-    destination.name = source.displayName;
+    setCharacterName(destination, source.displayName);
     destination.characterClass =
         static_cast<CharacterClass>(source.characterClass);
     destination.team = TEAM_PLAYER;

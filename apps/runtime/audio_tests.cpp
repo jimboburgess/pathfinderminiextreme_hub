@@ -56,6 +56,7 @@ int main() {
   trace<<"]}\n";trace.close();
   for(unsigned id=0;id<2;++id) {
    for(unsigned press=0;press<5;++press)tap(id,"a");
+   tap(id,"encoder");
    check(gameState==GAME_TOWN,"original character creation for audio audiences");
   }
   for(unsigned id=0;id<2;++id){tap(id,"cw");tap(id,"cw");tap(id,"a");if(menuState.isOpen)tap(id,"a");}

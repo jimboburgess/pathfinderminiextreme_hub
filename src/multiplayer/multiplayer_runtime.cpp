@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include <cstring>
+
 #include "data/entities.h"
 #include "data/game.h"
 #include "dungeon/combat.h"
@@ -24,11 +26,20 @@ MultiplayerAvailability currentAvailability()
 
 void refreshLocalProfile()
 {
-    multiplayerSession.setLocalProfile(
-        player.name.c_str(),
-        player.level,
-        static_cast<uint8_t>(player.characterClass));
+    const NetworkPlayerProfile profile = makeNetworkPlayerProfile(player);
+    multiplayerSession.setLocalProfile(profile.displayName, profile.level,
+                                       profile.characterClass);
 }
+}
+
+NetworkPlayerProfile makeNetworkPlayerProfile(const Character& character)
+{
+    NetworkPlayerProfile profile = {};
+    std::strncpy(profile.displayName, getCharacterName(character),
+                 NETWORK_PLAYER_NAME_SIZE - 1);
+    profile.level = character.level;
+    profile.characterClass = static_cast<uint8_t>(character.characterClass);
+    return profile;
 }
 
 void initializeMultiplayerRuntime()

@@ -109,6 +109,14 @@ enum MenuAction
     MENU_TOGGLE_AUDIO,
     MENU_TOGGLE_ENCODER_ROTATION,
     MENU_SAVE_GAME,
+    MENU_LOAD_SLOT_1,
+    MENU_LOAD_SLOT_2,
+    MENU_LOAD_SLOT_3,
+    MENU_SAVE_SLOT_1,
+    MENU_SAVE_SLOT_2,
+    MENU_SAVE_SLOT_3,
+    MENU_OVERWRITE_NO,
+    MENU_OVERWRITE_YES,
     MENU_OPTIONS,
     MENU_EXIT_TITLE,
 
@@ -217,6 +225,7 @@ struct MenuState
 
 extern MenuState menuState;
 extern const Menu mainMenu;
+extern char menuBodyScratch[128];
 
 bool isMenuItemVisible(MenuAction action);
 bool isMenuItemEnabled(MenuAction action);

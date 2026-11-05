@@ -6,7 +6,8 @@ enum CharacterCreationState
     CCS_CLASS_SELECT,
     CCS_WEAPON_STYLE_SELECT,
     CCS_VIEW_STATS,
-    CCS_MENU
+    CCS_MENU,
+    CCS_NAME_ENTRY
 };
 
 enum CharacterCreationMenuOption
@@ -50,8 +51,44 @@ struct CharacterCreationModel
         showingPreview=true; creationState=CCS_VIEW_STATS;return true;
     }
     void reroll() {if(showingPreview)createCharacter(preview,selectedClass,selectedWeaponStyle);}
+    void beginNameEntry() {
+        if(!showingPreview)return;
+        clearCharacterName(preview);selectedMenu=MENU_ACCEPT;
+        creationState=CCS_NAME_ENTRY;
+    }
+    void rotateNameCharacter(bool clockwise) {
+        static const char characters[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ";
+        const uint8_t count=sizeof(characters)-1;
+        const uint8_t index=static_cast<uint8_t>(selectedMenu);
+        selectedMenu=static_cast<CharacterCreationMenuOption>((index+(clockwise?1:count-1))%count);
+    }
+    char currentNameCharacter() const {
+        static const char characters[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ";
+        return characters[static_cast<uint8_t>(selectedMenu)];
+    }
+    bool appendNameCharacter(char character) {
+        if(creationState!=CCS_NAME_ENTRY || !isSupportedCharacterNameCharacter(character))return false;
+        const char* current=hasCharacterName(preview)?getCharacterName(preview):"";
+        uint8_t length=0;while(current[length]!='\0'&&length+1<CHARACTER_NAME_SIZE)length++;
+        if(length+1>=CHARACTER_NAME_SIZE)return false;
+        char updated[CHARACTER_NAME_SIZE]={};
+        for(uint8_t index=0;index<length;index++)updated[index]=current[index];
+        updated[length]=character;setCharacterName(preview,updated);return true;
+    }
+    bool appendSelectedNameCharacter() {return appendNameCharacter(currentNameCharacter());}
+    bool backspaceName() {
+        if(creationState!=CCS_NAME_ENTRY || !hasCharacterName(preview))return false;
+        const char* current=getCharacterName(preview);uint8_t length=0;
+        while(current[length]!='\0'&&length+1<CHARACTER_NAME_SIZE)length++;
+        if(length==0)return false;char updated[CHARACTER_NAME_SIZE]={};
+        for(uint8_t index=0;index+1<length;index++)updated[index]=current[index];
+        if(length==1)clearCharacterName(preview);else setCharacterName(preview,updated);return true;
+    }
+    void cancelNameEntry() {if(creationState==CCS_NAME_ENTRY){creationState=CCS_MENU;selectedMenu=MENU_ACCEPT;}}
     bool accept(Character& destination) {
         if(!showingPreview)return false;
-        destination=preview;showingPreview=false;return true;
+        destination=preview;setCharacterName(destination,
+            hasCharacterName(preview)?getCharacterName(preview):nullptr);
+        showingPreview=false;return true;
     }
 };

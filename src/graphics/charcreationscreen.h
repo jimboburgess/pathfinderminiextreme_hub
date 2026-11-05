@@ -20,6 +20,14 @@ void cancelFighterWeaponStyleSelection();
 void createPreviewCharacter();
 void rerollCharacter();
 void acceptCharacter();
+void beginCharacterNameEntry();
+void rotateCharacterNameCW();
+void rotateCharacterNameCCW();
+void appendSelectedCharacterNameCharacter();
+bool appendCharacterNameCharacter(char character);
+void backspaceCharacterName();
+void cancelCharacterNameEntry();
+bool isCharacterNameEntryActive();
 
 bool isShowingPreview();
 bool isCharacterMenuOpen();

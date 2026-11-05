@@ -9,7 +9,7 @@
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
-  let leaving=false;
+  let leaving=false, textInput=false;
   let ws=null, secret="", proof="", id=0, pending=null, playing=false, since="0", offset=0, chunks=[], total=0;
   let requests=[], held=new Set(), repeat=new Map(), scheduled=null, connecting=false, disconnectReason="";
   const status=text=>{$("status").textContent=text;};
@@ -34,6 +34,7 @@
     });
   }
   function applyFrame(frame) {
+    textInput=frame.text_input===true;
     if(frame.encoding!=="rgb565-patch-rle1" || frame.base!==since || frame.offset!==offset || !Number.isInteger(frame.total) || frame.total<0 || frame.total>230400 || typeof frame.more!=="boolean") throw new Error("Invalid frame sequence");
     const bytes=Uint8Array.from(atob(frame.pixels),c=>c.charCodeAt(0));
     if(bytes.length>9216 || (offset && frame.total!==total) || offset+bytes.length>frame.total) throw new Error("Invalid frame size");
@@ -88,8 +89,8 @@
   }
   function release(action) {if(!held.delete(action))return;clearTimeout(repeat.get(action));clearInterval(repeat.get(action));repeat.delete(action);if(action!=="cw"&&action!=="ccw")enqueue(action,false);}
   function releaseAll(){for(const timer of repeat.values()){clearTimeout(timer);clearInterval(timer);}repeat.clear();held.clear();requests=[];if(playing)enqueue("release",false);}
-  function actionFor(key){return {ArrowDown:"cw",s:"cw",S:"cw",ArrowUp:"ccw",w:"ccw",W:"ccw",Enter:"encoder"," ":"a",Escape:"b"}[key];}
-  document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;const a=actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a);}});
+  function actionFor(key){return {ArrowDown:"cw",s:"cw",S:"cw",ArrowUp:"ccw",w:"ccw",W:"ccw",Enter:"encoder"," ":"a",Escape:"b",Backspace:"b"}[key];}
+  document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;if(textInput&&playing&&event.key.length===1){event.preventDefault();enqueue(`key:${event.key}`,true);return;}const a=actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a);}});
   document.addEventListener("keyup",event=>{const a=actionFor(event.key);if(a){release(a);if(playing)event.preventDefault();}});
   window.addEventListener("blur",()=>{releaseAll();audio?.pause();});document.addEventListener("visibilitychange",()=>{if(document.hidden){releaseAll();audio?.pause();}});
   for(const button of $("controls").querySelectorAll("button")){

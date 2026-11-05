@@ -117,6 +117,7 @@ def main():
             assert client.call('input',action='a',down=True,audio_listener=0)['error']['code']=='InvalidRequest'
             view=View(client);views.append(view);title=view.frame();assert any(title)
             for _ in range(5):tap(client,'a')
+            tap(client,'encoder')
             town=view.frame();assert town!=title
         # Each accepted Fighter has a complete production Character; the native
         # gameplay tests assert HP/inventory and exact tile coordinates.

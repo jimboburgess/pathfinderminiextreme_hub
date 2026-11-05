@@ -461,7 +461,13 @@ void drawCharacterSheet()
     //--------------------------------------------------
 
     drawText(LEFT_X, y,
-             getCharacterClassName(currentCharacter->characterClass));
+             getCharacterName(*currentCharacter));
+
+    char identityText[32];
+    snprintf(identityText, sizeof(identityText), "%s Lv %u",
+             getCharacterClassName(currentCharacter->characterClass),
+             static_cast<unsigned>(currentCharacter->level));
+    drawText(LEFT_X, y + 12, identityText);
 
     char xpText[32];
     uint32_t nextLevelXP = currentCharacter->xp +
@@ -470,8 +476,8 @@ void drawCharacterSheet()
     snprintf(xpText, sizeof(xpText), "XP %lu/%lu",
              static_cast<unsigned long>(currentCharacter->xp),
              static_cast<unsigned long>(nextLevelXP));
-    drawText(75, y, xpText);
-    y += 16;
+    drawText(90, y + 12, xpText);
+    y += 28;
 
     drawDivider(y);
     y += 8;
