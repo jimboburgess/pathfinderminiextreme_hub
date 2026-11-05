@@ -1617,14 +1617,16 @@ static void finishTurnStart(Entity* entity)
 
     announceTurn(entity);
 
+    char turnMessage[64];
+    formatCombatTurnMessage(*entity, turnMessage, sizeof(turnMessage));
+    setGameMessage(turnMessage);
+
     if (entity->type == ENTITY_PLAYER)
     {
-        setGameMessage("Player Turn A:Open Menu Move:Encoder");
         combat.waitingForPlayer = true;
     }
     else
     {
-        setGameMessage("Monster Turn");
         combat.waitingForPlayer = false;
     }
 
@@ -1819,6 +1821,14 @@ void announceTurn(Entity* entity)
     Serial.println(entity->character.speed);
 }
 
+void formatCombatTurnMessage(const Entity& entity,
+                             char* buffer, size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+        return;
+    snprintf(buffer, bufferSize, "%s's turn.", getEntityName(&entity));
+}
+
 void runMonsterTurn(Entity* monster)
 {
     switch (monster->turn.monsterState)
@@ -1932,6 +1942,10 @@ void nextTurn()
 {
     Serial.println("NEXT TURN");
 
+    Entity* previous = getCurrentCombatant();
+    if (previous != nullptr)
+        markEntityFootprintDirty(*previous);
+
     for (uint8_t attempts = 0; attempts < combat.combatantCount; attempts++)
     {
         combat.currentTurnIndex++;
@@ -1966,7 +1980,10 @@ void nextTurn()
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if(pfme::runtime::nativeRoomsActive())pfme::runtime::prepareNativeCombatant(getCurrentCombatant());
 #endif
-    resetActions(getCurrentCombatant());
+    Entity* current = getCurrentCombatant();
+    if (current != nullptr)
+        markEntityFootprintDirty(*current);
+    resetActions(current);
 }
 
 void endPlayerTurn()
@@ -2037,17 +2054,6 @@ void updateCombat()
                 combat.phase = COMBAT_TURN;
 
                 resetActions(getCurrentCombatant());
-
-                if (combat.turnStartConditionPhase ==
-                    TURN_START_CONDITION_NONE)
-                {
-                    Entity* current = getCurrentCombatant();
-
-                    if (current->type == ENTITY_PLAYER)
-                        setGameMessage("Player Turn");
-                    else
-                        setGameMessage("Monster Turn");
-                }
             }
 
             break;

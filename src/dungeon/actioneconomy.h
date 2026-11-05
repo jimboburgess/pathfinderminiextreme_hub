@@ -35,7 +35,10 @@ inline bool tryBeginDoubleMove(
         return false;
 
     standardActionUsed = true;
-    movementRemaining = effectiveSpeed;
+    const uint16_t combined =
+        static_cast<uint16_t>(movementRemaining) + effectiveSpeed;
+    movementRemaining = combined > UINT8_MAX
+        ? UINT8_MAX : static_cast<uint8_t>(combined);
     return true;
 }
 

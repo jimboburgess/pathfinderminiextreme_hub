@@ -34,8 +34,8 @@ int main()
 
     require(tryBeginDoubleMove(turn, 6),
             "authoritative Double Move transition is accepted");
-    require(turn.standardActionUsed && turn.movementRemaining == 6,
-            "Double Move spends standard and grants one fresh allowance");
+    require(turn.standardActionUsed && turn.movementRemaining == 9,
+            "Double Move spends standard and adds one fresh allowance");
 
     require(!canUseStandardAction(turn),
             "Double Move consumes the standard action");
@@ -55,6 +55,17 @@ int main()
             "stale Double Move execution is rejected");
     require(turn.movementRemaining == staleMovement,
             "rejected Double Move does not mutate movement");
+
+    turn = TurnState{};
+    turn.moveActionUsed = true;
+    turn.movementRemaining = 4;
+    require(tryBeginDoubleMove(turn, 6) && turn.movementRemaining == 10,
+            "moving two of six then Double Move leaves ten squares");
+
+    turn = TurnState{};
+    turn.moveActionUsed = true;
+    require(tryBeginDoubleMove(turn, 6) && turn.movementRemaining == 6,
+            "an exhausted first move gains exactly one full allowance");
 
     turn.moveActionUsed = true;
     require(!canUseMoveAction(turn),

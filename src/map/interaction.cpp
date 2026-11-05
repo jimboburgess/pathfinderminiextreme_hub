@@ -260,11 +260,6 @@ void pickRiddlemanDoorLock()
 
 bool tryInteractWithFacingEntity()
 {
-    // Looting is deliberately a post-combat map interaction. It should not
-    // bypass the existing combat action economy while a fight is active.
-    if (combat.active)
-        return false;
-
     Entity* playerEntity = getActiveMapPlayer();
 
     if (playerEntity == nullptr || !playerEntity->active)
@@ -276,7 +271,7 @@ bool tryInteractWithFacingEntity()
     if (!isInsideActiveMap(targetX, targetY))
         return false;
 
-    if (gameState == GAME_DUNGEON)
+    if (!combat.active && gameState == GAME_DUNGEON)
     {
         HealingFountain* fountain = getHealingFountainAt(
             dungeon.rooms[dungeon.currentRoom], targetX, targetY);
@@ -332,10 +327,10 @@ bool tryInteractWithFacingEntity()
         return false;
     }
 
-    if (target->type == ENTITY_NPC)
+    if (!combat.active && target->type == ENTITY_NPC)
         return handleNPCInteraction(*target);
 
-    if (target->type == ENTITY_CHEST)
+    if (!combat.active && target->type == ENTITY_CHEST)
     {
         if (gameState == GAME_DUNGEON &&
             isCurrentBrazierPuzzleRewardAt(targetX, targetY) &&
@@ -388,6 +383,23 @@ bool tryInteractWithFacingEntity()
     if (target->type != ENTITY_MONSTER || !isLootable(target->character))
         return false;
 
+    if (combat.active)
+    {
+        Entity* combatant = getCurrentCombatant();
+        if (combatant != playerEntity || !isPlayerTurn() ||
+            !combat.waitingForPlayer ||
+            !canCharacterAct(playerEntity->character) ||
+            playerEntity->turn.standardActionUsed)
+        {
+            return false;
+        }
+
+        // Searching a body is a standard action. Item selection remains in
+        // the existing corpse inventory UI and the turn advances only after
+        // that modal closes, so the interaction can finish atomically.
+        playerEntity->turn.standardActionUsed = true;
+    }
+
     // The generator is idempotent. This also supports an older corpse that
     // entered STATE_DEAD before the loot system was added.
     generateCorpseLoot(*target, playerEntity->character.level);
@@ -409,6 +421,8 @@ bool tryInteractWithFacingEntity()
         if (gold == 0)
             setGameMessage("Nothing useful remains.");
 
+        if (combat.active)
+            checkEndPlayerTurn();
         return true;
     }
 

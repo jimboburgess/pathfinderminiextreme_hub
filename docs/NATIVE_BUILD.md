@@ -104,6 +104,18 @@ initiative controller, spells, persistence, rendering, audio, ESP-NOW, and
 network transport are intentionally reported as unavailable rather than
 imitated.
 
+The playable runtime follows the shared PF1e combat action economy. After a
+combatant starts its first move, **Double Move** spends the unused standard
+action and adds one current effective-speed allowance to any movement still
+remaining. Searching a corpse during combat uses the existing loot UI and
+spends a standard action. Initiative changes emit a named bottom message and
+draw a cyan outline around the active combatant's full footprint.
+
+Player weapon accuracy is derived from the production character rules: melee
+uses BAB + Strength modifier, while ranged uses BAB + Dexterity modifier. Both
+then apply applicable weapon, fighter weapon-group, condition, and situational
+bonuses or penalties. The character sheet displays MP as current/max.
+
 Phase 3D verified Windows MinGW GCC 13.1 and the actual Ubuntu NUC with GCC
 15.2 and CMake 4.2.3, including all native tests and the installed executable.
 

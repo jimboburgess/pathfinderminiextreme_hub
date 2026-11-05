@@ -26,6 +26,8 @@ bool backCharacterSheetSelection();
 
 void updateCharacterSheet();
 void drawCharacterSheet();
+void formatCharacterMP(const Character& character,
+                       char* buffer, size_t bufferSize);
 
 void openCharacterSheet();
 void openCharacterView(CharacterView view);

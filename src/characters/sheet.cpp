@@ -86,6 +86,16 @@ static void drawLabelValue(int labelX,
     drawValue(valueX, y, value);
 }
 
+void formatCharacterMP(const Character& character,
+                       char* buffer, size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+        return;
+    snprintf(buffer, bufferSize, "%d/%d",
+             character.magic.currentMP,
+             character.magic.maxMP);
+}
+
 void scrollCharacterSheetUp()
 {
     if (characterView == CHARACTER_VIEW_EQUIPMENT)
@@ -489,6 +499,12 @@ void drawCharacterSheet()
     drawText(145, y, "/");
     drawValue(155, y,
               currentCharacter->health.maxHP);
+    y += 12;
+
+    char mpText[20];
+    formatCharacterMP(*currentCharacter, mpText, sizeof(mpText));
+    drawText(LEFT_X, y, "MP");
+    drawText(VALUE_X, y, mpText);
     y += 12;
 
     drawLabelValue(LEFT_X, VALUE_X, y, "Armor Class", getArmorClass(*currentCharacter));

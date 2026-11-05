@@ -29,10 +29,46 @@ bool testAbilityModifiers()
 {
     CHECK(calculateAbilityModifier(1) == -5);
     CHECK(calculateAbilityModifier(9) == -1);
+    CHECK(calculateAbilityModifier(8) == -1);
+    CHECK(calculateAbilityModifier(7) == -2);
     CHECK(calculateAbilityModifier(10) == 0);
     CHECK(calculateAbilityModifier(11) == 0);
     CHECK(calculateAbilityModifier(12) == 1);
+    CHECK(calculateAbilityModifier(14) == 2);
+    CHECK(calculateAbilityModifier(15) == 2);
+    CHECK(calculateAbilityModifier(16) == 3);
     CHECK(calculateAbilityModifier(18) == 4);
+    return true;
+}
+
+bool testPlayerAttackBonusMatrix()
+{
+    const int bab = 1;
+    CHECK(calculateAttackBonus(
+        bab, calculateAbilityModifier(10), 0, 0, 0) == 1);
+    CHECK(calculateAttackBonus(
+        bab, calculateAbilityModifier(14), 0, 0, 0) == 3);
+    CHECK(calculateAttackBonus(
+        bab, calculateAbilityModifier(18), 0, 0, 0) == 5);
+
+    ItemInstance magicWeapon = makeItemInstance(ITEM_LONGSWORD);
+    magicWeapon.enhancementBonus = 1;
+    CHECK(calculateAttackBonus(
+        bab, calculateAbilityModifier(14),
+        calculateItemWeaponAttackBonus(true, magicWeapon), 0, 0) == 4);
+
+    const int matchingFocus = calculateFighterWeaponAttackBonus(
+        CLASS_FIGHTER, 2, WEAPON_GROUP_BLADES, WEAPON_GROUP_BLADES);
+    const int nonmatchingFocus = calculateFighterWeaponAttackBonus(
+        CLASS_FIGHTER, 2, WEAPON_GROUP_BLADES, WEAPON_GROUP_AXES);
+    CHECK(calculateAttackBonus(2, 0, 0, matchingFocus, 0) == 3);
+    CHECK(calculateAttackBonus(2, 0, 0, nonmatchingFocus, 0) == 2);
+
+    const int rangedDexterityBonus = calculateAttackBonus(
+        bab, calculateAbilityModifier(14), 0, 0, 0);
+    CHECK(rangedDexterityBonus == 3);
+    CHECK(rangedDexterityBonus +
+        calculateItemWeaponAttackBonus(true, magicWeapon) == 4);
     return true;
 }
 
@@ -249,6 +285,7 @@ bool runSelfTests(bool quiet)
 {
     const TestCase tests[] = {
         {"ability modifiers", testAbilityModifiers},
+        {"player attack bonus matrix", testPlayerAttackBonusMatrix},
         {"class progression", testClassProgression},
         {"saving throws", testSavingThrows},
         {"iterative attacks", testIterativeAttacks},

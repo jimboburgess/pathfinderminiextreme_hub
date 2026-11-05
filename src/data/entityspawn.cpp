@@ -331,7 +331,7 @@ const char* getEntityName(const Entity* entity)
     switch (entity->type)
     {
         case ENTITY_PLAYER:
-            return "Player";
+            return getCharacterName(entity->character);
 
         case ENTITY_MONSTER:
         {

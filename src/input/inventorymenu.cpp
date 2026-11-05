@@ -725,6 +725,12 @@ void closeInventoryMenu()
     if (!inventoryMenu.open)
         return;
 
+    Entity* combatant = getCurrentCombatant();
+    const bool finishCombatLootAction =
+        inventoryMenu.mode == INVENTORY_MENU_LOOT && combat.active &&
+        combatant != nullptr &&
+        inventoryMenu.character == &combatant->character;
+
     inventoryMenu.open = false;
     inventoryMenu.character = nullptr;
     inventoryMenu.corpse = nullptr;
@@ -742,6 +748,9 @@ void closeInventoryMenu()
     backgroundNeedsRedraw = true;
     redrawType = REDRAW_FULL;
     needsRedraw = true;
+
+    if (finishCombatLootAction)
+        checkEndPlayerTurn();
 }
 
 void handleInventoryMenuButtons()
