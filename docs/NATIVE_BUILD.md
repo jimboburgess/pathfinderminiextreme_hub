@@ -447,3 +447,26 @@ PlatformIO dependency reproducibility remains a deferred cleanup item. A fresh
 caret-compatible resolution can select newer Adafruit libraries and exceed internal
 DRAM by eight bytes; the established working versions are Adafruit GFX 1.12.6 and
 Adafruit ST7735/ST7789 1.11.0. Batch 3 does not change dependency constraints.
+
+## Playtest Batch 4 spell usability
+
+Supported spells now use the production ability resolver during dungeon and
+forest exploration. Healing, self-buffs, and allied touch buffs spend MP only on
+confirmation and leave exploration active. Confirming a hostile spell establishes
+combat, resolves that spell once as the opening hostile action, then rolls normal
+initiative. The opening cast consumes the caster's first combat standard action,
+so that turn retains movement but cannot cast or attack again. Canceling targeting
+spends nothing and starts no encounter.
+
+Targeting uses shared, allocation-free tile predicates. The existing Chebyshev
+grid convention treats each square as five feet, so 30 feet is six tiles. Target
+range marks legal origins separately from the purple affected-area preview.
+Radius, cone, and line previews call the same geometry used by resolution and are
+clipped to the active map and current line-of-effect behavior. Channel Energy and
+Turn Undead both use the same six-tile centered-range helper; Turn Undead also
+keeps its production line-of-sight restriction.
+
+The ESP-NOW combat cast path remains authoritative and independently revalidates
+range, room, target, resources, and effects. Exploration casting remains hidden
+during an ESP-NOW shared activity because that transport does not yet define a
+committed exploration-ability command; it is not executed client-side.

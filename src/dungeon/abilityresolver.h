@@ -113,9 +113,31 @@ EnergyInteraction getEnergyInteraction(
 bool isAbilityEffectHostileToTarget(
     const Ability& ability,
     const Character& target);
+bool isAbilityHostile(const Ability& ability);
+
+// Pure presentation/validation geometry. These helpers do not spend MP or
+// apply effects; committed casts still run through the authoritative resolver.
+bool isAbilityTargetTileInRange(
+    const Entity& caster,
+    AbilityID abilityID,
+    int tileX,
+    int tileY);
+bool isTileInRadiusAbilityArea(
+    const Entity& caster,
+    AbilityID abilityID,
+    int centerX,
+    int centerY,
+    int tileX,
+    int tileY);
+bool isTileInCenteredAbilityArea(
+    const Entity& caster,
+    AbilityID abilityID,
+    int tileX,
+    int tileY);
 
 // Shared cone geometry for both rendering and execution. The predicate
-// includes map bounds and line of effect, so previewed tiles are authoritative.
+// includes map bounds and line of effect; committed resolution remains
+// authoritative.
 bool isTileInDirectionalAbilityArea(
     const Entity& caster,
     AbilityID abilityID,

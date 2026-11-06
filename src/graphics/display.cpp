@@ -40,6 +40,7 @@ namespace
 constexpr uint16_t COLOR_GREASE = 0xB5A6;
 constexpr uint16_t COLOR_WEB = 0xCE79;
 constexpr uint16_t COLOR_AREA_TARGET = 0xC81F;
+constexpr uint16_t COLOR_ABILITY_RANGE = 0x431F;
 
 void getDamageFlashColors(DamageType type, uint16_t& primary, uint16_t& highlight)
 {
@@ -139,53 +140,24 @@ void drawGroundAbilityCursorTile(int tileX, int tileY)
     int targetX = 0;
     int targetY = 0;
     const Ability* ability = getAbility(combat.selectedAbility);
+    Entity* caster = getActiveMapPlayer();
 
-    if (ability == nullptr ||
+    if (ability == nullptr || caster == nullptr ||
         !isInsideActiveMap(tileX, tileY) ||
         !getSelectedAbilityGroundTarget(targetX, targetY) ||
-        abs(tileX - targetX) > ability->areaRadiusTiles ||
-        abs(tileY - targetY) > ability->areaRadiusTiles)
+        !isTileInRadiusAbilityArea(
+            *caster, combat.selectedAbility,
+            targetX, targetY, tileX, tileY))
     {
         return;
     }
 
-    int minimumX = targetX - ability->areaRadiusTiles;
-    int maximumX = targetX + ability->areaRadiusTiles;
-    int minimumY = targetY - ability->areaRadiusTiles;
-    int maximumY = targetY + ability->areaRadiusTiles;
-
-    if (minimumX < 0)
-        minimumX = 0;
-    if (minimumY < 0)
-        minimumY = 0;
-    if (maximumX >= getActiveMapWidth())
-        maximumX = getActiveMapWidth() - 1;
-    if (maximumY >= getActiveMapHeight())
-        maximumY = getActiveMapHeight() - 1;
-
     int screenX = tileX * TILE_SIZE;
     int screenY = tileY * TILE_SIZE;
 
-    // Draw only the outside edge, producing one clear perimeter around the
-    // complete affected area instead of a grid of individually boxed tiles.
-    if (tileY == minimumY)
-        tft.drawLine(screenX, screenY,
-                     screenX + TILE_SIZE - 1, screenY,
-                     COLOR_AREA_TARGET);
-    if (tileY == maximumY)
-        tft.drawLine(screenX, screenY + TILE_SIZE - 1,
-                     screenX + TILE_SIZE - 1,
-                     screenY + TILE_SIZE - 1,
-                     COLOR_AREA_TARGET);
-    if (tileX == minimumX)
-        tft.drawLine(screenX, screenY,
-                     screenX, screenY + TILE_SIZE - 1,
-                     COLOR_AREA_TARGET);
-    if (tileX == maximumX)
-        tft.drawLine(screenX + TILE_SIZE - 1, screenY,
-                     screenX + TILE_SIZE - 1,
-                     screenY + TILE_SIZE - 1,
-                     COLOR_AREA_TARGET);
+    tft.drawRect(screenX + 1, screenY + 1,
+                 TILE_SIZE - 2, TILE_SIZE - 2,
+                 COLOR_AREA_TARGET);
 
     if (tileX != targetX || tileY != targetY)
         return;
@@ -212,6 +184,28 @@ void drawGroundAbilityCursorTile(int tileX, int tileY)
                  baseX - perpendicularX,
                  baseY - perpendicularY,
                  COLOR_AREA_TARGET);
+}
+
+void drawAbilityRangeTile(int tileX, int tileY)
+{
+    Entity* caster = getActiveMapPlayer();
+    if (caster == nullptr || !isPlayerTargetingAbility() ||
+        isPlayerTargetingDirectionalAbility() ||
+        !isAbilityTargetTileInRange(
+            *caster, combat.selectedAbility, tileX, tileY))
+    {
+        return;
+    }
+
+    const int screenX = tileX * TILE_SIZE;
+    const int screenY = tileY * TILE_SIZE;
+    tft.drawPixel(screenX + 2, screenY + 2, COLOR_ABILITY_RANGE);
+    tft.drawPixel(screenX + TILE_SIZE - 3, screenY + 2,
+                  COLOR_ABILITY_RANGE);
+    tft.drawPixel(screenX + 2, screenY + TILE_SIZE - 3,
+                  COLOR_ABILITY_RANGE);
+    tft.drawPixel(screenX + TILE_SIZE - 3,
+                  screenY + TILE_SIZE - 3, COLOR_ABILITY_RANGE);
 }
 
 void drawDirectionalAbilityCursorTile(int tileX, int tileY)
@@ -527,6 +521,27 @@ void drawMapCursor()
 
     if (isPlayerTargetingAbility())
     {
+        for (int y = 0; y < getActiveMapHeight(); y++)
+        {
+            for (int x = 0; x < getActiveMapWidth(); x++)
+                drawAbilityRangeTile(x, y);
+        }
+
+        if (isPlayerTargetingCenteredAbility())
+        {
+            Entity* caster = getActiveMapPlayer();
+            if (caster != nullptr)
+            {
+                tft.drawRect(
+                    caster->x * TILE_SIZE,
+                    caster->y * TILE_SIZE,
+                    caster->spriteWidth,
+                    caster->spriteHeight,
+                    COLOR_AREA_TARGET);
+            }
+            return;
+        }
+
         if (isPlayerTargetingDirectionalAbility())
         {
             for (int y = 0; y < getActiveMapHeight(); y++)
@@ -645,6 +660,22 @@ void redrawDungeonTile(int x, int y)
 
     if (isPlayerTargetingAbility())
     {
+        drawAbilityRangeTile(x, y);
+
+        if (isPlayerTargetingCenteredAbility())
+        {
+            Entity* caster = getActiveMapPlayer();
+            if (caster != nullptr && entityOccupiesTile(*caster, x, y))
+            {
+                tft.drawRect(caster->x * TILE_SIZE,
+                             caster->y * TILE_SIZE,
+                             caster->spriteWidth,
+                             caster->spriteHeight,
+                             COLOR_AREA_TARGET);
+            }
+            return;
+        }
+
         if (isPlayerTargetingDirectionalAbility())
         {
             drawDirectionalAbilityCursorTile(x, y);
@@ -829,6 +860,22 @@ void redrawForestTile(int x, int y)
 
     if (isPlayerTargetingAbility())
     {
+        drawAbilityRangeTile(x, y);
+
+        if (isPlayerTargetingCenteredAbility())
+        {
+            Entity* caster = getActiveMapPlayer();
+            if (caster != nullptr && entityOccupiesTile(*caster, x, y))
+            {
+                tft.drawRect(caster->x * TILE_SIZE,
+                             caster->y * TILE_SIZE,
+                             caster->spriteWidth,
+                             caster->spriteHeight,
+                             COLOR_AREA_TARGET);
+            }
+            return;
+        }
+
         if (isPlayerTargetingDirectionalAbility())
         {
             drawDirectionalAbilityCursorTile(x, y);

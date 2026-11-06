@@ -127,14 +127,16 @@ static bool isValidChannelEnergyTarget(
     const Entity& cleric,
     const Entity& target)
 {
+    const Ability* ability = getAbility(ABILITY_CHANNEL_ENERGY);
     return target.active &&
+           ability != nullptr &&
            isChannelEnergyCreature(target) &&
            target.character.team == cleric.character.team &&
            (target.character.state == STATE_ALIVE ||
             target.character.state == STATE_UNCONSCIOUS) &&
            target.character.health.currentHP <
                target.character.health.maxHP &&
-           getEntityGridDistance(cleric, target) <= 6;
+           getEntityGridDistance(cleric, target) <= ability->rangeTiles;
 }
 
 static SoundEffect getAttackSound(
@@ -290,17 +292,8 @@ static bool isValidGroundAbilitySelection(
     int targetY)
 {
     return caster != nullptr && ability != nullptr &&
-           isInsideActiveMap(targetX, targetY) &&
-           getEntityGridDistanceToTile(
-               *caster, targetX, targetY) <= ability->rangeTiles &&
-            hasLineOfSightFromFootprintAt(
-                *caster,
-               caster->x,
-               caster->y,
-               targetX,
-                targetY) &&
-            getCoverFromEntityToTile(*caster, targetX, targetY) !=
-                COVER_TOTAL;
+           isAbilityTargetTileInRange(
+               *caster, ability->id, targetX, targetY);
 }
 
 static bool selectNextGroundAbilityTarget(bool forward)
@@ -1556,6 +1549,8 @@ void startCombat()
     combat.abilityResolutionPending = false;
     combat.abilityCaster = nullptr;
     combat.abilityEndedCombat = false;
+    combat.openingAbilityInProgress = false;
+    combat.openingAbilityPlayerID = INVALID_PLAYER_ID;
     combat.abilityResultTime = 0;
     combat.turnStartConditionPhase = TURN_START_CONDITION_NONE;
     combat.turnStartPoisonExpired = false;
@@ -1617,6 +1612,13 @@ static void finishTurnStart(Entity* entity)
     }
 
     announceTurn(entity);
+
+    if (entity->type == ENTITY_PLAYER &&
+        entity->ownerPlayerID == combat.openingAbilityPlayerID)
+    {
+        entity->turn.standardActionUsed = true;
+        combat.openingAbilityPlayerID = INVALID_PLAYER_ID;
+    }
 
     char turnMessage[64];
     formatCombatTurnMessage(*entity, turnMessage, sizeof(turnMessage));
@@ -1775,7 +1777,10 @@ void resetActions(Entity* entity)
     removeFlatFooted(entity);
 
     entity->turn.moveActionUsed = false;
-    entity->turn.standardActionUsed = false;
+    const bool consumedOpeningAbility =
+        entity->type == ENTITY_PLAYER &&
+        entity->ownerPlayerID == combat.openingAbilityPlayerID;
+    entity->turn.standardActionUsed = consumedOpeningAbility;
     entity->turn.fullDefense = false;
     entity->turn.fiveFootStepUsed = false;
     entity->turn.delayTurn = false;
@@ -2144,12 +2149,27 @@ void updateCombat()
                {
                    Entity* caster = combat.abilityCaster;
                    bool endedCombat = combat.abilityEndedCombat;
+                   const bool wasOpeningAbility =
+                       combat.openingAbilityInProgress;
 
                    combat.abilityResolutionPending = false;
                    combat.abilityCaster = nullptr;
                    combat.abilityEndedCombat = false;
+                   combat.openingAbilityInProgress = false;
 
-                   if (endedCombat)
+                   if (wasOpeningAbility)
+                   {
+                       combat.openingAbilityPlayerID =
+                           caster != nullptr && caster->type == ENTITY_PLAYER
+                               ? caster->ownerPlayerID : INVALID_PLAYER_ID;
+                       beginInitiativeAfterOpeningAttack();
+                       if (getLivingEnemyCombatantCount() == 0)
+                       {
+                           endCombat();
+                           resetAwarenessTimer();
+                       }
+                   }
+                   else if (endedCombat)
                    {
                        combat.waitingForPlayer = false;
                        combat.phase = COMBAT_END;
@@ -2385,6 +2405,8 @@ void endCombat()
     combat.abilityResolutionPending = false;
     combat.abilityCaster = nullptr;
     combat.abilityEndedCombat = false;
+    combat.openingAbilityInProgress = false;
+    combat.openingAbilityPlayerID = INVALID_PLAYER_ID;
     backgroundNeedsRedraw = true;
     redrawType = REDRAW_FULL;
     needsRedraw = true;
@@ -2877,10 +2899,27 @@ void cancelPlayerAttack()
 
 static void markAbilityCursorDirty()
 {
+    Entity* caster = getPlayerCombatant();
+    if (caster != nullptr)
+    {
+        for (int y = 0; y < getActiveMapHeight(); y++)
+        {
+            for (int x = 0; x < getActiveMapWidth(); x++)
+            {
+                if (isAbilityTargetTileInRange(
+                        *caster, combat.selectedAbility, x, y))
+                {
+                    markTileDirty(x, y);
+                }
+            }
+        }
+    }
+
+    if (isPlayerTargetingCenteredAbility())
+        return;
+
     if (isPlayerTargetingDirectionalAbility())
     {
-        Entity* caster = getPlayerCombatant();
-
         if (caster != nullptr)
         {
             for (int y = 0; y < getActiveMapHeight(); y++)
@@ -2920,7 +2959,9 @@ static void markAbilityCursorDirty()
                      x <= targetX + ability->areaRadiusTiles;
                      x++)
                 {
-                    if (isInsideActiveMap(x, y))
+                    if (caster != nullptr && isTileInRadiusAbilityArea(
+                            *caster, combat.selectedAbility,
+                            targetX, targetY, x, y))
                         markTileDirty(x, y);
                 }
             }
@@ -3178,7 +3219,11 @@ void beginPlayerAbility(AbilityID abilityID)
     {
         if (abilityID == ABILITY_TURN_UNDEAD)
         {
-            executeTurnUndead(*player);
+            combat.selectedAbility = abilityID;
+            combat.selectedTargetIndex = -1;
+            markAbilityCursorDirty();
+            setGameMessage("Turn Undead: A confirm B back");
+            requestCombatTileRedraw();
             return;
         }
         executePlayerAbility(*player, player, abilityID);
@@ -3251,6 +3296,25 @@ void beginPlayerAbility(AbilityID abilityID)
     requestCombatTileRedraw();
 }
 
+void beginChannelEnergyPreview()
+{
+    Entity* cleric = getActiveMapPlayer();
+    if (cleric == nullptr || !canUseChannelEnergy(*cleric))
+    {
+        setGameMessage("Channel Energy unavailable.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    combat.selectedAbility = ABILITY_CHANNEL_ENERGY;
+    combat.selectedTargetIndex = -1;
+    combat.selectedAbilityX = -1;
+    combat.selectedAbilityY = -1;
+    markAbilityCursorDirty();
+    setGameMessage("Channel Energy: A confirm B back");
+    requestCombatTileRedraw();
+}
+
 void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll)
 {
     Entity* player = getCurrentCombatant();
@@ -3306,6 +3370,13 @@ bool isPlayerTargetingDirectionalAbility()
            isDirectionalAbility(combat.selectedAbility);
 }
 
+bool isPlayerTargetingCenteredAbility()
+{
+    return isPlayerTargetingAbility() &&
+           (combat.selectedAbility == ABILITY_CHANNEL_ENERGY ||
+            combat.selectedAbility == ABILITY_TURN_UNDEAD);
+}
+
 bool isAbilityResolving()
 {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
@@ -3323,6 +3394,7 @@ Entity* getSelectedAbilityTarget()
     if (player == nullptr || entities == nullptr ||
         isPlayerTargetingGroundAbility() ||
         isPlayerTargetingDirectionalAbility() ||
+        isPlayerTargetingCenteredAbility() ||
         !isPlayerTargetingAbility() ||
         combat.selectedTargetIndex < 0 ||
         combat.selectedTargetIndex >= entityCount)
@@ -3358,6 +3430,12 @@ void rotateAbilityTarget(bool forward)
         return;
 
     markAbilityCursorDirty();
+
+    if (isPlayerTargetingCenteredAbility())
+    {
+        requestCombatTileRedraw();
+        return;
+    }
 
     if (isPlayerTargetingGroundAbility() ||
         isPlayerTargetingDirectionalAbility())
@@ -3419,6 +3497,97 @@ static void clearSelectedAbilityScroll()
     combat.selectedAbilityDamageType = DAMAGE_NONE;
 }
 
+static AbilityResult validateSelectedAbilityCommit(
+    const Entity& player,
+    const Entity* target)
+{
+    const AbilityCastSource source = combat.selectedAbilityFromScroll
+        ? AbilityCastSource::SCROLL : AbilityCastSource::NORMAL;
+    if (isPlayerTargetingDirectionalAbility())
+        return validateDirectionalAbility(player, combat.selectedAbility, source);
+    if (isPlayerTargetingGroundAbility())
+        return validateAbilityAt(
+            player, combat.selectedAbilityX, combat.selectedAbilityY,
+            combat.selectedAbility, source);
+    return validateAbility(
+        player, target, combat.selectedAbility, source,
+        combat.selectedAbilityDamageType);
+}
+
+static bool beginOpeningHostileAbility(
+    Entity& player,
+    Entity* target)
+{
+    if (combat.active)
+        return true;
+
+    const Ability* ability = getAbility(combat.selectedAbility);
+    const bool hostile = ability != nullptr &&
+        (target != nullptr
+            ? isAbilityEffectHostileToTarget(
+                *ability, target->character)
+            : isAbilityHostile(*ability));
+    if (ability == nullptr || !hostile)
+        return true;
+
+    const AbilityResult validation = validateSelectedAbilityCommit(
+        player, target);
+    if (validation != ABILITY_RESULT_SUCCESS)
+    {
+        setGameMessage(getAbilityResultMessage(validation));
+        playSound(SoundEffect::SPELL_FAIL);
+        requestCombatTileRedraw();
+        return false;
+    }
+
+    const AbilityID abilityID = combat.selectedAbility;
+    const int8_t targetIndex = combat.selectedTargetIndex;
+    const int8_t targetX = combat.selectedAbilityX;
+    const int8_t targetY = combat.selectedAbilityY;
+    const Direction direction = combat.selectedAbilityDirection;
+    const DamageType damageType = combat.selectedAbilityDamageType;
+    const bool fromScroll = combat.selectedAbilityFromScroll;
+    const ItemInstance scroll = combat.selectedAbilityScroll;
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
+    {
+        if (entities[i].active && entities[i].character.state == STATE_ALIVE &&
+            areHostile(player, entities[i]))
+        {
+            entities[i].awareOfPlayer = true;
+            entities[i].revealedToPlayer = true;
+        }
+    }
+
+    startCombat();
+    if (!combat.active)
+        return false;
+
+    for (uint8_t i = 0; i < combat.combatantCount; i++)
+    {
+        if (combat.initiativeOrder[i] == &player)
+        {
+            combat.currentTurnIndex = i;
+            break;
+        }
+    }
+
+    combat.phase = COMBAT_TURN;
+    combat.waitingForPlayer = true;
+    combat.openingAbilityInProgress = true;
+    combat.selectedAbility = abilityID;
+    combat.selectedTargetIndex = targetIndex;
+    combat.selectedAbilityX = targetX;
+    combat.selectedAbilityY = targetY;
+    combat.selectedAbilityDirection = direction;
+    combat.selectedAbilityDamageType = damageType;
+    combat.selectedAbilityFromScroll = fromScroll;
+    combat.selectedAbilityScroll = scroll;
+    return true;
+}
+
 void confirmPlayerAbility()
 {
     Entity* player = combat.active
@@ -3443,6 +3612,28 @@ void confirmPlayerAbility()
             combat.waitingForPlayer = false;
             requestCombatTileRedraw();
         }
+        return;
+    }
+
+    Entity* selectedTarget = getSelectedAbilityTarget();
+    if (player != nullptr &&
+        !beginOpeningHostileAbility(*player, selectedTarget))
+    {
+        return;
+    }
+
+    if (player != nullptr && isPlayerTargetingCenteredAbility())
+    {
+        const AbilityID abilityID = combat.selectedAbility;
+        markAbilityCursorDirty();
+        combat.selectedAbility = ABILITY_NONE;
+        combat.selectedTargetIndex = -1;
+        markPlayerFacingCursorDirty();
+        requestCombatTileRedraw();
+        if (abilityID == ABILITY_CHANNEL_ENERGY)
+            useChannelEnergy(*player);
+        else if (abilityID == ABILITY_TURN_UNDEAD)
+            executeTurnUndead(*player);
         return;
     }
 
@@ -3588,7 +3779,8 @@ void cancelPlayerAbility()
         return;
 
     bool wasSpatialTargeting = isPlayerTargetingGroundAbility() ||
-                               isPlayerTargetingDirectionalAbility();
+                               isPlayerTargetingDirectionalAbility() ||
+                               isPlayerTargetingCenteredAbility();
     markAbilityCursorDirty();
     combat.selectedAbility = ABILITY_NONE;
     combat.selectedAbilityX = -1;

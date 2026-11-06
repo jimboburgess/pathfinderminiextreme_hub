@@ -57,6 +57,15 @@ if(BUILD_TESTING)
     target_compile_definitions(pfme_save_slot_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_save_slots COMMAND pfme_save_slot_tests)
     set_tests_properties(pfme_save_slots PROPERTIES TIMEOUT 30)
+
+    add_executable(pfme_spell_usability_tests spell_usability_tests.cpp)
+    target_include_directories(pfme_spell_usability_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_spell_usability_tests PRIVATE
+        pfme_handheld_runtime)
+    target_compile_definitions(pfme_spell_usability_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_spell_usability COMMAND pfme_spell_usability_tests)
+    set_tests_properties(pfme_spell_usability PROPERTIES TIMEOUT 30)
 endif()
 
 if(BUILD_TESTING)

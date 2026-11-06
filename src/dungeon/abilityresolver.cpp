@@ -587,8 +587,8 @@ uint8_t collectRadiusAreaTiles(
     uint8_t count = 0;
     for (int y = centerY - ability.areaRadiusTiles; y <= centerY + ability.areaRadiusTiles; y++)
         for (int x = centerX - ability.areaRadiusTiles; x <= centerX + ability.areaRadiusTiles; x++)
-            if (count < capacity && isInsideActiveMap(x, y) &&
-                hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, x, y))
+            if (count < capacity && isTileInRadiusAbilityArea(
+                    caster, ability.id, centerX, centerY, x, y))
                 tiles[count++] = { static_cast<int8_t>(x), static_cast<int8_t>(y) };
     return count;
 }
@@ -616,6 +616,91 @@ bool isAbilityEffectHostileToTarget(
                    energy->damageType, target.creatureType) ==
                EnergyInteraction::DAMAGE;
     return ability.target == TARGET_ENEMY;
+}
+
+bool isAbilityHostile(const Ability& ability)
+{
+    return ability.target == TARGET_ENEMY ||
+           ability.target == TARGET_AREA ||
+           ability.target == TARGET_ALL_ENEMIES ||
+           ability.target == TARGET_ALL_ENEMIES_AREA;
+}
+
+bool isAbilityTargetTileInRange(
+    const Entity& caster,
+    AbilityID abilityID,
+    int tileX,
+    int tileY)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr || !isInsideActiveMap(tileX, tileY))
+        return false;
+
+    if (ability->target == TARGET_SELF ||
+        ability->target == TARGET_ALL_ALLIES_AREA)
+    {
+        return isTileInCenteredAbilityArea(
+            caster, abilityID, tileX, tileY);
+    }
+
+    const uint8_t range = ability->delivery == DELIVERY_TOUCH
+        ? 1 : ability->rangeTiles;
+    if (range == 0)
+    {
+        return ability->target == TARGET_ALLY;
+    }
+
+    if (getEntityGridDistanceToTile(caster, tileX, tileY) > range)
+    {
+        return false;
+    }
+
+    if (!hasLineOfSightFromFootprintAt(
+            caster, caster.x, caster.y, tileX, tileY))
+    {
+        return false;
+    }
+
+    return ability->delivery == DELIVERY_TOUCH ||
+           getCoverFromEntityToTile(caster, tileX, tileY) != COVER_TOTAL;
+}
+
+bool isTileInRadiusAbilityArea(
+    const Entity& caster,
+    AbilityID abilityID,
+    int centerX,
+    int centerY,
+    int tileX,
+    int tileY)
+{
+    const Ability* ability = getAbility(abilityID);
+    return ability != nullptr && ability->areaRadiusTiles > 0 &&
+           isInsideActiveMap(centerX, centerY) &&
+           isInsideActiveMap(tileX, tileY) &&
+           abs(tileX - centerX) <= ability->areaRadiusTiles &&
+           abs(tileY - centerY) <= ability->areaRadiusTiles &&
+           hasLineOfSightFromFootprintAt(
+               caster, caster.x, caster.y, tileX, tileY);
+}
+
+bool isTileInCenteredAbilityArea(
+    const Entity& caster,
+    AbilityID abilityID,
+    int tileX,
+    int tileY)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr || ability->rangeTiles == 0 ||
+        !isInsideActiveMap(tileX, tileY) ||
+        getEntityGridDistanceToTile(caster, tileX, tileY) >
+            ability->rangeTiles)
+    {
+        return false;
+    }
+
+    return abilityID != ABILITY_TURN_UNDEAD ||
+           hasLineOfSightFromFootprintAt(
+               caster, caster.x, caster.y, tileX, tileY);
 }
 
 bool isAbilitySupported(AbilityID abilityID)
@@ -1132,7 +1217,7 @@ AbilityResult validateAbility(
     if (conditionEffect != nullptr &&
         !canReceiveCondition(
             resolvedTarget->character,
-            conditionEffect->conditionType))
+            getGenericBuffCondition(*conditionEffect)))
     {
         return ABILITY_RESULT_TARGET_IMMUNE;
     }
@@ -1462,7 +1547,7 @@ AbilityResult validateAbilityAt(
     if (!isValidCaster(caster))
         return ABILITY_RESULT_INVALID_CASTER;
 
-    if (caster.turn.standardActionUsed)
+    if (combat.active && caster.turn.standardActionUsed)
         return ABILITY_RESULT_NO_STANDARD_ACTION;
 
     if (!isInsideActiveMap(targetX, targetY))
@@ -1649,7 +1734,7 @@ AbilityResult validateDirectionalAbility(
     if (!isInsideActiveMap(caster.x, caster.y))
         return ABILITY_RESULT_INVALID_TARGET;
 
-    if (caster.turn.standardActionUsed)
+    if (combat.active && caster.turn.standardActionUsed)
         return ABILITY_RESULT_NO_STANDARD_ACTION;
 
     if (!canPayAbilityCost(caster.character, *ability, source))

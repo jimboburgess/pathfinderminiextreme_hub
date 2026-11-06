@@ -44,10 +44,16 @@ void join(unsigned id,const char* code){board(id);choose(id,"Join Party");for(un
 bool selectAction(unsigned id,MenuAction action) {
     selectController(id);
     if(!menuState.isOpen || !menuState.depth)return false;
+    uint16_t classMask=MENU_CLASS_FIGHTER;
+    if(auto* actor=nativeActor(id)) {
+        if(actor->character.characterClass==CLASS_ROGUE)classMask=MENU_CLASS_ROGUE;
+        else if(actor->character.characterClass==CLASS_WIZARD)classMask=MENU_CLASS_WIZARD;
+        else if(actor->character.characterClass==CLASS_CLERIC)classMask=MENU_CLASS_CLERIC;
+    }
     const auto* menu=menuState.menuStack[menuState.depth-1];int target=-1,index=0;
     for(unsigned i=0;i<menu->itemCount;++i) {
         const auto& item=menu->items[i];
-        if(!(item.classMask & MENU_CLASS_FIGHTER) || !isMenuItemVisible(item.action))continue;
+        if(!(item.classMask & classMask) || !isMenuItemVisible(item.action))continue;
         if(item.action==action)target=index;
         ++index;
     }

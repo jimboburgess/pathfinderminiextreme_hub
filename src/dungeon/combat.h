@@ -107,6 +107,8 @@ struct Combat
     bool abilityResolutionPending = false;
     Entity* abilityCaster = nullptr;
     bool abilityEndedCombat = false;
+    bool openingAbilityInProgress = false;
+    PlayerID openingAbilityPlayerID = INVALID_PLAYER_ID;
     unsigned long abilityResultTime = 0;
 
     //--------------------------------------------------
@@ -251,11 +253,13 @@ void cancelPlayerAttack();
 //==================================================
 
 void beginPlayerAbility(AbilityID abilityID);
+void beginChannelEnergyPreview();
 void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll);
 void continuePlayerAbilityWithDamageType(DamageType damageType);
 bool isPlayerTargetingAbility();
 bool isPlayerTargetingGroundAbility();
 bool isPlayerTargetingDirectionalAbility();
+bool isPlayerTargetingCenteredAbility();
 bool isAbilityResolving();
 Entity* getSelectedAbilityTarget();
 bool getSelectedAbilityGroundTarget(int& x, int& y);

@@ -392,6 +392,12 @@ enum AbilityAnimation
 // entity storage while leaving room for scroll study beyond the starter book.
 constexpr uint8_t MAX_KNOWN_ABILITIES = 32;
 constexpr uint8_t MAX_ABILITY_EFFECTS = 4;
+constexpr uint8_t FEET_PER_TILE = 5;
+
+constexpr uint8_t feetToTiles(uint16_t feet)
+{
+    return static_cast<uint8_t>(feet / FEET_PER_TILE);
+}
 
 
 struct AbilityEffectData

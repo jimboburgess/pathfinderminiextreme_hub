@@ -141,6 +141,20 @@ and reconnect credentials remain process-local and are not save credentials.
 Browser character creation reports text-input mode with each frame so ordinary
 keyboard characters, Backspace, and Enter drive the same bounded creation model.
 
+During dungeon or forest exploration, the original Cast Spell menu now exposes
+supported spells. Non-hostile healing and buffs resolve without starting combat.
+Hostile confirmation resolves exactly once as the encounter's opening action,
+then proceeds to normal initiative. That opening cast consumes the caster's first
+combat standard action while leaving movement available. Escape cancels the
+targeting overlay without spending MP or starting combat.
+
+Spell targeting stays inside the shared 240x240 framebuffer. Subtle blue corner
+marks show legal target/origin range, purple tile outlines show the selected AoE,
+and the stronger selected target/caster outline remains distinct from the cyan
+active-turn and green poison indicators. Cone and line previews rotate with the
+existing controls; ground previews move with the existing encoder click. Channel
+Energy and Turn Undead show a centered 30-foot/six-tile radius.
+
 ## Build from the current source
 
 ```sh

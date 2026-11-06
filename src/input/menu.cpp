@@ -1351,19 +1351,7 @@ void menuActivate()
         case MENU_CHANNEL_ENERGY:
         {
             closeMenu();
-
-            Entity* cleric = getActiveMapPlayer();
-
-            if (cleric != nullptr)
-            {
-                useChannelEnergy(*cleric);
-            }
-            else
-            {
-                setGameMessage("Channel Energy unavailable.");
-                playSound(SoundEffect::ERROR);
-            }
-
+            beginChannelEnergyPreview();
             break;
         }
 
@@ -2219,9 +2207,13 @@ bool isMenuItemVisible(MenuAction action)
                    getEquippedRangedWeapon(*character) != nullptr;
 
         case MENU_CAST_SPELL:
-            return isPlayerCombatTurn() &&
+            return (isPlayerCombatTurn() ||
+                    (!combat.active && !isMultiplayerExplorationActive() &&
+                     (gameState == GAME_DUNGEON ||
+                      gameState == GAME_FOREST))) &&
                    canCharacterAct(*character) &&
-                   !getCurrentCombatant()->turn.standardActionUsed &&
+                   (!combat.active ||
+                    !getCurrentCombatant()->turn.standardActionUsed) &&
                    hasSupportedKnownSpell(*character);
 
         case MENU_SPECIAL_ABILITY:
