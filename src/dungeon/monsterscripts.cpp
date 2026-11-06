@@ -904,6 +904,7 @@ void runMeleeScript(Entity* monster)
     int webTargetX = 0;
     int webTargetY = 0;
     if (monster != nullptr && target != nullptr && web != nullptr &&
+        canMonsterUseWeb(monster->turn) &&
         monster->character.magic.currentMP >= web->mpCost &&
         findUsefulMonsterWebTarget(
             *monster, *target, webTargetX, webTargetY))
@@ -912,6 +913,7 @@ void runMeleeScript(Entity* monster)
             *monster, webTargetX, webTargetY, web->id);
         if (resolution.result == ABILITY_RESULT_SUCCESS)
         {
+            commitMonsterWebCooldown(monster->turn);
             presentGroundAbilityResolution(*monster, web->id, resolution);
             return;
         }
@@ -928,6 +930,7 @@ bool findUsefulMonsterWebTarget(
 {
     if (monster.monster == nullptr ||
         monster.monster->webCastPriority == 0 ||
+        !canMonsterUseWeb(monster.turn) ||
         !monsterHasSpecialAbility(*monster.monster, ABILITY_WEB) ||
         !isImmuneToWeb(monster))
     {

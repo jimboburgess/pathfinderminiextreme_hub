@@ -521,6 +521,7 @@ ConditionTurnResult processConditionsAtTurnStart(Character& character)
     if (hasCondition(character, CONDITION_POISONED))
     {
         result.damage = rollDie(4);
+        result.poisonDamage = result.damage;
         result.damageCondition = CONDITION_POISONED;
         character.health.currentHP -= result.damage;
         updateConditionsAfterDamage(character, result.damage);

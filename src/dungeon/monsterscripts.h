@@ -6,8 +6,65 @@
 #define MONSTER_SCRIPTS_H
 
 #include "characters/abilities.h"
+#include "dungeon/turns.h"
 
 struct Entity;
+
+constexpr uint8_t MONSTER_WEB_COOLDOWN_TURNS = 3;
+constexpr uint8_t MONSTER_WEB_COOLDOWN_MASK = 0x03;
+constexpr uint8_t MONSTER_WEB_CAST_THIS_TURN = 0x04;
+constexpr uint8_t MONSTER_THINKING_RESOLVED = 0x08;
+
+inline uint8_t getMonsterWebCooldownTurns(const TurnState& turn)
+{
+    return turn.monsterRuntimeFlags & MONSTER_WEB_COOLDOWN_MASK;
+}
+
+inline bool canMonsterUseWeb(const TurnState& turn)
+{
+    return getMonsterWebCooldownTurns(turn) == 0;
+}
+
+inline void commitMonsterWebCooldown(TurnState& turn)
+{
+    turn.monsterRuntimeFlags = static_cast<uint8_t>(
+        (turn.monsterRuntimeFlags & ~MONSTER_WEB_COOLDOWN_MASK) |
+        MONSTER_WEB_COOLDOWN_TURNS |
+        MONSTER_WEB_CAST_THIS_TURN);
+}
+
+inline void advanceMonsterWebCooldown(TurnState& turn)
+{
+    if ((turn.monsterRuntimeFlags & MONSTER_WEB_CAST_THIS_TURN) != 0)
+    {
+        turn.monsterRuntimeFlags &=
+            static_cast<uint8_t>(~MONSTER_WEB_CAST_THIS_TURN);
+        return;
+    }
+    const uint8_t cooldown = getMonsterWebCooldownTurns(turn);
+    if (cooldown > 0)
+    {
+        turn.monsterRuntimeFlags = static_cast<uint8_t>(
+            (turn.monsterRuntimeFlags & ~MONSTER_WEB_COOLDOWN_MASK) |
+            (cooldown - 1));
+    }
+}
+
+inline bool isMonsterThinkingResolved(const TurnState& turn)
+{
+    return (turn.monsterRuntimeFlags & MONSTER_THINKING_RESOLVED) != 0;
+}
+
+inline void markMonsterThinkingResolved(TurnState& turn)
+{
+    turn.monsterRuntimeFlags |= MONSTER_THINKING_RESOLVED;
+}
+
+inline void clearMonsterThinkingResolved(TurnState& turn)
+{
+    turn.monsterRuntimeFlags &=
+        static_cast<uint8_t>(~MONSTER_THINKING_RESOLVED);
+}
 
 inline bool isMonsterControlAbilityRedundant(
     const Ability& ability,

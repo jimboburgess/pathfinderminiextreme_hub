@@ -474,6 +474,21 @@ bool canAttemptEscapeWeb(const Entity& entity)
         getWebEffectAffectingEntity(entity) != nullptr;
 }
 
+bool releaseEntityFromWeb(Entity& entity)
+{
+    const bool grappledRemoved =
+        removeCondition(entity.character, CONDITION_GRAPPLED);
+    const bool legacyWebbedRemoved =
+        removeCondition(entity.character, CONDITION_WEBBED);
+    if (!grappledRemoved && !legacyWebbedRemoved)
+        return false;
+
+    if (!entity.turn.moveActionUsed)
+        entity.turn.movementRemaining = getEffectiveSpeed(entity.character);
+    markEntityFootprintDirty(entity);
+    return true;
+}
+
 bool attemptEscapeWeb(Entity& entity, int acrobaticsTotal)
 {
     const MapEffect* web = getWebEffectAffectingEntity(entity);
@@ -482,7 +497,7 @@ bool attemptEscapeWeb(Entity& entity, int acrobaticsTotal)
     {
         return false;
     }
-    return removeCondition(entity.character, CONDITION_GRAPPLED);
+    return releaseEntityFromWeb(entity);
 }
 
 bool removeWebEffect(MapEffect& effect)
@@ -496,10 +511,7 @@ bool removeWebEffect(MapEffect& effect)
     for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
     {
         if (getWebEffectAffectingEntity(entities[i]) == nullptr)
-        {
-            removeCondition(entities[i].character, CONDITION_GRAPPLED);
-            removeCondition(entities[i].character, CONDITION_WEBBED);
-        }
+            releaseEntityFromWeb(entities[i]);
     }
     return true;
 }

@@ -254,6 +254,16 @@ void markTileDirty(int, int)
         dirtyTileCount++;
 }
 
+void markEntityFootprintDirty(const Entity&)
+{
+    dirtyTileMarkCount++;
+}
+
+int getEffectiveSpeed(const Character& character)
+{
+    return character.speed;
+}
+
 CombatDamageResult applyCombatDamage(
     Entity& target,
     int damage,
@@ -1406,6 +1416,9 @@ void test_web_escape_uses_stored_dc_and_is_not_a_free_retry_loop()
     Entity& creature = activeTestEntities[0];
     initializeEntity(creature, ENTITY_MONSTER, TEAM_MONSTER);
     creature.x = 4; creature.y = 4;
+    creature.character.speed = 6;
+    creature.turn.movementRemaining = 0;
+    creature.turn.moveActionUsed = false;
     TEST_ASSERT_TRUE(addCondition(
         creature.character, CONDITION_GRAPPLED, 0, 0));
     MapEffect web;
@@ -1416,8 +1429,35 @@ void test_web_escape_uses_stored_dc_and_is_not_a_free_retry_loop()
     TEST_ASSERT_FALSE(attemptEscapeWeb(creature, 15));
     TEST_ASSERT_TRUE(hasCondition(
         creature.character, CONDITION_GRAPPLED));
+    TEST_ASSERT_EQUAL_UINT8(0, creature.turn.movementRemaining);
     TEST_ASSERT_TRUE(attemptEscapeWeb(creature, 16));
     TEST_ASSERT_FALSE(canAttemptEscapeWeb(creature));
+    TEST_ASSERT_EQUAL_UINT8(6, creature.turn.movementRemaining);
+}
+
+void test_web_cooldown_is_per_monster_and_skips_three_turns()
+{
+    TurnState spiderA{};
+    TurnState spiderB{};
+
+    TEST_ASSERT_TRUE(canMonsterUseWeb(spiderA));
+    TEST_ASSERT_TRUE(canMonsterUseWeb(spiderB));
+    commitMonsterWebCooldown(spiderA);
+    TEST_ASSERT_FALSE(canMonsterUseWeb(spiderA));
+    TEST_ASSERT_TRUE(canMonsterUseWeb(spiderB));
+
+    advanceMonsterWebCooldown(spiderA);
+    TEST_ASSERT_EQUAL_UINT8(3, getMonsterWebCooldownTurns(spiderA));
+    for (uint8_t turn = 0; turn < 3; turn++)
+    {
+        TEST_ASSERT_FALSE(canMonsterUseWeb(spiderA));
+        advanceMonsterWebCooldown(spiderA);
+    }
+    TEST_ASSERT_TRUE(canMonsterUseWeb(spiderA));
+
+    TurnState failedWeb{};
+    TEST_ASSERT_TRUE(canMonsterUseWeb(failedWeb));
+    TEST_ASSERT_EQUAL_UINT8(0, getMonsterWebCooldownTurns(failedWeb));
 }
 
 void test_queen_web_priority_expands_coverage_without_changing_normal_spider()
@@ -2495,6 +2535,7 @@ void setup()
     RUN_TEST(test_web_cover_counts_only_tiles_on_the_attack_line);
     RUN_TEST(test_burning_web_uses_typed_damage_once_and_releases_grapple);
     RUN_TEST(test_web_escape_uses_stored_dc_and_is_not_a_free_retry_loop);
+    RUN_TEST(test_web_cooldown_is_per_monster_and_skips_three_turns);
     RUN_TEST(test_queen_web_priority_expands_coverage_without_changing_normal_spider);
     RUN_TEST(test_color_spray_metadata_and_shared_cone_geometry);
     RUN_TEST(test_color_spray_failed_saves_use_effective_hd_tiers);

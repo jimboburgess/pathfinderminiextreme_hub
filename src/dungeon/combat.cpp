@@ -17,6 +17,7 @@
 #include "map/awareness.h"
 #include "map/mapeffects.h"
 #include "monsterscripts.h"
+#include "monsterpresentation.h"
 #include "npcs.h"
 #include "riddlepuzzle.h"
 #include "audio/audio.h"
@@ -1628,6 +1629,7 @@ static void finishTurnStart(Entity* entity)
     else
     {
         combat.waitingForPlayer = false;
+        combat.nextMonsterStep = millis() + MONSTER_TURN_MESSAGE_MS;
     }
 
     needsRedraw = true;
@@ -1661,29 +1663,20 @@ static void beginTurnStartConditionMessages(
     if (result.damage > 0)
     {
         char message[128];
+        const bool defeated = entity->character.health.currentHP <= 0;
 
-        if (entity->character.health.currentHP <= 0)
+        if (defeated)
         {
             DefeatResult defeatResult = finalizeDefeat(*entity);
             combat.turnStartConditionDefeated = true;
-
-            snprintf(message, sizeof(message),
-                     "%s takes %d damage and dies!",
-                     getEntityName(entity), result.damage);
+            formatConditionDamageMessage(
+                *entity, result, true, message, sizeof(message));
             appendLevelUpFeedback(
                 message, sizeof(message), defeatResult);
         }
-        else if (entity->type == ENTITY_PLAYER)
-        {
-            snprintf(message, sizeof(message),
-                     "You take %d damage.", result.damage);
-        }
         else
-        {
-            snprintf(message, sizeof(message),
-                     "%s takes %d damage.",
-                     getEntityName(entity), result.damage);
-        }
+            formatConditionDamageMessage(
+                *entity, result, false, message, sizeof(message));
 
         setGameMessage(message);
         combat.turnStartConditionPhase =
@@ -1818,6 +1811,7 @@ void announceTurn(Entity* entity)
 
     entity->turn.standardActionUsed = false;
     entity->turn.monsterState = MONSTER_START;
+    clearMonsterThinkingResolved(entity->turn);
     Serial.println(entity->character.speed);
 }
 
@@ -1829,11 +1823,72 @@ void formatCombatTurnMessage(const Entity& entity,
     snprintf(buffer, bufferSize, "%s's turn.", getEntityName(&entity));
 }
 
+void formatConditionDamageMessage(const Entity& entity,
+                                  const ConditionTurnResult& result,
+                                  bool defeated,
+                                  char* buffer, size_t bufferSize)
+{
+    if (buffer == nullptr || bufferSize == 0)
+        return;
+
+    const char* name = getEntityName(&entity);
+    if (result.poisonDamage > 0 && result.poisonDamage == result.damage)
+    {
+        snprintf(buffer, bufferSize,
+                 defeated
+                     ? "%s takes %d poison damage and dies!"
+                     : "%s takes %d poison damage.",
+                 name, result.poisonDamage);
+        return;
+    }
+
+    if (result.poisonDamage > 0)
+    {
+        snprintf(buffer, bufferSize,
+                 defeated
+                     ? "%s takes %d poison damage (%d total) and dies!"
+                     : "%s takes %d poison damage (%d total).",
+                 name, result.poisonDamage, result.damage);
+        return;
+    }
+
+    snprintf(buffer, bufferSize,
+             defeated ? "%s takes %d damage and dies!"
+                      : "%s takes %d damage.",
+             name, result.damage);
+}
+
 void runMonsterTurn(Entity* monster)
 {
     switch (monster->turn.monsterState)
     {
         case MONSTER_START:
+
+            if (!isMonsterThinkingResolved(monster->turn))
+            {
+                markMonsterThinkingResolved(monster->turn);
+                // Cosmetic hashing never consumes the authoritative gameplay
+                // RNG stream used by attacks, loot, or AI decisions.
+                const uint32_t cosmeticValue = getMonsterPresentationValue(
+                    static_cast<uint8_t>(monster->monsterID),
+                    monster->x, monster->y,
+                    combat.combatRound, combat.currentTurnIndex);
+                if (shouldMonsterThink(
+                        monster->character.abilities.intelligence,
+                        static_cast<uint8_t>(cosmeticValue % 100)))
+                {
+                    char message[64];
+                    snprintf(message, sizeof(message), "%s is thinking...",
+                             getEntityName(monster));
+                    setGameMessage(message);
+                    monster->turn.monsterState = MONSTER_THINKING;
+                    combat.nextMonsterStep = millis() +
+                        getMonsterThinkingDuration(
+                            static_cast<uint16_t>(cosmeticValue >> 8));
+                    needsRedraw = true;
+                    break;
+                }
+            }
 
             if (!shouldMonsterRunCombatAI(*monster))
             {
@@ -1911,6 +1966,12 @@ void runMonsterTurn(Entity* monster)
 
             nextTurn();
             break;
+
+        case MONSTER_THINKING:
+
+            monster->turn.monsterState = MONSTER_START;
+            runMonsterTurn(monster);
+            break;
     }
 }
 
@@ -1944,7 +2005,11 @@ void nextTurn()
 
     Entity* previous = getCurrentCombatant();
     if (previous != nullptr)
+    {
+        if (previous->type == ENTITY_MONSTER)
+            advanceMonsterWebCooldown(previous->turn);
         markEntityFootprintDirty(*previous);
+    }
 
     for (uint8_t attempts = 0; attempts < combat.combatantCount; attempts++)
     {
@@ -2231,7 +2296,8 @@ void updateCombat()
            {
                if (millis() >= combat.nextMonsterStep)
                {
-                   combat.nextMonsterStep = millis() + 120;
+                   combat.nextMonsterStep =
+                       millis() + MONSTER_STEP_PRESENTATION_MS;
 
                    runMonsterTurn(current);
                }

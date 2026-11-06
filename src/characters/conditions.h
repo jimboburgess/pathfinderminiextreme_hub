@@ -151,6 +151,7 @@ struct ConditionData
 struct ConditionTurnResult
 {
     int damage = 0;
+    int poisonDamage = 0;
     ConditionType damageCondition = CONDITION_NONE;
     uint8_t damageType = 0;
     bool poisonExpired = false;

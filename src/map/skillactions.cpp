@@ -378,7 +378,8 @@ bool cutFreeFromWeb()
         !canUseStandardSkillAction(*player))
         return false;
 
-    removeCondition(player->character, CONDITION_GRAPPLED);
+    if (!releaseEntityFromWeb(*player))
+        return false;
     setGameMessage("You cut yourself free.");
     spendStandardSkillAction(*player);
     return true;

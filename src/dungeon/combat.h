@@ -207,6 +207,10 @@ bool isPlayerTurn();
 
 void formatCombatTurnMessage(const Entity& entity,
                              char* buffer, size_t bufferSize);
+void formatConditionDamageMessage(const Entity& entity,
+                                  const ConditionTurnResult& result,
+                                  bool defeated,
+                                  char* buffer, size_t bufferSize);
 
 void announceTurn(Entity* entity);
 

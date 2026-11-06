@@ -918,6 +918,55 @@ static void drawActiveTurnOutline(const Entity& entity)
                  ST77XX_CYAN);
 }
 
+static uint16_t grayscaleColor(uint16_t color)
+{
+    const uint8_t red = ((color >> 11) & 0x1F) * 255 / 31;
+    const uint8_t green = ((color >> 5) & 0x3F) * 255 / 63;
+    const uint8_t blue = (color & 0x1F) * 255 / 31;
+    const uint8_t gray =
+        (static_cast<uint16_t>(red) * 30 +
+         static_cast<uint16_t>(green) * 59 +
+         static_cast<uint16_t>(blue) * 11) / 100;
+    return ((gray >> 3) << 11) |
+           ((gray >> 2) << 5) |
+           (gray >> 3);
+}
+
+uint16_t getPoisonTintColor(uint16_t color)
+{
+    const uint16_t red = ((color >> 11) & 0x1F) / 2;
+    const uint16_t green = ((color >> 5) & 0x3F);
+    const uint16_t blue = (color & 0x1F) / 2;
+    const uint16_t boostedGreen = (green + 63) / 2;
+    return static_cast<uint16_t>(
+        (red << 11) | (boostedGreen << 5) | blue);
+}
+
+static void drawConditionSpriteTransparent(
+    int x, int y, const uint16_t* sprite, uint8_t width, uint8_t height,
+    bool grayscale, bool poisoned)
+{
+    if (sprite == nullptr)
+        return;
+
+    tft.startWrite();
+    for (uint8_t row = 0; row < height; row++)
+    {
+        for (uint8_t col = 0; col < width; col++)
+        {
+            uint16_t color = pgm_read_word(&sprite[row * width + col]);
+            if (color == 0xF81F)
+                continue;
+            if (grayscale)
+                color = grayscaleColor(color);
+            if (poisoned)
+                color = getPoisonTintColor(color);
+            tft.writePixel(x + col, y + row, color);
+        }
+    }
+    tft.endWrite();
+}
+
 void drawEntity(const Entity& entity)
 {
     if (!entity.active)
@@ -952,12 +1001,14 @@ void drawEntity(const Entity& entity)
                 *player, player->x, player->y, entity);
         if (!hasCurrentLineOfSight)
         {
-            drawSpriteGrayscaleTransparent(
+            drawConditionSpriteTransparent(
                 entity.x * TILE_SIZE,
                 entity.y * TILE_SIZE,
                 entity.sprite,
                 entity.spriteWidth,
-                entity.spriteHeight);
+                entity.spriteHeight,
+                true,
+                hasCondition(entity.character, CONDITION_POISONED));
             drawActiveTurnOutline(entity);
             return;
         }
@@ -966,12 +1017,14 @@ void drawEntity(const Entity& entity)
     if (entity.sprite == nullptr)
         return;
 
-    drawSpriteTransparent(
+    drawConditionSpriteTransparent(
         entity.x * TILE_SIZE,
         entity.y * TILE_SIZE,
         entity.sprite,
         entity.spriteWidth,
-        entity.spriteHeight);
+        entity.spriteHeight,
+        false,
+        hasCondition(entity.character, CONDITION_POISONED));
     drawActiveTurnOutline(entity);
 
     if (entity.character.state == STATE_DEAD ||
@@ -1336,17 +1389,7 @@ void drawSpriteGrayscaleTransparent(
             if (color == 0xF81F)
                 continue;
 
-            const uint8_t red = ((color >> 11) & 0x1F) * 255 / 31;
-            const uint8_t green = ((color >> 5) & 0x3F) * 255 / 63;
-            const uint8_t blue = (color & 0x1F) * 255 / 31;
-            const uint8_t gray =
-                (static_cast<uint16_t>(red) * 30 +
-                 static_cast<uint16_t>(green) * 59 +
-                 static_cast<uint16_t>(blue) * 11) / 100;
-            tft.writePixel(x + col, y + row,
-                ((gray >> 3) << 11) |
-                ((gray >> 2) << 5) |
-                (gray >> 3));
+            tft.writePixel(x + col, y + row, grayscaleColor(color));
         }
     }
     tft.endWrite();

@@ -478,6 +478,7 @@ void test_poison_ticks_at_turn_start_and_expires()
 
     ConditionTurnResult first = processConditionsAtTurnStart(character);
     TEST_ASSERT_EQUAL_INT(2, first.damage);
+    TEST_ASSERT_EQUAL_INT(2, first.poisonDamage);
     TEST_ASSERT_EQUAL(CONDITION_POISONED, first.damageCondition);
     TEST_ASSERT_FALSE(first.poisonExpired);
     TEST_ASSERT_EQUAL_INT(18, character.health.currentHP);

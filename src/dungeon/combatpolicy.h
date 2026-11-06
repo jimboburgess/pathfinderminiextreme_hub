@@ -153,7 +153,10 @@ inline void resetCombatAbilityUsage(
     for (uint8_t i = 0; i < rosterCount; i++)
     {
         if (roster[i] != nullptr)
+        {
             roster[i]->turn.oncePerCombatAbilityUsed = false;
+            roster[i]->turn.monsterRuntimeFlags = 0;
+        }
     }
 }
 

@@ -429,3 +429,21 @@ combat still require extracting world state and per-player UI from those globals
 No browser gameplay simulation, public service, firmware framebuffer or persistent
 NUC service was introduced. The earlier portable-leaf and topology-only descriptions
 above still describe those independent targets, not this optional runtime.
+
+## Playtest Batch 3 condition presentation
+
+Poison damage now reports the affected creature's display name and active poison
+is rendered as a green runtime tint; no duplicate sprites are stored. Giant Spider
+Web is authoritative per creature and becomes unavailable for that spider's next
+three turns after a successful cast. Escaping or cutting free spends the existing
+standard action but immediately restores an otherwise-unused move allowance.
+
+Monster turns retain immediate authoritative decisions while presentation advances
+at 200 ms per visible tile step. A separate deterministic cosmetic hash gives
+Intelligence-weighted 300-600 ms thinking pauses without consuming gameplay RNG.
+No blocking delay is used.
+
+PlatformIO dependency reproducibility remains a deferred cleanup item. A fresh
+caret-compatible resolution can select newer Adafruit libraries and exceed internal
+DRAM by eight bytes; the established working versions are Adafruit GFX 1.12.6 and
+Adafruit ST7735/ST7789 1.11.0. Batch 3 does not change dependency constraints.

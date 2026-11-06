@@ -64,6 +64,7 @@ void drawSpriteTransparent(int x,int y,const uint16_t* sprite,uint8_t width,uint
 void drawSpriteTransparent64(int x, int y, const uint16_t* sprite);
 void drawSpriteGrayscaleTransparent(
     int x, int y, const uint16_t* sprite, uint8_t width, uint8_t height);
+uint16_t getPoisonTintColor(uint16_t color);
 
 void refreshDisplay();
 

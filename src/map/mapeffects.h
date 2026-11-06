@@ -114,6 +114,7 @@ void markMapEffectTilesDirty(const MapEffect& effect);
 const MapEffect* getWebEffectAffectingEntity(const Entity& entity);
 bool canAttemptEscapeWeb(const Entity& entity);
 bool attemptEscapeWeb(Entity& entity, int acrobaticsTotal);
+bool releaseEntityFromWeb(Entity& entity);
 bool removeWebEffect(MapEffect& effect);
 WebBurnResult burnWebAtTiles(
     const AreaFlashTile* tiles, uint8_t tileCount);

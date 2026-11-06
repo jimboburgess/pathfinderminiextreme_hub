@@ -13,7 +13,8 @@ enum MonsterTurnState
     MONSTER_MOVE,
     MONSTER_ACTION,
     MONSTER_ATTACK,
-    MONSTER_END
+    MONSTER_END,
+    MONSTER_THINKING
 };
 
 struct TurnState
@@ -30,8 +31,12 @@ struct TurnState
     bool powerAttackActive = false;
     // Transient encounter state; reset when a new combat roster is built.
     bool oncePerCombatAbilityUsed = false;
+    uint8_t monsterRuntimeFlags = 0;
 
 };
+
+static_assert(sizeof(TurnState) <= 16,
+              "TurnState must remain compact for fixed Entity arrays");
 
 
 

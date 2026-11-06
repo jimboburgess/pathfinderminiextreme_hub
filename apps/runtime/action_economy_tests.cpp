@@ -9,13 +9,17 @@
 #include "dungeon/combatpolicy.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/loot.h"
+#include "dungeon/monsterpresentation.h"
+#include "dungeon/monsterscripts.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
 #include "map/activemap.h"
 #include "map/interaction.h"
+#include "map/mapeffects.h"
 #include "map/movement.h"
+#include "map/skillactions.h"
 
 #include <algorithm>
 #include <iostream>
@@ -264,6 +268,145 @@ int main()
         formatCombatTurnMessage(mira, turnMessage, sizeof(turnMessage));
         check(std::string(turnMessage) == "Mira's turn.",
               "other player turn message uses their name");
+
+        ConditionTurnResult poisonResult{};
+        poisonResult.damage = 3;
+        poisonResult.poisonDamage = 3;
+        char poisonMessage[64];
+        formatConditionDamageMessage(
+            *actor, poisonResult, false,
+            poisonMessage, sizeof(poisonMessage));
+        check(std::string(poisonMessage) ==
+              "Aric takes 3 poison damage.",
+              "poison damage message uses the character name");
+
+        combat.active = false;
+        removeCondition(actor->character, CONDITION_POISONED);
+        tft.fillScreen(ST77XX_BLACK);
+        drawEntity(*actor);
+        const uint16_t* normalFrame = pixels();
+        int poisonSampleX = -1;
+        int poisonSampleY = -1;
+        uint16_t normalColor = ST77XX_BLACK;
+        const int actorLeft = actor->x * TILE_SIZE;
+        const int actorTop = actor->y * TILE_SIZE;
+        for (int y = actorTop + 1;
+             y < actorTop + actor->spriteHeight - 1 && poisonSampleX < 0; y++)
+        {
+            for (int x = actorLeft + 1;
+                 x < actorLeft + actor->spriteWidth - 1; x++)
+            {
+                const uint16_t color = normalFrame[y * 240 + x];
+                if (color != ST77XX_BLACK)
+                {
+                    poisonSampleX = x;
+                    poisonSampleY = y;
+                    normalColor = color;
+                    break;
+                }
+            }
+        }
+        check(poisonSampleX >= 0, "poison render sample exists");
+        check(addCondition(actor->character, CONDITION_POISONED, 0, 3),
+              "poison render condition applies");
+        tft.fillScreen(ST77XX_BLACK);
+        drawEntity(*actor);
+        check(pixels()[poisonSampleY * 240 + poisonSampleX] ==
+                  getPoisonTintColor(normalColor),
+              "poisoned entity uses green render-time tint");
+        combat.active = true;
+        tft.fillScreen(ST77XX_BLACK);
+        drawEntity(*actor);
+        check(hasOutline(*actor, ST77XX_CYAN),
+              "poison tint coexists with active-turn outline");
+        check(removeCondition(actor->character, CONDITION_POISONED),
+              "poison render condition clears");
+        combat.active = false;
+        tft.fillScreen(ST77XX_BLACK);
+        drawEntity(*actor);
+        check(pixels()[poisonSampleY * 240 + poisonSampleX] == normalColor,
+              "poison tint disappears immediately after cure");
+
+        TurnState spiderA{};
+        TurnState spiderB{};
+        commitMonsterWebCooldown(spiderA);
+        check(!canMonsterUseWeb(spiderA) && canMonsterUseWeb(spiderB),
+              "Web cooldown is independent per spider");
+        advanceMonsterWebCooldown(spiderA);
+        check(getMonsterWebCooldownTurns(spiderA) == 3,
+              "Web cast turn does not consume first cooldown turn");
+        for (int turn = 0; turn < 3; turn++)
+        {
+            check(!canMonsterUseWeb(spiderA),
+                  "Web unavailable during each cooldown turn");
+            advanceMonsterWebCooldown(spiderA);
+        }
+        check(canMonsterUseWeb(spiderA),
+              "Web is available after three skipped turns");
+
+        check(getMonsterThinkingChance(3) == 35 &&
+              getMonsterThinkingChance(7) == 25 &&
+              getMonsterThinkingChance(11) == 15 &&
+              getMonsterThinkingChance(12) == 8,
+              "thinking chance follows Intelligence thresholds");
+        check(getMonsterThinkingChance(3) > getMonsterThinkingChance(12),
+              "low Intelligence thinks more often");
+        const uint32_t cosmeticValue = getMonsterPresentationValue(
+            MONSTER_GIANT_SPIDER, 4, 5, 2, 1);
+        check(cosmeticValue == getMonsterPresentationValue(
+                  MONSTER_GIANT_SPIDER, 4, 5, 2, 1),
+              "cosmetic thinking decision is deterministic");
+        const unsigned long thinkingDuration =
+            getMonsterThinkingDuration(
+                static_cast<uint16_t>(cosmeticValue >> 8));
+        check(thinkingDuration >= MONSTER_THINKING_MIN_MS &&
+              thinkingDuration <= MONSTER_THINKING_MAX_MS,
+              "thinking duration stays within presentation bounds");
+        check(MONSTER_STEP_PRESENTATION_MS >= 150 &&
+              MONSTER_STEP_PRESENTATION_MS <= 250,
+              "monster tile pacing is near 200 milliseconds");
+
+        clearMapEffects();
+        MapEffect web{};
+        web.active = true;
+        web.type = MAP_EFFECT_WEB;
+        web.x = actor->x;
+        web.y = actor->y;
+        web.saveDC = 16;
+        web.expiresWithCombat = true;
+        check(addMapEffect(web) != nullptr, "Web escape fixture applies");
+        actor->turn = TurnState{};
+        actor->turn.turnActive = true;
+        actor->turn.movementRemaining = 0;
+        check(addCondition(actor->character, CONDITION_GRAPPLED, 0, 0),
+              "Web restraint applies");
+        check(!attemptEscapeWeb(*actor, 15) &&
+              actor->turn.movementRemaining == 0,
+              "failed Web escape preserves restraint");
+        check(attemptEscapeWeb(*actor, 16) &&
+              actor->turn.movementRemaining == effectiveSpeed,
+              "successful Web escape immediately restores unused movement");
+        clearMapEffects();
+
+        actor->character.equipment.equipped[SLOT_MELEE_WEAPON] =
+            makeItemInstance(ITEM_LONGSWORD);
+        actor->turn = TurnState{};
+        actor->turn.turnActive = true;
+        actor->turn.movementRemaining = 0;
+        check(addCondition(actor->character, CONDITION_GRAPPLED, 0, 0),
+              "cut-free restraint applies");
+        combat = Combat{};
+        combat.active = true;
+        combat.phase = COMBAT_TURN;
+        combat.waitingForPlayer = true;
+        combat.combatantCount = 1;
+        combat.initiativeOrder[0] = actor;
+        check(cutFreeFromWeb(), "cut-free action succeeds");
+        check(!hasCondition(actor->character, CONDITION_GRAPPLED) &&
+              actor->turn.movementRemaining == effectiveSpeed &&
+              actor->turn.standardActionUsed &&
+              !actor->turn.moveActionUsed,
+              "cut-free spends standard action and restores move action");
 
         actor->turn = TurnState{};
         actor->turn.turnActive = true;
