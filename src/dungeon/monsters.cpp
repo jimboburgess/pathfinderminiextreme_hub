@@ -6,6 +6,7 @@
 
 #include "data/dice.h"
 #include "characters/characters.h"
+#include "graphics/actionpose.h"
 #include "graphics/monstersprites.h"
 
 
@@ -29,7 +30,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_NONE,
         { ABILITY_NONE, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_NONE,
         { 0, 0 }, 0, 0, CREATURE_PLAYER, false, 0, 0, 0, 0,
-        IDLE_STATIONARY
+        IDLE_STATIONARY, false, 0, 0, nullptr
     },
 
     //======================================================
@@ -49,7 +50,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_HUMANOID,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_GOBLIN, false, 0, 0, 2, 2,
-        IDLE_PATROL
+        IDLE_PATROL, false, 0, 0, &goblinActionSprite
     },
 
     {
@@ -67,7 +68,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_HUMANOID,
         { ABILITY_RANGED_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_RANGED,
         { 0, 0 }, 0, 0, CREATURE_GOBLIN, false, 0, 0, 3, 2,
-        IDLE_PATROL
+        IDLE_PATROL, false, 0, 0, &goblinArcherActionSprite
     },
 
     {
@@ -85,7 +86,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_HUMANOID,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_ORC, false, 0, 0, 2, 1,
-        IDLE_PATROL
+        IDLE_PATROL, false, 0, 0, &bugbearActionSprite
     },
 
     //======================================================
@@ -106,7 +107,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_SKELETON, false, 0, 0, 1, -2,
-        IDLE_STATIONARY
+        IDLE_STATIONARY, false, 0, 0, &skeletonActionSprite
     },
 
     {
@@ -124,7 +125,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_ZOMBIE, false, 0, 0, 0, -3,
-        IDLE_WANDER
+        IDLE_WANDER, false, 0, 0, &zombieActionSprite
     },
 
     {
@@ -142,7 +143,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_ZOMBIE, false, 0, 0, 3, 1,
-        IDLE_PATROL
+        IDLE_PATROL, false, 0, 0, &ghoulActionSprite
     },
 
     {
@@ -160,7 +161,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_UNDEAD,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_ZOMBIE, false, 0, 0, 4, 2,
-        IDLE_PATROL
+        IDLE_PATROL, false, 0, 0, &wightActionSprite
     },
 
     //======================================================
@@ -184,7 +185,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         IDLE_HIDE,
         false,
         0,
-        1
+        1,
+        &giantSpiderActionSprite
     },
 
     {
@@ -202,7 +204,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_MONSTER,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_MONSTER, true, 0, 0, 1, 1,
-        IDLE_HIDE
+        IDLE_HIDE, false, 0, 0, &grayOozeActionSprite
     },
 
     {
@@ -220,7 +222,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_MONSTER,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_SUPPORT,
         { 0, 0 }, 0, 0, CREATURE_MONSTER, false, 0, 0, 1, -1,
-        IDLE_STATIONARY
+        IDLE_STATIONARY, false, 0, 0, &violetFungusActionSprite
     },
 
     {
@@ -237,7 +239,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         LOOT_ABERRATION,
         { ABILITY_MELEE_ATTACK, ABILITY_NONE, ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_MONSTER, false, 0, 0, 3, 4,
-        IDLE_HIDE
+        IDLE_HIDE, false, 0, 0, &chokerActionSprite
     },
 
     {
@@ -260,7 +262,10 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         4,
         CREATURE_BEHOLDER, false, 0, 0, 6, 2,
         IDLE_STATIONARY,
-        true
+        true,
+        0,
+        0,
+        &spectatorActionSprite
     },
 
     {
@@ -292,7 +297,10 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         5,
         1,
         IDLE_STATIONARY,
-        true
+        true,
+        0,
+        0,
+        &skeletonMageActionSprite
     },
 
     //======================================================
@@ -315,7 +323,10 @@ const Monster monsterDatabase[MONSTER_COUNT] =
           ABILITY_NONE, ABILITY_NONE }, SCRIPT_MELEE,
         { 0, 0 }, 0, 0, CREATURE_GOBLIN, false, 0, 0, 4, 3,
         IDLE_PATROL,
-        true
+        true,
+        0,
+        0,
+        &goblinChieftainActionSprite
     },
 
     {
@@ -336,7 +347,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         IDLE_HIDE,
         true,
         1,
-        3
+        3,
+        &spiderQueenActionSprite
     },
 };
 

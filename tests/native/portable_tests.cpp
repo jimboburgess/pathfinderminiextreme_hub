@@ -41,7 +41,7 @@ bool testPacketGoldenVectorAndRoundTrip()
         header, payload, sizeof(payload), encoded, sizeof(encoded), encodedSize));
 
     const uint8_t expected[] = {
-        0x4D, 0x50, 0x06, 0x60, 0x02, 0x01, 0xCD, 0xAB, 0x04,
+        0x4D, 0x50, 0x07, 0x60, 0x02, 0x01, 0xCD, 0xAB, 0x04,
         0x00, 0x78, 0x56, 0x34, 0x12, 0x04, 0x03, 0x02, 0x01};
     CHECK(encodedSize == sizeof(expected));
     CHECK(std::memcmp(encoded, expected, sizeof(expected)) == 0);
@@ -116,6 +116,33 @@ bool testSharedMessageAndCombatReferencesStayBounded()
     CHECK(decodeMultiplayerCombatActionRequest(bytes, size, decodedAction));
     CHECK(decodedAction.actor.playerID == 1);
     CHECK(decodedAction.target.entityID == 2);
+
+    ExplorationActionEventPayload actionEvent{};
+    actionEvent.activityID = 99;
+    actionEvent.actionSequence = 5;
+    actionEvent.actor = decodedAction.actor;
+    CHECK(encodeExplorationActionEvent(
+        actionEvent, bytes, sizeof(bytes), size));
+    CHECK(size == EXPLORATION_ACTION_EVENT_PAYLOAD_SIZE);
+    ExplorationActionEventPayload decodedEvent{};
+    CHECK(decodeExplorationActionEvent(bytes, size, decodedEvent));
+    CHECK(decodedEvent.actionSequence == 5);
+    CHECK(decodedEvent.actor.playerID == 1);
+
+    MultiplayerCombatEventPayload combatEvent{};
+    combatEvent.activityID = 99;
+    combatEvent.combatID = 12;
+    combatEvent.eventSequence = 6;
+    combatEvent.eventType = MultiplayerCombatEventType::ACTION_RESULT;
+    combatEvent.actionFlags = MULTIPLAYER_COMBAT_ACTION_POSE;
+    combatEvent.actor = decodedAction.actor;
+    CHECK(encodeMultiplayerCombatEvent(
+        combatEvent, bytes, sizeof(bytes), size));
+    MultiplayerCombatEventPayload decodedCombatEvent{};
+    CHECK(decodeMultiplayerCombatEvent(
+        bytes, size, decodedCombatEvent));
+    CHECK((decodedCombatEvent.actionFlags &
+           MULTIPLAYER_COMBAT_ACTION_POSE) != 0);
 
     action.actor.playerID = INVALID_PLAYER_ID;
     CHECK(!encodeMultiplayerCombatActionRequest(

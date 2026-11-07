@@ -28,6 +28,7 @@
 #include "data/game.h"
 #include "data/progression.h"
 #include "graphics/display.h"
+#include "graphics/actionpose.h"
 #include "graphics/messagelog.h"
 #include "input/menu.h"
 
@@ -2721,6 +2722,7 @@ void confirmPlayerAttack()
     }
 
     playSound(getAttackSound(player, weapon));
+    triggerEntityActionPose(*player);
 
     // Clear the targeting cursor before it stops being a targeting action.
     // For melee this is the exact square chosen by the direction cursor.
@@ -3125,6 +3127,7 @@ static void executeTurnUndead(Entity& cleric)
 
     cleric.character.magic.currentMP -= ability->mpCost;
     cleric.turn.standardActionUsed = true;
+    triggerEntityActionPose(cleric);
     if (turned == 0)
         setGameMessage("No undead were turned");
     else
@@ -4261,6 +4264,7 @@ bool useChannelEnergy(Entity& cleric)
         cleric.character.classAbilities.channelEnergyCurrent;
 
     cleric.character.classAbilities.channelEnergyCurrent--;
+    triggerEntityActionPose(cleric);
 
     for (uint8_t i = 0; i < entityCount; i++)
     {
@@ -4370,6 +4374,7 @@ void beginMonsterAttack(
     }
 
     playSound(getAttackSound(monster, weapon));
+    triggerEntityActionPose(*monster);
 
     int abilityModifier = getAbilityModifier(
         monster->character,

@@ -23,6 +23,7 @@
 #include "characters/items.h"
 #include "data/dice.h"
 #include "graphics/display.h"
+#include "graphics/actionpose.h"
 #include "graphics/messagelog.h"
 #include "graphics/npcsprites.h"
 #include "graphics/sprites.h"
@@ -177,6 +178,8 @@ struct ExplorationAbilityNetworkState
     uint8_t hasSequenceMask = 0;
     uint8_t resultReadyMask = 0;
     uint8_t lastResult[MAX_MULTIPLAYER_PLAYERS] = {};
+    uint16_t lastActionEvent[MAX_MULTIPLAYER_PLAYERS] = {};
+    uint8_t hasActionEventMask = 0;
     uint8_t retryCount = 0;
     uint8_t pendingSize = 0;
     uint8_t pendingBytes[EXPLORATION_ABILITY_COMMAND_PAYLOAD_SIZE] = {};
@@ -255,6 +258,10 @@ void processExplorationAbilityCommand(
     const uint8_t* payload,
     uint16_t payloadSize);
 void processExplorationAbilityResult(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize);
+void processExplorationActionEvent(
     PlayerID sender,
     const uint8_t* payload,
     uint16_t payloadSize);
@@ -3425,6 +3432,11 @@ void processCombatEvent(
                              event.actorHP, event.actorState);
     applyCombatantEventState(event.target, event.targetX, event.targetY,
                              event.targetHP, event.targetState);
+    if ((event.actionFlags & MULTIPLAYER_COMBAT_ACTION_POSE) != 0)
+    {
+        Entity* actor = resolveVisibleCombatant(event.actor);
+        if (actor != nullptr) triggerEntityActionPose(*actor);
+    }
     Entity* previousTurnEntity = getVisibleMultiplayerCurrentCombatant();
     if (previousTurnEntity != nullptr)
         markEntityFootprintDirty(*previousTurnEntity);
@@ -3564,6 +3576,9 @@ void handleGameplayPacket(
             break;
         case NetworkPacketType::EXPLORATION_ABILITY_RESULT:
             processExplorationAbilityResult(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::EXPLORATION_ACTION_EVENT:
+            processExplorationActionEvent(sender, payload, payloadSize);
             break;
         case NetworkPacketType::SHARED_GAMEPLAY_MESSAGE:
             processSharedGameplayMessage(sender, payload, payloadSize);
@@ -3792,7 +3807,8 @@ bool emitCombatEvent(
     MultiplayerCombatEventType eventType,
     const MultiplayerCombatantRef& actor,
     const MultiplayerCombatantRef& target,
-    const char* message)
+    const char* message,
+    bool actionPose = false)
 {
     MultiplayerCombatEventPayload event{};
     event.activityID = runtime.activityID;
@@ -3812,6 +3828,8 @@ bool emitCombatEvent(
         event.actionFlags |= MULTIPLAYER_COMBAT_STANDARD_ACTION_USED;
     if (currentSlot.fullDefense)
         event.actionFlags |= MULTIPLAYER_COMBAT_FULL_DEFENSE;
+    if (actionPose)
+        event.actionFlags |= MULTIPLAYER_COMBAT_ACTION_POSE;
     fillCombatEventState(event, actor, true);
     fillCombatEventState(event, target, false);
     if (runtime.type == MultiplayerActivityType::DUNGEON &&
@@ -4044,19 +4062,21 @@ bool resolveMultiplayerAttack(
     actor->turn.standardActionUsed = true;
     const uint8_t roomID = request.actor.roomID;
     saveCombatRoomAndRestoreHost(roomID);
+    if (Entity* visibleActor = resolveVisibleCombatant(request.actor))
+        triggerEntityActionPose(*visibleActor);
     if (!hasLivingMultiplayerHostile())
     {
         multiplayerCombat->ending = true;
         emitCombatEvent(NetworkPacketType::COMBAT_END,
                         MultiplayerCombatEventType::COMBAT_ENDED,
-                        request.actor, request.target, "Combat ends.");
+                        request.actor, request.target, "Combat ends.", true);
         return true;
     }
     if (shouldAdvanceAfterStandardAction(combatSlot.moveActionUsed))
         advanceMultiplayerTurn();
     return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
                            MultiplayerCombatEventType::ACTION_RESULT,
-                           request.actor, request.target, message);
+                           request.actor, request.target, message, true);
 }
 
 bool resolveMultiplayerAbility(
@@ -4132,6 +4152,8 @@ bool resolveMultiplayerAbility(
     const uint8_t roomID = request.actor.roomID;
     refreshHostParticipantCharacters();
     saveCombatRoomAndRestoreHost(roomID);
+    if (Entity* visibleActor = resolveVisibleCombatant(request.actor))
+        triggerEntityActionPose(*visibleActor);
     scheduleRoomRefreshForClients(roomID);
     if (outcome != nullptr) *outcome = ABILITY_RESULT_SUCCESS;
     if (!hasLivingMultiplayerHostile())
@@ -4139,14 +4161,14 @@ bool resolveMultiplayerAbility(
         multiplayerCombat->ending = true;
         return emitCombatEvent(NetworkPacketType::COMBAT_END,
             MultiplayerCombatEventType::COMBAT_ENDED,
-            request.actor, request.target, "Combat ends.");
+            request.actor, request.target, "Combat ends.", true);
     }
     if (!openingAction &&
         shouldAdvanceAfterStandardAction(combatSlot.moveActionUsed))
         advanceMultiplayerTurn();
     return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
         MultiplayerCombatEventType::ACTION_RESULT,
-        request.actor, request.target, message);
+        request.actor, request.target, message, true);
 }
 
 void completeExplorationAbility(
@@ -4176,6 +4198,27 @@ void completeExplorationAbility(
     {
         sendToPlayer(sender, NetworkPacketType::EXPLORATION_ABILITY_RESULT,
                      bytes, size, NETWORK_FLAG_CONTROL_EVENT);
+    }
+}
+
+void publishExplorationActionEvent(
+    const MultiplayerCombatantRef& actor,
+    uint16_t actionSequence)
+{
+    ExplorationActionEventPayload event{};
+    event.activityID = runtime.activityID;
+    event.actionSequence = actionSequence;
+    event.actor = actor;
+    uint8_t bytes[EXPLORATION_ACTION_EVENT_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (!encodeExplorationActionEvent(event, bytes, sizeof(bytes), size))
+        return;
+    for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS;
+         ++playerID)
+    {
+        if (isParticipant(playerID))
+            sendToPlayer(playerID, NetworkPacketType::EXPLORATION_ACTION_EVENT,
+                         bytes, size, NETWORK_FLAG_CONTROL_EVENT);
     }
 }
 
@@ -4318,6 +4361,8 @@ void resolveAuthoritativeExplorationAbility(
         refreshHostParticipantCharacters();
         const uint8_t roomID = actorRef.roomID;
         saveCombatRoomAndRestoreHost(roomID);
+        if (Entity* visibleActor = resolveVisibleCombatant(actorRef))
+            triggerEntityActionPose(*visibleActor);
         scheduleRoomRefreshForClients(roomID);
         char message[SHARED_MESSAGE_TEXT_SIZE] = {};
         snprintf(message, sizeof(message), "%s casts %s.",
@@ -4325,6 +4370,7 @@ void resolveAuthoritativeExplorationAbility(
                  getAbilityName(abilityID));
         publishSharedGameplayMessage(
             message, SharedMessageCategory::GAMEPLAY);
+        publishExplorationActionEvent(actorRef, command.actionSequence);
     }
     else
         restoreHostDungeonRoom();
@@ -4387,6 +4433,31 @@ void processExplorationAbilityResult(
         static_cast<AbilityResult>(result.result);
     if (abilityResult != ABILITY_RESULT_SUCCESS)
         setGameMessage(getAbilityResultMessage(abilityResult));
+}
+
+void processExplorationActionEvent(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        multiplayerCombat == nullptr) return;
+    ExplorationActionEventPayload event{};
+    if (!decodeExplorationActionEvent(payload, payloadSize, event) ||
+        event.activityID != runtime.activityID ||
+        event.actor.kind != MultiplayerCombatantKind::PLAYER ||
+        !isValidPlayerID(event.actor.playerID)) return;
+    ExplorationAbilityNetworkState& state =
+        multiplayerCombat->explorationAbility;
+    const uint8_t bit = playerBit(event.actor.playerID);
+    if ((state.hasActionEventMask & bit) != 0 &&
+        !isNewerMovementSequence(
+            event.actionSequence,
+            state.lastActionEvent[event.actor.playerID])) return;
+    state.hasActionEventMask |= bit;
+    state.lastActionEvent[event.actor.playerID] = event.actionSequence;
+    Entity* actor = resolveVisibleCombatant(event.actor);
+    if (actor != nullptr) triggerEntityActionPose(*actor);
 }
 
 bool processAuthoritativeCombatAction(

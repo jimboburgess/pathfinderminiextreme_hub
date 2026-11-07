@@ -75,7 +75,13 @@ struct Entity
     // NPC identity occupies padding beside the byte-sized idle state, keeping
     // the already-large persistent Entity record from growing.
     NPCID npcID = NPC_NONE;
-    uint32_t nextIdleActionTime = 0;
+    union
+    {
+        uint32_t nextIdleActionTime = 0;
+        // Active actions and exploration idle movement are mutually exclusive.
+        // Sharing their transient deadline keeps fixed Entity storage unchanged.
+        uint32_t actionPoseUntil;
+    };
 
     LootData loot;
 

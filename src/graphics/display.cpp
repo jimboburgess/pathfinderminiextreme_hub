@@ -8,6 +8,7 @@
 #include "data/game.h"
 
 #include "audio/audio.h"
+#include "graphics/actionpose.h"
 #include "charcreationscreen.h"
 #include "messagelog.h"
 #include "monstersprites.h"
@@ -997,7 +998,7 @@ uint16_t getPoisonTintColor(uint16_t color)
 
 static void drawConditionSpriteTransparent(
     int x, int y, const uint16_t* sprite, uint8_t width, uint8_t height,
-    bool grayscale, bool poisoned)
+    bool grayscale, bool poisoned, const ActionSprite* actionSprite = nullptr)
 {
     if (sprite == nullptr)
         return;
@@ -1014,7 +1015,48 @@ static void drawConditionSpriteTransparent(
                 color = grayscaleColor(color);
             if (poisoned)
                 color = getPoisonTintColor(color);
-            tft.writePixel(x + col, y + row, color);
+            int poseOffset = 0;
+            if (actionSprite != nullptr && row < height * 3 / 4 &&
+                actionSprite->style != ACTION_SPRITE_CAST)
+                poseOffset = 1;
+            if (col + poseOffset < width)
+                tft.writePixel(x + col + poseOffset, y + row, color);
+        }
+    }
+
+    if (actionSprite != nullptr)
+    {
+        auto actionColor = [&](uint16_t color)
+        {
+            if (grayscale) color = grayscaleColor(color);
+            if (poisoned) color = getPoisonTintColor(color);
+            return color;
+        };
+        const uint16_t primary = actionColor(actionSprite->primaryColor);
+        const uint16_t accent = actionColor(actionSprite->accentColor);
+        const int right = x + width - 2;
+        const int middle = y + height / 2;
+        switch (actionSprite->style)
+        {
+            case ACTION_SPRITE_WEAPON:
+                tft.writeLine(right - 5, middle + 3, right, middle - 2, primary);
+                tft.writeLine(right - 4, middle + 3, right - 2, middle + 5, accent);
+                break;
+            case ACTION_SPRITE_RANGED:
+                tft.writeLine(right - 6, middle, right, middle, primary);
+                tft.writeLine(right - 2, middle - 2, right, middle, accent);
+                tft.writeLine(right - 2, middle + 2, right, middle, accent);
+                break;
+            case ACTION_SPRITE_CAST:
+                tft.writeLine(x + 2, y + 3, x + 6, y + 3, primary);
+                tft.writeLine(x + 4, y + 1, x + 4, y + 5, primary);
+                tft.writeLine(right - 4, y + 5, right, y + 5, accent);
+                tft.writeLine(right - 2, y + 3, right - 2, y + 7, accent);
+                break;
+            case ACTION_SPRITE_NATURAL:
+                tft.writeLine(x + 1, middle - 3, x + 5, middle + 1, primary);
+                tft.writeLine(right - 4, middle + 1, right, middle - 3, accent);
+                break;
         }
     }
     tft.endWrite();
@@ -1067,7 +1109,9 @@ void drawEntity(const Entity& entity)
                 entity.spriteWidth,
                 entity.spriteHeight,
                 true,
-                hasCondition(entity.character, CONDITION_POISONED));
+                hasCondition(entity.character, CONDITION_POISONED),
+                isEntityActionPoseActive(entity)
+                    ? getEntityActionSprite(entity) : nullptr);
             drawActiveTurnOutline(entity);
             return;
         }
@@ -1083,7 +1127,9 @@ void drawEntity(const Entity& entity)
         entity.spriteWidth,
         entity.spriteHeight,
         false,
-        hasCondition(entity.character, CONDITION_POISONED));
+        hasCondition(entity.character, CONDITION_POISONED),
+        isEntityActionPoseActive(entity)
+            ? getEntityActionSprite(entity) : nullptr);
     drawActiveTurnOutline(entity);
 
     if (entity.character.state == STATE_DEAD ||

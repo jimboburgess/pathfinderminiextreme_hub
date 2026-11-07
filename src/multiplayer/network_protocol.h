@@ -6,7 +6,7 @@
 
 #include "multiplayer_types.h"
 
-constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 6;
+constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 7;
 constexpr uint16_t MULTIPLAYER_PACKET_MAGIC = 0x504D;
 constexpr size_t ESPNOW_MAX_PACKET_SIZE = 250;
 constexpr size_t NETWORK_PACKET_HEADER_SIZE = 14;
@@ -26,6 +26,7 @@ constexpr size_t PLAYER_POSITION_PAYLOAD_SIZE = 11;
 constexpr size_t PLAYER_ROOM_CHANGE_PAYLOAD_SIZE = 11;
 constexpr size_t EXPLORATION_ABILITY_COMMAND_PAYLOAD_SIZE = 16;
 constexpr size_t EXPLORATION_ABILITY_RESULT_PAYLOAD_SIZE = 7;
+constexpr size_t EXPLORATION_ACTION_EVENT_PAYLOAD_SIZE = 10;
 constexpr size_t SNAPSHOT_CHUNK_DATA_SIZE = 200;
 constexpr size_t ACTIVITY_ACK_PAYLOAD_SIZE = 11;
 constexpr size_t PLAYER_ROOM_TRANSITION_REQUEST_PAYLOAD_SIZE = 8;
@@ -79,6 +80,7 @@ enum class NetworkPacketType : uint8_t
     PLAYER_ROOM_CHANGE,
     EXPLORATION_ABILITY_COMMAND,
     EXPLORATION_ABILITY_RESULT,
+    EXPLORATION_ACTION_EVENT,
 
     COMBAT_BEGIN = 48,
     COMBAT_STATE,
@@ -195,10 +197,12 @@ enum class MultiplayerCombatActionType : uint8_t
 constexpr uint8_t MULTIPLAYER_COMBAT_MOVE_ACTION_USED = 0x01;
 constexpr uint8_t MULTIPLAYER_COMBAT_STANDARD_ACTION_USED = 0x02;
 constexpr uint8_t MULTIPLAYER_COMBAT_FULL_DEFENSE = 0x04;
+constexpr uint8_t MULTIPLAYER_COMBAT_ACTION_POSE = 0x08;
 constexpr uint8_t MULTIPLAYER_COMBAT_ACTION_FLAGS_MASK =
     MULTIPLAYER_COMBAT_MOVE_ACTION_USED |
     MULTIPLAYER_COMBAT_STANDARD_ACTION_USED |
-    MULTIPLAYER_COMBAT_FULL_DEFENSE;
+    MULTIPLAYER_COMBAT_FULL_DEFENSE |
+    MULTIPLAYER_COMBAT_ACTION_POSE;
 
 enum class MultiplayerCombatEventType : uint8_t
 {
@@ -533,6 +537,13 @@ struct ExplorationAbilityResultPayload
     uint8_t result = 0;
 };
 
+struct ExplorationActionEventPayload
+{
+    uint32_t activityID = 0;
+    uint16_t actionSequence = 0;
+    MultiplayerCombatantRef actor{};
+};
+
 struct DecodedNetworkPacket
 {
     NetworkPacketHeader header{};
@@ -748,5 +759,14 @@ bool decodeExplorationAbilityResult(
     const uint8_t* data,
     size_t size,
     ExplorationAbilityResultPayload& payload);
+bool encodeExplorationActionEvent(
+    const ExplorationActionEventPayload& payload,
+    uint8_t* destination,
+    size_t capacity,
+    size_t& size);
+bool decodeExplorationActionEvent(
+    const uint8_t* data,
+    size_t size,
+    ExplorationActionEventPayload& payload);
 
 #endif

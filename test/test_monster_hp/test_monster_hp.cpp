@@ -3,6 +3,7 @@
 
 #include "../../src/data/entityspawn.h"
 #include "../../src/graphics/monstersprites.h"
+#include "../actionpose_stubs.h"
 
 // Lightweight sprite definitions keep this embedded unit focused on monster
 // data and spawning rather than linking the production bitmap assets.

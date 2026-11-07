@@ -9,6 +9,7 @@
 #include "map/awareness.h"
 #include "map/monsteridle.h"
 #include "graphics/elementalvisual.h"
+#include "graphics/actionpose.h"
 #include "town/town.h"
 #include "audio/audio.h"
 #include "map/mapeffects.h"
@@ -107,7 +108,7 @@ void renderController() {
         backgroundNeedsRedraw=true;redrawType=REDRAW_FULL;needsRedraw=true;
     }
     refreshNativePartyMenu();
-    updateMonsterVisibility();updateElementalVisualEffect();updateGameMessage();updateTownRest();
+    updateMonsterVisibility();updateElementalVisualEffect();updateEntityActionPoses();updateGameMessage();updateTownRest();
     if(needsRedraw)refreshDisplay();
     if(gameState==GAME_START && !menuState.isOpen)drawStartAnimation();
 }

@@ -84,7 +84,7 @@ or permanent services. No such forwarding is started by build/tests.
 
 ## Messages and authorization
 
-The application version `v:1` is independent of ESP-NOW protocol 6. Frames are
+The application version `v:1` is independent of ESP-NOW protocol 7. Frames are
 UTF-8 JSON text. Every request has integer `v`, printable string `id` (1–32
 characters), and string `type`. Only the documented fields for a command are
 accepted. Booleans/floats do not substitute for version numbers. JSON parsing

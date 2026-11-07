@@ -7,6 +7,7 @@
 #include "dungeon/actioneconomy.h"
 #include "dungeon/combat.h"
 #include "graphics/tiles.h"
+#include "graphics/actionpose.h"
 #include "map/activemap.h"
 
 namespace
@@ -165,6 +166,7 @@ ThrownPotionResolution resolveThrownHealingPotion(
     }
 
     resolution.consumed = true;
+    triggerEntityActionPose(thrower);
     resolution.attackTotal = attackRoll + getRangedAttackBonus(thrower.character);
     resolution.hit = squareTargetRangedAttackHits(
         attackRoll, getRangedAttackBonus(thrower.character));

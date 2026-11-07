@@ -327,6 +327,7 @@ bool isKnownPacketType(NetworkPacketType packetType)
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
         case NetworkPacketType::EXPLORATION_ABILITY_COMMAND:
         case NetworkPacketType::EXPLORATION_ABILITY_RESULT:
+        case NetworkPacketType::EXPLORATION_ACTION_EVENT:
         case NetworkPacketType::COMBAT_BEGIN:
         case NetworkPacketType::COMBAT_STATE:
         case NetworkPacketType::COMBAT_ACTION_REQUEST:
@@ -382,6 +383,7 @@ bool isGameplayPacketType(NetworkPacketType packetType)
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
         case NetworkPacketType::EXPLORATION_ABILITY_COMMAND:
         case NetworkPacketType::EXPLORATION_ABILITY_RESULT:
+        case NetworkPacketType::EXPLORATION_ACTION_EVENT:
         case NetworkPacketType::COMBAT_BEGIN:
         case NetworkPacketType::COMBAT_STATE:
         case NetworkPacketType::COMBAT_ACTION_REQUEST:
@@ -1367,5 +1369,33 @@ bool decodeExplorationAbilityResult(
     return reader.readU32(payload.activityID) &&
            reader.readU16(payload.actionSequence) &&
            reader.readU8(payload.result) && reader.finished() &&
+           payload.activityID != 0;
+}
+
+bool encodeExplorationActionEvent(
+    const ExplorationActionEventPayload& payload,
+    uint8_t* destination,
+    size_t capacity,
+    size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 ||
+        payload.actor.kind == MultiplayerCombatantKind::NONE ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.actionSequence) ||
+        !writeCombatantRef(writer, payload.actor)) return false;
+    size = writer.size();
+    return size == EXPLORATION_ACTION_EVENT_PAYLOAD_SIZE;
+}
+
+bool decodeExplorationActionEvent(
+    const uint8_t* data,
+    size_t size,
+    ExplorationActionEventPayload& payload)
+{
+    PacketReader reader(data, size);
+    return reader.readU32(payload.activityID) &&
+           reader.readU16(payload.actionSequence) &&
+           readCombatantRef(reader, payload.actor) && reader.finished() &&
            payload.activityID != 0;
 }

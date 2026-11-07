@@ -95,6 +95,14 @@ if(BUILD_TESTING)
     target_compile_definitions(pfme_monster_balance_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_monster_balance COMMAND pfme_monster_balance_tests)
     set_tests_properties(pfme_monster_balance PROPERTIES TIMEOUT 30)
+
+    add_executable(pfme_action_pose_tests action_pose_tests.cpp)
+    target_include_directories(pfme_action_pose_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_action_pose_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_action_pose_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_action_pose COMMAND pfme_action_pose_tests)
+    set_tests_properties(pfme_action_pose PROPERTIES TIMEOUT 30)
 endif()
 
 if(BUILD_TESTING)

@@ -470,7 +470,7 @@ Channel Energy remains a wall-independent caster-centered six-tile radius. Turn
 Undead remains caster-centered at six tiles and retains caster line of sight.
 Directional cones and lines retain their caster/source line-of-effect rules.
 
-ESP-NOW protocol 6 adds one generic 16-byte committed exploration-ability command
+ESP-NOW protocol 7 uses one generic 16-byte committed exploration-ability command
 and a 7-byte result. Preview and cursor movement remain local. The host derives the
 actor from the sender, validates ability access, resources, room, target, range,
 line of effect and hostility, then runs the production resolver. Non-hostile casts
@@ -479,6 +479,23 @@ Hostile casts begin combat, resolve once as the opening action before normal
 initiative, and preserve the spent Standard Action on the caster's actual
 initiative turn. Scroll casting remains unavailable over ESP-NOW because its
 inventory consumption is not yet represented by this command.
+
+## Creature action poses
+
+Every player class and production monster has one generic action sprite style:
+weapon, ranged, casting, or natural. A successfully committed melee, ranged, or
+natural attack, spell, Channel Energy, Turn Undead, thrown potion, or active
+monster ability displays that pose for 1000 ms, regardless of hit or miss.
+Targeting previews, cancellation, and rejected actions do not trigger it. A
+second committed action refreshes the deadline instead of queuing animation.
+
+The timer is nonblocking and shares the entity's mutually exclusive exploration
+idle deadline, so fixed entity storage and ESP32 internal RAM do not grow. Pose
+expiration dirties only the creature footprint. Rendering retains poison tint,
+line-of-sight grayscale, the cyan turn outline, and death/KO precedence. ESP-NOW
+protocol 7 carries a semantic action flag on authoritative combat results and a
+10-byte authoritative exploration action event; clients derive presentation
+locally and never transmit sprite frames or targeting movement.
 
 ## Playtest Batch 5 party items
 

@@ -12,6 +12,8 @@
 #include "characters/items.h"
 #include "characters/abilities.h"
 
+struct ActionSprite;
+
 enum ChallengeRating
 {
     CR_ONE_EIGHTH,
@@ -220,6 +222,10 @@ struct Monster
     // Zero means no Web plan, one preserves the ordinary spider's single
     // target-centered cast, and higher values allow broader repeat coverage.
     uint8_t webCastPriority;
+
+    // Flash-resident presentation metadata for the creature's single ACTION
+    // frame. Passive effects never activate it.
+    const ActionSprite* actionSprite;
 };
 
 const Monster* getMonster(MonsterID id);

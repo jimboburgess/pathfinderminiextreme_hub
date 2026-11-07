@@ -13,6 +13,7 @@
 #include "data/entitytraits.h"
 #include "data/progression.h"
 #include "graphics/display.h"
+#include "graphics/actionpose.h"
 
 namespace
 {
@@ -1130,12 +1131,13 @@ bool canPayAbilityCost(
 }
 
 void payAbilityCost(
-    Character& caster,
+    Entity& caster,
     const Ability& ability,
     AbilityCastSource source)
 {
     if (source == AbilityCastSource::NORMAL)
-        caster.magic.currentMP -= ability.mpCost;
+        caster.character.magic.currentMP -= ability.mpCost;
+    triggerEntityActionPose(caster);
 }
 
 bool applyAbilityModifierCondition(
@@ -1341,7 +1343,7 @@ AbilityResolution resolveAbility(
             // Confirmation has committed the spell even though the attack
             // missed. Pay its resource/action cost, but return before saves,
             // damage, conditions, or recurring effects can be applied.
-            payAbilityCost(caster.character, *ability, source);
+            payAbilityCost(caster, *ability, source);
             if (combat.active)
                 caster.turn.standardActionUsed = true;
             return resolution;
@@ -1400,7 +1402,7 @@ AbilityResolution resolveAbility(
         {
             burnWebUnderEntity(*resolvedTarget);
         }
-        payAbilityCost(caster.character, *ability, source);
+        payAbilityCost(caster, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
         return resolution;
@@ -1444,7 +1446,7 @@ AbilityResolution resolveAbility(
         }
         if (abilityDealsDamageType(*ability, DAMAGE_FIRE))
             burnWebUnderEntity(*resolvedTarget);
-        payAbilityCost(caster.character, *ability, source);
+        payAbilityCost(caster, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
         return resolution;
@@ -1559,7 +1561,7 @@ AbilityResolution resolveAbility(
 
     // Resource and action costs occur only after all validation and effect
     // application have succeeded.
-    payAbilityCost(caster.character, *ability, source);
+    payAbilityCost(caster, *ability, source);
     if (combat.active)
         caster.turn.standardActionUsed = true;
 
@@ -1694,7 +1696,7 @@ AbilityResolution resolveAbilityAt(
         }
         if (ability->effects[0].damageType == DAMAGE_FIRE)
             burnWebAtTiles(flashTiles, flashTileCount);
-        payAbilityCost(caster.character, *ability, source);
+        payAbilityCost(caster, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
         return resolution;
@@ -1760,7 +1762,7 @@ AbilityResolution resolveAbilityAt(
         }
     }
 
-    payAbilityCost(caster.character, *ability, source);
+    payAbilityCost(caster, *ability, source);
     if (combat.active)
         caster.turn.standardActionUsed = true;
     return resolution;
@@ -1863,7 +1865,7 @@ AbilityResolution resolveAbilityInDirection(
         }
         if (ability->effects[0].damageType == DAMAGE_FIRE)
             burnWebAtTiles(flashTiles, flashTileCount);
-        payAbilityCost(caster.character, *ability, source);
+        payAbilityCost(caster, *ability, source);
         if (combat.active)
             caster.turn.standardActionUsed = true;
         return resolution;
@@ -1910,7 +1912,7 @@ AbilityResolution resolveAbilityInDirection(
         }
         playAreaDamageFlash(effect.damageType, effectTiles, tileCount);
         resolution.mapEffectCreated = true;
-        payAbilityCost(caster.character, *ability, source);
+        payAbilityCost(caster, *ability, source);
         if (combat.active) caster.turn.standardActionUsed = true;
         return resolution;
     }
@@ -1988,7 +1990,7 @@ AbilityResolution resolveAbilityInDirection(
             resolution.targetsAffected++;
     }
 
-    payAbilityCost(caster.character, *ability, source);
+    payAbilityCost(caster, *ability, source);
     if (combat.active)
         caster.turn.standardActionUsed = true;
     return resolution;

@@ -7,6 +7,7 @@
 #include "../../src/graphics/monstersprites.h"
 #include "../../src/graphics/npcsprites.h"
 #include "../../src/graphics/tiles.h"
+#include "../actionpose_stubs.h"
 
 // Lightweight graphics definitions keep this test focused on persistence.
 const uint16_t goblinSprite16x16r1[SPRITE_W * SPRITE_H] = {};

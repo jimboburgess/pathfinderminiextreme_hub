@@ -171,7 +171,7 @@ bool canPayAbilityCost(
     const Ability& ability,
     AbilityCastSource source);
 void payAbilityCost(
-    Character& caster,
+    Entity& caster,
     const Ability& ability,
     AbilityCastSource source);
 

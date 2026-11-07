@@ -29,6 +29,8 @@ static uint8_t activeTestEntityCount = 0;
 
 Combat combat;
 
+void triggerEntityActionPose(Entity&) {}
+
 bool triggerTrapForEntityAt(Entity&, int, int)
 {
     return false;
