@@ -159,6 +159,8 @@ struct Monster
 
     uint8_t hitDice;
     uint8_t baseAttack;
+    // Base normal AC used by authoritative entity attack resolution. Armor
+    // equipment remains descriptive/loot metadata for monster identity.
     uint8_t armorClass;
 
     int8_t fortitude;

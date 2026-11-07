@@ -505,3 +505,29 @@ thrown-potion commands. Those multiplayer actions remain hidden during an
 ESP-NOW shared activity rather than being simulated client-side; handheld
 single-player item use, throwing, dropping, persistence, pickup, and rendering
 remain available.
+
+## Playtest Batch 6 monster balance
+
+Published Pathfinder statistics are reference material, not mandatory targets.
+Mini EXTREME tunes normal monster AC around the actual d20 hit chance of the
+level expected to encounter it. At levels 1-2, fodder and normal enemies are
+generally AC 10-14, tough enemies remain at or below AC 16, and an elite or boss
+may reach AC 17 only when that defense is intentional. HP, offense, poison,
+control abilities, positioning, and behavior preserve monster identity without
+making repeated misses the default experience.
+
+`Monster::armorClass` is the authoritative normal AC for attacks against a
+monster. Player and NPC AC still use the shared character/equipment calculation;
+cover and Full Defense remain additive. Creatures with no Constitution score use
+their unmodified hit-die rolls instead of treating the missing score as an
+implicit -5 modifier. There is no separate Easy/Normal/Hard/Extreme combat AC
+modifier, so the base values are not applied twice.
+
+`pfme_monster_balance_tests` is a native-only audit that enumerates every
+production monster and reports CR, role, intended level range, effective old AC,
+definition AC, average HP, attack bonus, average weapon damage, saves, and actual
+level-1/level-2 Fighter hit probabilities. It also checks class attack profiles,
+low-level encounter bands, themed encounter ordering, natural 1/20 behavior,
+and level-3/level-5 progression. The current roster ends at CR 4 and deliberately
+does not auto-scale early monsters; stronger future tiers should add distinct
+definitions rather than erase player attack progression with automatic AC gain.

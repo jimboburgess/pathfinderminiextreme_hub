@@ -107,8 +107,8 @@ void test_low_constitution_hp_never_wraps()
         const Monster* monster = getMonster(noConstitutionMonsters[i]);
         TEST_ASSERT_NOT_NULL(monster);
 
-        // This is the minimum possible total for hitDice d8. The negative
-        // Constitution modifier should clamp to one HP per die, not wrap.
+        // This is the minimum possible total for hitDice d8. A missing
+        // Constitution score applies no modifier rather than an implicit -5.
         useHitPointRoll(monster->hitDice);
         TEST_ASSERT_EQUAL_UINT16(
             monster->hitDice, getMonsterMaxHP(*monster));
@@ -118,7 +118,7 @@ void test_low_constitution_hp_never_wraps()
     const Monster* zombie = getMonster(MONSTER_ZOMBIE);
     TEST_ASSERT_NOT_NULL(zombie);
     useHitPointRoll(16);
-    TEST_ASSERT_EQUAL_UINT16(6, getMonsterMaxHP(*zombie));
+    TEST_ASSERT_EQUAL_UINT16(16, getMonsterMaxHP(*zombie));
 }
 
 void test_zombie_database_fields_and_id_lookup_are_aligned()
@@ -138,7 +138,7 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL_UINT8(2, zombie.hitDice);
     TEST_ASSERT_EQUAL_UINT8(0, zombie.abilities.constitution);
     TEST_ASSERT_EQUAL_UINT8(1, zombie.baseAttack);
-    TEST_ASSERT_EQUAL_UINT8(14, zombie.armorClass);
+    TEST_ASSERT_EQUAL_UINT8(10, zombie.armorClass);
     TEST_ASSERT_EQUAL_INT8(3, zombie.fortitude);
     TEST_ASSERT_EQUAL_INT8(0, zombie.reflex);
     TEST_ASSERT_EQUAL_INT8(3, zombie.will);
@@ -177,7 +177,7 @@ void test_zombie_database_fields_and_id_lookup_are_aligned()
     TEST_ASSERT_EQUAL_PTR(skeletonMage16x16, skeletonMage.sprite);
     TEST_ASSERT_EQUAL_UINT8(3, skeletonMage.hitDice);
     TEST_ASSERT_EQUAL_UINT8(1, skeletonMage.baseAttack);
-    TEST_ASSERT_EQUAL_UINT8(15, skeletonMage.armorClass);
+    TEST_ASSERT_EQUAL_UINT8(14, skeletonMage.armorClass);
     TEST_ASSERT_EQUAL_INT8(5, skeletonMage.fortitude);
     TEST_ASSERT_EQUAL_INT8(1, skeletonMage.reflex);
     TEST_ASSERT_EQUAL_INT8(5, skeletonMage.will);

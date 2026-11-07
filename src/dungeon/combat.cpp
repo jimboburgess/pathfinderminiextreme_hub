@@ -2771,8 +2771,8 @@ void confirmPlayerAttack()
     const int coverBonus = combat.attackType == COMBAT_ATTACK_RANGED
         ? getCoverArmorClassBonus(getCoverBetween(*player, *target))
         : 0;
-    const int targetArmorClass = getArmorClass(
-        target->character,
+    const int targetArmorClass = getEntityArmorClass(
+        *target,
         (target->turn.fullDefense ? 4 : 0) + coverBonus);
     const bool automaticCriticalConfirmation =
         fighterAutomaticallyConfirmsCritical(player->character, *weapon);
@@ -4352,8 +4352,8 @@ void beginMonsterAttack(
     const int coverBonus = attackType == COMBAT_ATTACK_RANGED
         ? getCoverArmorClassBonus(getCoverBetween(*monster, *target))
         : 0;
-    const int targetArmorClass = getArmorClass(
-        target->character,
+    const int targetArmorClass = getEntityArmorClass(
+        *target,
         (target->turn.fullDefense ? 4 : 0) + coverBonus);
 
     AttackRollResult attackResult = resolveAttackRoll(

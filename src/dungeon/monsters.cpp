@@ -41,7 +41,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {11,15,12,10,9,6},
         1,
         1,
-        16,
+        12,
         3,3,-1,6,
         ITEM_SCIMITAR,
         ITEM_LEATHER_ARMOR,
@@ -58,7 +58,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {11,15,12,10,9,6},
         1,
         1,
-        15,
+        13,
         3,3,-1,
         6,
         ITEM_SHORTBOW,
@@ -76,7 +76,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {15,14,13,10,10,9},
         3,
         3,
-        18,
+        14,
         4,3,1,
         8,
         ITEM_MORNINGSTAR,
@@ -97,7 +97,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {12,14,0,0,10,0},
         1,
         1,
-        15,
+        13,
         2,2,0,
         6,
         ITEM_LONGSWORD,
@@ -115,7 +115,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {13,8,0,0,10,0},
         2,
         1,
-        14,
+        10,
         3,0,3,
         4,
         ITEM_SLAM,
@@ -133,7 +133,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {13,15,0,13,14,14},
         2,
         2,
-        16,
+        12,
         3,5,5,
         6,
         ITEM_CLAWS,
@@ -151,7 +151,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {12,12,0,11,13,15},
         4,
         4,
-        17,
+        13,
         4,4,6,
         6,
         ITEM_SLAM,
@@ -193,7 +193,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {12,1,0,0,1,1},
         3,
         3,
-        15,
+        10,
         5,0,0,
         4,
         ITEM_PSEUDOPOD,
@@ -211,7 +211,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {10,5,0,0,10,1},
         4,
         3,
-        18,
+        12,
         6,1,4,
         0,
         ITEM_TENTACLE,
@@ -229,7 +229,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {16,14,13,4,13,7},
         3,
         3,
-        17,
+        15,
         3,5,2,6,
         ITEM_TENTACLE,
         ITEM_NATURAL_ARMOR_2,
@@ -246,8 +246,8 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {14,20,16,16,14,14},
         4,
         3,
-        20,
-        11,13,14,
+        16,
+        6,8,5,
         4,
         ITEM_TENTACLE,
         ITEM_NATURAL_ARMOR_2,
@@ -272,7 +272,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {10,14,18,16,14,12},
         3,
         1,
-        15,
+        14,
         5,1,5,
         6,
         ITEM_SCYTHE,
@@ -304,7 +304,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {16,16,14,10,11,12},
         4,
         4,
-        18,
+        14,
         5,5,2,
         6,
         ITEM_SCIMITAR,
@@ -324,7 +324,7 @@ const Monster monsterDatabase[MONSTER_COUNT] =
         {17,17,16,0,12,4},
         5,
         4,
-        17,
+        15,
         6,6,3,
         8,
         ITEM_BITE,
@@ -372,13 +372,14 @@ bool monsterHasSpecialAbility(const Monster& monster, AbilityID ability)
 
 uint16_t getMonsterMaxHP(const Monster& monster)
 {
-    // Keep the entire calculation signed. Monsters without Constitution use
-    // a score of 0, whose negative modifier can make a low hit-die roll fall
-    // below zero. Storing that intermediate in uint16_t wrapped it to a value
-    // near 65,535 before the minimum-HP check could run.
+    // A zero score represents a creature without Constitution, not an
+    // ordinary score with a -5 modifier. Such monsters retain their rolled
+    // hit dice so durability comes from HD rather than inflated AC.
+    const int constitutionModifier = monster.abilities.constitution == 0
+        ? 0
+        : getAbilityModifier(monster.abilities.constitution);
     int hp = rollDice(monster.hitDice, 8) +
-             monster.hitDice *
-                 getAbilityModifier(monster.abilities.constitution);
+             monster.hitDice * constitutionModifier;
 
     if (hp < monster.hitDice)
         hp = monster.hitDice;

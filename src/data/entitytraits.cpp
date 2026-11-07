@@ -14,6 +14,14 @@ uint8_t getEffectiveHitDice(const Entity& entity)
     return entity.character.level > 0 ? entity.character.level : 1;
 }
 
+int getEntityArmorClass(const Entity& entity, int dodgeBonus)
+{
+    if (entity.type == ENTITY_MONSTER && entity.monster != nullptr)
+        return entity.monster->armorClass + dodgeBonus;
+
+    return getArmorClass(entity.character, dodgeBonus);
+}
+
 bool canSee(const Entity& entity)
 {
     if (entity.type == ENTITY_MONSTER && entity.monster != nullptr &&

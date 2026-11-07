@@ -11,6 +11,10 @@ struct Entity;
 // from rolled hit points.
 uint8_t getEffectiveHitDice(const Entity& entity);
 
+// Monster definitions own their tuned normal AC; player and NPC AC continues
+// through the shared character/equipment calculation.
+int getEntityArmorClass(const Entity& entity, int dodgeBonus = 0);
+
 // One shared visual-perception query for naturally sightless monsters and
 // temporary blindness. Map line of sight remains a separate geometry rule.
 bool canSee(const Entity& entity);

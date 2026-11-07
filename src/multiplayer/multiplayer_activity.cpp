@@ -3928,8 +3928,8 @@ bool resolveMultiplayerAttack(
     const int bonus = (ranged ? getRangedAttackBonus(actor->character)
                               : getMeleeAttackBonus(actor->character)) +
                       rangePenalty;
-    const int armorClass = getArmorClass(target->character,
-                                         target->turn.fullDefense ? 4 : 0);
+    const int armorClass = getEntityArmorClass(
+        *target, target->turn.fullDefense ? 4 : 0);
     const bool hit = roll == 20 || (roll != 1 && roll + bonus >= armorClass);
     bool critical = false;
     if (hit && roll >= weapon->criticalThreat)
