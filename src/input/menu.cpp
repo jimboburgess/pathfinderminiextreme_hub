@@ -962,6 +962,13 @@ const MenuItem combatMenuItems[] =
     MENU_CLASS_ALL
 },
 {
+    "Trade Items",
+    "Offer items to any connected party member.",
+    MENU_TRADE_ITEMS,
+    nullptr,
+    MENU_CLASS_ALL
+},
+{
     "Special Ability",
     "Use one of your class abilities.",
     MENU_SPECIAL_ABILITY,
@@ -1428,6 +1435,13 @@ void menuActivate()
 
             closeMenu();
             openPlayerInventoryMenu();
+            break;
+
+        case MENU_TRADE_ITEMS:
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            closeMenu();
+            pfme::runtime::openNativeTradeMenu();
+#endif
             break;
 
         case MENU_EQUIPMENT:
@@ -2302,6 +2316,13 @@ bool isMenuItemVisible(MenuAction action)
                     (isPlayerCombatTurn() &&
                      canCharacterAct(*character) &&
                      !getCurrentCombatant()->turn.standardActionUsed));
+
+        case MENU_TRADE_ITEMS:
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            return pfme::runtime::canOpenNativeTradeMenu();
+#else
+            return false;
+#endif
 
         case MENU_DOUBLE_MOVE:
             return isPlayerCombatTurn() &&

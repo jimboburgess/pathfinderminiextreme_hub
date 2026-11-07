@@ -24,6 +24,7 @@
 #include "../audio/audio.h"
 #include "forest/forest.h"
 #include "map/movement.h"
+#include "map/worlditems.h"
 #include "dungeon/turns.h"
 #include "data/dice.h"
 #include "data/entityspawn.h"
@@ -460,6 +461,14 @@ bool tryMovePlayerAuthoritative(
     if (targetEntity != nullptr && targetEntity != player &&
         targetEntity->type == ENTITY_PLAYER)
     {
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+
+    if (targetEntity != nullptr && targetEntity != player &&
+        isDroppedWorldItem(*targetEntity))
+    {
+        setGameMessage("Press A to pick up the item.");
         playSound(SoundEffect::BUMP);
         return false;
     }
@@ -906,7 +915,8 @@ bool canPlayerMoveTo(int x, int y)
     y);
 
     if (entity != nullptr &&
-        (entity->type == ENTITY_MONSTER || entity->type == ENTITY_PLAYER))
+        (entity->type == ENTITY_MONSTER || entity->type == ENTITY_PLAYER ||
+         isDroppedWorldItem(*entity)))
     {
         return false;
     }

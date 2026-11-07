@@ -25,6 +25,19 @@ bool hasLoot(const LootData& loot)
     return loot.generated || loot.itemCount != 0 || loot.gold != 0;
 }
 
+const InventorySlot* persistentItemDropSlot(const Entity& entity)
+{
+    const ItemInstance& item = entity.loot.slots[0].item;
+    return entity.active && entity.type == ENTITY_LOOT &&
+           entity.loot.generated && entity.loot.itemCount == 1 &&
+           entity.loot.slots[0].quantity > 0 &&
+           item.itemID > ITEM_NONE && item.itemID < ITEM_COUNT &&
+           item.enhancementBonus >= 0 && item.enhancementBonus <= 5 &&
+           (item.weaponProperties & ~WEAPON_PROPERTY_MASK) == 0
+        ? &entity.loot.slots[0]
+        : nullptr;
+}
+
 bool hasConditions(const ConditionData& conditions)
 {
     return conditions.count != 0 || conditions.timedDamageCount != 0 ||
@@ -259,9 +272,27 @@ bool packPersistentEntity(const Entity& source, PersistentEntity& destination)
             packed = simpleEntityPayloadIsEmpty(source);
             break;
         case ENTITY_PUZZLE_KEY:
-        case ENTITY_LOOT:
             packed = simpleEntityPayloadIsEmpty(source);
             break;
+        case ENTITY_LOOT:
+        {
+            const InventorySlot* slot = persistentItemDropSlot(source);
+            if (slot == nullptr)
+            {
+                packed = simpleEntityPayloadIsEmpty(source);
+                break;
+            }
+            if (source.locked || source.opened ||
+                hasNonPersistentCharacterPayload(source.character) ||
+                source.monsterID != MONSTER_NONE || source.monster != nullptr ||
+                source.npcID != NPC_NONE)
+                break;
+            new (&destination.payload.itemDrop) PersistentItemDropState{};
+            destination.payload.itemDrop.slot = *slot;
+            destination.flags |= PERSISTENT_ITEM_DROP;
+            packed = true;
+            break;
+        }
         case ENTITY_NONE:
             packed = !source.active && simpleEntityPayloadIsEmpty(source);
             break;
@@ -307,9 +338,19 @@ bool inflatePersistentEntity(const PersistentEntity& source,
             inflated = true;
             break;
         case ENTITY_PUZZLE_KEY:
-        case ENTITY_LOOT:
         case ENTITY_NONE:
             inflated = true;
+            break;
+        case ENTITY_LOOT:
+            if ((source.flags & PERSISTENT_ITEM_DROP) == 0)
+                inflated = true;
+            else
+            {
+                destination.loot.generated = true;
+                destination.loot.itemCount = 1;
+                destination.loot.slots[0] = source.payload.itemDrop.slot;
+                inflated = persistentItemDropSlot(destination) != nullptr;
+            }
             break;
         default:
             break;

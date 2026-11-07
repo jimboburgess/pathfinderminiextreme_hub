@@ -171,6 +171,8 @@ enum AbilityID
     // Appended so existing persisted AbilityID values remain stable.
     ABILITY_BATTLE_CRY,
 
+    ABILITY_THROW_HEALING_POTION,
+
     ABILITY_MAX
 };
 
@@ -398,6 +400,10 @@ constexpr uint8_t feetToTiles(uint16_t feet)
 {
     return static_cast<uint8_t>(feet / FEET_PER_TILE);
 }
+
+constexpr uint8_t THROWN_POTION_RANGE_FEET = 20;
+constexpr uint8_t THROWN_POTION_RANGE_TILES =
+    feetToTiles(THROWN_POTION_RANGE_FEET);
 
 
 struct AbilityEffectData

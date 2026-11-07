@@ -1,5 +1,6 @@
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
 #include "native_rooms.h"
+#include "native_party.h"
 #endif
 #include "inventorymenu.h"
 
@@ -13,12 +14,14 @@
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "map/activemap.h"
+#include "map/worlditems.h"
 #include "dungeon/combat.h"
 #include "dungeon/loot.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "input/buttons.h"
 #include "input/menu.h"
+#include "multiplayer/multiplayer_activity.h"
 
 namespace
 {
@@ -42,10 +45,11 @@ struct InventoryMenuState
     Entity* corpse = nullptr;
     uint8_t cursorIndex = 0;
     uint8_t firstVisibleIndex = 0;
-    char status[64] = "";
+    char status[60] = "";
     bool choosingScrollAction = false;
     ItemInstance scrollItem = { ITEM_NONE, 0, WEAPON_PROPERTY_NONE };
     uint8_t scrollAction = 0;
+    bool choosingItemAction = false;
 };
 
 InventoryMenuState inventoryMenu;
@@ -161,6 +165,75 @@ void setInventoryStatus(const char* message)
 void clearInventoryStatus()
 {
     inventoryMenu.status[0] = '\0';
+}
+
+enum ItemMenuAction : uint8_t
+{
+    ITEM_MENU_USE,
+    ITEM_MENU_THROW,
+    ITEM_MENU_DROP,
+    ITEM_MENU_CANCEL
+};
+
+uint8_t getItemActionCount()
+{
+    const InventorySlot* slot = getSelectedSlot();
+    if (slot == nullptr) return 0;
+    uint8_t count = 2;
+    if (slot->item.itemID == ITEM_POTION_CURE_LIGHT_WOUNDS &&
+        (gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&
+        !isMultiplayerExplorationActive())
+        count++;
+    if ((gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&
+        !isMultiplayerExplorationActive())
+        count++;
+    return count;
+}
+
+ItemMenuAction getItemAction(uint8_t index)
+{
+    const InventorySlot* slot = getSelectedSlot();
+    if (index == 0) return ITEM_MENU_USE;
+    index--;
+    if (slot != nullptr &&
+        slot->item.itemID == ITEM_POTION_CURE_LIGHT_WOUNDS &&
+        (gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&
+        !isMultiplayerExplorationActive())
+    {
+        if (index == 0) return ITEM_MENU_THROW;
+        index--;
+    }
+    if ((gameState == GAME_DUNGEON || gameState == GAME_FOREST) &&
+        !isMultiplayerExplorationActive())
+    {
+        if (index == 0) return ITEM_MENU_DROP;
+        index--;
+    }
+    return ITEM_MENU_CANCEL;
+}
+
+const char* getItemActionName(ItemMenuAction action)
+{
+    switch (action)
+    {
+        case ITEM_MENU_USE: return "Use";
+        case ITEM_MENU_THROW: return "Throw";
+        case ITEM_MENU_DROP: return "Drop";
+        default: return "Cancel";
+    }
+}
+
+void publishItemMessage(const char* message)
+{
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if (pfme::runtime::nativeRoomsActive() &&
+        pfme::runtime::socialPartiesEnabled())
+    {
+        pfme::runtime::nativePartyMessage(message);
+        return;
+    }
+#endif
+    setGameMessage(message);
 }
 
 void moveInventorySelection(bool forward)
@@ -418,6 +491,8 @@ void confirmScrollAction()
 
     const ItemInstance scrollItem = inventoryMenu.scrollItem;
     inventoryMenu.choosingScrollAction = false;
+    inventoryMenu.choosingItemAction = false;
+    inventoryMenu.scrollAction = 0;
     closeInventoryMenu();
     beginPlayerScrollAbility(scroll->taughtAbility, scrollItem);
 }
@@ -481,6 +556,82 @@ void useSelectedPlayerItem()
         setInventoryStatus("That item cannot be used.");
 
     playSound(SoundEffect::ERROR);
+}
+
+void dropSelectedPlayerItem()
+{
+    const InventorySlot* slot = getSelectedSlot();
+    Entity* actor = getActiveMapPlayer();
+    if (slot == nullptr || actor == nullptr)
+    {
+        setInventoryStatus("Cannot drop an item here.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    const ItemInstance item = slot->item;
+    char itemName[48];
+    formatItemInstanceName(item, itemName, sizeof(itemName));
+    Entity* drop = nullptr;
+    const WorldItemResult result = dropWorldItem(*actor, item, &drop);
+    if (result != WorldItemResult::SUCCESS)
+    {
+        if (result == WorldItemResult::NO_DROP_SPACE)
+            setInventoryStatus("No clear square for the item.");
+        else if (result == WorldItemResult::WORLD_FULL)
+            setInventoryStatus("Too many items are in this area.");
+        else if (result == WorldItemResult::NOT_ACTING ||
+                 result == WorldItemResult::ACTION_SPENT)
+            setInventoryStatus("Cannot drop an item now.");
+        else
+            setInventoryStatus("Item is no longer available.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    if (drop != nullptr) markTileDirty(drop->x, drop->y);
+    char message[96];
+    snprintf(message, sizeof(message), "%s drops %s.",
+             getCharacterName(actor->character), itemName);
+    closeInventoryMenu();
+    publishItemMessage(message);
+    playSound(SoundEffect::ITEM_PICKUP);
+    if (combat.active) checkEndPlayerTurn();
+}
+
+void confirmItemAction()
+{
+    const ItemMenuAction action = getItemAction(inventoryMenu.scrollAction);
+    inventoryMenu.choosingItemAction = false;
+    inventoryMenu.scrollAction = 0;
+    switch (action)
+    {
+        case ITEM_MENU_USE:
+            useSelectedPlayerItem();
+            break;
+        case ITEM_MENU_THROW:
+            closeInventoryMenu();
+            beginThrownHealingPotion();
+            break;
+        case ITEM_MENU_DROP:
+            dropSelectedPlayerItem();
+            break;
+        case ITEM_MENU_CANCEL:
+            needsRedraw = true;
+            break;
+    }
+}
+
+void beginItemAction()
+{
+    if (getSelectedSlot() == nullptr)
+    {
+        setInventoryStatus("No item selected.");
+        return;
+    }
+    inventoryMenu.choosingItemAction = true;
+    inventoryMenu.scrollAction = 0;
+    needsRedraw = true;
 }
 
 void takeSelectedCorpseLoot()
@@ -758,6 +909,39 @@ void handleInventoryMenuButtons()
     if (!inventoryMenu.open)
         return;
 
+    if (inventoryMenu.choosingItemAction)
+    {
+        const uint8_t count = getItemActionCount();
+        if (count == 0)
+        {
+            inventoryMenu.choosingItemAction = false;
+            return;
+        }
+        EncoderDirection actionDirection = readEncoder();
+        if (actionDirection != ENCODER_NONE)
+        {
+            inventoryMenu.scrollAction = static_cast<uint8_t>(
+                (inventoryMenu.scrollAction +
+                 (actionDirection == ENCODER_CLOCKWISE ? 1 : count - 1)) %
+                count);
+            needsRedraw = true;
+            playSound(SoundEffect::MENU_MOVE);
+        }
+        if (buttonAPressed())
+        {
+            playSound(SoundEffect::MENU_SELECT);
+            confirmItemAction();
+        }
+        if (buttonBPressed())
+        {
+            inventoryMenu.choosingItemAction = false;
+            inventoryMenu.scrollAction = 0;
+            needsRedraw = true;
+            playSound(SoundEffect::MENU_BACK);
+        }
+        return;
+    }
+
     if (inventoryMenu.choosingScrollAction)
     {
         const Scroll* scroll = getScroll(inventoryMenu.scrollItem.itemID);
@@ -816,7 +1000,7 @@ void handleInventoryMenuButtons()
         playSound(SoundEffect::MENU_SELECT);
 
         if (inventoryMenu.mode == INVENTORY_MENU_PLAYER)
-            useSelectedPlayerItem();
+            beginItemAction();
         else
             takeSelectedCorpseLoot();
 
@@ -900,7 +1084,7 @@ void drawInventoryMenu()
     tft.setTextSize(1);
     tft.setTextColor(MENU_TEXT);
     tft.setCursor(MENU_X + MENU_PADDING, footerY + 5);
-    tft.print(inventoryMenu.mode == INVENTORY_MENU_PLAYER ? "A Use" : "A Take");
+    tft.print(inventoryMenu.mode == INVENTORY_MENU_PLAYER ? "A Actions" : "A Take");
     tft.setCursor(MENU_X + 140, footerY + 5);
     tft.print("B Back");
 
@@ -921,6 +1105,25 @@ void drawInventoryMenu()
             tft.setCursor(MENU_X + 40, MENU_Y + 56 + i * 18);
             tft.print(i == inventoryMenu.scrollAction ? "> " : "  ");
             tft.print(canLearn ? choices[i] : (i == 0 ? choices[0] : choices[2]));
+        }
+    }
+
+    if (inventoryMenu.choosingItemAction)
+    {
+        const uint8_t count = getItemActionCount();
+        const int height = 16 + count * 18;
+        tft.fillRect(MENU_X + 40, MENU_Y + 42,
+                     MENU_WIDTH - 80, height, MENU_HEADER_BG);
+        tft.drawRect(MENU_X + 40, MENU_Y + 42,
+                     MENU_WIDTH - 80, height, MENU_BORDER);
+        tft.setTextSize(1);
+        for (uint8_t i = 0; i < count; ++i)
+        {
+            tft.setTextColor(
+                i == inventoryMenu.scrollAction ? MENU_CURSOR : MENU_TEXT);
+            tft.setCursor(MENU_X + 52, MENU_Y + 50 + i * 18);
+            tft.print(i == inventoryMenu.scrollAction ? "> " : "  ");
+            tft.print(getItemActionName(getItemAction(i)));
         }
     }
 }

@@ -674,7 +674,9 @@ bool isTileInRadiusAbilityArea(
     int tileY)
 {
     const Ability* ability = getAbility(abilityID);
-    return ability != nullptr && ability->areaRadiusTiles > 0 &&
+    return ability != nullptr &&
+           ability->target == TARGET_AREA &&
+           ability->delivery == DELIVERY_AREA &&
            isInsideActiveMap(centerX, centerY) &&
            isInsideActiveMap(tileX, tileY) &&
            abs(tileX - centerX) <= ability->areaRadiusTiles &&
@@ -714,7 +716,8 @@ bool isAbilitySupported(AbilityID abilityID)
         return false;
     }
 
-    if (abilityID == ABILITY_TURN_UNDEAD)
+    if (abilityID == ABILITY_TURN_UNDEAD ||
+        abilityID == ABILITY_THROW_HEALING_POTION)
         return true;
 
     // Physical damage reduction remains deferred. Resist Energy and
@@ -750,7 +753,8 @@ bool isGroundTargetAbility(AbilityID abilityID)
            ability->target == TARGET_AREA &&
            ability->delivery == DELIVERY_AREA &&
             (ability->mapEffectType != MAP_EFFECT_NONE ||
-             hasInstantAreaDamageProfile(*ability));
+             hasInstantAreaDamageProfile(*ability) ||
+             abilityID == ABILITY_THROW_HEALING_POTION);
 }
 
 bool isDirectionalAbility(AbilityID abilityID)

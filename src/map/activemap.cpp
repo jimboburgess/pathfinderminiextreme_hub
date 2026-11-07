@@ -56,6 +56,16 @@ Entity* getActiveMapPlayer()
     return getPlayerEntity(entities, entityCount);
 }
 
+Entity* spawnActiveMapEntity(EntityType type, uint8_t x, uint8_t y)
+{
+    if (!isInsideActiveMap(x, y)) return nullptr;
+    if (gameState == GAME_FOREST)
+        return spawnEntity(forestEntities, forestEntityCount, type, x, y);
+    if (gameState == GAME_DUNGEON)
+        return spawnEntity(dungeon.entities, dungeon.entityCount, type, x, y);
+    return nullptr;
+}
+
 int getActiveMapWidth()
 {
     switch (gameState)

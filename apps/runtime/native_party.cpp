@@ -6,6 +6,8 @@
 #include "forest/forest.h"
 #include "town/town.h"
 #include "characters/sheet.h"
+#include "characters/items.h"
+#include "dungeon/actioneconomy.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include <array>
@@ -40,15 +42,20 @@ class Entropy final:public PartyEntropy {
 };
 Entropy entropy;
 std::unique_ptr<PartyRegistry> registry;
+TradeOfferBook tradeOffers;
 bool travelling=false;
 constexpr const char* alphabet="23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 struct Social {
  bool member=false;PartyHandle party{};PartyMembership membership{};unsigned world=0;
  char name[NETWORK_PLAYER_NAME_SIZE]{};
- enum Pane {Board,Code,Status} pane=Board;
+ enum Pane {Board,Code,Status,TradeRecipients,TradeItems,TradeReview,TradeWaiting} pane=Board;
  char code[PARTY_JOIN_CODE_SIZE]{};unsigned entered=0;
  char title[36]{},body[256]{},oldBody[256]{};
- MenuItem items[32]{};char letters[32][2]{};Menu menu{};
+ MenuItem items[32]{};char letters[32][2]{};char rowTitles[32][48]{};
+ PlayerID tradeRecipient=INVALID_PLAYER_ID;
+ PlayerID tradeRecipientLookup[MAX_MULTIPLAYER_PLAYERS]{};
+ bool selectedTradeItems[MAX_INVENTORY]{};
+ Menu menu{};
 };
 std::array<Social,MAX_MULTIPLAYER_PLAYERS> social;
 const Menu* currentMenu(){return menuState.isOpen && menuState.depth?menuState.menuStack[menuState.depth-1]:nullptr;}
@@ -56,6 +63,12 @@ bool sameParty(PlayerID a,PlayerID b){
  if(!social[a].member||!social[b].member)return false;
  PartySnapshot first,second;
  return registry->snapshot(social[a].party,first)==PartyError::Ok && registry->snapshot(social[b].party,second)==PartyError::Ok && first.id.high==second.id.high && first.id.low==second.id.low;
+}
+bool connectedPartyMember(PlayerID id){
+ if(!isValidPlayerID(id)||!social[id].member)return false;
+ PartySnapshot snapshot;if(registry->snapshot(social[id].party,snapshot)!=PartyError::Ok)return false;
+ const PlayerID member=social[id].membership.player;
+ return isValidPlayerID(member)&&snapshot.members[member].occupied&&snapshot.members[member].connected;
 }
 PartyPlayerProfile profile(PlayerID id){
  PartyPlayerProfile result{};std::snprintf(result.displayName,sizeof(result.displayName),"%s",social[id].name[0]?social[id].name:"Adventurer");
@@ -76,6 +89,63 @@ bool create(PlayerID id){
  nativePartyMessage("Party created. Share the code.");return true;
 }
 void item(Social& s,unsigned i,const char* title,const char* description){s.items[i]={title,description,MENU_NONE,nullptr,MENU_CLASS_ALL,ABILITY_NONE};}
+Character selectedCharacter(PlayerID id){
+ selectController(id);if(auto* actor=nativeActor(id))return actor->character;return player;
+}
+void assignSelectedCharacter(PlayerID id,const Character& character){
+ selectController(id);if(auto* actor=nativeActor(id))actor->character=character;else player=character;
+}
+void messagePlayer(PlayerID id,const char* text){
+ const auto owner=selectedController();if(selectController(id))setGameMessage(text);selectController(owner);
+}
+bool mayCommitCombatTrade(PlayerID id){
+ if(!combat.active)return true;
+ Entity* actor=nativeActor(id);
+ return actor&&getCurrentCombatant()==actor&&isPlayerTurn()&&combat.waitingForPlayer&&
+  canCharacterAct(actor->character)&&canUseStandardAction(actor->turn);
+}
+void buildTrade(PlayerID id){
+ auto& s=social[id];const TradeOffer* pending=tradeOffers.pendingFor(id);
+ std::memset(s.body,0,sizeof(s.body));
+ if(pending){
+  if(pending->recipient==id){
+   s.pane=Social::TradeReview;std::snprintf(s.title,sizeof(s.title),"Trade from %s",social[pending->sender].name);
+   int used=0;for(uint8_t line=0;line<pending->lineCount&&used>=0&&static_cast<size_t>(used)<sizeof(s.body);++line){
+    char name[48];formatItemInstanceName(pending->lines[line].item,name,sizeof(name),true);
+    used+=std::snprintf(s.body+used,sizeof(s.body)-used,"%s x%u\n",name,unsigned(pending->lines[line].quantity));
+   }
+   item(s,0,"Accept","Accept this one-way item offer.");item(s,1,"Decline","Decline without moving any item.");
+   s.menu={s.title,s.items,2,nullptr,nullptr,s.body,96};
+  }else{
+   s.pane=Social::TradeWaiting;std::snprintf(s.title,sizeof(s.title),"Trade Pending");
+   std::snprintf(s.body,sizeof(s.body),"Waiting for %s to accept or decline.",social[pending->recipient].name);
+   item(s,0,"Cancel Offer","Keep every offered item.");s.menu={s.title,s.items,1,nullptr,nullptr,s.body,76};
+  }
+  openMenu(&s.menu);return;
+ }
+ s.pane=Social::TradeRecipients;std::snprintf(s.title,sizeof(s.title),"Trade Items");unsigned count=0;
+ for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peer!=id&&sameParty(id,peer)&&connectedPartyMember(peer)){
+  std::snprintf(s.rowTitles[count],sizeof(s.rowTitles[count]),"%s",social[peer].name);
+  item(s,count,s.rowTitles[count],"Offer items regardless of party distance.");s.tradeRecipientLookup[count]=peer;++count;
+ }
+ if(!count){std::snprintf(s.rowTitles[0],sizeof(s.rowTitles[0]),"No member available");item(s,0,s.rowTitles[0],"Connected party members appear here.");count=1;}
+ s.menu={s.title,s.items,static_cast<uint8_t>(count),nullptr,nullptr,"Choose a party member.",30};openMenu(&s.menu);
+}
+void buildTradeItems(PlayerID id,PlayerID recipient){
+ auto& s=social[id];s.pane=Social::TradeItems;s.tradeRecipient=recipient;
+ std::snprintf(s.title,sizeof(s.title),"Offer to %s",social[recipient].name);
+ Character character=selectedCharacter(id);const uint8_t itemCount=character.inventory.itemCount;
+ for(uint8_t index=0;index<itemCount;++index){
+  char name[40];formatItemInstanceName(character.inventory.slots[index].item,name,sizeof(name),true);
+  std::snprintf(s.rowTitles[index],sizeof(s.rowTitles[index]),"[%c] %s",s.selectedTradeItems[index]?'x':' ',name);
+  item(s,index,s.rowTitles[index],"Toggle one unit of this item.");
+ }
+ std::snprintf(s.rowTitles[itemCount],sizeof(s.rowTitles[itemCount]),"Send Offer");
+ item(s,itemCount,s.rowTitles[itemCount],"Recipient must accept before ownership changes.");
+ std::snprintf(s.rowTitles[itemCount+1],sizeof(s.rowTitles[itemCount+1]),"Cancel");
+ item(s,itemCount+1,s.rowTitles[itemCount+1],"Return without making an offer.");
+ s.menu={s.title,s.items,static_cast<uint8_t>(itemCount+2),nullptr,nullptr,"Select up to four item stacks; one unit each.",42};openMenu(&s.menu);
+}
 void build(PlayerID id,Social::Pane pane){
  auto& s=social[id];s.pane=pane;std::memset(s.body,0,sizeof(s.body));
  if(pane==Social::Board){
@@ -83,8 +153,9 @@ void build(PlayerID id,Social::Pane pane){
   item(s,0,"Create Party","Become leader; share the join code.");
   item(s,1,"Join Party","Enter a five-character party code.");
   item(s,2,"Party Status","Members, classes and connection status.");
-  item(s,3,"Leave Party","In Town: leader departure closes party.");
-  s.menu={s.title,s.items,4,nullptr,nullptr,s.body,30};
+  item(s,3,"Trade Items","Offer carried items to a party member.");
+  item(s,4,"Leave Party","In Town: leader departure closes party.");
+  s.menu={s.title,s.items,5,nullptr,nullptr,s.body,30};
  }else if(pane==Social::Code){
   std::snprintf(s.title,sizeof(s.title),"Join Code: %s",s.code);
   for(unsigned i=0;alphabet[i];++i){s.letters[i][0]=alphabet[i];s.letters[i][1]=0;item(s,i,s.letters[i],"Choose each character; B cancels.");}
@@ -104,9 +175,10 @@ bool leaveSocial(PlayerID id){
  if(leader)for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer] && nativeActor(peer)){
   setGameMessage("All members must return to Town.");return false;
  }
+ tradeOffers.cancelForPlayer(id);
  auto error=registry->leave(s.membership.handle);if(error!=PartyError::Ok){showError(error);return false;}
  s.member=false;
- if(leader){for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer]){social[peer].member=false;assignNativeWorld(peer,peer);}}
+ if(leader){for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer]){tradeOffers.cancelForPlayer(peer);social[peer].member=false;assignNativeWorld(peer,peer);}}
  else assignNativeWorld(id,id);
  selectNativeWorld(nativeControllerWorld(id));
  const std::string message=leader?"Party closed; characters retained.":"A member left the party.";
@@ -120,7 +192,7 @@ void initializeNativeParties(uint32_t){
  for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)assignNativeWorld(id,id);
  selectNativeWorld(0);
 }
-void resetNativePartyCharacter(PlayerID id){if(isValidPlayerID(id))social[id]=Social{};}
+void resetNativePartyCharacter(PlayerID id){if(isValidPlayerID(id)){tradeOffers.cancelForPlayer(id);social[id]=Social{};}}
 void nativePartyCharacterName(PlayerID id,const char* name){if(!isValidPlayerID(id))return;
  if(!social[id].name[0] && registry){bool used[NATIVE_WORLD_CAPACITY]{};for(const auto& other:social)if(other.member)used[other.world]=true;
   unsigned world=!used[id]?id:0;while(world<NATIVE_WORLD_CAPACITY && used[world])++world;
@@ -129,15 +201,95 @@ void nativePartyCharacterName(PlayerID id,const char* name){if(!isValidPlayerID(
  std::snprintf(social[id].name,sizeof(social[id].name),"%s",name);
 }
 bool nativePartySnapshot(PlayerID id,PartySnapshot& snapshot){return registry && isValidPlayerID(id) && social[id].member && registry->snapshot(social[id].party,snapshot)==PartyError::Ok;}
+const TradeOffer* pendingNativeTrade(PlayerID player){return tradeOffers.pendingFor(player);}
+bool canOpenNativeTradeMenu(){
+ const PlayerID id=selectedController();if(!registry||!isValidPlayerID(id)||!social[id].member)return false;
+ if(tradeOffers.pendingFor(id))return true;
+ PartySnapshot snapshot;if(!nativePartySnapshot(id,snapshot)||snapshot.memberCount<2)return false;
+ return mayCommitCombatTrade(id);
+}
+void openNativeTradeMenu(){
+ const PlayerID id=selectedController();if(!canOpenNativeTradeMenu()){setGameMessage("Trade is unavailable now.");return;}
+ std::memset(social[id].selectedTradeItems,0,sizeof(social[id].selectedTradeItems));buildTrade(id);
+}
+TradeResult proposeNativeTrade(PlayerID recipient,const TradeOfferLine* lines,uint8_t lineCount,uint32_t& offerID){
+ const PlayerID sender=selectedController();offerID=0;
+ if(!registry||!isValidPlayerID(sender)||!isValidPlayerID(recipient)||
+    !sameParty(sender,recipient)||!connectedPartyMember(recipient))return TradeResult::INVALID_PLAYER;
+ if(!mayCommitCombatTrade(sender))return TradeResult::PLAYER_BUSY;
+ Character senderCharacter=selectedCharacter(sender);
+ TradeResult result=tradeOffers.propose(sender,recipient,lines,lineCount,senderCharacter,offerID);
+ if(result!=TradeResult::SUCCESS)return result;
+ if(combat.active){Entity* actor=nativeActor(sender);if(actor)actor->turn.standardActionUsed=true;}
+ char offered[48];formatItemInstanceName(lines[0].item,offered,sizeof(offered));
+ char recipientMessage[96];std::snprintf(recipientMessage,sizeof(recipientMessage),"%s offers you %s.",social[sender].name,offered);
+ char senderMessage[96];std::snprintf(senderMessage,sizeof(senderMessage),"Offer sent to %s.",social[recipient].name);
+ messagePlayer(recipient,recipientMessage);messagePlayer(sender,senderMessage);selectController(sender);
+ if(combat.active)checkEndPlayerTurn();
+ return TradeResult::SUCCESS;
+}
+TradeResult respondToNativeTrade(bool accept){
+ const PlayerID recipient=selectedController();const TradeOffer* pending=tradeOffers.pendingFor(recipient);
+ if(!pending||pending->recipient!=recipient)return TradeResult::NOT_FOUND;
+ const uint32_t offerID=pending->id;const PlayerID sender=pending->sender;
+ if(!sameParty(sender,recipient)||!connectedPartyMember(sender)){
+  tradeOffers.cancel(offerID);return TradeResult::INVALID_PLAYER;
+ }
+ if(!accept){TradeResult result=tradeOffers.decline(offerID,recipient);if(result==TradeResult::SUCCESS){
+  char text[96];std::snprintf(text,sizeof(text),"%s declined the trade.",social[recipient].name);messagePlayer(sender,text);messagePlayer(recipient,"Trade declined.");selectController(recipient);}return result;}
+ Character senderCharacter=selectedCharacter(sender);Character recipientCharacter=selectedCharacter(recipient);
+ TradeResult result=tradeOffers.accept(offerID,recipient,senderCharacter,recipientCharacter);
+ if(result==TradeResult::SUCCESS){assignSelectedCharacter(sender,senderCharacter);assignSelectedCharacter(recipient,recipientCharacter);
+  char text[96];std::snprintf(text,sizeof(text),"%s accepted the trade.",social[recipient].name);messagePlayer(sender,text);messagePlayer(recipient,"Trade accepted.");}
+ else if(result==TradeResult::INVENTORY_FULL){messagePlayer(sender,"Trade cancelled: inventory full.");messagePlayer(recipient,"Inventory full. Trade cancelled.");}
+ else{messagePlayer(sender,"Trade cancelled: items changed.");messagePlayer(recipient,"Trade cancelled: items unavailable.");}
+ selectController(recipient);return result;
+}
+bool cancelNativeTrade(){
+ const PlayerID id=selectedController();const TradeOffer* pending=tradeOffers.pendingFor(id);
+ if(!pending||pending->sender!=id)return false;const PlayerID recipient=pending->recipient;
+ if(!tradeOffers.cancel(pending->id))return false;
+ messagePlayer(recipient,"Trade offer cancelled.");messagePlayer(id,"Trade offer cancelled.");selectController(id);return true;
+}
 void openNativePartyMenu(){if(registry)build(selectedController(),Social::Board);}
 bool cancelNativePartyMenu(){
  const auto id=selectedController();
  if(!registry || !isValidPlayerID(id) || currentMenu()!=&social[id].menu || social[id].pane==Social::Board)return false;
+ if(social[id].pane==Social::TradeItems){buildTrade(id);return true;}
+ if(social[id].pane==Social::TradeRecipients||social[id].pane==Social::TradeReview||social[id].pane==Social::TradeWaiting){closeMenu();return true;}
  build(id,Social::Board);return true;
 }
 bool activateNativePartyMenu(){
  const auto id=selectedController();if(!registry||!isValidPlayerID(id)||currentMenu()!=&social[id].menu)return false;
  auto& s=social[id];const auto index=menuState.cursorIndex;
+ if(s.pane==Social::TradeRecipients){
+  unsigned available=0;for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peer!=id&&sameParty(id,peer)&&connectedPartyMember(peer))++available;
+  if(index<available){std::memset(s.selectedTradeItems,0,sizeof(s.selectedTradeItems));buildTradeItems(id,s.tradeRecipientLookup[index]);}
+  else setGameMessage("No party member is available.");
+  return true;
+ }
+ if(s.pane==Social::TradeItems){
+  Character character=selectedCharacter(id);const uint8_t count=character.inventory.itemCount;
+  if(index<count){
+   if(!s.selectedTradeItems[index]){unsigned selected=0;for(bool value:s.selectedTradeItems)selected+=value;if(selected>=MAX_TRADE_OFFER_ITEMS){setGameMessage("Offer can contain four item stacks.");return true;}}
+   s.selectedTradeItems[index]=!s.selectedTradeItems[index];buildTradeItems(id,s.tradeRecipient);return true;
+  }
+  if(index==count){TradeOfferLine lines[MAX_TRADE_OFFER_ITEMS]{};uint8_t lineCount=0;
+   for(uint8_t itemIndex=0;itemIndex<count&&lineCount<MAX_TRADE_OFFER_ITEMS;++itemIndex)if(s.selectedTradeItems[itemIndex]){
+    lines[lineCount].item=character.inventory.slots[itemIndex].item;lines[lineCount].quantity=1;++lineCount;
+   }
+   if(!lineCount){setGameMessage("Select at least one item.");return true;}
+   uint32_t offerID=0;TradeResult result=proposeNativeTrade(s.tradeRecipient,lines,lineCount,offerID);
+   if(result==TradeResult::SUCCESS)buildTrade(id);
+   else if(result==TradeResult::PLAYER_BUSY)setGameMessage("A player already has a pending trade.");
+   else if(result==TradeResult::NOT_OWNED)setGameMessage("An offered item is no longer available.");
+   else setGameMessage("Trade offer could not be sent.");
+   return true;
+  }
+  closeMenu();return true;
+ }
+ if(s.pane==Social::TradeReview){respondToNativeTrade(index==0);closeMenu();return true;}
+ if(s.pane==Social::TradeWaiting){cancelNativeTrade();closeMenu();return true;}
  if(s.pane==Social::Status){build(id,Social::Board);return true;}
  if(s.pane==Social::Code){
   if(index>=std::strlen(alphabet)||s.entered>=PARTY_JOIN_CODE_LENGTH)return true;
@@ -158,7 +310,8 @@ bool activateNativePartyMenu(){
  if(index==0){if(create(id))build(id,Social::Status);}
  else if(index==1){if(s.member)setGameMessage("Leave your current party first.");else{s.entered=0;s.code[0]=0;build(id,Social::Code);}}
  else if(index==2)build(id,Social::Status);
- else if(index==3){if(leaveSocial(id))build(id,Social::Board);}
+ else if(index==3){if(canOpenNativeTradeMenu())openNativeTradeMenu();else setGameMessage("Join another party member to trade.");}
+ else if(index==4){if(leaveSocial(id))build(id,Social::Board);}
  return true;
 }
 void refreshNativePartyMenu(){
@@ -169,6 +322,12 @@ void refreshNativePartyMenu(){
   registry->updateMember(s.membership.handle,profile(id),location);
  }
  if(!menuState.isOpen||currentMenu()!=&s.menu||s.pane==Social::Code)return;
+ if(s.pane==Social::TradeRecipients||s.pane==Social::TradeItems||
+    s.pane==Social::TradeReview||s.pane==Social::TradeWaiting){
+  if((s.pane==Social::TradeReview||s.pane==Social::TradeWaiting)&&
+     !tradeOffers.pendingFor(id))closeMenu();
+  return;
+ }
  PartySnapshot party;
  if(!nativePartySnapshot(id,party))std::snprintf(s.body,sizeof(s.body),"No party. Create or join in Town.");
  else if(s.pane==Social::Board)std::snprintf(s.body,sizeof(s.body),"Code %s  %u/4",party.joinCode,party.memberCount);
@@ -188,7 +347,7 @@ void nativePartyConnection(PlayerID id,bool connected){
  if(!registry||!isValidPlayerID(id)||!social[id].member)return;
  auto& s=social[id];
  if(connected){PartyMembership resumed;const auto error=registry->reconnect(s.party,s.membership.player,s.membership.reconnectToken,resumed);if(error==PartyError::Ok)s.membership=resumed;}
- else registry->disconnect(s.membership.handle);
+ else{tradeOffers.cancelForPlayer(id);registry->disconnect(s.membership.handle);}
 }
 bool retireNativePartyMember(PlayerID id){
  if(!registry||!social[id].member)return true;

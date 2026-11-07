@@ -16,6 +16,7 @@
 #include "loot.h"
 #include "map/awareness.h"
 #include "map/mapeffects.h"
+#include "map/worlditems.h"
 #include "monsterscripts.h"
 #include "monsterpresentation.h"
 #include "npcs.h"
@@ -3315,6 +3316,63 @@ void beginChannelEnergyPreview()
     requestCombatTileRedraw();
 }
 
+void beginThrownHealingPotion()
+{
+    if (isMultiplayerExplorationActive() || isMultiplayerCombatActive())
+    {
+        setGameMessage("Potion throwing is unavailable over ESP-NOW.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    Entity* thrower = combat.active ? getCurrentCombatant() : getActiveMapPlayer();
+    if (thrower == nullptr || thrower->type != ENTITY_PLAYER ||
+        !hasItem(thrower->character, ITEM_POTION_CURE_LIGHT_WOUNDS) ||
+        (combat.active &&
+         (!combat.waitingForPlayer || !isPlayerTurn() ||
+          thrower->turn.standardActionUsed)))
+    {
+        setGameMessage("Cannot throw a potion now.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    combat.selectedAbility = ABILITY_THROW_HEALING_POTION;
+    combat.selectedAbilityDirection = moveDirection;
+    combat.selectedTargetIndex = -1;
+    combat.selectedAbilityX = -1;
+    combat.selectedAbilityY = -1;
+
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    for (uint8_t i = 0; entities != nullptr && i < entityCount; ++i)
+    {
+        Entity& candidate = entities[i];
+        if (&candidate != thrower && candidate.active &&
+            candidate.type == ENTITY_PLAYER &&
+            candidate.character.team == thrower->character.team &&
+            isHealingPotionThrowTargetTile(
+                *thrower, candidate.x, candidate.y))
+        {
+            combat.selectedAbilityX = static_cast<int8_t>(candidate.x);
+            combat.selectedAbilityY = static_cast<int8_t>(candidate.y);
+            break;
+        }
+    }
+
+    if (combat.selectedAbilityX < 0)
+    {
+        combat.selectedAbility = ABILITY_NONE;
+        setGameMessage("No ally is in throwing range.");
+        playSound(SoundEffect::ERROR);
+        return;
+    }
+
+    markAbilityCursorDirty();
+    setGameMessage("Choose ally square: A throw B back");
+    requestCombatTileRedraw();
+}
+
 void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll)
 {
     Entity* player = getCurrentCombatant();
@@ -3479,7 +3537,9 @@ bool moveGroundAbilityTarget()
     combat.selectedAbilityX = static_cast<int8_t>(targetX);
     combat.selectedAbilityY = static_cast<int8_t>(targetY);
     markAbilityCursorDirty();
-    setGameMessage("Choose a spell target");
+    setGameMessage(combat.selectedAbility == ABILITY_THROW_HEALING_POTION
+        ? "Choose ally square: A throw B back"
+        : "Choose a spell target");
     requestCombatTileRedraw();
     return true;
 }
@@ -3592,6 +3652,78 @@ void confirmPlayerAbility()
 {
     Entity* player = combat.active
         ? getCurrentCombatant() : getActiveMapPlayer();
+
+    if (combat.selectedAbility == ABILITY_THROW_HEALING_POTION)
+    {
+        int targetX = 0;
+        int targetY = 0;
+        if (player == nullptr ||
+            !getSelectedAbilityGroundTarget(targetX, targetY))
+        {
+            setGameMessage("Invalid potion target.");
+            playSound(SoundEffect::ERROR);
+            return;
+        }
+
+        ThrownPotionResolution resolution = resolveThrownHealingPotion(
+            *player, targetX, targetY, rollDie(20), rollDie(8));
+        if (resolution.result != WorldItemResult::SUCCESS)
+        {
+            switch (resolution.result)
+            {
+                case WorldItemResult::OUT_OF_RANGE:
+                    setGameMessage("That square is out of range.");
+                    break;
+                case WorldItemResult::BLOCKED:
+                    setGameMessage("No clear throw to that square.");
+                    break;
+                case WorldItemResult::INVALID_ITEM:
+                    setGameMessage("Potion is no longer available.");
+                    break;
+                case WorldItemResult::NOT_ACTING:
+                case WorldItemResult::ACTION_SPENT:
+                    setGameMessage("Cannot throw a potion now.");
+                    break;
+                default:
+                    setGameMessage("Choose an allied player's square.");
+                    break;
+            }
+            playSound(SoundEffect::ERROR);
+            requestCombatTileRedraw();
+            return;
+        }
+
+        markAbilityCursorDirty();
+        combat.selectedAbility = ABILITY_NONE;
+        combat.selectedAbilityX = -1;
+        combat.selectedAbilityY = -1;
+        combat.selectedAbilityDirection = moveDirection;
+        combat.selectedTargetIndex = -1;
+        markPlayerFacingCursorDirty();
+        requestCombatTileRedraw();
+
+        char message[96];
+        if (resolution.hit)
+        {
+            snprintf(message, sizeof(message), "%s is healed for %d HP.",
+                     getEntityName(resolution.target), resolution.healing);
+            if (resolution.healing > 0)
+                playAbilityImpactFlash(
+                    IMPACT_HEAL, DAMAGE_POSITIVE,
+                    resolution.target->x, resolution.target->y);
+            playSound(SoundEffect::POTION);
+        }
+        else
+        {
+            snprintf(message, sizeof(message),
+                     "The healing potion shatters harmlessly.");
+            playSound(SoundEffect::ERROR);
+        }
+        setGameMessage(message);
+        if (combat.active)
+            checkEndPlayerTurn();
+        return;
+    }
 
     if (isMultiplayerCombatActive())
     {
@@ -3778,6 +3910,8 @@ void cancelPlayerAbility()
     if (!isPlayerTargetingAbility())
         return;
 
+    const bool wasPotionThrow =
+        combat.selectedAbility == ABILITY_THROW_HEALING_POTION;
     bool wasSpatialTargeting = isPlayerTargetingGroundAbility() ||
                                isPlayerTargetingDirectionalAbility() ||
                                isPlayerTargetingCenteredAbility();
@@ -3792,7 +3926,9 @@ void cancelPlayerAbility()
     requestCombatTileRedraw();
 
     if (wasSpatialTargeting)
-        setGameMessage("Spell targeting canceled.");
+        setGameMessage(wasPotionThrow
+            ? "Potion throw canceled."
+            : "Spell targeting canceled.");
     else
         openMenu(&mainMenu);
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "session/party_registry.h"
 #include "input/menu.h"
+#include "multiplayer/itemtrade.h"
 struct Entity;
 namespace pfme { namespace runtime {
 constexpr unsigned NATIVE_WORLD_CAPACITY=MAX_MULTIPLAYER_PLAYERS;
@@ -34,4 +35,14 @@ void adoptNativeForestActor(PlayerID,Entity*);
 void invalidateNativeRoomView();
 // Local test diagnostics; never accepted from clients or published via protocol.
 bool nativePartySnapshot(PlayerID,PartySnapshot&);
+bool canOpenNativeTradeMenu();
+void openNativeTradeMenu();
+TradeResult proposeNativeTrade(
+    PlayerID recipient,
+    const TradeOfferLine* lines,
+    uint8_t lineCount,
+    uint32_t& offerID);
+TradeResult respondToNativeTrade(bool accept);
+bool cancelNativeTrade();
+const TradeOffer* pendingNativeTrade(PlayerID player);
 }}

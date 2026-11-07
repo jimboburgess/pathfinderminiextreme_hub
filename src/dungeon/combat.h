@@ -253,6 +253,7 @@ void cancelPlayerAttack();
 //==================================================
 
 void beginPlayerAbility(AbilityID abilityID);
+void beginThrownHealingPotion();
 void beginChannelEnergyPreview();
 void beginPlayerScrollAbility(AbilityID abilityID, const ItemInstance& scroll);
 void continuePlayerAbilityWithDamageType(DamageType damageType);

@@ -653,10 +653,9 @@ bool useCureLightWoundsPotion(Character& character, int& amountRestored)
     }
 
     const int previousHP = character.health.currentHP;
-    amountRestored = healCharacter(character, rollDice(1, 8) + 1);
-
-    if (amountRestored <= 0)
-        return false;
+    amountRestored = healCharacter(
+        character,
+        calculateCureLightWoundsPotionHealing(rollDice(1, 8)));
 
     if (!removeItem(character, ITEM_POTION_CURE_LIGHT_WOUNDS))
     {
@@ -746,6 +745,12 @@ bool advanceSpellLearning(Character& character, bool& completed)
     AbilityID completedAbility = ABILITY_NONE;
     completed = completeSpellLearning(character, completedAbility);
     return true;
+}
+
+int calculateCureLightWoundsPotionHealing(int naturalRoll)
+{
+    const int healing = naturalRoll - 1;
+    return healing > 0 ? healing : 0;
 }
 
 bool completeSpellLearning(Character& character, AbilityID& completedAbility)

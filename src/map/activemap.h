@@ -4,13 +4,13 @@
 #include <stdint.h>
 
 #include "graphics/tiles.h"
-
-struct Entity;
+#include "data/entities.h"
 
 // The forest and dungeon expose different backing arrays, but combat and
 // monster AI should always operate on whichever map is currently active.
 Entity* getActiveMapEntities(uint8_t& entityCount);
 Entity* getActiveMapPlayer();
+Entity* spawnActiveMapEntity(EntityType type, uint8_t x, uint8_t y);
 
 int getActiveMapWidth();
 int getActiveMapHeight();

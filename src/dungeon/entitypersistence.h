@@ -15,7 +15,8 @@ enum PersistentEntityFlag : uint8_t
     PERSISTENT_ENTITY_ACTIVE = 1 << 0,
     PERSISTENT_MONSTER_AWARE = 1 << 1,
     PERSISTENT_MONSTER_REVEALED = 1 << 2,
-    PERSISTENT_MONSTER_HAS_LAST_KNOWN = 1 << 3
+    PERSISTENT_MONSTER_HAS_LAST_KNOWN = 1 << 3,
+    PERSISTENT_ITEM_DROP = 1 << 4
 };
 
 struct PersistentMonsterState
@@ -48,11 +49,17 @@ struct PersistentNPCState
     NPCID npcID = NPC_NONE;
 };
 
+struct PersistentItemDropState
+{
+    InventorySlot slot{};
+};
+
 union PersistentEntityPayload
 {
     PersistentMonsterState monster;
     PersistentChestState chest;
     PersistentNPCState npc;
+    PersistentItemDropState itemDrop;
 
     PersistentEntityPayload() {}
     ~PersistentEntityPayload() {}

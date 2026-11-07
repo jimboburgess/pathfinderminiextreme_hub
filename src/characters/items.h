@@ -697,6 +697,8 @@ bool completeSpellLearning(Character& character, AbilityID& completedAbility);
 // explicitly configured monster that carries the same normal item.
 bool useCureLightWoundsPotion(Character& character, int& amountRestored);
 
+int calculateCureLightWoundsPotionHealing(int naturalRoll);
+
 // Restores MP and consumes exactly the selected potion as one transaction.
 // amountRestored is set to zero on every failure.
 ManaPotionUseResult useManaPotion(

@@ -66,6 +66,26 @@ if(BUILD_TESTING)
     target_compile_definitions(pfme_spell_usability_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_spell_usability COMMAND pfme_spell_usability_tests)
     set_tests_properties(pfme_spell_usability PROPERTIES TIMEOUT 30)
+
+    add_executable(pfme_item_interaction_tests item_interaction_tests.cpp)
+    target_include_directories(pfme_item_interaction_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_item_interaction_tests PRIVATE
+        pfme_handheld_runtime)
+    target_compile_definitions(pfme_item_interaction_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_item_interactions COMMAND pfme_item_interaction_tests)
+    set_tests_properties(pfme_item_interactions PROPERTIES TIMEOUT 30)
+
+    add_executable(pfme_party_item_authority_tests
+        party_item_authority_tests.cpp)
+    target_include_directories(pfme_party_item_authority_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_party_item_authority_tests PRIVATE
+        pfme_handheld_runtime)
+    target_compile_definitions(pfme_party_item_authority_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_party_item_authority
+        COMMAND pfme_party_item_authority_tests)
+    set_tests_properties(pfme_party_item_authority PROPERTIES TIMEOUT 60)
 endif()
 
 if(BUILD_TESTING)

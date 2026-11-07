@@ -12,6 +12,7 @@
 #include "messagelog.h"
 #include "monstersprites.h"
 #include "graphics/sprites.h"
+#include "graphics/itemdropvisual.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
 #include "data/entitytraits.h"
@@ -22,6 +23,7 @@
 #include "dungeon/roomdraw.h"
 #include "forest/forest.h"
 #include "map/mapeffects.h"
+#include "map/worlditems.h"
 #include "graphics/tiles.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
@@ -196,6 +198,10 @@ void drawAbilityRangeTile(int tileX, int tileY)
     {
         return;
     }
+
+    if (combat.selectedAbility == ABILITY_THROW_HEALING_POTION &&
+        !isHealingPotionThrowTargetTile(*caster, tileX, tileY))
+        return;
 
     const int screenX = tileX * TILE_SIZE;
     const int screenY = tileY * TILE_SIZE;
@@ -1034,6 +1040,12 @@ void drawEntity(const Entity& entity)
         tft.drawCircle(x + 5, y + 6, 3, ST77XX_YELLOW);
         tft.drawLine(x + 8, y + 8, x + 13, y + 13, ST77XX_YELLOW);
         tft.drawLine(x + 11, y + 11, x + 13, y + 9, ST77XX_YELLOW);
+        return;
+    }
+
+    if (entity.type == ENTITY_LOOT)
+    {
+        drawDroppedItem(entity);
         return;
     }
 

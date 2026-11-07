@@ -470,3 +470,38 @@ The ESP-NOW combat cast path remains authoritative and independently revalidates
 range, room, target, resources, and effects. Exploration casting remains hidden
 during an ESP-NOW shared activity because that transport does not yet define a
 committed exploration-ability command; it is not executed client-side.
+
+## Playtest Batch 5 party items
+
+Normal Healing Potions now restore `max(0, 1d8 - 1)` HP. In Dungeon and Forest
+inventory actions they retain self-use and add Throw and Drop. Throw uses the
+shared ground cursor with a 20-foot (four-tile) first-increment limit, line of
+effect, and an allied player's occupied square. Confirmation makes a ranged
+attack against AC 5 rather than the ally's AC; hit or miss consumes one potion,
+and a miss shatters harmlessly. Combat throws spend the standard action, while
+drops and pickups spend the move action. Exploration item actions are free and
+never start combat.
+
+Native/browser parties expose Trade Items in the map menu and Town bulletin
+board. An offer may contain up to four item-instance lines, one unit per selected
+stack. It is distance-independent, remains pending without moving ownership,
+and transfers atomically only after the named recipient accepts. Acceptance
+revalidates party membership, sender ownership, and recipient capacity. A combat
+offer may be committed only by the acting player and spends that player's
+standard action; administrative acceptance spends no recipient action. Each
+player may participate in one pending offer, and disconnecting or leaving cancels
+it without moving items.
+
+World drops reuse the room-persistent `ENTITY_LOOT` record with one exact
+`ItemInstance`. Dropping removes one unit only after an adjacent valid world slot
+is created; pickup adds the item before removing that slot, so serialized input
+races have one winner. Healing Potion bottles are light blue, Mana Potion bottles
+are deep blue, and weapons, armor/shields, scrolls, and miscellaneous items use
+small shared category glyphs in the production 240x240 framebuffer. Dungeon drops
+follow room persistence and Forest drops follow the existing Forest lifecycle.
+
+The current ESP-NOW protocol has no authoritative trade, world-drop, pickup, or
+thrown-potion commands. Those multiplayer actions remain hidden during an
+ESP-NOW shared activity rather than being simulated client-side; handheld
+single-player item use, throwing, dropping, persistence, pickup, and rendering
+remain available.

@@ -11,6 +11,7 @@
 #include "data/game.h"
 #include "map/dungeontools.h"
 #include "map/activemap.h"
+#include "map/worlditems.h"
 #include "dungeon/combat.h"
 #include "dungeon/loot.h"
 #include "dungeon/dungeon.h"
@@ -27,6 +28,10 @@
 #include "graphics/tiles.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_party.h"
+#include "native_rooms.h"
+#endif
 
 namespace
 {
@@ -325,6 +330,44 @@ bool tryInteractWithFacingEntity()
     if (target == nullptr)
     {
         return false;
+    }
+
+    if (target->type == ENTITY_LOOT && isDroppedWorldItem(*target))
+    {
+        const InventorySlot* slot = getDroppedWorldItem(*target);
+        const ItemInstance item = slot->item;
+        const int dropX = target->x;
+        const int dropY = target->y;
+        const WorldItemResult result = pickupWorldItem(*playerEntity, *target);
+        if (result != WorldItemResult::SUCCESS)
+        {
+            if (result == WorldItemResult::INVENTORY_FULL)
+                setGameMessage("Inventory full.");
+            else if (result == WorldItemResult::NOT_ACTING ||
+                     result == WorldItemResult::ACTION_SPENT)
+                setGameMessage("Cannot pick that up now.");
+            else
+                setGameMessage("That item is unavailable.");
+            playSound(SoundEffect::ERROR);
+            return true;
+        }
+
+        char itemName[48];
+        formatItemInstanceName(item, itemName, sizeof(itemName));
+        char message[96];
+        snprintf(message, sizeof(message), "%s picks up %s.",
+                 getCharacterName(playerEntity->character), itemName);
+        markTileDirty(dropX, dropY);
+        playSound(SoundEffect::ITEM_PICKUP);
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+        if (pfme::runtime::nativeRoomsActive() &&
+            pfme::runtime::socialPartiesEnabled())
+            pfme::runtime::nativePartyMessage(message);
+        else
+#endif
+            setGameMessage(message);
+        if (combat.active) checkEndPlayerTurn();
+        return true;
     }
 
     if (!combat.active && target->type == ENTITY_NPC)
