@@ -6,7 +6,7 @@
 
 #include "multiplayer_types.h"
 
-constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 5;
+constexpr uint8_t MULTIPLAYER_PROTOCOL_VERSION = 6;
 constexpr uint16_t MULTIPLAYER_PACKET_MAGIC = 0x504D;
 constexpr size_t ESPNOW_MAX_PACKET_SIZE = 250;
 constexpr size_t NETWORK_PACKET_HEADER_SIZE = 14;
@@ -24,6 +24,8 @@ constexpr size_t NETWORK_CHARACTER_STATE_SIZE = 177;
 constexpr size_t PLAYER_MOVE_REQUEST_PAYLOAD_SIZE = 7;
 constexpr size_t PLAYER_POSITION_PAYLOAD_SIZE = 11;
 constexpr size_t PLAYER_ROOM_CHANGE_PAYLOAD_SIZE = 11;
+constexpr size_t EXPLORATION_ABILITY_COMMAND_PAYLOAD_SIZE = 16;
+constexpr size_t EXPLORATION_ABILITY_RESULT_PAYLOAD_SIZE = 7;
 constexpr size_t SNAPSHOT_CHUNK_DATA_SIZE = 200;
 constexpr size_t ACTIVITY_ACK_PAYLOAD_SIZE = 11;
 constexpr size_t PLAYER_ROOM_TRANSITION_REQUEST_PAYLOAD_SIZE = 8;
@@ -75,6 +77,8 @@ enum class NetworkPacketType : uint8_t
     PLAYER_MOVE_REQUEST = 32,
     PLAYER_POSITION,
     PLAYER_ROOM_CHANGE,
+    EXPLORATION_ABILITY_COMMAND,
+    EXPLORATION_ABILITY_RESULT,
 
     COMBAT_BEGIN = 48,
     COMBAT_STATE,
@@ -510,6 +514,25 @@ struct PlayerRoomChangePayload
     uint16_t movementSequence = 0;
 };
 
+struct ExplorationAbilityCommandPayload
+{
+    uint32_t activityID = 0;
+    uint16_t actionSequence = 0;
+    MultiplayerCombatantRef target{};
+    uint16_t abilityID = 0;
+    int8_t targetX = -1;
+    int8_t targetY = -1;
+    uint8_t direction = 0;
+    uint8_t damageType = 0;
+};
+
+struct ExplorationAbilityResultPayload
+{
+    uint32_t activityID = 0;
+    uint16_t actionSequence = 0;
+    uint8_t result = 0;
+};
+
 struct DecodedNetworkPacket
 {
     NetworkPacketHeader header{};
@@ -707,5 +730,23 @@ bool decodePlayerRoomChange(
     const uint8_t* data,
     size_t size,
     PlayerRoomChangePayload& payload);
+bool encodeExplorationAbilityCommand(
+    const ExplorationAbilityCommandPayload& payload,
+    uint8_t* destination,
+    size_t capacity,
+    size_t& size);
+bool decodeExplorationAbilityCommand(
+    const uint8_t* data,
+    size_t size,
+    ExplorationAbilityCommandPayload& payload);
+bool encodeExplorationAbilityResult(
+    const ExplorationAbilityResultPayload& payload,
+    uint8_t* destination,
+    size_t capacity,
+    size_t& size);
+bool decodeExplorationAbilityResult(
+    const uint8_t* data,
+    size_t size,
+    ExplorationAbilityResultPayload& payload);
 
 #endif

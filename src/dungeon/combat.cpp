@@ -3192,11 +3192,8 @@ void beginPlayerAbility(AbilityID abilityID)
 
     if (player == nullptr || player->type != ENTITY_PLAYER ||
         (combat.active && !combat.waitingForPlayer) ||
-        (!combat.selectedAbilityFromScroll && !knowsAbility(player->character, abilityID) &&
-         !(player->character.characterClass == CLASS_CLERIC &&
-           ability != nullptr && ability->type == ABILITY_DIVINE &&
-           ability->category == ABILITY_CATEGORY_SPELL &&
-           ability->level <= getClericSpellAccessLevel(player->character))) ||
+        (!combat.selectedAbilityFromScroll &&
+         !canCharacterAccessAbility(player->character, abilityID)) ||
         !isAbilitySupported(abilityID) ||
         ability == nullptr)
     {
@@ -3225,6 +3222,26 @@ void beginPlayerAbility(AbilityID abilityID)
             markAbilityCursorDirty();
             setGameMessage("Turn Undead: A confirm B back");
             requestCombatTileRedraw();
+            return;
+        }
+        if (isMultiplayerExplorationActive() &&
+            !isMultiplayerCombatActive())
+        {
+            if (combat.selectedAbilityFromScroll)
+            {
+                setGameMessage("Scroll casting is unavailable over ESP-NOW.");
+                playSound(SoundEffect::SPELL_FAIL);
+                return;
+            }
+            if (!requestMultiplayerExplorationAbility(
+                    static_cast<uint16_t>(abilityID), player, -1, -1,
+                    static_cast<uint8_t>(moveDirection),
+                    static_cast<uint8_t>(combat.selectedAbilityDamageType)))
+            {
+                setGameMessage("Ability command is already pending.");
+                playSound(SoundEffect::SPELL_FAIL);
+            }
+            clearSelectedAbilityScroll();
             return;
         }
         executePlayerAbility(*player, player, abilityID);
@@ -3743,6 +3760,38 @@ void confirmPlayerAbility()
             clearSelectedAbilityScroll();
             combat.waitingForPlayer = false;
             requestCombatTileRedraw();
+        }
+        return;
+    }
+
+    if (isMultiplayerExplorationActive())
+    {
+        if (combat.selectedAbilityFromScroll)
+        {
+            setGameMessage("Scroll casting is unavailable over ESP-NOW.");
+            playSound(SoundEffect::SPELL_FAIL);
+            return;
+        }
+        Entity* target = getSelectedAbilityTarget();
+        if (requestMultiplayerExplorationAbility(
+                static_cast<uint16_t>(combat.selectedAbility), target,
+                combat.selectedAbilityX, combat.selectedAbilityY,
+                static_cast<uint8_t>(combat.selectedAbilityDirection),
+                static_cast<uint8_t>(combat.selectedAbilityDamageType)))
+        {
+            markAbilityCursorDirty();
+            combat.selectedAbility = ABILITY_NONE;
+            combat.selectedAbilityX = -1;
+            combat.selectedAbilityY = -1;
+            combat.selectedTargetIndex = -1;
+            clearSelectedAbilityScroll();
+            markPlayerFacingCursorDirty();
+            requestCombatTileRedraw();
+        }
+        else
+        {
+            setGameMessage("Ability command is already pending.");
+            playSound(SoundEffect::SPELL_FAIL);
         }
         return;
     }

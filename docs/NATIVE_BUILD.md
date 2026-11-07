@@ -443,10 +443,10 @@ at 200 ms per visible tile step. A separate deterministic cosmetic hash gives
 Intelligence-weighted 300-600 ms thinking pauses without consuming gameplay RNG.
 No blocking delay is used.
 
-PlatformIO dependency reproducibility remains a deferred cleanup item. A fresh
-caret-compatible resolution can select newer Adafruit libraries and exceed internal
-DRAM by eight bytes; the established working versions are Adafruit GFX 1.12.6 and
-Adafruit ST7735/ST7789 1.11.0. Batch 3 does not change dependency constraints.
+PlatformIO pins Adafruit GFX 1.12.6 and Adafruit ST7735/ST7789 1.11.0 exactly.
+This avoids caret-compatible upgrades changing firmware memory use, and a clean
+isolated `libdeps` resolution must select those versions before a release build is
+considered reproducible.
 
 ## Playtest Batch 4 spell usability
 
@@ -462,14 +462,23 @@ Targeting uses shared, allocation-free tile predicates. The existing Chebyshev
 grid convention treats each square as five feet, so 30 feet is six tiles. Target
 range marks legal origins separately from the purple affected-area preview.
 Radius, cone, and line previews call the same geometry used by resolution and are
-clipped to the active map and current line-of-effect behavior. Channel Energy and
-Turn Undead both use the same six-tile centered-range helper; Turn Undead also
-keeps its production line-of-sight restriction.
+clipped to the active map. A selected-origin burst first validates placement from
+the caster, then propagates line of effect from its chosen origin; sight-blocking
+tiles and tiles hidden from that origin are excluded from both preview and
+resolution. Persistent selected-origin areas use the same footprint helper.
+Channel Energy remains a wall-independent caster-centered six-tile radius. Turn
+Undead remains caster-centered at six tiles and retains caster line of sight.
+Directional cones and lines retain their caster/source line-of-effect rules.
 
-The ESP-NOW combat cast path remains authoritative and independently revalidates
-range, room, target, resources, and effects. Exploration casting remains hidden
-during an ESP-NOW shared activity because that transport does not yet define a
-committed exploration-ability command; it is not executed client-side.
+ESP-NOW protocol 6 adds one generic 16-byte committed exploration-ability command
+and a 7-byte result. Preview and cursor movement remain local. The host derives the
+actor from the sender, validates ability access, resources, room, target, range,
+line of effect and hostility, then runs the production resolver. Non-hostile casts
+refresh authoritative character/world snapshots and remain in exploration.
+Hostile casts begin combat, resolve once as the opening action before normal
+initiative, and preserve the spent Standard Action on the caster's actual
+initiative turn. Scroll casting remains unavailable over ESP-NOW because its
+inventory consumption is not yet represented by this command.
 
 ## Playtest Batch 5 party items
 

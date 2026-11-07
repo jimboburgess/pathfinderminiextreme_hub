@@ -325,6 +325,8 @@ bool isKnownPacketType(NetworkPacketType packetType)
         case NetworkPacketType::PLAYER_MOVE_REQUEST:
         case NetworkPacketType::PLAYER_POSITION:
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
+        case NetworkPacketType::EXPLORATION_ABILITY_COMMAND:
+        case NetworkPacketType::EXPLORATION_ABILITY_RESULT:
         case NetworkPacketType::COMBAT_BEGIN:
         case NetworkPacketType::COMBAT_STATE:
         case NetworkPacketType::COMBAT_ACTION_REQUEST:
@@ -378,6 +380,8 @@ bool isGameplayPacketType(NetworkPacketType packetType)
         case NetworkPacketType::PLAYER_MOVE_REQUEST:
         case NetworkPacketType::PLAYER_POSITION:
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
+        case NetworkPacketType::EXPLORATION_ABILITY_COMMAND:
+        case NetworkPacketType::EXPLORATION_ABILITY_RESULT:
         case NetworkPacketType::COMBAT_BEGIN:
         case NetworkPacketType::COMBAT_STATE:
         case NetworkPacketType::COMBAT_ACTION_REQUEST:
@@ -1295,4 +1299,73 @@ bool decodePlayerRoomChange(const uint8_t* data, size_t size,
         payload.activityID != 0 && isValidPlayerID(payload.playerID) &&
         payload.roomID < NETWORK_MAX_DUNGEON_ROOMS &&
         payload.entryDirection < 8;
+}
+
+bool encodeExplorationAbilityCommand(
+    const ExplorationAbilityCommandPayload& payload,
+    uint8_t* destination,
+    size_t capacity,
+    size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 || payload.abilityID == 0 ||
+        payload.direction >= 8 ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.actionSequence) ||
+        !writeOptionalCombatantRef(writer, payload.target) ||
+        !writer.writeU16(payload.abilityID) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.targetX)) ||
+        !writer.writeU8(static_cast<uint8_t>(payload.targetY)) ||
+        !writer.writeU8(payload.direction) ||
+        !writer.writeU8(payload.damageType)) return false;
+    size = writer.size();
+    return size == EXPLORATION_ABILITY_COMMAND_PAYLOAD_SIZE;
+}
+
+bool decodeExplorationAbilityCommand(
+    const uint8_t* data,
+    size_t size,
+    ExplorationAbilityCommandPayload& payload)
+{
+    PacketReader reader(data, size);
+    uint8_t targetX = 0;
+    uint8_t targetY = 0;
+    if (!reader.readU32(payload.activityID) ||
+        !reader.readU16(payload.actionSequence) ||
+        !readOptionalCombatantRef(reader, payload.target) ||
+        !reader.readU16(payload.abilityID) ||
+        !reader.readU8(targetX) || !reader.readU8(targetY) ||
+        !reader.readU8(payload.direction) ||
+        !reader.readU8(payload.damageType) || !reader.finished()) return false;
+    payload.targetX = static_cast<int8_t>(targetX);
+    payload.targetY = static_cast<int8_t>(targetY);
+    return payload.activityID != 0 && payload.abilityID != 0 &&
+           payload.direction < 8;
+}
+
+bool encodeExplorationAbilityResult(
+    const ExplorationAbilityResultPayload& payload,
+    uint8_t* destination,
+    size_t capacity,
+    size_t& size)
+{
+    PacketWriter writer(destination, capacity);
+    if (payload.activityID == 0 ||
+        !writer.writeU32(payload.activityID) ||
+        !writer.writeU16(payload.actionSequence) ||
+        !writer.writeU8(payload.result)) return false;
+    size = writer.size();
+    return size == EXPLORATION_ABILITY_RESULT_PAYLOAD_SIZE;
+}
+
+bool decodeExplorationAbilityResult(
+    const uint8_t* data,
+    size_t size,
+    ExplorationAbilityResultPayload& payload)
+{
+    PacketReader reader(data, size);
+    return reader.readU32(payload.activityID) &&
+           reader.readU16(payload.actionSequence) &&
+           reader.readU8(payload.result) && reader.finished() &&
+           payload.activityID != 0;
 }

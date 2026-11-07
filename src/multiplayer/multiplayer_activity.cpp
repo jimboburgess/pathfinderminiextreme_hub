@@ -168,10 +168,26 @@ struct MultiplayerCombatSlot
     bool fullDefense = false;
 };
 
+struct ExplorationAbilityNetworkState
+{
+    uint16_t localSequence = 0;
+    uint16_t pendingSequence = 0;
+    uint16_t lastSequence[MAX_MULTIPLAYER_PLAYERS] = {};
+    uint32_t lastCommandAt = 0;
+    uint8_t hasSequenceMask = 0;
+    uint8_t resultReadyMask = 0;
+    uint8_t lastResult[MAX_MULTIPLAYER_PLAYERS] = {};
+    uint8_t retryCount = 0;
+    uint8_t pendingSize = 0;
+    uint8_t pendingBytes[EXPLORATION_ABILITY_COMMAND_PAYLOAD_SIZE] = {};
+};
+
 struct MultiplayerCombatRuntime
 {
     bool active = false;
     bool ending = false;
+    bool openingAbilityPending = false;
+    PlayerID openingAbilityPlayerID = INVALID_PLAYER_ID;
     uint16_t combatID = 0;
     uint16_t nextEventSequence = 1;
     uint16_t lastEventSequence = 0;
@@ -180,6 +196,9 @@ struct MultiplayerCombatRuntime
     uint8_t currentTurnIndex = 0;
     uint16_t round = 1;
     uint16_t localActionSequence = 0;
+    uint16_t openingAbilitySequence = 0;
+    PlayerID openingAbilitySender = INVALID_PLAYER_ID;
+    MultiplayerCombatActionRequestPayload openingAbilityRequest{};
     uint16_t lastActionSequence[MAX_MULTIPLAYER_PLAYERS] = {};
     bool hasActionSequence[MAX_MULTIPLAYER_PLAYERS] = {};
     MultiplayerCombatSlot slots[MAX_COMBATANTS] = {};
@@ -190,6 +209,7 @@ struct MultiplayerCombatRuntime
     uint32_t lastSendAt = 0;
     uint16_t pendingSize = 0;
     uint8_t pendingBytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    ExplorationAbilityNetworkState explorationAbility{};
 #if MULTIPLAYER_DEBUG
     uint8_t snapshotRetries = 0;
     uint8_t snapshotChunkDuplicates = 0;
@@ -208,8 +228,36 @@ NetworkCharacterState* participantCharacters = nullptr;
 MultiplayerCombatRuntime* multiplayerCombat = nullptr;
 MultiplayerRoomEffectState* multiplayerRoomEffects = nullptr;
 
+void resetCombatRuntime()
+{
+    if (multiplayerCombat == nullptr) return;
+    memset(multiplayerCombat, 0, sizeof(*multiplayerCombat));
+    multiplayerCombat->openingAbilityPlayerID = INVALID_PLAYER_ID;
+    multiplayerCombat->nextEventSequence = 1;
+    multiplayerCombat->round = 1;
+    multiplayerCombat->openingAbilitySender = INVALID_PLAYER_ID;
+    multiplayerCombat->pendingPacketType = NetworkPacketType::ERROR_PACKET;
+}
+
+void resetCombatRuntimePreservingExplorationAbility()
+{
+    if (multiplayerCombat == nullptr) return;
+    const ExplorationAbilityNetworkState explorationAbility =
+        multiplayerCombat->explorationAbility;
+    resetCombatRuntime();
+    multiplayerCombat->explorationAbility = explorationAbility;
+}
+
 const MultiplayerCombatantRef* currentCombatRef();
 Entity* resolveVisibleCombatant(const MultiplayerCombatantRef& reference);
+void processExplorationAbilityCommand(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize);
+void processExplorationAbilityResult(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize);
 
 NetworkCharacterState& participantCharacter(PlayerID playerID)
 {
@@ -316,8 +364,7 @@ uint8_t getCombatRoomID()
 void resetActivityState()
 {
     runtime = ActivityRuntime{};
-    if (multiplayerCombat != nullptr)
-        *multiplayerCombat = MultiplayerCombatRuntime{};
+    resetCombatRuntime();
     if (multiplayerRoomEffects != nullptr)
         memset(multiplayerRoomEffects, 0,
                sizeof(MultiplayerRoomEffectState) *
@@ -3297,7 +3344,7 @@ void processCombatBegin(
         priorCurrent = multiplayerCombat->slots[
             multiplayerCombat->currentTurnIndex];
     if (!reinforcementUpdate)
-        *multiplayerCombat = MultiplayerCombatRuntime{};
+        resetCombatRuntimePreservingExplorationAbility();
     multiplayerCombat->active = true;
     multiplayerCombat->combatID = begin.combatID;
     multiplayerCombat->lastEventSequence = begin.eventSequence;
@@ -3512,6 +3559,12 @@ void handleGameplayPacket(
         case NetworkPacketType::PLAYER_ROOM_CHANGE:
             processPlayerRoomChange(sender, payload, payloadSize);
             break;
+        case NetworkPacketType::EXPLORATION_ABILITY_COMMAND:
+            processExplorationAbilityCommand(sender, payload, payloadSize);
+            break;
+        case NetworkPacketType::EXPLORATION_ABILITY_RESULT:
+            processExplorationAbilityResult(sender, payload, payloadSize);
+            break;
         case NetworkPacketType::SHARED_GAMEPLAY_MESSAGE:
             processSharedGameplayMessage(sender, payload, payloadSize);
             break;
@@ -3619,6 +3672,12 @@ void resetMultiplayerTurnState(MultiplayerCombatSlot& slot)
     slot.standardActionUsed = false;
     slot.fullDefense = false;
     const MultiplayerCombatantRef& reference = slot.initiative.combatant;
+    if (reference.kind == MultiplayerCombatantKind::PLAYER &&
+        reference.playerID == multiplayerCombat->openingAbilityPlayerID)
+    {
+        slot.standardActionUsed = true;
+        multiplayerCombat->openingAbilityPlayerID = INVALID_PLAYER_ID;
+    }
     slot.movementRemaining = reference.kind == MultiplayerCombatantKind::PLAYER &&
         isValidPlayerID(reference.playerID)
         ? participantCharacter(reference.playerID).speed
@@ -3825,21 +3884,28 @@ void saveCombatRoomAndRestoreHost(uint8_t changedRoom)
 
 void scheduleRoomRefreshForClients(uint8_t roomID)
 {
-    if (!multiplayerSession.isHost() ||
-        runtime.type != MultiplayerActivityType::DUNGEON ||
+    if (!multiplayerSession.isHost()) return;
+    if (runtime.type == MultiplayerActivityType::DUNGEON &&
         roomID >= NETWORK_MAX_DUNGEON_ROOMS) return;
+    if (runtime.type == MultiplayerActivityType::FOREST)
+    {
+        roomID = runtime.currentRoom;
+        if (++runtime.snapshotEpoch == 0) ++runtime.snapshotEpoch;
+    }
     const uint32_t now = millis();
     for (PlayerID playerID = 1; playerID < MAX_MULTIPLAYER_PLAYERS; ++playerID)
     {
         Participant& participant = runtime.participants[playerID];
         if (!participant.participating ||
-            participant.spawn.roomID != roomID || participant.roomLoading)
+            (runtime.type == MultiplayerActivityType::DUNGEON &&
+             participant.spawn.roomID != roomID) || participant.roomLoading)
             continue;
         participant.roomLoading = true;
         participant.ready = false;
         participant.startAcked = false;
         participant.transferRoom = roomID;
-        participant.transferEpoch = runtime.roomRevisions[roomID];
+        participant.transferEpoch = runtime.type == MultiplayerActivityType::DUNGEON
+            ? runtime.roomRevisions[roomID] : runtime.snapshotEpoch;
         participant.transferIncludesGraph = false;
         participant.transitionEntry = ENTRY_START;
         participant.roomLoadStartedAt = now;
@@ -3994,18 +4060,28 @@ bool resolveMultiplayerAttack(
 }
 
 bool resolveMultiplayerAbility(
-    const MultiplayerCombatActionRequestPayload& request)
+    const MultiplayerCombatActionRequestPayload& request,
+    AbilityResult* outcome = nullptr,
+    bool openingAction = false)
 {
+    if (outcome != nullptr) *outcome = ABILITY_RESULT_INVALID_TARGET;
     if ((request.flags & 0x01u) != 0) return false;
     if (!prepareCombatantRoom(request.actor)) return false;
     Entity* actor = resolveVisibleCombatant(request.actor);
     Entity* target = resolveVisibleCombatant(request.target);
     if (actor == nullptr || actor->character.state != STATE_ALIVE)
     {
+        if (outcome != nullptr) *outcome = ABILITY_RESULT_INVALID_CASTER;
         restoreHostDungeonRoom();
         return false;
     }
     const AbilityID abilityID = static_cast<AbilityID>(request.abilityID);
+    if (!canCharacterAccessAbility(actor->character, abilityID))
+    {
+        if (outcome != nullptr) *outcome = ABILITY_RESULT_INVALID_ABILITY;
+        restoreHostDungeonRoom();
+        return false;
+    }
     AbilityResolution result{};
     if (isDirectionalAbility(abilityID))
         result = resolveAbilityInDirection(
@@ -4025,6 +4101,7 @@ bool resolveMultiplayerAbility(
     }
     if (result.result != ABILITY_RESULT_SUCCESS)
     {
+        if (outcome != nullptr) *outcome = result.result;
         setGameMessage(getAbilityResultMessage(result.result));
         restoreHostDungeonRoom();
         return false;
@@ -4034,16 +4111,29 @@ bool resolveMultiplayerAbility(
     if (target != nullptr && request.target.kind == MultiplayerCombatantKind::PLAYER)
         copyCharacterToNetwork(request.target.playerID, target->character,
                                participantCharacter(request.target.playerID));
-    MultiplayerCombatSlot& combatSlot = multiplayerCombat->slots[
-        multiplayerCombat->currentTurnIndex];
+    const int actorSlotIndex = findCombatSlot(request.actor);
+    if (actorSlotIndex < 0)
+    {
+        if (outcome != nullptr) *outcome = ABILITY_RESULT_INVALID_CASTER;
+        restoreHostDungeonRoom();
+        return false;
+    }
+    MultiplayerCombatSlot& combatSlot =
+        multiplayerCombat->slots[actorSlotIndex];
     combatSlot.standardActionUsed = true;
-    actor->turn.standardActionUsed = true;
+    if (actorSlotIndex == multiplayerCombat->currentTurnIndex)
+        actor->turn.standardActionUsed = true;
+    else if (openingAction && request.actor.kind ==
+             MultiplayerCombatantKind::PLAYER)
+        multiplayerCombat->openingAbilityPlayerID = request.actor.playerID;
     char message[SHARED_MESSAGE_TEXT_SIZE] = {};
     snprintf(message, sizeof(message), "%s casts %s.",
              combatantDisplayName(request.actor, actor), getAbilityName(abilityID));
     const uint8_t roomID = request.actor.roomID;
+    refreshHostParticipantCharacters();
     saveCombatRoomAndRestoreHost(roomID);
     scheduleRoomRefreshForClients(roomID);
+    if (outcome != nullptr) *outcome = ABILITY_RESULT_SUCCESS;
     if (!hasLivingMultiplayerHostile())
     {
         multiplayerCombat->ending = true;
@@ -4051,11 +4141,252 @@ bool resolveMultiplayerAbility(
             MultiplayerCombatEventType::COMBAT_ENDED,
             request.actor, request.target, "Combat ends.");
     }
-    if (shouldAdvanceAfterStandardAction(combatSlot.moveActionUsed))
+    if (!openingAction &&
+        shouldAdvanceAfterStandardAction(combatSlot.moveActionUsed))
         advanceMultiplayerTurn();
     return emitCombatEvent(NetworkPacketType::COMBAT_ACTION_RESULT,
         MultiplayerCombatEventType::ACTION_RESULT,
         request.actor, request.target, message);
+}
+
+void completeExplorationAbility(
+    PlayerID sender,
+    uint16_t actionSequence,
+    AbilityResult result)
+{
+    if (!isValidPlayerID(sender) || multiplayerCombat == nullptr) return;
+    ExplorationAbilityNetworkState& state =
+        multiplayerCombat->explorationAbility;
+    state.lastResult[sender] = static_cast<uint8_t>(result);
+    state.resultReadyMask |= playerBit(sender);
+    if (sender == HOST_PLAYER_ID)
+    {
+        if (result != ABILITY_RESULT_SUCCESS)
+            setGameMessage(getAbilityResultMessage(result));
+        return;
+    }
+    ExplorationAbilityResultPayload payload{};
+    payload.activityID = runtime.activityID;
+    payload.actionSequence = actionSequence;
+    payload.result = static_cast<uint8_t>(result);
+    uint8_t bytes[EXPLORATION_ABILITY_RESULT_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodeExplorationAbilityResult(
+            payload, bytes, sizeof(bytes), size))
+    {
+        sendToPlayer(sender, NetworkPacketType::EXPLORATION_ABILITY_RESULT,
+                     bytes, size, NETWORK_FLAG_CONTROL_EVENT);
+    }
+}
+
+MultiplayerCombatantRef explorationActorRef(PlayerID playerID)
+{
+    MultiplayerCombatantRef reference{};
+    if (!isValidPlayerID(playerID) || !isParticipant(playerID))
+        return reference;
+    reference.kind = MultiplayerCombatantKind::PLAYER;
+    reference.playerID = playerID;
+    reference.roomID = runtime.type == MultiplayerActivityType::FOREST
+        ? 0 : runtime.participants[playerID].spawn.roomID;
+    return reference;
+}
+
+void resolveAuthoritativeExplorationAbility(
+    PlayerID sender,
+    const ExplorationAbilityCommandPayload& command)
+{
+    MultiplayerCombatantRef actorRef = explorationActorRef(sender);
+    if (actorRef.kind != MultiplayerCombatantKind::PLAYER ||
+        isMultiplayerCombatActive() || !prepareCombatantRoom(actorRef))
+    {
+        completeExplorationAbility(
+            sender, command.actionSequence, ABILITY_RESULT_INVALID_CASTER);
+        return;
+    }
+
+    Entity* actor = resolveVisibleCombatant(actorRef);
+    const AbilityID abilityID = static_cast<AbilityID>(command.abilityID);
+    const Ability* ability = getAbility(abilityID);
+    if (actor == nullptr || actor->character.state != STATE_ALIVE)
+    {
+        restoreHostDungeonRoom();
+        completeExplorationAbility(
+            sender, command.actionSequence, ABILITY_RESULT_INVALID_CASTER);
+        return;
+    }
+    if (ability == nullptr || !isAbilitySupported(abilityID) ||
+        !canCharacterAccessAbility(actor->character, abilityID))
+    {
+        restoreHostDungeonRoom();
+        completeExplorationAbility(
+            sender, command.actionSequence, ABILITY_RESULT_INVALID_ABILITY);
+        return;
+    }
+
+    Entity* target = nullptr;
+    if (ability->target == TARGET_SELF)
+        target = actor;
+    else if (command.target.kind != MultiplayerCombatantKind::NONE)
+    {
+        if (command.target.roomID != actorRef.roomID)
+        {
+            restoreHostDungeonRoom();
+            completeExplorationAbility(
+                sender, command.actionSequence,
+                ABILITY_RESULT_INVALID_TARGET);
+            return;
+        }
+        target = resolveVisibleCombatant(command.target);
+    }
+
+    AbilityResult validation = ABILITY_RESULT_INVALID_TARGET;
+    if (abilityID == ABILITY_CHANNEL_ENERGY)
+        validation = canUseChannelEnergy(*actor)
+            ? ABILITY_RESULT_SUCCESS : ABILITY_RESULT_INVALID_CASTER;
+    else if (isDirectionalAbility(abilityID))
+        validation = validateDirectionalAbility(*actor, abilityID);
+    else if (isGroundTargetAbility(abilityID))
+        validation = validateAbilityAt(
+            *actor, command.targetX, command.targetY, abilityID);
+    else
+        validation = validateAbility(
+            *actor, target, abilityID, AbilityCastSource::NORMAL,
+            static_cast<DamageType>(command.damageType));
+
+    if (validation != ABILITY_RESULT_SUCCESS)
+    {
+        restoreHostDungeonRoom();
+        completeExplorationAbility(sender, command.actionSequence, validation);
+        return;
+    }
+
+    const bool hostile = target != nullptr
+        ? isAbilityEffectHostileToTarget(*ability, target->character)
+        : isAbilityHostile(*ability);
+    MultiplayerCombatActionRequestPayload request{};
+    request.activityID = runtime.activityID;
+    request.action = MultiplayerCombatActionType::CAST_ABILITY;
+    request.actor = actorRef;
+    request.target = command.target;
+    request.abilityID = command.abilityID;
+    request.targetX = command.targetX;
+    request.targetY = command.targetY;
+    request.direction = command.direction;
+    request.damageType = command.damageType;
+
+    if (hostile)
+    {
+        if (!startMultiplayerCombatFromCurrentRoom())
+        {
+            restoreHostDungeonRoom();
+            completeExplorationAbility(
+                sender, command.actionSequence,
+                ABILITY_RESULT_INVALID_TARGET);
+            return;
+        }
+        multiplayerCombat->openingAbilityPending = true;
+        multiplayerCombat->openingAbilitySender = sender;
+        multiplayerCombat->openingAbilitySequence = command.actionSequence;
+        multiplayerCombat->openingAbilityRequest = request;
+        return;
+    }
+
+    AbilityResult outcome = ABILITY_RESULT_INVALID_TARGET;
+    if (abilityID == ABILITY_CHANNEL_ENERGY)
+    {
+        outcome = useChannelEnergy(*actor)
+            ? ABILITY_RESULT_SUCCESS : ABILITY_RESULT_INVALID_TARGET;
+    }
+    else
+    {
+        AbilityResolution resolution{};
+        if (isDirectionalAbility(abilityID))
+            resolution = resolveAbilityInDirection(
+                *actor, static_cast<Direction>(command.direction), abilityID);
+        else if (isGroundTargetAbility(abilityID))
+            resolution = resolveAbilityAt(
+                *actor, command.targetX, command.targetY, abilityID);
+        else
+            resolution = resolveAbility(
+                *actor, target, abilityID, AbilityCastSource::NORMAL,
+                static_cast<DamageType>(command.damageType));
+        outcome = resolution.result;
+    }
+
+    if (outcome == ABILITY_RESULT_SUCCESS)
+    {
+        refreshHostParticipantCharacters();
+        const uint8_t roomID = actorRef.roomID;
+        saveCombatRoomAndRestoreHost(roomID);
+        scheduleRoomRefreshForClients(roomID);
+        char message[SHARED_MESSAGE_TEXT_SIZE] = {};
+        snprintf(message, sizeof(message), "%s casts %s.",
+                 combatantDisplayName(actorRef, actor),
+                 getAbilityName(abilityID));
+        publishSharedGameplayMessage(
+            message, SharedMessageCategory::GAMEPLAY);
+    }
+    else
+        restoreHostDungeonRoom();
+    completeExplorationAbility(sender, command.actionSequence, outcome);
+}
+
+void processExplorationAbilityCommand(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isHost() ||
+        runtime.phase != ActivityPhase::ACTIVE ||
+        !isParticipant(sender) || sender == HOST_PLAYER_ID) return;
+    ExplorationAbilityCommandPayload command{};
+    if (!decodeExplorationAbilityCommand(
+            payload, payloadSize, command) ||
+        command.activityID != runtime.activityID) return;
+    if (multiplayerCombat == nullptr) return;
+    ExplorationAbilityNetworkState& state =
+        multiplayerCombat->explorationAbility;
+    if ((state.hasSequenceMask & playerBit(sender)) != 0)
+    {
+        if (command.actionSequence == state.lastSequence[sender])
+        {
+            if ((state.resultReadyMask & playerBit(sender)) != 0)
+                completeExplorationAbility(
+                    sender, command.actionSequence,
+                    static_cast<AbilityResult>(state.lastResult[sender]));
+            return;
+        }
+        if (!isNewerMovementSequence(
+                command.actionSequence,
+                state.lastSequence[sender])) return;
+    }
+    state.hasSequenceMask |= playerBit(sender);
+    state.resultReadyMask &= static_cast<uint8_t>(~playerBit(sender));
+    state.lastSequence[sender] = command.actionSequence;
+    resolveAuthoritativeExplorationAbility(sender, command);
+}
+
+void processExplorationAbilityResult(
+    PlayerID sender,
+    const uint8_t* payload,
+    uint16_t payloadSize)
+{
+    if (!multiplayerSession.isClient() || sender != HOST_PLAYER_ID ||
+        multiplayerCombat == nullptr ||
+        multiplayerCombat->explorationAbility.pendingSize == 0) return;
+    ExplorationAbilityNetworkState& state =
+        multiplayerCombat->explorationAbility;
+    ExplorationAbilityResultPayload result{};
+    if (!decodeExplorationAbilityResult(payload, payloadSize, result) ||
+        result.activityID != runtime.activityID ||
+        result.actionSequence != state.pendingSequence ||
+        result.result > ABILITY_RESULT_MAP_EFFECT_LIMIT) return;
+    state.pendingSize = 0;
+    state.retryCount = 0;
+    const AbilityResult abilityResult =
+        static_cast<AbilityResult>(result.result);
+    if (abilityResult != ABILITY_RESULT_SUCCESS)
+        setGameMessage(getAbilityResultMessage(abilityResult));
 }
 
 bool processAuthoritativeCombatAction(
@@ -4245,8 +4576,7 @@ void initializeMultiplayerActivity()
     {
         multiplayerCombat = static_cast<MultiplayerCombatRuntime*>(
             ps_malloc(sizeof(MultiplayerCombatRuntime)));
-        if (multiplayerCombat != nullptr)
-            *multiplayerCombat = MultiplayerCombatRuntime{};
+        resetCombatRuntime();
     }
     if (multiplayerRoomEffects == nullptr)
     {
@@ -4283,6 +4613,30 @@ void updateMultiplayerActivity(uint32_t now)
     }
 
     removeDisconnectedParticipants();
+
+    if (multiplayerSession.isClient() && multiplayerCombat != nullptr &&
+        multiplayerCombat->explorationAbility.pendingSize != 0 &&
+        elapsed(now, multiplayerCombat->explorationAbility.lastCommandAt,
+                RELIABLE_ACK_TIMEOUT_MS))
+    {
+        ExplorationAbilityNetworkState& state =
+            multiplayerCombat->explorationAbility;
+        if (state.retryCount < RELIABLE_RETRY_LIMIT)
+        {
+            ++state.retryCount;
+            sendToHost(NetworkPacketType::EXPLORATION_ABILITY_COMMAND,
+                       state.pendingBytes,
+                       state.pendingSize,
+                       NETWORK_FLAG_CONTROL_EVENT);
+            state.lastCommandAt = now;
+        }
+        else
+        {
+            state.pendingSize = 0;
+            state.retryCount = 0;
+            setGameMessage("Ability command was not accepted.");
+        }
+    }
 
     if (multiplayerSession.isClient() && runtime.phase == ActivityPhase::NONE &&
         (runtime.pendingInviteAccepted || runtime.pendingInviteDeclined))
@@ -4829,7 +5183,7 @@ bool startMultiplayerCombatFromCurrentRoom()
         setGameMessage("More enemies join combat!");
         return true;
     }
-    *multiplayerCombat = MultiplayerCombatRuntime{};
+    resetCombatRuntimePreservingExplorationAbility();
     multiplayerCombat->active = true;
     multiplayerCombat->combatID = static_cast<uint16_t>(esp_random());
     if (multiplayerCombat->combatID == 0) multiplayerCombat->combatID = 1;
@@ -4901,11 +5255,13 @@ bool startMultiplayerCombatFromCurrentRoom()
                 multiplayerCombat->slots[left] = multiplayerCombat->slots[right];
                 multiplayerCombat->slots[right] = swap;
             }
-    resetMultiplayerTurnState(multiplayerCombat->slots[0]);
+    multiplayerCombat->currentTurnIndex = 0;
+    resetMultiplayerTurnState(
+        multiplayerCombat->slots[multiplayerCombat->currentTurnIndex]);
     combat.active = true;
     combat.phase = COMBAT_TURN;
     combat.combatantCount = 0;
-    combat.currentTurnIndex = 0;
+    combat.currentTurnIndex = multiplayerCombat->currentTurnIndex;
     combat.combatRound = 1;
     combat.waitingForPlayer = isLocalPlayersMultiplayerTurn();
 
@@ -4914,7 +5270,7 @@ bool startMultiplayerCombatFromCurrentRoom()
     begin.combatID = multiplayerCombat->combatID;
     begin.eventSequence = 1;
     begin.combatantCount = multiplayerCombat->combatantCount;
-    begin.currentTurnIndex = 0;
+    begin.currentTurnIndex = multiplayerCombat->currentTurnIndex;
     begin.round = 1;
     for (uint8_t index = 0; index < begin.combatantCount; ++index)
         begin.combatants[index] = multiplayerCombat->slots[index].initiative;
@@ -5027,6 +5383,64 @@ bool requestMultiplayerCombatAbility(
     return submitMultiplayerCombatRequest(request);
 }
 
+bool requestMultiplayerExplorationAbility(
+    uint16_t abilityID,
+    const Entity* target,
+    int8_t targetX,
+    int8_t targetY,
+    uint8_t direction,
+    uint8_t damageType)
+{
+    if (!isMultiplayerExplorationActive() ||
+        isMultiplayerCombatActive() ||
+        !isLocalActivityParticipant() || direction >= 8 || abilityID == 0 ||
+        multiplayerCombat == nullptr ||
+        multiplayerCombat->explorationAbility.pendingSize != 0)
+    {
+        return false;
+    }
+    ExplorationAbilityCommandPayload command{};
+    command.activityID = runtime.activityID;
+    ExplorationAbilityNetworkState& state =
+        multiplayerCombat->explorationAbility;
+    command.actionSequence = ++state.localSequence;
+    if (command.actionSequence == 0)
+        command.actionSequence = ++state.localSequence;
+    if (target != nullptr) command.target = combatRefForEntity(*target);
+    command.abilityID = abilityID;
+    command.targetX = targetX;
+    command.targetY = targetY;
+    command.direction = direction;
+    command.damageType = damageType;
+
+    if (multiplayerSession.isHost())
+    {
+        state.hasSequenceMask |= playerBit(HOST_PLAYER_ID);
+        state.resultReadyMask &=
+            static_cast<uint8_t>(~playerBit(HOST_PLAYER_ID));
+        state.lastSequence[HOST_PLAYER_ID] = command.actionSequence;
+        resolveAuthoritativeExplorationAbility(HOST_PLAYER_ID, command);
+        return true;
+    }
+
+    size_t size = 0;
+    if (!encodeExplorationAbilityCommand(
+            command, state.pendingBytes,
+            sizeof(state.pendingBytes), size)) return false;
+    state.pendingSequence = command.actionSequence;
+    state.pendingSize = static_cast<uint8_t>(size);
+    state.retryCount = 0;
+    state.lastCommandAt = millis();
+    if (!sendToHost(NetworkPacketType::EXPLORATION_ABILITY_COMMAND,
+                    state.pendingBytes, size,
+                    NETWORK_FLAG_CONTROL_EVENT))
+    {
+        state.pendingSize = 0;
+        return false;
+    }
+    return true;
+}
+
 bool requestMultiplayerCombatEndTurn()
 {
     MultiplayerCombatActionRequestPayload request{};
@@ -5114,6 +5528,19 @@ void updateMultiplayerCombat(uint32_t now)
         return;
     }
     if (!multiplayerSession.isHost()) return;
+    if (multiplayerCombat->openingAbilityPending)
+    {
+        const PlayerID sender = multiplayerCombat->openingAbilitySender;
+        const uint16_t sequence =
+            multiplayerCombat->openingAbilitySequence;
+        const MultiplayerCombatActionRequestPayload request =
+            multiplayerCombat->openingAbilityRequest;
+        multiplayerCombat->openingAbilityPending = false;
+        AbilityResult outcome = ABILITY_RESULT_INVALID_TARGET;
+        resolveMultiplayerAbility(request, &outcome, true);
+        completeExplorationAbility(sender, sequence, outcome);
+        return;
+    }
     const MultiplayerCombatantRef* current = currentCombatRef();
     if (current != nullptr && !multiplayerCombatantAlive(*current))
     {

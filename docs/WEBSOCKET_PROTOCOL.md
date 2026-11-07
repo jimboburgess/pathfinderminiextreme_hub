@@ -17,11 +17,14 @@ OpenSSL development packages on either host. OS CSPRNGs supply 32 random bytes
 per credential: Windows BCryptGenRandom and Linux getrandom.
 
 `apps/server/CMakeLists.txt` pins official HTTPS source URLs and SHA-256 hashes.
-No installation script is run. Dependencies extract/download into the ignored
-build tree. Licenses are retained and installed with the server. For offline
-builds, set `FETCHCONTENT_SOURCE_DIR_PFME_BOOST` to the verified extracted Boost
-root and `PFME_MONOCYPHER_DIR` to a directory containing the pinned `.c`, `.h`
-and `LICENCE.md` files. Monocypher files are hash-checked even in offline mode.
+Monocypher is fetched as the immutable official 4.0.3 release archive at
+`https://monocypher.org/download/monocypher-4.0.3.tar.gz`, whose SHA-256 is
+`8cc9bc341a66249016db9bd70e9142d8d0aef9945973744b1ac05dbc55d8ee66`.
+No installation script is run. Dependencies extract into the ignored build tree,
+and licenses are retained and installed with the server. For offline builds, set
+`FETCHCONTENT_SOURCE_DIR_PFME_BOOST` to the verified extracted Boost root and
+`PFME_MONOCYPHER_DIR` to a verified full Monocypher 4.0.3 tree containing `src/`
+and `LICENCE.md`. CMake rejects incomplete offline trees.
 
 ```sh
 cmake -S . -B build/native-server -DPFME_BUILD_SERVER=ON -DCMAKE_BUILD_TYPE=Release
@@ -32,8 +35,9 @@ ctest --test-dir build/native-server --output-on-failure
 Server C++17 is isolated from the shared C++11 engine. Tests additionally require
 Python 3.8+ (standard library only). `PFME_BUILD_SERVER` defaults OFF, so ordinary
 headless builds do not acquire server dependencies. PlatformIO never compiles
-`apps/server`, Boost, JSON or Monocypher. No ESP-NOW version-4 codec, packet,
-save format, existing gameplay rule or firmware setting changes.
+`apps/server`, Boost, JSON or Monocypher. The server dependency path does not
+alter the ESP-NOW codec, save format, or gameplay rules. Current ESP-NOW protocol
+6 is documented with the handheld cleanup notes in `NATIVE_BUILD.md`.
 
 ## Startup and shutdown
 
@@ -80,7 +84,7 @@ or permanent services. No such forwarding is started by build/tests.
 
 ## Messages and authorization
 
-The application version `v:1` is independent of ESP-NOW protocol 4. Frames are
+The application version `v:1` is independent of ESP-NOW protocol 6. Frames are
 UTF-8 JSON text. Every request has integer `v`, printable string `id` (1–32
 characters), and string `type`. Only the documented fields for a command are
 accepted. Booleans/floats do not substitute for version numbers. JSON parsing

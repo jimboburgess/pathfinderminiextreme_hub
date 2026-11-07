@@ -100,6 +100,13 @@ bool requestMultiplayerCombatAbility(
     uint8_t direction,
     uint8_t damageType,
     uint8_t flags = 0);
+bool requestMultiplayerExplorationAbility(
+    uint16_t abilityID,
+    const Entity* target,
+    int8_t targetX,
+    int8_t targetY,
+    uint8_t direction,
+    uint8_t damageType);
 bool requestMultiplayerCombatEndTurn();
 bool requestMultiplayerFullDefense();
 bool isCurrentMultiplayerCombatant(const Entity& entity);

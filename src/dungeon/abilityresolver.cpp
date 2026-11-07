@@ -11,6 +11,7 @@
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "data/entitytraits.h"
+#include "data/progression.h"
 #include "graphics/display.h"
 
 namespace
@@ -567,6 +568,33 @@ bool entityIsInDirectionalAreaFromSource(
     return false;
 }
 
+bool entityIsInRadiusArea(
+    const Entity& caster,
+    const Entity& target,
+    const Ability& ability,
+    int centerX,
+    int centerY)
+{
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(target);
+         offsetY++)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(target);
+             offsetX++)
+        {
+            if (isTileInRadiusAbilityArea(
+                    caster, ability.id, centerX, centerY,
+                    target.x + offsetX, target.y + offsetY))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 uint8_t collectDirectionalAreaTiles(
     const Entity& caster, const Ability& ability, Direction direction,
     AreaFlashTile tiles[], uint8_t capacity)
@@ -578,6 +606,23 @@ uint8_t collectDirectionalAreaTiles(
                     caster, ability.id, direction, x, y))
                 tiles[count++] = { static_cast<int8_t>(x), static_cast<int8_t>(y) };
     return count;
+}
+
+bool isTileInOriginRadiusArea(
+    const Ability& ability,
+    int centerX,
+    int centerY,
+    int tileX,
+    int tileY)
+{
+    return ability.target == TARGET_AREA &&
+           ability.delivery == DELIVERY_AREA &&
+           isInsideActiveMap(centerX, centerY) &&
+           isInsideActiveMap(tileX, tileY) &&
+           abs(tileX - centerX) <= ability.areaRadiusTiles &&
+           abs(tileY - centerY) <= ability.areaRadiusTiles &&
+           !isTileBlockingSight(getActiveMapTile(tileX, tileY)) &&
+           hasLineOfSight(centerX, centerY, tileX, tileY);
 }
 
 uint8_t collectRadiusAreaTiles(
@@ -673,16 +718,10 @@ bool isTileInRadiusAbilityArea(
     int tileX,
     int tileY)
 {
+    static_cast<void>(caster);
     const Ability* ability = getAbility(abilityID);
-    return ability != nullptr &&
-           ability->target == TARGET_AREA &&
-           ability->delivery == DELIVERY_AREA &&
-           isInsideActiveMap(centerX, centerY) &&
-           isInsideActiveMap(tileX, tileY) &&
-           abs(tileX - centerX) <= ability->areaRadiusTiles &&
-           abs(tileY - centerY) <= ability->areaRadiusTiles &&
-           hasLineOfSightFromFootprintAt(
-               caster, caster.x, caster.y, tileX, tileY);
+    return ability != nullptr && isTileInOriginRadiusArea(
+        *ability, centerX, centerY, tileX, tileY);
 }
 
 bool isTileInCenteredAbilityArea(
@@ -742,7 +781,20 @@ bool isAbilitySupported(AbilityID abilityID)
     return isEntityAbilitySupported(*ability) ||
            hasSupportedMapEffect(*ability) ||
            hasSupportedColorSprayProfile(*ability) ||
-             hasInstantAreaDamageProfile(*ability);
+           hasInstantAreaDamageProfile(*ability);
+}
+
+bool canCharacterAccessAbility(
+    const Character& character,
+    AbilityID abilityID)
+{
+    const Ability* ability = getAbility(abilityID);
+    return ability != nullptr &&
+        (knowsAbility(character, abilityID) ||
+         (character.characterClass == CLASS_CLERIC &&
+          ability->type == ABILITY_DIVINE &&
+          ability->category == ABILITY_CATEGORY_SPELL &&
+          ability->level <= getClericSpellAccessLevel(character)));
 }
 
 bool isGroundTargetAbility(AbilityID abilityID)
@@ -883,8 +935,9 @@ AbilityResolution resolveEnvironmentalAbility(
         mapEffect.conditionDuration = static_cast<uint8_t>(effect.duration);
         for (int y=context.sourceY-ability->areaRadiusTiles; y<=context.sourceY+ability->areaRadiusTiles; y++)
             for (int x=context.sourceX-ability->areaRadiusTiles; x<=context.sourceX+ability->areaRadiusTiles; x++)
-                if (mapEffect.tileCount < MAX_MAP_EFFECT_TILES && isInsideActiveMap(x,y) &&
-                    hasLineOfSight(context.sourceX,context.sourceY,x,y)) {
+                if (mapEffect.tileCount < MAX_MAP_EFFECT_TILES &&
+                    isTileInOriginRadiusArea(
+                        *ability, context.sourceX, context.sourceY, x, y)) {
                     mapEffect.tiles[mapEffect.tileCount].x=x;
                     mapEffect.tiles[mapEffect.tileCount++].y=y;
                 }
@@ -1613,9 +1666,8 @@ AbilityResolution resolveAbilityAt(
             if (!target.active || isBertramRiddleman(target) ||
                 !isCombatEntityType(target.type) ||
                 target.character.state != STATE_ALIVE ||
-                getEntityGridDistanceToTile(target, targetX, targetY) > ability->areaRadiusTiles ||
-                !hasLineOfSightFromFootprintAt(caster, caster.x, caster.y, target.x, target.y) ||
-                getCoverFromEntityToTile(target, targetX, targetY) == COVER_TOTAL)
+                !entityIsInRadiusArea(
+                    caster, target, *ability, targetX, targetY))
                 continue;
             const int coverBonus = getCoverSavingThrowBonus(
                 getCoverFromEntityToTile(target, targetX, targetY),

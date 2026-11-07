@@ -382,6 +382,57 @@ void test_combat_move_is_bounded_and_invalid_stable_refs_are_rejected()
         move, bytes, sizeof(bytes), size));
 }
 
+void test_exploration_ability_command_is_compact_and_authority_ready()
+{
+    ExplorationAbilityCommandPayload command{};
+    command.activityID = 77;
+    command.actionSequence = 9;
+    command.target.kind = MultiplayerCombatantKind::MONSTER;
+    command.target.playerID = INVALID_PLAYER_ID;
+    command.target.roomID = 4;
+    command.target.entityID = 3;
+    command.abilityID = 45;
+    command.targetX = 10;
+    command.targetY = 6;
+    command.direction = 7;
+    command.damageType = 2;
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    TEST_ASSERT_TRUE(encodeExplorationAbilityCommand(
+        command, bytes, sizeof(bytes), size));
+    TEST_ASSERT_EQUAL_UINT32(
+        EXPLORATION_ABILITY_COMMAND_PAYLOAD_SIZE, size);
+    ExplorationAbilityCommandPayload decoded{};
+    TEST_ASSERT_TRUE(decodeExplorationAbilityCommand(
+        bytes, size, decoded));
+    TEST_ASSERT_EQUAL_UINT16(9, decoded.actionSequence);
+    TEST_ASSERT_EQUAL_UINT8(4, decoded.target.roomID);
+    TEST_ASSERT_EQUAL_UINT8(3, decoded.target.entityID);
+    TEST_ASSERT_EQUAL_INT8(10, decoded.targetX);
+    TEST_ASSERT_EQUAL_UINT8(7, decoded.direction);
+
+    command.direction = 8;
+    TEST_ASSERT_FALSE(encodeExplorationAbilityCommand(
+        command, bytes, sizeof(bytes), size));
+    command.direction = 0;
+    command.abilityID = 0;
+    TEST_ASSERT_FALSE(encodeExplorationAbilityCommand(
+        command, bytes, sizeof(bytes), size));
+
+    ExplorationAbilityResultPayload result{};
+    result.activityID = 77;
+    result.actionSequence = 9;
+    result.result = 6;
+    TEST_ASSERT_TRUE(encodeExplorationAbilityResult(
+        result, bytes, sizeof(bytes), size));
+    TEST_ASSERT_EQUAL_UINT32(
+        EXPLORATION_ABILITY_RESULT_PAYLOAD_SIZE, size);
+    ExplorationAbilityResultPayload decodedResult{};
+    TEST_ASSERT_TRUE(decodeExplorationAbilityResult(
+        bytes, size, decodedResult));
+    TEST_ASSERT_EQUAL_UINT8(6, decodedResult.result);
+}
+
 void test_snapshot_chunks_accept_ordering_and_identical_duplicates()
 {
     BoundedSnapshotReceiver receiver{};
@@ -580,6 +631,7 @@ void setup()
     RUN_TEST(test_multiplayer_combat_begin_preserves_stable_refs_and_initiative);
     RUN_TEST(test_combat_action_and_result_round_trip_are_host_authoritative);
     RUN_TEST(test_combat_move_is_bounded_and_invalid_stable_refs_are_rejected);
+    RUN_TEST(test_exploration_ability_command_is_compact_and_authority_ready);
     RUN_TEST(test_snapshot_chunks_accept_ordering_and_identical_duplicates);
     RUN_TEST(test_snapshot_chunks_reject_stale_missing_and_oversized_data);
     RUN_TEST(test_activity_ack_round_trip_identifies_exact_snapshot_chunk);

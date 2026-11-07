@@ -2181,12 +2181,24 @@ bool isMenuItemVisible(MenuAction action)
             case MENU_EQUIPMENT:
             case MENU_SKILLS:
             case MENU_QUESTS:
+            case MENU_CAST_SPELL:
+            case MENU_CAST_ABILITY:
+            case MENU_RESIST_FIRE:
+            case MENU_RESIST_COLD:
+            case MENU_RESIST_ELECTRICITY:
+            case MENU_RESIST_ACID:
+            case MENU_RESIST_CANCEL:
+            case MENU_CHANNEL_ENERGY:
             case MENU_GAME:
             case MENU_RETURN_TO_TOWN:
             case MENU_OPTIONS:
             case MENU_TOGGLE_AUDIO:
             case MENU_TOGGLE_ENCODER_ROTATION:
                 break;
+            case MENU_SPECIAL_ABILITY:
+                if (character->characterClass == CLASS_CLERIC)
+                    break;
+                return false;
             default:
                 return false;
         }
@@ -2222,7 +2234,7 @@ bool isMenuItemVisible(MenuAction action)
 
         case MENU_CAST_SPELL:
             return (isPlayerCombatTurn() ||
-                    (!combat.active && !isMultiplayerExplorationActive() &&
+                    (!combat.active &&
                      (gameState == GAME_DUNGEON ||
                       gameState == GAME_FOREST))) &&
                    canCharacterAct(*character) &&

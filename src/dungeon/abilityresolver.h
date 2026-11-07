@@ -99,6 +99,9 @@ struct EnvironmentalAbilityContext
 // one timed condition, one persistent ground/area effect, and the supported
 // directional/cone effect profile.
 bool isAbilitySupported(AbilityID abilityID);
+bool canCharacterAccessAbility(
+    const Character& character,
+    AbilityID abilityID);
 bool isGroundTargetAbility(AbilityID abilityID);
 bool isDirectionalAbility(AbilityID abilityID);
 bool canResolveEnvironmentally(AbilityID abilityID);

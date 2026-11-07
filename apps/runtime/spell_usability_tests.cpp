@@ -162,15 +162,33 @@ int main()
                   *actor, ABILITY_FIREBALL, 0, 0, -1, 0),
               "radius preview clips at map edge");
         dungeon.rooms[dungeon.currentRoom].map.tiles[6][9] = TILE_WALL;
+        check(isAbilityTargetTileInRange(
+                  *actor, ABILITY_FIREBALL, 10, 5),
+              "caster can place burst origin around wall edge");
+        check(isTileInRadiusAbilityArea(
+                  *actor, ABILITY_FIREBALL, 10, 5, 10, 6),
+              "selected-origin burst reaches a tile visible from origin");
         check(!isTileInRadiusAbilityArea(
-                  *actor, ABILITY_FIREBALL, 10, 6, 11, 6),
-              "radius preview follows resolver line of sight");
+                  *actor, ABILITY_FIREBALL, 10, 5, 9, 6),
+              "selected-origin burst does not shade a solid wall");
         check(!isTileInCenteredAbilityArea(
                   *actor, ABILITY_TURN_UNDEAD, 11, 6),
               "Turn Undead preview follows resolver line of sight");
         check(isTileInCenteredAbilityArea(
                   *actor, ABILITY_CHANNEL_ENERGY, 11, 6),
               "Channel Energy keeps its wall-independent radius rule");
+        Entity* burstTarget = spawnTarget(10, 6);
+        learnAbility(actor->character, ABILITY_FIREBALL);
+        const int burstTargetHP = burstTarget->character.health.currentHP;
+        const int burstCasterMP = actor->character.magic.currentMP;
+        AbilityResolution burst = resolveAbilityAt(
+            *actor, 10, 5, ABILITY_FIREBALL);
+        check(burst.result == ABILITY_RESULT_SUCCESS,
+              "selected-origin Fireball resolves around wall edge");
+        check(burstTarget->character.health.currentHP < burstTargetHP,
+              "Fireball resolver matches origin-based preview");
+        burstTarget->active = false;
+        actor->character.magic.currentMP = burstCasterMP;
         dungeon.rooms[dungeon.currentRoom].map.tiles[6][9] = TILE_FLOOR;
 
         learnAbility(actor->character, ABILITY_CURE_LIGHT_WOUNDS);

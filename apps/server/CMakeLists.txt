@@ -9,39 +9,35 @@ FetchContent_Declare(pfme_boost
     SOURCE_SUBDIR pfme_no_cmake_subdirectory)
 FetchContent_MakeAvailable(pfme_boost)
 
-set(PFME_MONOCYPHER_DIR "" CACHE PATH "Offline directory containing pinned Monocypher sources")
-if(NOT PFME_MONOCYPHER_DIR)
-    set(PFME_MONOCYPHER_DIR "${CMAKE_BINARY_DIR}/_deps/monocypher")
-    file(MAKE_DIRECTORY "${PFME_MONOCYPHER_DIR}")
+set(PFME_MONOCYPHER_DIR "" CACHE PATH
+    "Offline Monocypher 4.0.3 tree containing src/ and LICENCE.md")
+if(PFME_MONOCYPHER_DIR)
+    set(pfme_monocypher_SOURCE_DIR "${PFME_MONOCYPHER_DIR}")
+else()
+    FetchContent_Declare(pfme_monocypher
+        URL https://monocypher.org/download/monocypher-4.0.3.tar.gz
+        URL_HASH SHA256=8cc9bc341a66249016db9bd70e9142d8d0aef9945973744b1ac05dbc55d8ee66
+        SOURCE_SUBDIR pfme_no_cmake_subdirectory)
+    FetchContent_MakeAvailable(pfme_monocypher)
 endif()
-foreach(entry
-    "monocypher.c|57eb914fc88136119bd41655cccb8c250048bf54d470540625186f8ab16f64be"
-    "monocypher.h|c494da712122da7ff679fdcf318a5317e84972b6c950fe9d896212947797facd"
-    "LICENCE.md|5f8360e4c06ddcc584bdb4b210c6af824c4bb301e6a9a521869b6d90795ca4b3")
-    string(REPLACE "|" ";" parts "${entry}")
-    list(GET parts 0 name)
-    list(GET parts 1 checksum)
-    if(NOT EXISTS "${PFME_MONOCYPHER_DIR}/${name}")
-        if(name STREQUAL "LICENCE.md")
-            set(source "${name}")
-        else()
-            set(source "src/${name}")
-        endif()
-        file(DOWNLOAD "https://raw.githubusercontent.com/LoupVaillant/Monocypher/4.0.3/${source}"
-            "${PFME_MONOCYPHER_DIR}/${name}" EXPECTED_HASH "SHA256=${checksum}" TLS_VERIFY ON)
-    endif()
-    file(SHA256 "${PFME_MONOCYPHER_DIR}/${name}" actual)
-    if(NOT actual STREQUAL checksum)
-        message(FATAL_ERROR "Monocypher source checksum mismatch")
+set(PFME_MONOCYPHER_SOURCE "${pfme_monocypher_SOURCE_DIR}/src/monocypher.c")
+set(PFME_MONOCYPHER_INCLUDE_DIR "${pfme_monocypher_SOURCE_DIR}/src")
+set(PFME_MONOCYPHER_LICENSE "${pfme_monocypher_SOURCE_DIR}/LICENCE.md")
+foreach(required
+    "${PFME_MONOCYPHER_SOURCE}"
+    "${PFME_MONOCYPHER_INCLUDE_DIR}/monocypher.h"
+    "${PFME_MONOCYPHER_LICENSE}")
+    if(NOT EXISTS "${required}")
+        message(FATAL_ERROR "Pinned Monocypher 4.0.3 tree is incomplete: ${required}")
     endif()
 endforeach()
 enable_language(C)
 find_package(Threads REQUIRED)
 add_library(pfme_server_support STATIC credentials.cpp protocol.cpp service.cpp serve_identity.cpp
-    boost_json.cpp "${PFME_MONOCYPHER_DIR}/monocypher.c")
+    boost_json.cpp "${PFME_MONOCYPHER_SOURCE}")
 target_include_directories(pfme_server_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(pfme_server_support SYSTEM PUBLIC
-    "${pfme_boost_SOURCE_DIR}" "${PFME_MONOCYPHER_DIR}")
+    "${pfme_boost_SOURCE_DIR}" "${PFME_MONOCYPHER_INCLUDE_DIR}")
 target_link_libraries(pfme_server_support PUBLIC pfme_portable_leaf Threads::Threads)
 if(WIN32)
     target_link_libraries(pfme_server_support PUBLIC ws2_32 mswsock bcrypt)
@@ -76,7 +72,7 @@ if(PFME_BUILD_PLAYABLE)
         DESTINATION share/licenses/pfme_server/adafruit_gfx)
 endif()
 install(FILES "${pfme_boost_SOURCE_DIR}/LICENSE_1_0.txt" DESTINATION share/licenses/pfme_server/boost)
-install(FILES "${PFME_MONOCYPHER_DIR}/LICENCE.md" DESTINATION share/licenses/pfme_server/monocypher)
+install(FILES "${PFME_MONOCYPHER_LICENSE}" DESTINATION share/licenses/pfme_server/monocypher)
 if(BUILD_TESTING)
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
     add_test(NAME pfme_server_lifetime COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/server/run_lifetime.py" "$<TARGET_FILE:pfme_server>")
