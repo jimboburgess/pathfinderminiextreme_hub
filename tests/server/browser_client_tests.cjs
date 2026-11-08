@@ -1,9 +1,10 @@
 // Client logic only: fake DOM/timers/socket, no browser or networking.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const events={},elements={},sent=[],timers=new Map();
+const interactTest=process.argv.includes('--interact');
 const textTest=process.argv.includes('--text');
 const privateTest=process.argv.includes('--serve');
-const fixture=process.argv[3]&&!privateTest&&!textTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
+const fixture=process.argv[3]&&!privateTest&&!interactTest&&!textTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
 const expectedPixels=process.argv[4]&&!process.argv[4].startsWith('--')?fs.readFileSync(process.argv[4]):null;
 let now=0,nextTimer=1,lastPixels,socket,characterExists=false,socketCount=0,failOpens=0;
 const retryTest=process.argv.includes("--retry");
@@ -24,12 +25,13 @@ patch.writeUInt16LE(32767,6);patch.writeUInt16LE(0x8000|24833,8);patch.writeUInt
 class Socket {
   static OPEN=1;
   constructor(url){++socketCount;this.url=url;socket=this;this.readyState=1;this.stall=false;queueMicrotask(()=>{if(failOpens>0){--failOpens;this.onerror?.();}else this.onopen?.();});}
-  send(text){const request=JSON.parse(text);sent.push(request);if(this.stall){this.blocked=request;return;}this.respond(request);}
+  send(text){const request=JSON.parse(text);sent.push({...request,at:now});if(this.stall){this.blocked=request;return;}this.respond(request);}
   respond(request){let data={};
     if(privateTest&&request.type==='reconnect'&&!characterExists){queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:false,error:{code:'NoCharacter'}})}));return;}
     if(request.type==='join'){characterExists=true;data=privateTest?{}:{reconnect_token:'b'.repeat(64)};}
     if(request.type==='leave')characterExists=false;
-    if(request.type==='screen')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):''};
+    if(request.type==='play')data={interactive_frames:interactTest};
+    if(request.type==='screen'||request.type==='interact')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):''};
     if(textTest&&data.encoding)data.text_input=true;
     if(request.type==='screen'&&fixture&&request.since==='0')data=fixture.find(p=>p.offset===request.offset);
     queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:true,data})}));
@@ -87,21 +89,21 @@ async function main(){
   assert.equal(key('keydown',' ','INPUT'),false);
   const encoderBefore=sent.filter(r=>r.action==='encoder'&&r.down).length;
   assert.equal(key('keydown',' '),true);await advance(100);
-  assert.equal(sent.filter(r=>r.type==='input'&&r.action==='encoder'&&r.down).length,encoderBefore+1);
+  assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&r.down).length,encoderBefore+1);
   key('keydown',' ','CANVAS',true);await advance(800);
-  assert.equal(sent.filter(r=>r.type==='input'&&r.action==='encoder'&&r.down).length,encoderBefore+1,'holding/repeat does not send movement presses');
-  key('keyup',' ');await advance(100);assert(sent.some(r=>r.type==='input'&&r.action==='encoder'&&!r.down));
-  key('keydown','ArrowRight');await advance(1000);assert(sent.filter(r=>r.type==='input'&&r.action==='cw').length>1);
-  events['window:blur']();await advance(200);const rotary=sent.filter(r=>r.type==='input'&&r.action==='cw').length;
-  await advance(1000);assert.equal(sent.filter(r=>r.type==='input'&&r.action==='cw').length,rotary,'blur stops repeat');
-  assert(sent.some(r=>r.type==='input'&&r.action==='release'));
+  assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&r.down).length,encoderBefore+1,'holding/repeat does not send movement presses');
+  key('keyup',' ');await advance(100);assert(sent.some(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&!r.down));
+  key('keydown','ArrowRight');await advance(1000);assert(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length>1);
+  events['window:blur']();await advance(200);const rotary=sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length;
+  await advance(1000);assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length,rotary,'blur stops repeat');
+  assert(sent.some(r=>(r.type==='input'||r.type==='interact')&&r.action==='release'));
   // A stalled response plus rapid inputs must collapse to release, never leave
   // a rotary interval running after its held-key state has been discarded.
   socket.stall=true;await advance(100);key('keydown','ArrowRight');
   for(let i=0;i<10;i++){key('keydown',' ');key('keyup',' ');}
   key('keyup','ArrowRight');socket.stall=false;socket.respond(socket.blocked);await flush();
   const sentBefore=sent.length;await advance(1800);
-  assert.equal(sent.slice(sentBefore).filter(r=>r.type==='input'&&r.action==='cw').length,0,'overflow cancels held repeat');
+  assert.equal(sent.slice(sentBefore).filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length,0,'overflow cancels held repeat');
   documentMock.hidden=true;events['document:visibilitychange']();await advance(100);
   element('disconnect').onclick();await flush();assert.equal(element('resume').disabled,false);assert.equal(element('connect').querySelector().disabled,true,'owned session cannot be replaced accidentally');
   element('resume').onclick();await flush();await advance(1000);
@@ -133,6 +135,10 @@ async function main(){
     const leave=element('leave').onclick();await advance(1000);await leave;await flush();
     assert(sent.some(r=>r.type==='leave'));assert.equal(element('leave').disabled,true);assert.equal(element('connect').querySelector().disabled,false);
     console.log('Private client: WSS, no shared secret or bearer reconnect proof, identity recovery, verified-identity reconnect UI, and confirmed Leave passed.');
+  }
+  if(interactTest){
+    for(let i=0;i<sent.length;i++)assert(sent.filter(r=>r.at>=sent[i].at&&r.at<sent[i].at+1000).length<=18,'rolling request cap');
+    assert(sent.some(r=>r.type==='interact'&&r.action),'controls carry visual cursor');
   }
   console.log('Playable client: exact RLE color decode, integer zoom, default mappings, form exclusion, held encoder click, focus release, bounded overflow/repeat and reconnect affordance passed.');
 }

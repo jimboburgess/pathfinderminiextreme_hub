@@ -11,6 +11,7 @@ class ScreenStream {
     size_t offset_=0;
 public:
     void reset() { previous_.fill(0); snapshot_.fill(0); pending_.clear(); revision_=0; offset_=0; }
+    bool cursorValid(uint64_t since,size_t offset) const { return since==revision_ && offset==offset_ && revision_!=UINT64_MAX; }
     bool next(const uint16_t* pixels, uint64_t since, size_t offset, json::object& out);
 };
 }

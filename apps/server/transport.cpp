@@ -1,3 +1,4 @@
+#include "../runtime/performance.h"
 #include "transport.h"
 #include "runtime_health.h"
 #include "server_limits.h"
@@ -186,6 +187,7 @@ private:
                 for(auto& item:peers_)peers.push_back(item.second);
                 for(auto& peer:peers)peer->checkAdmission();
             }
+            if(perf::enabled())perf::metrics.timerLate.add(perf::micros(std::chrono::steady_clock::now()-gameClock_.expiry()));
             std::vector<std::shared_ptr<Peer>> current;for(auto& entry:peers_)current.push_back(entry.second);
             for(auto& peer:current)peer->pulse();
             const auto started=std::chrono::steady_clock::now();service.tick();
@@ -195,6 +197,7 @@ private:
 #ifdef __linux__
             if(health_&&started-lastHealth_>=5s){health_->pulse();lastHealth_=started;}
 #endif
+            if(perf::enabled() && std::chrono::steady_clock::now()-profileAt_>=5s){perf::report();profileAt_=std::chrono::steady_clock::now();}
             tick();
         } });
     }
@@ -245,6 +248,7 @@ private:
     uint64_t nextSerial_ = 1;
     unsigned accepts_ = 0;
     std::chrono::steady_clock::time_point acceptWindow_ = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point profileAt_=std::chrono::steady_clock::now();
     uint64_t ticks_=0,maxTick_=0;
     bool stopped_ = false;
     std::chrono::steady_clock::time_point lastSlowTick_{};
@@ -397,8 +401,11 @@ void Peer::send(std::string text, bool shouldClose)
     writing_ = true;
     arm(WRITE_SECONDS);
     ws_.text(true);
-    ws_.async_write(asio::buffer(output_), [self = shared_from_this(), shouldClose](Error ec, std::size_t)
+    const auto writeStart=perf::enabled()?perf::Clock::now():perf::Clock::time_point{};
+    if(perf::enabled())perf::metrics.maxOutstandingWrites=1;
+    ws_.async_write(asio::buffer(output_), [self = shared_from_this(), shouldClose,writeStart](Error ec, std::size_t)
     {
+        if(perf::enabled())perf::metrics.write.add(perf::micros(perf::Clock::now()-writeStart));
         self->writing_ = false;
         if(self->finished_)return;
         if(ec){self->finish("write_error",1006,"transport",ec.value());return;}
@@ -453,6 +460,7 @@ int runServer(uint16_t port, uint32_t seed, uint32_t duration, const SecretDiges
     Server server(io, port, seed, gate, partyMode,serve);
     server.run(duration);
     io.run();
+    perf::report();
     server.summary();
     std::cout << "stopped\n" << std::flush;
     return 0;

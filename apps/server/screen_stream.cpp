@@ -15,7 +15,7 @@ std::string base64(const uint8_t* data,size_t size) {
 }
 }
 bool ScreenStream::next(const uint16_t* pixels,uint64_t since,size_t offset,json::object& out) {
-    if(since!=revision_ || offset!=offset_ || revision_==std::numeric_limits<uint64_t>::max()) return false;
+    if(!cursorValid(since,offset)) return false;
     if(pending_.empty()) {
         std::copy(pixels,pixels+57600,snapshot_.begin());
         auto word=[&](uint16_t v) { pending_.push_back(uint8_t(v)); pending_.push_back(uint8_t(v>>8)); };

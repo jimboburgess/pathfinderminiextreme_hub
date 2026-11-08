@@ -9,7 +9,8 @@
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
-  let leaving=false, textInput=false, pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
+  let leaving=false, interactiveFrames=false, lastSent=0, textInput=false, pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
+  const rpcTimes=[];
   let ws=null, secret="", proof="", id=0, pending=null, playing=false, since="0", offset=0, chunks=[], total=0;
   let requests=[], held=new Set(), heldSources=new Map(), repeat=new Map(), scheduled=null, connecting=false, disconnectReason="";
   const status=text=>{$("status").textContent=text;};
@@ -30,6 +31,7 @@
       const requestId=String(++id),target=ws,epoch=generation;
       const timeout=setTimeout(()=>{if(pending?.id===requestId&&target===ws&&epoch===generation){pending=null;reject(new Error("Server response timed out"));if(ws?.readyState===WebSocket.OPEN)ws.close(4000,"rpc_timeout");}},15000);
       pending={id:requestId,resolve,reject,timeout};
+      lastSent=Date.now();rpcTimes.push(lastSent);while(rpcTimes.length&&lastSent-rpcTimes[0]>=1005)rpcTimes.shift();
       ws.send(JSON.stringify({v:1,id:requestId,type,...fields}));
     });
   }
@@ -63,20 +65,27 @@
     }
     since=frame.frame;offset=0;total=0;chunks=[];
   }
+  function wake(delay=0) {clearTimeout(scheduled);const epoch=generation;scheduled=setTimeout(()=>{if(epoch===generation)pump();},delay);}
   async function pump() {
     if(!playing||leaving||pumping||pending)return;
+    // One in-flight request, no frame queue, and <=18 requests in any rolling
+    // second INCLUDING controls and handshake. Preserve the server's 20/s cap.
+    const now=Date.now();while(rpcTimes.length&&now-rpcTimes[0]>=1005)rpcTimes.shift();
+    const wait=Math.max(0,lastSent+60-now,rpcTimes.length>=18?rpcTimes[0]+1005-now:0);
+    if(wait){wake(wait);return;}
     const epoch=generation;pumping=true;
     try {
-      if(requests.length){const event=requests.shift();await rpc("input",event);}
+      if(interactiveFrames){const event=requests.shift();applyFrame(await rpc("interact",{since,offset,...(event||{})}));}
+      else if(requests.length){const event=requests.shift();await rpc("input",event);}
       else applyFrame(await rpc("screen",{since,offset}));
     }catch(error){if(epoch!==generation)return;disconnectReason=error.message;status(disconnectReason);playing=false;releaseAll();ws?.close();return;}finally{if(epoch===generation)pumping=false;}
-    // At most ~14 requests/sec including controls, below the existing 20/sec cap.
-    if(!leaving)scheduled=setTimeout(()=>{if(epoch===generation)pump();},75);
+    if(!leaving)wake(interactiveFrames?Math.max(0,lastSent+(requests.length||offset?60:75)-Date.now()):75);
   }
   function enqueue(action,down) {
     if(!playing)return;
     if(requests.length>=8){releaseAll();return;}
     requests.push({action,down});
+    if(interactiveFrames&&!pumping&&!pending)wake();
   }
   function press(action,source=action) {
     audio?.unlock();
@@ -155,7 +164,7 @@
         try{await rpc("reconnect");}catch(error){if(error.code!=="NoCharacter"||resume)throw error;await rpc("join",{name});}
         proof="verified-identity";
       }else if(resume)await rpc("reconnect",{token:proof});else{const joined=await rpc("join",{name});proof=joined.reconnect_token;}
-      const runtime=await rpc("play");audio?.enable(runtime.audio===true);
+      const runtime=await rpc("play");interactiveFrames=runtime.interactive_frames===true;audio?.enable(runtime.audio===true);
       $("runtime-note").textContent=(runtime.persistence==="account-character-slots"?"Three account-owned character saves are stored on the server. ":"This adventure lives in server memory. ")+"Temporary disconnects reserve your character for 120 seconds. Original audio starts with a game control.";
       // Fresh authoritative full frame/audio state; no client snapshot or held
       // controls are replayed. Keep the previous image visible until connected.

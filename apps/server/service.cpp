@@ -1,3 +1,4 @@
+#include "../runtime/performance.h"
 #include "service.h"
 #include "server_limits.h"
 #include <stdexcept>
@@ -33,6 +34,7 @@ std::string Service::hello(bool serveMode)
 { return json::serialize(response("", "hello", {{"authentication_required", true}, {"authentication",serveMode?"serve":"development"},{"navigation", "topology-only"}})); }
 void Service::tick()
 {
+    perf::Scope measured(perf::metrics.tick);
     expireReservations();
 #ifdef PFME_HAS_PLAYABLE
     const auto now=now_();
@@ -125,7 +127,8 @@ Reply Service::handle(ConnectionState& connection, std::string_view message)
             }
         }
 #endif
-        auto text = json::serialize(result);
+        std::string text;{perf::Scope measured(perf::metrics.serialize);text = json::serialize(result);}
+        if(perf::enabled() && runtime::isValidController(connection.player))perf::metrics.wireBytes[connection.player]+=text.size();
         bytes_+=text.size();
         if (text.size() > MAX_RESPONSE_BYTES) return {json::serialize(failure(request.id, "ResponseLimit")), true};
         return {std::move(text), connection.authFailures >= AUTH_FAILURE_LIMIT};

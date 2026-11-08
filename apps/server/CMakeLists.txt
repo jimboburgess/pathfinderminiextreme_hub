@@ -146,6 +146,15 @@ if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
         "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --serve)
 endif()
 
+if(BUILD_TESTING AND PFME_BUILD_PLAYABLE)
+    add_executable(pfme_interact_service_tests ../../tests/server/interact_service_tests.cpp)
+    target_link_libraries(pfme_interact_service_tests PRIVATE pfme_server_support)
+    add_test(NAME pfme_interact_service COMMAND pfme_interact_service_tests)
+    if(PFME_CLIENT_NODE)
+        add_test(NAME pfme_browser_interact COMMAND "${PFME_CLIENT_NODE}" "${PROJECT_SOURCE_DIR}/tests/server/browser_client_tests.cjs" "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --interact)
+    endif()
+endif()
+
 if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
     add_test(NAME pfme_browser_text_space COMMAND "${PFME_CLIENT_NODE}"
         "${PROJECT_SOURCE_DIR}/tests/server/browser_client_tests.cjs"

@@ -5,6 +5,7 @@
 #include <Adafruit_ST7789.h>
 
 #include "config.h"
+#include "core/engine_version.h"
 #include "data/game.h"
 
 #include "audio/audio.h"
@@ -254,6 +255,10 @@ void drawStartScreen()
     drawSpriteTransparent64(176, 95, WIZARD64X64);
 
     tft.setTextColor(ST77XX_WHITE);
+    tft.setTextSize(1);
+    tft.setCursor(198, 8);
+    tft.print("v");
+    tft.print(PFME_RELEASE_VERSION);
 
     tft.setTextSize(3);
     tft.setCursor(30, 30);
