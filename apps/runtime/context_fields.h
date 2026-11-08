@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include "controller_capacity.h"
 #include "dungeon/dungeontopology.h"
 #include <type_traits>
 #include "input/buttonstate.h"
@@ -20,7 +21,7 @@ void resetPresentation(unsigned index);
 void loadPresentation(unsigned index);
 ButtonInputState& productionButtonState();
 CharacterCreationModel& productionCreationState();
-template<class T,unsigned Count=MAX_MULTIPLAYER_PLAYERS> class ValueBank {
+template<class T,unsigned Count=NATIVE_CONTROLLER_CAPACITY> class ValueBank {
     T& live;
     T slots[Count];
     T initial;
@@ -56,7 +57,7 @@ public:
 };
 void switchRoomFields(unsigned next);
 void resetNativeRoomFields();
-constexpr unsigned NATIVE_ROOM_BANK_COUNT=(MAX_ROOMS+1)*MAX_MULTIPLAYER_PLAYERS;
+constexpr unsigned NATIVE_ROOM_BANK_COUNT=(MAX_ROOMS+1)*NATIVE_CONTROLLER_CAPACITY;
 template<class T> class RoomField final : public RoomContextField, public ValueBank<T,NATIVE_ROOM_BANK_COUNT> {
 public:
     explicit RoomField(T& value):ValueBank<T,NATIVE_ROOM_BANK_COUNT>(value){}

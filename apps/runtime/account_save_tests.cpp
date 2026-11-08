@@ -65,7 +65,7 @@ int main(int argc,char** argv){fs::path root;try{
  check(!CharacterFiles::bind((id+1)%4,"acct-stable-owner"),"one account cannot occupy two controllers");
  create(runtime,owner,1,"Fighter");player.level=3;player.xp=321;player.inventory.gold=501;
  player.conditions.count=1;player.conditions.conditions[0].type=CONDITION_CURSED;player.conditions.conditions[0].roundsRemaining=7;
- check(saveAccountCharacter(0)==nullptr,"first slot save");
+ if(auto* error=saveAccountCharacter(0))throw std::runtime_error(std::string("first slot: ")+error);
  check(saveAccountCharacter(1)!=nullptr,"same character cannot be cloned to another slot");
  check(saveAccountCharacter(3)!=nullptr,"fourth saved slot denied");
  Character loaded{};check(loadGameFromSlot(loaded,0)&&loaded.conditions.count==1&&loaded.inventory.gold==501&&loaded.level==3,"full native condition/gold/level roundtrip");

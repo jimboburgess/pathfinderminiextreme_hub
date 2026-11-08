@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "controller_capacity.h"
 #include <string>
 namespace pfme { namespace runtime {
 struct ControllerState;
@@ -13,6 +14,7 @@ bool selectController(uint8_t id);
 bool controllerInput(uint8_t id,const std::string& action,bool down);
 const uint16_t* controllerPixels(uint8_t id);
 uint32_t worldTime();
+uint8_t nativePartyPlayerID(uint8_t);
 
 // Original handheld globals permit one runtime per process, one owning session.
 void initialize(uint32_t seed);

@@ -539,8 +539,8 @@ struct NativeAudioContext {
 };
 // The extra context serves the unchanged legacy native adapter. It is not a
 // party character slot and never receives another listener's stream.
-NativeAudioContext nativeAudioContexts[MAX_MULTIPLAYER_PLAYERS+1];
-unsigned selectedAudioIndex=MAX_MULTIPLAYER_PLAYERS;
+NativeAudioContext nativeAudioContexts[pfme::runtime::NATIVE_CONTROLLER_CAPACITY + 1];
+unsigned selectedAudioIndex=pfme::runtime::NATIVE_CONTROLLER_CAPACITY;
 NativeAudioContext& currentNativeAudio() {return nativeAudioContexts[selectedAudioIndex];}
 #define playback (currentNativeAudio().state)
 #define runtimeToneSequence (currentNativeAudio().tones)
@@ -964,15 +964,15 @@ void toggleAudioMuted()
 
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
 namespace pfme { namespace runtime {
-void selectAudioController(PlayerID id) {selectedAudioIndex=isValidPlayerID(id)?id:MAX_MULTIPLAYER_PLAYERS;}
-PlayerID audioController() {return selectedAudioIndex<MAX_MULTIPLAYER_PLAYERS?static_cast<PlayerID>(selectedAudioIndex):INVALID_PLAYER_ID;}
+void selectAudioController(PlayerID id) {selectedAudioIndex=isValidController(id)?id:NATIVE_CONTROLLER_CAPACITY;}
+PlayerID audioController() {return selectedAudioIndex<NATIVE_CONTROLLER_CAPACITY?static_cast<PlayerID>(selectedAudioIndex):INVALID_PLAYER_ID;}
 void updateControllerAudio(PlayerID id,uint32_t now) {
-    if(!isValidPlayerID(id))return;
+    if(!isValidController(id))return;
     const auto previous=selectedAudioIndex;selectedAudioIndex=id;
     updateAudioAt(now);selectedAudioIndex=previous;
 }
 void resetControllerAudio(PlayerID id) {
-    if(isValidPlayerID(id))nativeAudioContexts[id]=NativeAudioContext{};
+    if(isValidController(id))nativeAudioContexts[id]=NativeAudioContext{};
 }
 }}
 #endif

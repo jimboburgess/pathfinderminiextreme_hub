@@ -42,7 +42,7 @@ class Entropy final:public PartyEntropy {
 };
 Entropy entropy;
 std::unique_ptr<PartyRegistry> registry;
-TradeOfferBook tradeOffers;
+
 bool travelling=false;
 constexpr const char* alphabet="23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 struct Social {
@@ -57,7 +57,21 @@ struct Social {
  bool selectedTradeItems[MAX_INVENTORY]{};
  Menu menu{};
 };
-std::array<Social,MAX_MULTIPLAYER_PLAYERS> social;
+std::array<Social,NATIVE_CONTROLLER_CAPACITY> social;
+class RoutedTradeBook {
+ std::array<TradeOfferBook,NATIVE_WORLD_CAPACITY> books{};
+ std::array<TradeOffer,NATIVE_CONTROLLER_CAPACITY> views{};
+ PlayerID local(PlayerID id)const{return isValidController(id)&&social[id].member?social[id].membership.player:INVALID_PLAYER_ID;}
+ PlayerID global(PlayerID localID,unsigned world)const{for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(social[id].member&&social[id].world==world&&social[id].membership.player==localID)return id;return INVALID_PLAYER_ID;}
+public:
+ const TradeOffer* pendingFor(PlayerID id){auto member=local(id);if(!isValidPlayerID(member))return nullptr;auto world=social[id].world;auto* offer=books[world].pendingFor(member);if(!offer)return nullptr;views[id]=*offer;views[id].sender=global(offer->sender,world);views[id].recipient=global(offer->recipient,world);return &views[id];}
+ void cancelForPlayer(PlayerID id){auto member=local(id);if(isValidPlayerID(member))books[social[id].world].cancelForPlayer(member);}
+ bool cancel(uint32_t offer){return books[nativeWorldIndex()].cancel(offer);}
+ TradeResult propose(PlayerID sender,PlayerID recipient,const TradeOfferLine* lines,uint8_t count,const Character& character,uint32_t& offer){return books[nativeWorldIndex()].propose(local(sender),local(recipient),lines,count,character,offer);}
+ TradeResult accept(uint32_t offer,PlayerID recipient,Character& sender,Character& target){return books[nativeWorldIndex()].accept(offer,local(recipient),sender,target);}
+ TradeResult decline(uint32_t offer,PlayerID recipient){return books[nativeWorldIndex()].decline(offer,local(recipient));}
+} tradeOffers;
+unsigned privateTownWorld(PlayerID id){bool used[NATIVE_WORLD_CAPACITY]{};for(const auto& other:social)if(other.member)used[other.world]=true;unsigned world=!used[id]?id:0;while(world<NATIVE_WORLD_CAPACITY&&used[world])++world;if(world==NATIVE_WORLD_CAPACITY)throw std::runtime_error("No private Town world");return world;}
 const Menu* currentMenu(){return menuState.isOpen && menuState.depth?menuState.menuStack[menuState.depth-1]:nullptr;}
 bool sameParty(PlayerID a,PlayerID b){
  if(!social[a].member||!social[b].member)return false;
@@ -65,7 +79,7 @@ bool sameParty(PlayerID a,PlayerID b){
  return registry->snapshot(social[a].party,first)==PartyError::Ok && registry->snapshot(social[b].party,second)==PartyError::Ok && first.id.high==second.id.high && first.id.low==second.id.low;
 }
 bool connectedPartyMember(PlayerID id){
- if(!isValidPlayerID(id)||!social[id].member)return false;
+ if(!isValidController(id)||!social[id].member)return false;
  PartySnapshot snapshot;if(registry->snapshot(social[id].party,snapshot)!=PartyError::Ok)return false;
  const PlayerID member=social[id].membership.player;
  return isValidPlayerID(member)&&snapshot.members[member].occupied&&snapshot.members[member].connected;
@@ -77,6 +91,9 @@ PartyPlayerProfile profile(PlayerID id){
  result.characterClass=character.characterClass;result.level=character.level;return result;
 }
 void showError(PartyError error){char text[96];std::snprintf(text,sizeof(text),"Party: %s",partyErrorName(error));setGameMessage(text);}
+void partyLifecycle(const char* event,PlayerID id,const PartySnapshot& party){
+ std::fprintf(stderr,"{\"event\":\"%s\",\"controller\":%u,\"party\":\"%016llx%016llx\",\"player_id\":%u}\n",event,unsigned(id),static_cast<unsigned long long>(party.id.high),static_cast<unsigned long long>(party.id.low),unsigned(social[id].membership.player));
+}
 bool town(){return gameState==GAME_TOWN && !isTownRestActive();}
 bool create(PlayerID id){
  if(!town()||social[id].member){setGameMessage("Create a party in Town first.");return false;}
@@ -86,6 +103,7 @@ bool create(PlayerID id){
  unsigned world=!used[id]?id:0;while(world<NATIVE_WORLD_CAPACITY && used[world])++world;
  if(world==NATIVE_WORLD_CAPACITY){registry->leave(s.membership.handle);setGameMessage("Party runtime full.");return false;}
  s.member=true;s.world=world;assignNativeWorld(id,world);selectNativeWorld(world);resetNativeWorld();
+ PartySnapshot created;registry->snapshot(s.party,created);partyLifecycle("JOINED_PARTY",id,created);
  nativePartyMessage("Party created. Share the code.");return true;
 }
 void item(Social& s,unsigned i,const char* title,const char* description){s.items[i]={title,description,MENU_NONE,nullptr,MENU_CLASS_ALL,ABILITY_NONE};}
@@ -124,7 +142,7 @@ void buildTrade(PlayerID id){
   openMenu(&s.menu);return;
  }
  s.pane=Social::TradeRecipients;std::snprintf(s.title,sizeof(s.title),"Trade Items");unsigned count=0;
- for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peer!=id&&sameParty(id,peer)&&connectedPartyMember(peer)){
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peer!=id&&sameParty(id,peer)&&connectedPartyMember(peer)){
   std::snprintf(s.rowTitles[count],sizeof(s.rowTitles[count]),"%s",social[peer].name);
   item(s,count,s.rowTitles[count],"Offer items regardless of party distance.");s.tradeRecipientLookup[count]=peer;++count;
  }
@@ -170,40 +188,41 @@ bool leaveSocial(PlayerID id){
  auto& s=social[id];if(!s.member){setGameMessage("Not in a party.");return true;}
  if(!town()||nativeActor(id)||combat.active){setGameMessage("Return to Town before leaving.");return false;}
  PartySnapshot before;if(registry->snapshot(s.party,before)!=PartyError::Ok){s.member=false;return true;}
- bool peers[MAX_MULTIPLAYER_PLAYERS]{};for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)peers[peer]=sameParty(id,peer);
+ bool peers[NATIVE_CONTROLLER_CAPACITY]{};for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)peers[peer]=sameParty(id,peer);
  const bool leader=s.membership.player==HOST_PLAYER_ID;
- if(leader)for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer] && nativeActor(peer)){
+ if(leader)for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peers[peer] && nativeActor(peer)){
   setGameMessage("All members must return to Town.");return false;
  }
  tradeOffers.cancelForPlayer(id);
  auto error=registry->leave(s.membership.handle);if(error!=PartyError::Ok){showError(error);return false;}
- s.member=false;
- if(leader){for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer]){tradeOffers.cancelForPlayer(peer);social[peer].member=false;assignNativeWorld(peer,peer);}}
- else assignNativeWorld(id,id);
+ partyLifecycle("LEFT_PARTY",id,before);s.member=false;
+ if(leader){for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peers[peer]){tradeOffers.cancelForPlayer(peer);social[peer].member=false;}}
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peers[peer]&&!social[peer].member)assignNativeWorld(peer,privateTownWorld(peer));
  selectNativeWorld(nativeControllerWorld(id));
  const std::string message=leader?"Party closed; characters retained.":"A member left the party.";
- for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer] && selectController(peer)){if(!social[peer].member)resetNativeWorld();setGameMessage(message.c_str());}
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peers[peer] && selectController(peer)){if(!social[peer].member)resetNativeWorld();setGameMessage(message.c_str());}
  selectController(id);if(!leader)setGameMessage("Left party; character retained.");return true;
 }
 }
+PlayerID nativePartyPlayerID(ControllerID id){return isValidController(id)&&social[id].member?social[id].membership.player:static_cast<PlayerID>(id%MAX_MULTIPLAYER_PLAYERS);}
 bool socialPartiesEnabled(){return registry!=nullptr;}
 void initializeNativeParties(uint32_t){
  registry=std::make_unique<PartyRegistry>(entropy);
- for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)assignNativeWorld(id,id);
+ for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)assignNativeWorld(id,id);
  selectNativeWorld(0);
 }
-void resetNativePartyCharacter(PlayerID id){if(isValidPlayerID(id)){tradeOffers.cancelForPlayer(id);social[id]=Social{};}}
-void nativePartyCharacterName(PlayerID id,const char* name){if(!isValidPlayerID(id))return;
+void resetNativePartyCharacter(PlayerID id){if(isValidController(id)){tradeOffers.cancelForPlayer(id);social[id]=Social{};}}
+void nativePartyCharacterName(PlayerID id,const char* name){if(!isValidController(id))return;
  if(!social[id].name[0] && registry){bool used[NATIVE_WORLD_CAPACITY]{};for(const auto& other:social)if(other.member)used[other.world]=true;
   unsigned world=!used[id]?id:0;while(world<NATIVE_WORLD_CAPACITY && used[world])++world;
   if(world<NATIVE_WORLD_CAPACITY){assignNativeWorld(id,world);selectNativeWorld(world);}
  }
  std::snprintf(social[id].name,sizeof(social[id].name),"%s",name);
 }
-bool nativePartySnapshot(PlayerID id,PartySnapshot& snapshot){return registry && isValidPlayerID(id) && social[id].member && registry->snapshot(social[id].party,snapshot)==PartyError::Ok;}
+bool nativePartySnapshot(PlayerID id,PartySnapshot& snapshot){return registry && isValidController(id) && social[id].member && registry->snapshot(social[id].party,snapshot)==PartyError::Ok;}
 const TradeOffer* pendingNativeTrade(PlayerID player){return tradeOffers.pendingFor(player);}
 bool canOpenNativeTradeMenu(){
- const PlayerID id=selectedController();if(!registry||!isValidPlayerID(id)||!social[id].member)return false;
+ const PlayerID id=selectedController();if(!registry||!isValidController(id)||!social[id].member)return false;
  if(tradeOffers.pendingFor(id))return true;
  PartySnapshot snapshot;if(!nativePartySnapshot(id,snapshot)||snapshot.memberCount<2)return false;
  return mayCommitCombatTrade(id);
@@ -214,7 +233,7 @@ void openNativeTradeMenu(){
 }
 TradeResult proposeNativeTrade(PlayerID recipient,const TradeOfferLine* lines,uint8_t lineCount,uint32_t& offerID){
  const PlayerID sender=selectedController();offerID=0;
- if(!registry||!isValidPlayerID(sender)||!isValidPlayerID(recipient)||
+ if(!registry||!isValidController(sender)||!isValidController(recipient)||
     !sameParty(sender,recipient)||!connectedPartyMember(recipient))return TradeResult::INVALID_PLAYER;
  if(!mayCommitCombatTrade(sender))return TradeResult::PLAYER_BUSY;
  Character senderCharacter=selectedCharacter(sender);
@@ -254,16 +273,16 @@ bool cancelNativeTrade(){
 void openNativePartyMenu(){if(registry)build(selectedController(),Social::Board);}
 bool cancelNativePartyMenu(){
  const auto id=selectedController();
- if(!registry || !isValidPlayerID(id) || currentMenu()!=&social[id].menu || social[id].pane==Social::Board)return false;
+ if(!registry || !isValidController(id) || currentMenu()!=&social[id].menu || social[id].pane==Social::Board)return false;
  if(social[id].pane==Social::TradeItems){buildTrade(id);return true;}
  if(social[id].pane==Social::TradeRecipients||social[id].pane==Social::TradeReview||social[id].pane==Social::TradeWaiting){closeMenu();return true;}
  build(id,Social::Board);return true;
 }
 bool activateNativePartyMenu(){
- const auto id=selectedController();if(!registry||!isValidPlayerID(id)||currentMenu()!=&social[id].menu)return false;
+ const auto id=selectedController();if(!registry||!isValidController(id)||currentMenu()!=&social[id].menu)return false;
  auto& s=social[id];const auto index=menuState.cursorIndex;
  if(s.pane==Social::TradeRecipients){
-  unsigned available=0;for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peer!=id&&sameParty(id,peer)&&connectedPartyMember(peer))++available;
+  unsigned available=0;for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peer!=id&&sameParty(id,peer)&&connectedPartyMember(peer))++available;
   if(index<available){std::memset(s.selectedTradeItems,0,sizeof(s.selectedTradeItems));buildTradeItems(id,s.tradeRecipientLookup[index]);}
   else setGameMessage("No party member is available.");
   return true;
@@ -302,9 +321,9 @@ bool activateNativePartyMenu(){
   if(error!=PartyError::Ok){build(id,Social::Board);showError(error);return true;}
   PartySnapshot joined;registry->snapshot(party,joined);
   unsigned world=NATIVE_WORLD_CAPACITY;
-  for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer){PartySnapshot p;if(nativePartySnapshot(peer,p) && p.id.high==joined.id.high && p.id.low==joined.id.low){world=social[peer].world;break;}}
+  for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer){PartySnapshot p;if(nativePartySnapshot(peer,p) && p.id.high==joined.id.high && p.id.low==joined.id.low){world=social[peer].world;break;}}
   if(world==NATIVE_WORLD_CAPACITY){registry->leave(membership.handle);build(id,Social::Board);setGameMessage("Party runtime unavailable.");return true;}
-  s.member=true;s.party=party;s.membership=membership;s.world=world;
+  s.member=true;s.party=party;s.membership=membership;s.world=world;partyLifecycle("JOINED_PARTY",id,joined);
   assignNativeWorld(id,world);selectNativeWorld(world);build(id,Social::Status);nativePartyMessage("An adventurer joined the party.");return true;
  }
  if(index==0){if(create(id))build(id,Social::Status);}
@@ -315,7 +334,7 @@ bool activateNativePartyMenu(){
  return true;
 }
 void refreshNativePartyMenu(){
- const auto id=selectedController();if(!registry||!isValidPlayerID(id))return;
+ const auto id=selectedController();if(!registry||!isValidController(id))return;
  auto& s=social[id];
  if(s.member){
   const auto location=gameState==GAME_FOREST?MultiplayerMemberLocation::FOREST:gameState==GAME_DUNGEON?MultiplayerMemberLocation::DUNGEON:MultiplayerMemberLocation::TOWN;
@@ -340,11 +359,11 @@ void refreshNativePartyMenu(){
 }
 void nativePartyMessage(const char* text){
  if(!registry)return;const auto owner=selectedController();const std::string message=text?text:"";
- for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(sameParty(owner,id) && selectController(id))setGameMessage(message.c_str());
+ for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(sameParty(owner,id) && selectController(id))setGameMessage(message.c_str());
  selectController(owner);
 }
 void nativePartyConnection(PlayerID id,bool connected){
- if(!registry||!isValidPlayerID(id)||!social[id].member)return;
+ if(!registry||!isValidController(id)||!social[id].member)return;
  auto& s=social[id];
  if(connected){PartyMembership resumed;const auto error=registry->reconnect(s.party,s.membership.player,s.membership.reconnectToken,resumed);if(error==PartyError::Ok)s.membership=resumed;}
  else{tradeOffers.cancelForPlayer(id);registry->disconnect(s.membership.handle);}
@@ -352,9 +371,9 @@ void nativePartyConnection(PlayerID id,bool connected){
 bool retireNativePartyMember(PlayerID id){
  if(!registry||!social[id].member)return true;
  const auto owner=selectedController();
- bool peers[MAX_MULTIPLAYER_PLAYERS]{};const bool leader=social[id].membership.player==HOST_PLAYER_ID;
- for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)peers[peer]=peer==id || (leader && sameParty(id,peer));
- for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(peers[peer] && selectController(peer)){
+ bool peers[NATIVE_CONTROLLER_CAPACITY]{};const bool leader=social[id].membership.player==HOST_PLAYER_ID;
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)peers[peer]=peer==id || (leader && sameParty(id,peer));
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(peers[peer] && selectController(peer)){
   if(combat.active){selectController(owner);return false;}
   if(nativeActor(peer) && !leaveNativeRoom(dungeon)){selectController(owner);return false;}
   gameState=GAME_TOWN;closeMenu();closeTownHome();closeCharacterSheet();backgroundNeedsRedraw=true;redrawType=REDRAW_FULL;needsRedraw=true;
@@ -365,13 +384,13 @@ bool retireNativePartyMember(PlayerID id){
 void nativePartyReturnedToTown(){
  if(!registry)return;const auto id=selectedController();if(!social[id].member)return;
  refreshNativePartyMenu();
- for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(sameParty(id,peer) && nativeActor(peer))return;
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(sameParty(id,peer) && nativeActor(peer))return;
  registry->returnToTown(social[id].membership.handle);
 }
 bool canResetNativePartyAdventure(){
  if(!registry)return false;const auto id=selectedController();
- if(!isValidPlayerID(id)||!social[id].member||social[id].membership.player!=HOST_PLAYER_ID||!town()||combat.active)return false;
- for(PlayerID peer=0;peer<MAX_MULTIPLAYER_PLAYERS;++peer)if(sameParty(id,peer)&&nativeActor(peer))return false;
+ if(!isValidController(id)||!social[id].member||social[id].membership.player!=HOST_PLAYER_ID||!town()||combat.active)return false;
+ for(PlayerID peer=0;peer<NATIVE_CONTROLLER_CAPACITY;++peer)if(sameParty(id,peer)&&nativeActor(peer))return false;
  return true;
 }
 bool resetNativePartyAdventure(){
@@ -380,7 +399,7 @@ bool resetNativePartyAdventure(){
 }
 bool startNativePartyAdventure(bool forest){
  if(!registry||travelling)return false;
- const auto owner=selectedController();if(!isValidPlayerID(owner))return true;
+ const auto owner=selectedController();if(!isValidController(owner))return true;
  if(!town()){setGameMessage("Travel begins in Town.");return true;}
  if(!social[owner].member && !create(owner))return true;
  auto& s=social[owner];PartySnapshot party;
@@ -406,8 +425,8 @@ bool startNativePartyAdventure(bool forest){
   refreshNativePartyMenu();return true;
  }
  if(s.membership.player!=HOST_PLAYER_ID){setGameMessage("Only the party leader starts travel.");return true;}
- bool members[MAX_MULTIPLAYER_PLAYERS]{};
- for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(sameParty(owner,id)){
+ bool members[NATIVE_CONTROLLER_CAPACITY]{};
+ for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(sameParty(owner,id)){
   members[id]=true;
   selectController(id);
   const auto local=social[id].membership.player;
@@ -420,7 +439,7 @@ bool startNativePartyAdventure(bool forest){
  auto error=forest?registry->startForest(s.membership.handle):registry->startDungeon(s.membership.handle);
  if(error!=PartyError::Ok){showError(error);return true;}
  registry->setLocked(s.membership.handle,true);travelling=true;bool fresh=true;
- for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(members[id]){
+ for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(members[id]){
   selectController(id);closeMenu();closeTownHome();closeCharacterSheet();
   if(forest){if(!enterNativeForestController(fresh))throw std::runtime_error("Party forest initialization failed");fresh=false;}
   else enterDungeon();

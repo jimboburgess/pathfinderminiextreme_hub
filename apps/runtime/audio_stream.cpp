@@ -5,10 +5,10 @@ namespace pfme { namespace runtime {
 namespace {
 constexpr std::size_t AUDIO_HISTORY=512;
 struct Ring {uint64_t sequence=0;uint16_t frequency=0,duty=512;std::array<AudioEvent,AUDIO_HISTORY> events{};};
-Ring rings[MAX_MULTIPLAYER_PLAYERS];
+Ring rings[NATIVE_CONTROLLER_CAPACITY];
 }
 void emitNativeAudio(PlayerID id,uint16_t frequency,uint16_t duty) {
-    if(!isValidPlayerID(id))return;
+    if(!isValidController(id))return;
     auto& ring=rings[id];
     const bool unchanged=ring.frequency==frequency && (!frequency || ring.duty==duty);
     ring.frequency=frequency;ring.duty=duty;
@@ -17,9 +17,9 @@ void emitNativeAudio(PlayerID id,uint16_t frequency,uint16_t duty) {
     const auto sequence=++ring.sequence;
     ring.events[(sequence-1)%AUDIO_HISTORY]={sequence,audioTime(),frequency,duty};
 }
-void resetAudioStream(PlayerID id) {if(isValidPlayerID(id))rings[id]=Ring{};}
+void resetAudioStream(PlayerID id) {if(isValidController(id))rings[id]=Ring{};}
 AudioBatch readAudioStream(PlayerID id,uint64_t since,bool fresh) {
-    AudioBatch out;out.now=audioTime();if(!isValidPlayerID(id))return out;
+    AudioBatch out;out.now=audioTime();if(!isValidController(id))return out;
     const auto& ring=rings[id];out.cursor=ring.sequence;out.frequency=ring.frequency;out.duty=ring.duty;
     // Never build an outgoing queue of stale notes. A delayed/reconnected
     // listener resynchronizes to the current oscillator state instead.

@@ -1,6 +1,7 @@
 #pragma once
 // Native account storage only. ESP32 Preferences and save-format bytes stay intact.
 #include <array>
+#include "controller_capacity.h"
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -16,7 +17,7 @@
 #endif
 class CharacterFiles {
     struct Owner {std::string name;int slot=-1;};
-    static std::array<Owner,4>& owners(){static std::array<Owner,4> v;return v;}
+    static std::array<Owner,pfme::runtime::NATIVE_CONTROLLER_CAPACITY>& owners(){static std::array<Owner,pfme::runtime::NATIVE_CONTROLLER_CAPACITY> v;return v;}
     static const char* filename(const char* key){
         if(!key)return nullptr;
         if(!std::strcmp(key,"player0"))return "save_slot_1.dat";
@@ -69,17 +70,17 @@ class CharacterFiles {
 public:
     static bool required(){const char* s=std::getenv("PFME_REQUIRE_ACCOUNT_SAVES");return s&&std::strcmp(s,"1")==0;}
     static bool bind(unsigned id,const std::string& principal){
-        if(id>=4||principal.empty()||principal.size()>64)return false;
+        if(id>=pfme::runtime::NATIVE_CONTROLLER_CAPACITY||principal.empty()||principal.size()>64)return false;
         static const char hex[]="0123456789abcdef";std::string name="account-";
         for(unsigned char c:principal){if(c<33||c>126)return false;name+=hex[c>>4];name+=hex[c&15];}
-        for(unsigned other=0;other<4;++other)if(other!=id&&owners()[other].name==name)return false;
+        for(unsigned other=0;other<pfme::runtime::NATIVE_CONTROLLER_CAPACITY;++other)if(other!=id&&owners()[other].name==name)return false;
         auto& o=owners()[id];if(!o.name.empty()&&o.name!=name)return false;o.name=name;return true;
     }
-    static std::string owner(unsigned id){return id<4?owners()[id].name:std::string();}
-    static int active(unsigned id){return id<4?owners()[id].slot:-1;}
-    static void activate(unsigned id,unsigned slot){if(id<4&&slot<3)owners()[id].slot=int(slot);}
-    static void deactivate(unsigned id){if(id<4)owners()[id].slot=-1;}
-    static void retire(unsigned id){if(id<4)owners()[id]=Owner{};}
+    static std::string owner(unsigned id){return id<pfme::runtime::NATIVE_CONTROLLER_CAPACITY?owners()[id].name:std::string();}
+    static int active(unsigned id){return id<pfme::runtime::NATIVE_CONTROLLER_CAPACITY?owners()[id].slot:-1;}
+    static void activate(unsigned id,unsigned slot){if(id<pfme::runtime::NATIVE_CONTROLLER_CAPACITY&&slot<3)owners()[id].slot=int(slot);}
+    static void deactivate(unsigned id){if(id<pfme::runtime::NATIVE_CONTROLLER_CAPACITY)owners()[id].slot=-1;}
+    static void retire(unsigned id){if(id<pfme::runtime::NATIVE_CONTROLLER_CAPACITY)owners()[id]=Owner{};}
     static void reset(){for(auto& o:owners())o=Owner{};}
     static size_t length(const std::string& owner,const char* key) noexcept {try{
         const char* name=filename(key);if(!name)return 0;

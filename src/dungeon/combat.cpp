@@ -1498,7 +1498,7 @@ bool isPlayerTurn()
 
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if(pfme::runtime::nativeRoomsActive())return current->type==ENTITY_PLAYER &&
-        current->ownerPlayerID==pfme::runtime::selectedController();
+        current->nativeControllerID==pfme::runtime::selectedController();
 #endif
     return (current->type == ENTITY_PLAYER);
 }

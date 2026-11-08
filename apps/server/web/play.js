@@ -3,13 +3,13 @@
   const $=id=>document.getElementById(id), canvas=$("display"), ctx=canvas.getContext("2d",{alpha:false,willReadFrequently:true});
   const audio=window.PfmeAudio?new window.PfmeAudio():null;
   const accountMode=$("connect").dataset?.accountAuth==="true";
-  if(accountMode)setInterval(()=>{fetch('/accounts/presence/',{credentials:'same-origin',cache:'no-store'}).then(r=>{if(r.status===401){ws?.close();status('Your login expired. Refresh to sign in again.');}}).catch(()=>{});},15000);
+  if(accountMode)setInterval(()=>{fetch('/accounts/presence/',{credentials:'same-origin',cache:'no-store'}).then(r=>{if(r.status===401){wanted=false;clearTimeout(retryTimer);ws?.close();status('Your login expired. Sign in again.');}}).catch(()=>{});},15000);
   const privateMode=$("connect").dataset?.authMode==="serve";
   if(privateMode){$("secret").required=false;$("secret").closest("label").hidden=true;}
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
-  let leaving=false, textInput=false;
+  let leaving=false, textInput=false, pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
   let ws=null, secret="", proof="", id=0, pending=null, playing=false, since="0", offset=0, chunks=[], total=0;
   let requests=[], held=new Set(), heldSources=new Map(), repeat=new Map(), scheduled=null, connecting=false, disconnectReason="";
   const status=text=>{$("status").textContent=text;};
@@ -27,8 +27,8 @@
   function rpc(type,fields={}) {
     return new Promise((resolve,reject)=>{
       if(!ws || ws.readyState!==WebSocket.OPEN || pending) {reject(new Error("Connection not ready"));return;}
-      const requestId=String(++id);
-      const timeout=setTimeout(()=>{if(pending?.id===requestId){pending=null;reject(new Error("Server response timed out"));ws?.close();}},4000);
+      const requestId=String(++id),target=ws,epoch=generation;
+      const timeout=setTimeout(()=>{if(pending?.id===requestId&&target===ws&&epoch===generation){pending=null;reject(new Error("Server response timed out"));if(ws?.readyState===WebSocket.OPEN)ws.close(4000,"rpc_timeout");}},15000);
       pending={id:requestId,resolve,reject,timeout};
       ws.send(JSON.stringify({v:1,id:requestId,type,...fields}));
     });
@@ -64,13 +64,14 @@
     since=frame.frame;offset=0;total=0;chunks=[];
   }
   async function pump() {
-    if(!playing||leaving)return;
+    if(!playing||leaving||pumping||pending)return;
+    const epoch=generation;pumping=true;
     try {
       if(requests.length){const event=requests.shift();await rpc("input",event);}
       else applyFrame(await rpc("screen",{since,offset}));
-    }catch(error){disconnectReason=error.message;status(disconnectReason);playing=false;releaseAll();ws?.close();return;}
+    }catch(error){if(epoch!==generation)return;disconnectReason=error.message;status(disconnectReason);playing=false;releaseAll();ws?.close();return;}finally{if(epoch===generation)pumping=false;}
     // At most ~14 requests/sec including controls, below the existing 20/sec cap.
-    if(!leaving)scheduled=setTimeout(pump,75);
+    if(!leaving)scheduled=setTimeout(()=>{if(epoch===generation)pump();},75);
   }
   function enqueue(action,down) {
     if(!playing)return;
@@ -110,40 +111,75 @@
     button.addEventListener("pointerdown",event=>{event.preventDefault();button.setPointerCapture(event.pointerId);press(button.dataset.action,"pointer:"+event.pointerId);});
     button.addEventListener("pointerup",event=>release(button.dataset.action,"pointer:"+event.pointerId));button.addEventListener("pointercancel",releaseAll);
   }
-  async function connect(resume){
+  const finalErrors=new Set(["NoCharacter","OwnershipRequired","AuthenticationFailed","IdentityRequired","ReplayRejected","ServerFull"]);
+  function retry(){
+    if(!wanted||connecting||playing||retryTimer)return;
+    if(!lostAt)lostAt=Date.now();
+    if(Date.now()-lostAt>=120000){wanted=false;disconnectReason="Reconnect grace ended. Connect again to load a saved character.";status(disconnectReason);return;}
+    const delays=[500,1000,2000,4000,5000],base=delays[Math.min(retryAttempt++,4)];
+    const delay=Math.round(base*(.9+Math.random()*.2));
+    status("Connection lost â€” reconnecting...");clearTimeout(retryTimer);
+    retryTimer=setTimeout(()=>{retryTimer=null;connect(true,true);},delay);
+  }
+  async function connect(resume,automatic=false){
     if(connecting||playing)return;connecting=true;disconnectReason="";$("resume").disabled=true;
+    const attempt=++generation;let socket;
+    if(!automatic){wanted=true;lostAt=0;retryAttempt=0;clearTimeout(retryTimer);}
     try{
       const name=$("name").value;
       if(!resume){secret=$("secret").value.trim();proof="";}
       $("secret").value="";
-      if((!privateMode&&!/^[0-9a-f]{64}$/.test(secret))||(!resume&&!/^[!-~]{1,15}$/.test(name)))throw new Error("Enter the 64-character development secret and a name without spaces.");
-      ws=new WebSocket(`${location.protocol==="https:"?"wss":"ws"}://${location.host}/`);
-      await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=()=>reject(new Error("Connection failed"));});
-      ws.onmessage=event=>{try{const reply=JSON.parse(event.data);if(!reply.id)return;if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");if(reply.audio)audio?.apply(reply.audio);const p=pending;pending=null;clearTimeout(p.timeout);if(reply.ok)p.resolve(reply.data);else p.reject(new Error(reply.error?.code==="Full"?"Party Full: all four character slots are occupied. You remain signed in. Retry after someone uses Leave character; disconnect alone retains their slot.":reply.error?.code||"Server rejected command"));}catch(error){status(error.message);ws.close();}};
-      ws.onclose=()=>{if($("leave"))$("leave").disabled=true;audio?.pause();playing=false;releaseAll();clearTimeout(scheduled);if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}$("disconnect").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;status(disconnectReason||"Disconnected. The server retains this session in memory. Reconnect from this tab to resume.");};
-      await rpc("authenticate",privateMode?{}:{secret});
+      if((!privateMode&&!/^[0-9a-f]{64}$/.test(secret))||(!resume&&!/^[!-~]{1,15}$/.test(name))){wanted=false;throw new Error("Enter the development secret and a name without spaces.");}
+      socket=new WebSocket(`${location.protocol==="https:"?"wss":"ws"}://${location.host}/`);ws=socket;
+      let rejectOpening=null;
+      socket.onclose=event=>{
+        if(rejectOpening){rejectOpening(new Error("Connection closed before opening"));rejectOpening=null;}
+        if(ws!==socket||attempt!==generation)return;
+        playing=false;pumping=false;audio?.pause();releaseAll();clearTimeout(scheduled);
+        if(pending){clearTimeout(pending.timeout);pending.reject(new Error("Connection closed"));pending=null;}
+        $("disconnect").disabled=true;if($("leave"))$("leave").disabled=true;$("resume").disabled=!proof;$("connect").querySelector("button").disabled=!!proof;
+        if(event?.code===4001){wanted=false;disconnectReason="Replaced by another signed-in connection.";}
+        if(event?.code===4401){wanted=false;disconnectReason="Your login expired. Sign in again.";}
+        if(event?.code===4409){wanted=false;disconnectReason="Server is full.";}
+        if(wanted){connecting=false;retry();}else status(disconnectReason||"Disconnected. Reconnect within 120 seconds to restore this character.");
+      };
+      await new Promise((resolve,reject)=>{rejectOpening=reject;socket.onopen=()=>{rejectOpening=null;resolve();};socket.onerror=()=>{rejectOpening=null;reject(new Error("Connection failed"));};});
+      socket.onmessage=event=>{if(ws!==socket||attempt!==generation)return;try{
+        const reply=JSON.parse(event.data);if(!reply.id)return;
+        if(!pending||reply.id!==pending.id)throw new Error("Unexpected response");
+        if(reply.audio)audio?.apply(reply.audio);const p=pending;pending=null;clearTimeout(p.timeout);
+        if(reply.ok)p.resolve(reply.data);else{const error=new Error(reply.error?.code||"Server rejected command");error.code=reply.error?.code;p.reject(error);}
+      }catch(error){disconnectReason=error.message;socket.close();}};
+      id=0;await rpc("authenticate",privateMode?{}:{secret});
       if(privateMode){
-        try{await rpc("reconnect");}catch(error){if(error.message!=="NoCharacter")throw error;await rpc("join",{name});}
+        try{await rpc("reconnect");}catch(error){if(error.code!=="NoCharacter"||resume)throw error;await rpc("join",{name});}
         proof="verified-identity";
       }else if(resume)await rpc("reconnect",{token:proof});else{const joined=await rpc("join",{name});proof=joined.reconnect_token;}
       const runtime=await rpc("play");audio?.enable(runtime.audio===true);
-      $("runtime-note").textContent=(runtime.audio&&audio?"Original music and sound effects play locally after using a game control. ":"Sound is silent in this runtime. ")+"Saves remain in server memory. Other connected party members continue during a disconnect. Keep this tab open to retain its reconnect credential; it is never saved to browser storage.";
-      if(privateMode)$("runtime-note").textContent="Verified private identity. Reconnect restores your character while this server process remains running. Authorization expires after 15 minutes; reconnect to verify again. Original sound starts with a game control.";
-      if(accountMode)$("runtime-note").textContent="Signed in to your own Pathfinder account. Refresh or reconnect restores your character while this game process remains running. Disconnect retains your slot; Leave character releases it. Original audio starts with a game control.";
+      $("runtime-note").textContent=(runtime.persistence==="account-character-slots"?"Three account-owned character saves are stored on the server. ":"This adventure lives in server memory. ")+"Temporary disconnects reserve your character for 120 seconds. Original audio starts with a game control.";
+      // Fresh authoritative full frame/audio state; no client snapshot or held
+      // controls are replayed. Keep the previous image visible until connected.
       clearFrame();requests=[];playing=true;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
       if($("leave"))$("leave").disabled=false;
-      status("Connected. A / Enter: Button A; W / Space: encoder click; Q/E or Left/Right: rotate. Saves are in memory only.");canvas.focus();pump();
-    }catch(error){disconnectReason=error.message;status(disconnectReason);ws?.close();}finally{connecting=false;}
+      retryAttempt=0;lostAt=0;status(automatic?"Reconnected.":"Connected. A / Enter: Button A; W / Space: encoder click; Q/E or Left/Right: rotate.");canvas.focus();pump();
+    }catch(error){
+      if(attempt!==generation)return;
+      if(finalErrors.has(error.code)){wanted=false;clearTimeout(retryTimer);if(error.code==="NoCharacter"){proof="";$("resume").disabled=true;$("connect").querySelector("button").disabled=false;}}
+      disconnectReason=error.code==="ServerFull"?"Server is full.":error.code==="NoCharacter"?"The previous session ended. Connect to load a saved character.":error.message;
+      status(disconnectReason);socket?.close();
+    }finally{
+      if(attempt===generation){connecting=false;if(wanted&&!playing&&!retryTimer)retry();}
+    }
   }
   $("connect").onsubmit=event=>{event.preventDefault();audio?.unlock();connect(false);};$("resume").onclick=()=>{audio?.unlock();connect(true);};
   if($("leave"))$("leave").onclick=async()=>{
     if(!playing||!window.confirm("Leave this character permanently for this server session?"))return;
-    leaving=true;releaseAll();clearTimeout(scheduled);
+    wanted=false;clearTimeout(retryTimer);leaving=true;releaseAll();clearTimeout(scheduled);
     // Wait for the existing one-in-flight RPC to complete before Leave.
     while(pending)await new Promise(resolve=>setTimeout(resolve,20));
     try{await rpc("input",{action:"release",down:false});await rpc("leave");proof="";audio?.pause();playing=false;ws?.close(1000,"left character");$("leave").disabled=true;}
     catch(error){status(error.message);}
     finally{leaving=false;if(playing)pump();}
   };
-  $("disconnect").onclick=()=>{audio?.pause();releaseAll();playing=false;clearTimeout(scheduled);ws?.close(1000,"user disconnect");};
+  $("disconnect").onclick=()=>{wanted=false;clearTimeout(retryTimer);audio?.pause();releaseAll();playing=false;clearTimeout(scheduled);ws?.close(1000,"user disconnect");};
 })();

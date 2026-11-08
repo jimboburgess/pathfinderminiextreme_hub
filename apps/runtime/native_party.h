@@ -1,10 +1,12 @@
 #pragma once
 #include "session/party_registry.h"
+#include "controller_capacity.h"
 #include "input/menu.h"
 #include "multiplayer/itemtrade.h"
 struct Entity;
 namespace pfme { namespace runtime {
-constexpr unsigned NATIVE_WORLD_CAPACITY=MAX_MULTIPLAYER_PLAYERS;
+constexpr unsigned NATIVE_WORLD_CAPACITY=NATIVE_CONTROLLER_CAPACITY;
+PlayerID nativePartyPlayerID(ControllerID);
 constexpr uint8_t NATIVE_FOREST_ROOM=MAX_ROOMS;
 bool socialPartiesEnabled();
 unsigned nativeWorldIndex();

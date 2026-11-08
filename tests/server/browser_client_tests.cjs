@@ -4,8 +4,9 @@ const events={},elements={},sent=[],timers=new Map();
 const textTest=process.argv.includes('--text');
 const privateTest=process.argv.includes('--serve');
 const fixture=process.argv[3]&&!privateTest&&!textTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
-const expectedPixels=process.argv[4]?fs.readFileSync(process.argv[4]):null;
-let now=0,nextTimer=1,lastPixels,socket,characterExists=false;
+const expectedPixels=process.argv[4]&&!process.argv[4].startsWith('--')?fs.readFileSync(process.argv[4]):null;
+let now=0,nextTimer=1,lastPixels,socket,characterExists=false,socketCount=0,failOpens=0;
+const retryTest=process.argv.includes("--retry");
 function element(id){return elements[id]??={value:'',style:{},disabled:false,tagName:'DIV',clientWidth:1200,
   addEventListener(type,fn){events[id+':'+type]=fn;},getBoundingClientRect(){return {top:200};},focus(){},
   closest(){return element(id+'Label');},querySelector(){return element(id+'Button');},querySelectorAll(){return [];}};}
@@ -22,7 +23,7 @@ const patch=Buffer.alloc(12);patch.writeUInt16LE(0,0);patch.writeUInt16LE(0xffff
 patch.writeUInt16LE(32767,6);patch.writeUInt16LE(0x8000|24833,8);patch.writeUInt16LE(0x001f,10);
 class Socket {
   static OPEN=1;
-  constructor(url){this.url=url;socket=this;this.readyState=1;this.stall=false;queueMicrotask(()=>this.onopen?.());}
+  constructor(url){++socketCount;this.url=url;socket=this;this.readyState=1;this.stall=false;queueMicrotask(()=>{if(failOpens>0){--failOpens;this.onerror?.();}else this.onopen?.();});}
   send(text){const request=JSON.parse(text);sent.push(request);if(this.stall){this.blocked=request;return;}this.respond(request);}
   respond(request){let data={};
     if(privateTest&&request.type==='reconnect'&&!characterExists){queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:false,error:{code:'NoCharacter'}})}));return;}
@@ -33,11 +34,11 @@ class Socket {
     if(request.type==='screen'&&fixture&&request.since==='0')data=fixture.find(p=>p.offset===request.offset);
     queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:true,data})}));
   }
-  close(){this.readyState=3;queueMicrotask(()=>this.onclose?.());}
+  close(code=1000,reason=""){this.readyState=3;queueMicrotask(()=>this.onclose?.({code,reason}));}
 }
 const documentMock={hidden:false,getElementById:element,addEventListener(type,fn){events['document:'+type]=fn;}};
 const sandbox={document:documentMock,window:{confirm:()=>true,addEventListener(type,fn){events['window:'+type]=fn;}},innerHeight:1100,location:privateTest?{protocol:'https:',host:'game.test.ts.net'}:{protocol:'http:',host:'127.0.0.1:18765'},
-  WebSocket:Socket,Uint8Array,Uint8ClampedArray,atob:s=>Buffer.from(s,'base64').toString('binary'),
+  Date:{now:()=>now},Math:Object.assign(Object.create(Math),{random:()=>.5}),WebSocket:Socket,Uint8Array,Uint8ClampedArray,atob:s=>Buffer.from(s,'base64').toString('binary'),
   setTimeout:(fn,ms)=>timeout(fn,ms),clearTimeout:id=>timers.delete(id),setInterval:(fn,ms)=>timeout(fn,ms,ms),clearInterval:id=>timers.delete(id)};
 vm.createContext(sandbox);vm.runInContext(fs.readFileSync(process.argv[2],'utf8'),sandbox);
 function key(type,key,target='CANVAS',repeat=false){let prevented=false;events['document:'+type]({key,repeat,target:{tagName:target},preventDefault(){prevented=true;}});return prevented;}
@@ -106,6 +107,25 @@ async function main(){
   element('resume').onclick();await flush();await advance(1000);
   assert.match(element('status').textContent,/Connected/);
   verifyPixels();
+  if(retryTest){
+    const first=socket,begin=sent.length;first.close(1006,"network interruption");await flush();
+    assert.match(element('status').textContent,/reconnecting/);await advance(499);assert.equal(socket,first,'first retry waits 0.5 seconds');
+    await advance(700);assert.notEqual(socket,first);assert.match(element('status').textContent,/Reconnected/);
+    const recovered=sent.slice(begin);assert(recovered.some(r=>r.type==='reconnect'),'recovers existing ownership');assert(!recovered.some(r=>r.type==='join'),'never creates a replacement character');
+    const count=socketCount;socket.close(4001,'replaced');await flush();await advance(6000);assert.equal(socketCount,count,'superseded tab must not fight for control');assert.match(element('status').textContent,/Replaced/);
+    element('resume').onclick();await flush();await advance(500);assert.match(element('status').textContent,/Connected/);
+    failOpens=5;const before=socketCount;socket.close(1006,'interruption');await flush();
+    for(const [index,delay] of [500,1000,2000,4000,5000,5000].entries()){
+      await advance(delay-1);assert.equal(socketCount,before+index,'bounded backoff '+delay);
+      await advance(1);assert.equal(socketCount,before+index+1,'retry at '+delay);
+    }
+    await advance(500);assert.match(element('status').textContent,/Reconnected/);
+    failOpens=100;socket.close(1006,'long interruption');await flush();await advance(130000);
+    const stopped=socketCount;await advance(10000);assert.equal(socketCount,stopped,'retry stops after grace');
+    assert.match(element('status').textContent,/grace ended/);failOpens=0;
+    element('resume').onclick();await flush();await advance(500);assert.match(element('status').textContent,/Connected/);
+    console.log('Automatic reconnect: deterministic first retry, ownership recovery, no Join replay and no duplicate-tab reconnect fight passed.');
+  }
   if(privateTest){
     assert.equal(socket.url,'wss://game.test.ts.net/');assert.equal(element('secret').required,false);assert.equal(element('secret').closest().hidden,true);
     assert(sent.filter(r=>r.type==='authenticate').every(r=>!('secret' in r)&&!('identity' in r)));

@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "runtime_health.h"
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -21,6 +22,9 @@ bool number(const char* text, uint64_t maximum, uint64_t& result)
 }
 int main(int argc, char** argv)
 {
+#ifdef __linux__
+    if(argc==3&&std::string(argv[1])=="--healthcheck")return pfme::server::runtimeHealthy(argv[2])?0:1;
+#endif
     uint64_t port = 8765, seed = 12345, duration = 0;
     bool partyMode=false,portSpecified=false,serveSpecified=false,cloudflareSpecified=false,durationSpecified=false;
     pfme::server::ServeOptions serve;

@@ -80,7 +80,7 @@ print(json.dumps(result))
     assert b(op='http',path='/accounts/login/',form={'oversized':'x'*9000})['result']['status']==413
     assert b(op='open',slot=13,headers={'Pfme-Verified-Identity':'forged','Cf-Access-Jwt-Assertion':'forged'}).get('failed')
     page=b(op='http',path='/play',cookie=cookies[0])['result'];assert page['status']==200 and 'data-account-auth="true"' in page['body']
-    js=b(op='http',path='/play.js',cookie=cookies[0])['result'];assert 'Party Full:' in js['body']
+    js=b(op='http',path='/play.js',cookie=cookies[0])['result'];assert 'Server is full.' in js['body'] and 'reconnecting' in js['body']
     players=[];views=[];ids=[]
     for i in range(4):
         assert b(op='open',slot=i,cookie=cookies[i],headers={'Pfme-Verified-Identity':'forged'})['result']['opened']
@@ -107,7 +107,7 @@ print(json.dumps(result))
         cookies[i]='; '.join(k+'='+v for k,v in login['cookies'].items())
         assert b(op='http',path='/accounts/presence/',cookie=cookies[i])['result']['status']==200
         assert b(op='open',slot=i,cookie=cookies[i])['result']['opened'];c=Client(i);assert c.call('authenticate')['ok']
-        assert c.call('join',name='Waiting')['error']['code']=='Full';assert b(op='close',slot=i)['result']['closed']
+        assert c.call('join',name='Waiting')['ok'];assert c.call('play')['ok'];assert c.call('party_status')['error']['code']=='NotInParty';assert c.call('leave')['ok'];assert b(op='close',slot=i)['result']['closed']
     report['four_original_characters_and_six_waiting_accounts']=True
     assert players[0].call('input',action='a',down=True,player_id=ids[1])['error']['code']=='InvalidRequest'
     form_town_party(players)

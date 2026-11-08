@@ -7,9 +7,11 @@
 namespace pfme { namespace runtime {
 // Authentication and capability validation stay in Service/GameSession. This
 // adapter leases production controllers to already verified capabilities.
+class SessionBank;
 class PartyRuntime {
 public:
     PartyRuntime(GameSession&,uint32_t seed);
+    PartyRuntime(SessionBank&,uint32_t seed);
     ~PartyRuntime();
     bool start(const PlayerHandle&,uint64_t serial,const std::string& verifiedPrincipal="");
     bool input(const PlayerHandle&,uint64_t serial,const std::string&,bool);
@@ -17,6 +19,7 @@ public:
     bool audio(const PlayerHandle&,uint64_t serial,uint64_t since,bool fresh,AudioBatch&);
     void detach(const PlayerHandle&,uint64_t serial);
     bool leave(const PlayerHandle&,uint64_t serial);
+    bool expire(const PlayerHandle&);
     void tick(uint32_t milliseconds);
     bool status(const PlayerHandle&,uint64_t serial,PartySnapshot&);
 private:

@@ -15,7 +15,7 @@ namespace {
 uint32_t sinceSave=0;
 const char* canSwitch(bool saving){
     const auto id=selectedController();
-    if(!isValidPlayerID(id)||CharacterFiles::owner(id).empty())return "Account storage unavailable.";
+    if(!isValidController(id)||CharacterFiles::owner(id).empty())return "Account storage unavailable.";
     if(combat.active||nativeActor(id)||isTownRestActive()||pendingNativeTrade(id))return "Finish combat/trade. Return to Town.";
     if(gameState!=GAME_TOWN && (saving||gameState!=GAME_START))return "Return to Stay Home first.";
     return nullptr;
@@ -30,7 +30,7 @@ bool flushAccountCharacter(uint8_t id){
     if(!selectController(id))return false;
     const auto* actor=nativeActor(id);
     const bool good=saveGameToSlot(actor?actor->character:player,static_cast<uint8_t>(slot));
-    if(previous!=id&&isValidPlayerID(previous))selectController(previous);
+    if(previous!=id&&isValidController(previous))selectController(previous);
     return good;
 }
 const char* saveAccountCharacter(uint8_t slot){
@@ -64,7 +64,7 @@ const char* newAccountCharacter(){
 }
 void autosaveAccountCharacters(uint32_t elapsed){
     sinceSave+=elapsed;if(sinceSave<30000)return;sinceSave=0;
-    for(uint8_t id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)
+    for(uint8_t id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)
         if(!flushAccountCharacter(id))std::fputs("{\"event\":\"character_save_failed\"}\n",stderr);
 }
 }}

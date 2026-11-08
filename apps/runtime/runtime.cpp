@@ -36,6 +36,7 @@ void loop();
 NativeSerial Serial;
 NativeSPI SPI;
 namespace {
+using pfme::runtime::NATIVE_CONTROLLER_CAPACITY;
 std::mt19937 rng;
 std::mt19937 worldRng[pfme::runtime::NATIVE_WORLD_CAPACITY];
 uint32_t nowMs=1;
@@ -65,11 +66,11 @@ struct BoundController {
     TargetingView targeting;
     BoundController() { pins.fill(HIGH); }
 };
-BoundController bound[MAX_MULTIPLAYER_PLAYERS];
+BoundController bound[NATIVE_CONTROLLER_CAPACITY];
 void tickAudioClock(uint32_t elapsed) {
     for(uint32_t tick=0;tick<elapsed;++tick) {
         ++nowMs;++audioMs;
-        for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)
+        for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)
             if(bound[id].state)pfme::runtime::updateControllerAudio(id,audioMs);
     }
 }
@@ -95,14 +96,14 @@ void initialize(uint32_t seed) {
 namespace {
 void synchronizeCombatViews() {
     if(hadCombat!=combat.active) {
-        for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(nativeControllerWorld(id)==nativeWorldIndex())bound[id].targeting=TargetingView{};
+        for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(nativeControllerWorld(id)==nativeWorldIndex())bound[id].targeting=TargetingView{};
         hadCombat=combat.active;
     }
 }
 void renderController() {
     // Other actors dirty the shared world, not this observer's private tile
     // cache. Refresh each live map at 20 Hz; input/UI redraws remain immediate.
-    if(multiController && isValidPlayerID(selected) && (gameState==GAME_DUNGEON || gameState==GAME_FOREST) &&
+    if(multiController && isValidController(selected) && (gameState==GAME_DUNGEON || gameState==GAME_FOREST) &&
        !menuState.isOpen &&
        uint32_t(nowMs-bound[selected].lastWorldDraw)>=50) {
         bound[selected].lastWorldDraw=nowMs;
@@ -122,7 +123,7 @@ void inputStep() {
     renderController();
 }
 void storeController() {
-    if(!isValidPlayerID(selected) || !bound[selected].state)return;
+    if(!isValidController(selected) || !bound[selected].state)return;
     auto* actor=nativeActor(selected);
     bound[selected].state->character=actor && (gameState==GAME_DUNGEON || gameState==GAME_FOREST)?actor->character:player;
     bound[selected].state->viewRoom=dungeon.currentRoom;
@@ -147,13 +148,13 @@ void initializeControllers(uint32_t seed,bool socialParties) {
     if(socialParties){for(unsigned i=0;i<NATIVE_WORLD_CAPACITY;++i)worldRng[i].seed(seed^(0x9e3779b9u*i));initializeNativeParties(seed);}
 }
 bool selectController(uint8_t id) {
-    if(!multiController || !isValidPlayerID(id) || !bound[id].state)return false;
+    if(!multiController || !isValidController(id) || !bound[id].state)return false;
     if(selected==id)return true;
     storeController();
     saveNativeRoomView(dungeon);
     selectNativeWorld(nativeControllerWorld(id));
-    if(isValidPlayerID(selected)) tft.exchangeSurface(bound[selected].state->surface);
-    if(isValidPlayerID(selected))switchPresentation(selected,id);
+    if(isValidController(selected)) tft.exchangeSurface(bound[selected].state->surface);
+    if(isValidController(selected))switchPresentation(selected,id);
     else loadPresentation(id);
     selected=id;selectAudioController(id);player=bound[id].state->character;pins=bound[id].pins;
     productionButtonState()=bound[id].state->input;
@@ -171,7 +172,7 @@ bool selectController(uint8_t id) {
     return true;
 }
 bool bindController(uint8_t id,ControllerState& state) {
-    if(!multiController || !isValidPlayerID(id))return false;
+    if(!multiController || !isValidController(id))return false;
     if(bound[id].state && bound[id].state!=&state)return false;
     bound[id].state=&state;bound[id].connected=true;
     if(!selectController(id))return false;
@@ -193,16 +194,16 @@ bool unbindController(uint8_t id) {
     resetPresentation(id);retireNativeObserver(id);resetControllerAudio(id);resetAudioStream(id);selectAudioController(INVALID_PLAYER_ID);return true;
 }
 bool controllerInput(uint8_t id,const std::string& action,bool down) {
-    if(!isValidPlayerID(id) || !bound[id].connected || !selectController(id))return false;
+    if(!isValidController(id) || !bound[id].connected || !selectController(id))return false;
     const bool result=input(action,down);storeController();return result;
 }
 const uint16_t* controllerPixels(uint8_t id) {
-    if(!isValidPlayerID(id) || !bound[id].state)return nullptr;
+    if(!isValidController(id) || !bound[id].state)return nullptr;
     return id==selected?tft.getBuffer():bound[id].state->surface.getBuffer();
 }
 namespace {bool broadcastingAudio=false;}
 bool broadcastNativeSound(SoundEffect sound) {
-    if(!multiController || broadcastingAudio || !isValidPlayerID(selected))return false;
+    if(!multiController || broadcastingAudio || !isValidController(selected))return false;
     // Encoder/menu feedback belongs to its controller, even when the input
     // also runs inside an authoritative world-event scope.
     if(sound>=SoundEffect::MENU_MOVE && sound<=SoundEffect::BUMP)return false;
@@ -212,28 +213,28 @@ bool broadcastNativeSound(SoundEffect sound) {
     const auto room=nativeActorRoom(selected);
     if(!roomSound || room==NO_ROOM)return false;
     broadcastingAudio=true;
-    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state && nativeActorRoom(id)==room) {
+    for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(bound[id].state && nativeActorRoom(id)==room) {
         selectAudioController(id);playSound(sound);
     }
     selectAudioController(selected);broadcastingAudio=false;return true;
 }
 bool broadcastNativeTones(const uint16_t* frequencies,uint8_t count,uint16_t duration,uint16_t pause,AudioDuty duty,bool& result) {
-    if(!multiController || broadcastingAudio || !isValidPlayerID(selected) || nativeActorRoom(selected)==NO_ROOM)return false;
+    if(!multiController || broadcastingAudio || !isValidController(selected) || nativeActorRoom(selected)==NO_ROOM)return false;
     if(!frequencies || !count || count>MAX_RUNTIME_TONE_SEQUENCE || !duration)return false;
     std::array<uint16_t,MAX_RUNTIME_TONE_SEQUENCE> notes{};
     for(unsigned i=0;i<count;++i)notes[i]=frequencies[i];
     const auto room=nativeActorRoom(selected);broadcastingAudio=true;result=false;
-    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state && nativeActorRoom(id)==room) {
+    for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(bound[id].state && nativeActorRoom(id)==room) {
         selectAudioController(id);const bool accepted=playToneSequence(notes.data(),count,duration,pause,duty);if(id==selected)result=accepted;
     }
     selectAudioController(selected);broadcastingAudio=false;return true;
 }
 bool isNativeWorldEvent() {return multiController && worldEvent;}
 bool broadcastNativeMessage(const char* text) {
-    if(!isNativeWorldEvent() || !isValidPlayerID(selected))return false;
+    if(!isNativeWorldEvent() || !isValidController(selected))return false;
     const std::string message=text?text:"";const auto owner=selected,room=nativeActorRoom(owner);
     worldEvent=false;
-    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)
+    for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)
         if(bound[id].state && nativeControllerWorld(id)==nativeWorldIndex() &&
            (combat.active || nativeActorRoom(id)==room) && room!=NO_ROOM) {
             selectController(id);setGameMessage(message.c_str());
@@ -243,11 +244,11 @@ bool broadcastNativeMessage(const char* text) {
 namespace {
 PlayerID combatController(Entity* entity) {
     if(!entity)return INVALID_PLAYER_ID;
-    if(entity->type==ENTITY_PLAYER)return entity->ownerPlayerID;
+    if(entity->type==ENTITY_PLAYER)return entity->nativeControllerID;
     auto* pending=combat.monsterAttackTarget;
-    if(pending && pending->type==ENTITY_PLAYER && nativeEntityRoom(pending)==nativeEntityRoom(entity))return pending->ownerPlayerID;
+    if(pending && pending->type==ENTITY_PLAYER && nativeEntityRoom(pending)==nativeEntityRoom(entity))return pending->nativeControllerID;
     const auto room=nativeEntityRoom(entity);int distance=std::numeric_limits<int>::max();PlayerID result=INVALID_PLAYER_ID;
-    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id) {
+    for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id) {
         auto* actor=nativeActor(id);
         if(!actor || !bound[id].state || nativeActorRoom(id)!=room || actor->character.state!=STATE_ALIVE)continue;
         const int candidate=getEntityGridDistance(*entity,*actor);
@@ -258,7 +259,7 @@ PlayerID combatController(Entity* entity) {
 void updateNativeCombat() {
     if(!combat.active)return;
     auto* current=getCurrentCombatant();const auto id=combatController(current);
-    if(!isValidPlayerID(id)) {
+    if(!isValidController(id)) {
         if(current && current->type!=ENTITY_PLAYER && combat.phase==COMBAT_TURN)nextTurn();
         return;
     }
@@ -275,7 +276,7 @@ void updateNativeCombat() {
 }
 bool clearNativeMapEffects() {
     static bool clearing=false;
-    if(!multiController || clearing || !isValidPlayerID(selected))return false;
+    if(!multiController || clearing || !isValidController(selected))return false;
     const auto owner=selected;clearing=true;bool found=false;
     if(gameState==GAME_FOREST){clearMapEffects();clearing=false;return true;}
     for(uint8_t room=0;room<dungeon.roomCount;++room)if(bindNativeWorldRoom(dungeon,room)) {
@@ -286,7 +287,7 @@ bool clearNativeMapEffects() {
 }
 void scanNativeRoomAwareness() {
     const auto owner=selected,room=nativeActorRoom(selected);
-    for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id) {
+    for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id) {
         auto* actor=nativeActor(id);
         if(!bound[id].state || !actor || nativeActorRoom(id)!=room || actor->character.state!=STATE_ALIVE)continue;
         selectController(id);uint8_t count=0;auto* entities=getActiveMapEntities(count);
@@ -295,7 +296,7 @@ void scanNativeRoomAwareness() {
     selectController(owner);
 }
 void prepareNativeCombatant(Entity* entity) {
-    const auto id=combatController(entity);if(isValidPlayerID(id))selectController(id);
+    const auto id=combatController(entity);if(isValidController(id))selectController(id);
 }
 void tickNativeCombatRooms() {
     const auto owner=selected;bool visited[NATIVE_WORLD_CAPACITY][MAX_ROOMS+1]{};
@@ -303,7 +304,7 @@ void tickNativeCombatRooms() {
         const auto room=nativeEntityRoom(combat.initiativeOrder[i]);
         if(room==NO_ROOM || visited[nativeWorldIndex()][room])continue;visited[nativeWorldIndex()][room]=true;
         bool controllerFound=false;
-        for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state && nativeActorRoom(id)==room) {
+        for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(bound[id].state && nativeActorRoom(id)==room) {
             selectController(id);controllerFound=true;break;
         }
         if(!controllerFound && room<MAX_ROOMS)bindNativeWorldRoom(dungeon,room);
@@ -321,7 +322,7 @@ void advance(uint32_t elapsed) {
             const auto original=selected;
             // One clock increment per world tick, independent of client count.
             bool visited[NATIVE_WORLD_CAPACITY][MAX_ROOMS+1]{};
-            for(uint8_t id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state) {
+            for(uint8_t id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(bound[id].state) {
                 selectController(id);
                 if(bound[id].connected){WorldEventScope inputScope((gameState==GAME_DUNGEON || gameState==GAME_FOREST) && !menuState.isOpen && !isCharacterSheetVisible() && !isInventoryMenuOpen() && !combat.inspecting);handleButtons();}
                 const auto room=nativeActorRoom(id);
@@ -334,10 +335,10 @@ void advance(uint32_t elapsed) {
                 renderController();storeController();
             }
             bool combatUpdated[NATIVE_WORLD_CAPACITY]{};
-            for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(bound[id].state && !combatUpdated[nativeControllerWorld(id)]) {
+            for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(bound[id].state && !combatUpdated[nativeControllerWorld(id)]) {
                 selectController(id);combatUpdated[nativeWorldIndex()]=true;updateNativeCombat();
             }
-            if(isValidPlayerID(original))selectController(original);
+            if(isValidController(original))selectController(original);
         }
      }
 }

@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "runtime_health.h"
 #include "server_limits.h"
 #include "service.h"
 #include <boost/asio.hpp>
@@ -9,8 +10,10 @@
 #include <memory>
 #include <vector>
 #include <filesystem>
+#include <optional>
 #ifdef __linux__
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -39,12 +42,13 @@ public:
     bool countsPrincipal(const std::string& principal) const {return principalCounted_&&!finished_&&connection_.verifiedPrincipal==principal;}
     void start();
     void stop();
-    void finish();
+    void finish(const char* reason="transport_error",unsigned code=1006,const char* initiator="transport",int error=0);
+    void pulse();
 private:
     void arm(unsigned seconds);
     void read();
     void send(std::string text, bool close = false);
-    void close(websocket::close_code code);
+    void close(websocket::close_code code,const char* reason="normal_close");
     websocket::stream<beast::basic_stream<StreamProtocol>> ws_;
     ServeLease lease_;
     bool hasLease_=false,principalCounted_=false;
@@ -56,6 +60,10 @@ private:
     ConnectionState connection_;
     uint16_t port_;
     std::string output_;
+    std::optional<std::pair<std::string,bool>> deferred_;
+    Liveness liveness_;
+    std::chrono::steady_clock::time_point createdAt_=std::chrono::steady_clock::now();
+    std::string closeReason_;unsigned closeCode_=1000;bool pinging_=false;
     std::shared_ptr<http::response<http::string_body>> page_;
     unsigned controls_ = 0;
     std::chrono::steady_clock::time_point controlWindow_ = std::chrono::steady_clock::now();
@@ -88,9 +96,24 @@ public:
             if(!path.is_absolute() || path.lexically_normal()!=path || options_.socket.size()>=100 ||
                std::filesystem::canonical(parent)!=parent || ::lstat(parent.c_str(),&directory)!=0 ||
                !S_ISDIR(directory.st_mode)||directory.st_uid!=::geteuid()||
-               (serve->cloudflare?(directory.st_gid!=serve->peerGid||(directory.st_mode&0777)!=0710):(directory.st_mode&0077)!=0) ||
-               ::lstat(options_.socket.c_str(),&existing)==0 || errno!=ENOENT)
+               (serve->cloudflare?(directory.st_gid!=serve->peerGid||(directory.st_mode&0777)!=0710):(directory.st_mode&0077)!=0))
                 throw std::runtime_error("unsafe local socket path");
+            // Exclusive same-UID lock survives as a file, not as a held lock,
+            // after a crash. Never unlink a socket belonging to a running server.
+            health_=std::make_unique<RuntimeHealth>(options_.socket+".health");
+            if(::lstat(options_.socket.c_str(),&existing)==0){
+                if(!S_ISSOCK(existing.st_mode)||existing.st_uid!=::geteuid()||
+                   (existing.st_mode&0777)!=(serve->cloudflare?0660:0600))throw std::runtime_error("unsafe existing socket");
+                const int probe=::socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
+                if(probe<0)throw std::runtime_error("socket probe failed");
+                sockaddr_un address{};address.sun_family=AF_UNIX;
+                std::copy(options_.socket.begin(),options_.socket.end(),address.sun_path);
+                const int result=::connect(probe,reinterpret_cast<sockaddr*>(&address),sizeof(address));const int failure=errno;::close(probe);
+                struct stat again{};
+                if(result==0||failure!=ECONNREFUSED||::lstat(options_.socket.c_str(),&again)!=0||
+                   again.st_dev!=existing.st_dev||again.st_ino!=existing.st_ino||::unlink(options_.socket.c_str())!=0)
+                    throw std::runtime_error("existing socket cannot be retired safely");
+            }else if(errno!=ENOENT)throw std::runtime_error("socket inspection failed");
             ::umask(0077);
             localAcceptor_=std::make_unique<asio::local::stream_protocol::acceptor>(io);
             localAcceptor_->open();localAcceptor_->bind(asio::local::stream_protocol::endpoint(options_.socket));
@@ -145,6 +168,7 @@ public:
             io_.stop();
         });
     }
+    void summary(){auto data=service.metrics();data["event"]="RUN_SUMMARY";data["max_tick_us"]=maxTick_;data["ticks"]=ticks_;data["outbound_response_queue_max"]=1;data["obsolete_visual_queue"]=0;std::clog<<json::serialize(data)<<'\n';}
     Service service;
     bool privateMode() const {return policy_!=nullptr;}
     ServePolicy* policy() {return policy_.get();}
@@ -162,7 +186,16 @@ private:
                 for(auto& item:peers_)peers.push_back(item.second);
                 for(auto& peer:peers)peer->checkAdmission();
             }
-            service.tick(); tick();
+            std::vector<std::shared_ptr<Peer>> current;for(auto& entry:peers_)current.push_back(entry.second);
+            for(auto& peer:current)peer->pulse();
+            const auto started=std::chrono::steady_clock::now();service.tick();
+            ++ticks_;maxTick_=std::max<uint64_t>(maxTick_,std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-started).count());
+            const auto duration=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count();
+            if(duration>100&&started-lastSlowTick_>=5s){std::clog<<"{\"event\":\"SLOW_TICK\",\"duration_ms\":"<<duration<<",\"connections\":"<<peers_.size()<<"}\n";lastSlowTick_=started;}
+#ifdef __linux__
+            if(health_&&started-lastHealth_>=5s){health_->pulse();lastHealth_=started;}
+#endif
+            tick();
         } });
     }
     void accept()
@@ -201,6 +234,8 @@ private:
 #ifdef __linux__
     std::unique_ptr<asio::local::stream_protocol::acceptor> localAcceptor_;
     std::unique_ptr<OwnedSocketPath> ownedPath_;
+    std::unique_ptr<RuntimeHealth> health_;
+    std::chrono::steady_clock::time_point lastHealth_{};
 #endif
     asio::io_context& io_;
     tcp::acceptor acceptor_;
@@ -210,7 +245,9 @@ private:
     uint64_t nextSerial_ = 1;
     unsigned accepts_ = 0;
     std::chrono::steady_clock::time_point acceptWindow_ = std::chrono::steady_clock::now();
+    uint64_t ticks_=0,maxTick_=0;
     bool stopped_ = false;
+    std::chrono::steady_clock::time_point lastSlowTick_{};
 };
 
 Peer::Peer(StreamSocket socket, Server& owner, uint64_t serial, uint16_t port)
@@ -219,19 +256,20 @@ Peer::Peer(StreamSocket socket, Server& owner, uint64_t serial, uint16_t port)
 { connection_.serial = serial; }
 bool Peer::checkAdmission() {
     if(finished_)return false;
-    if(hasLease_ && !owner_.policy()->valid(lease_)){finish();return false;}
+    if(owner_.service.replaced(connection_)){close(websocket::close_code(4001),"replaced_by_new_connection");return false;}
+    if(hasLease_ && !owner_.policy()->valid(lease_)){close(websocket::close_code(4003),"authorization_expired_or_revoked");return false;}
     return true;
 }
 void Peer::arm(unsigned seconds)
 {
     ioDeadline_.expires_after(std::chrono::seconds(seconds));
-    ioDeadline_.async_wait([self = shared_from_this()](Error ec) { if (!ec) self->finish(); });
+    ioDeadline_.async_wait([self = shared_from_this()](Error ec) { if (!ec) self->finish("write_deadline",1006,"server"); });
 }
 void Peer::start()
 {
     auto self = shared_from_this();
     authDeadline_.expires_after(std::chrono::seconds(AUTH_SECONDS));
-    authDeadline_.async_wait([self](Error ec) { if (!ec) self->finish(); });
+    authDeadline_.async_wait([self](Error ec) { if (!ec) self->finish("authentication_deadline",1008,"server"); });
     upgrade_.header_limit(MAX_REQUEST_BYTES);
     upgrade_.body_limit(0);
     http::async_read(ws_.next_layer(), input_, upgrade_, [self](Error ec, std::size_t)
@@ -308,8 +346,8 @@ void Peer::start()
         }
         websocket::stream_base::timeout timeouts;
         timeouts.handshake_timeout = std::chrono::seconds(AUTH_SECONDS);
-        timeouts.idle_timeout = std::chrono::seconds(IO_SECONDS);
-        timeouts.keep_alive_pings = true;
+        timeouts.idle_timeout = websocket::stream_base::none();
+        timeouts.keep_alive_pings = false; // One server ping policy, no competing read deadline.
         self->ws_.set_option(timeouts);
         self->ws_.read_message_max(MAX_REQUEST_BYTES);
         self->ws_.control_callback([weak = self->weak_from_this()](websocket::frame_type, beast::string_view)
@@ -318,13 +356,15 @@ void Peer::start()
             {
                 const auto now = std::chrono::steady_clock::now();
                 if (now - peer->controlWindow_ >= 1s) { peer->controlWindow_ = now; peer->controls_ = 0; }
-                if (++peer->controls_ > 40) peer->finish();
+                peer->liveness_.traffic(now);
+                if (++peer->controls_ > 40) peer->finish("control_rate_limit",1008,"server");
             }
         });
         self->ws_.async_accept(req, [self](Error error)
         {
             if (error || self->finished_) { self->finish(); return; }
-            self->opened_ = true;
+            self->opened_ = true;self->liveness_.traffic(std::chrono::steady_clock::now());
+            auto event=self->owner_.service.describe(self->connection_);event["event"]="CONNECTED";std::clog<<json::serialize(event)<<'\n';
             self->send(Service::hello(self->owner_.privateMode()));
         });
     });
@@ -332,16 +372,18 @@ void Peer::start()
 void Peer::read()
 {
     if (finished_ || stopping_ || closing_ || !checkAdmission()) return;
-    arm(IO_SECONDS);
     ws_.async_read(input_, [self = shared_from_this()](Error ec, std::size_t)
     {
-        if (ec || self->finished_) { self->finish(); return; }
+        if(self->finished_)return;
+        if(ec){if(ec==websocket::error::closed)self->finish("browser_close",self->ws_.reason().code,"client");else self->finish("read_error",1006,"transport",ec.value());return;}
+        self->liveness_.traffic(std::chrono::steady_clock::now());
         if (self->closing_ || !self->checkAdmission()) return;
         if (!self->ws_.got_text())
         { self->send(json::serialize(failure("", "TextRequired")), true); return; }
         const auto text = beast::buffers_to_string(self->input_.data());
         self->input_.consume(self->input_.size());
         auto result = self->owner_.service.handle(self->connection_, text);
+        if(result.close){auto parsed=json::parse(result.text).as_object();if(auto* error=parsed.if_contains("error"))self->closeReason_=std::string(error->as_object().at("code").as_string());}
         if (self->connection_.authenticated) self->authDeadline_.cancel();
         self->send(std::move(result.text), result.close);
     });
@@ -349,7 +391,8 @@ void Peer::read()
 void Peer::send(std::string text, bool shouldClose)
 {
     if (finished_) return;
-    if (text.size() > MAX_RESPONSE_BYTES) { finish(); return; }
+    if (text.size() > MAX_RESPONSE_BYTES) { finish("response_limit",1008,"server"); return; }
+    if(pinging_){if(deferred_){finish("outbound_bound",1008,"server");return;}deferred_=std::make_pair(std::move(text),shouldClose);return;}
     output_ = std::move(text);
     writing_ = true;
     arm(WRITE_SECONDS);
@@ -357,30 +400,34 @@ void Peer::send(std::string text, bool shouldClose)
     ws_.async_write(asio::buffer(output_), [self = shared_from_this(), shouldClose](Error ec, std::size_t)
     {
         self->writing_ = false;
-        if (ec || self->finished_) { self->finish(); return; }
+        if(self->finished_)return;
+        if(ec){self->finish("write_error",1006,"transport",ec.value());return;}
         self->ioDeadline_.cancel();
         self->output_.clear();
-        if (shouldClose || self->stopping_) self->close(shouldClose ? websocket::close_code::policy_error : websocket::close_code::normal);
+        if (shouldClose || self->stopping_) self->close(shouldClose ? websocket::close_code::policy_error : websocket::close_code(self->closeCode_),self->closeReason_.empty()?"server_shutdown":self->closeReason_.c_str());
         else self->read();
     });
 }
-void Peer::close(websocket::close_code code)
+void Peer::close(websocket::close_code code,const char* reason)
 {
     if (finished_ || closing_) return;
-    closing_ = true;
-    arm(AUTH_SECONDS);
-    ws_.async_close(code, [self = shared_from_this()](Error) { self->finish(); });
+    closeReason_=reason;closeCode_=static_cast<unsigned>(code);
+    if(writing_||pinging_){stopping_=true;return;}
+    closing_ = true;arm(AUTH_SECONDS);
+    websocket::close_reason detail(code);detail.reason=closeReason_;
+    ws_.async_close(detail, [self = shared_from_this()](Error ec) { self->finish(self->closeReason_.c_str(),self->closeCode_,"server",ec.value()); });
 }
 void Peer::stop()
 {
     stopping_ = true;
     if (!opened_) finish();
-    else if (!writing_) close(websocket::close_code::normal);
+    else if (!writing_&&!pinging_) close(websocket::close_code::normal,"server_shutdown");
 }
-void Peer::finish()
+void Peer::finish(const char* reason,unsigned code,const char* initiator,int error)
 {
     if (finished_) return;
     finished_ = true;
+    if(opened_){auto event=owner_.service.describe(connection_);event["event"]="DISCONNECTED";event["reason"]=reason;event["close_code"]=code;event["initiator"]=initiator;event["transport_error"]=error;event["duration_ms"]=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-createdAt_).count();std::clog<<json::serialize(event)<<'\n';}
     authDeadline_.cancel(); ioDeadline_.cancel();
     Error ignored;
     ws_.next_layer().socket().shutdown(tcp::socket::shutdown_both, ignored);
@@ -388,12 +435,25 @@ void Peer::finish()
     owner_.service.detach(connection_);
     owner_.removed(connection_.serial);
 }
+void Peer::pulse(){
+ if(finished_||!opened_||closing_||stopping_||!checkAdmission())return;
+ const auto now=std::chrono::steady_clock::now();
+ if(liveness_.stale(now)){finish("heartbeat_timeout",1001,"server");return;}
+ if(liveness_.pingDue(now)&&!writing_&&!pinging_){
+  liveness_.pingAt=now;pinging_=true;arm(WRITE_SECONDS);
+  ws_.async_ping({},[self=shared_from_this()](Error ec){self->pinging_=false;self->ioDeadline_.cancel();if(self->finished_)return;if(ec){self->finish("ping_error",1006,"transport",ec.value());return;}
+   if(self->stopping_){self->close(websocket::close_code(self->closeCode_),self->closeReason_.empty()?"server_shutdown":self->closeReason_.c_str());return;}
+   if(self->deferred_){auto response=std::move(*self->deferred_);self->deferred_.reset();self->send(std::move(response.first),response.second);}
+  });
+ }
+}
 int runServer(uint16_t port, uint32_t seed, uint32_t duration, const SecretDigest& gate, bool partyMode,const ServeOptions* serve)
 {
     asio::io_context io(1);
     Server server(io, port, seed, gate, partyMode,serve);
     server.run(duration);
     io.run();
+    server.summary();
     std::cout << "stopped\n" << std::flush;
     return 0;
 }

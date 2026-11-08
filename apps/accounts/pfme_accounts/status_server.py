@@ -14,7 +14,7 @@ class Handler(BaseHTTPRequestHandler):
             data=json.loads(Path('/status/current.json').read_text())
             data['online']=bool(data.get('backend_online')) and time.time()-data['updated_at']<25
             data['state']='Online' if data['online'] else 'Offline'
-        except (OSError,ValueError):data={'online':False,'state':'Offline','active_players':0,'capacity':4,'players':[],'connected_accounts':0,'waiting_usernames':[]}
+        except (OSError,ValueError):data={'online':False,'state':'Offline','active_players':0,'capacity':20,'party_capacity':4,'players':[],'connected_accounts':0,'waiting_usernames':[]}
         data['usernames']=', '.join(x['username'] for x in data['players']) or 'None'
         body=json.dumps(data).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(body)

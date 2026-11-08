@@ -34,6 +34,7 @@ public:
     ControllerError detach(const PlayerHandle&,uint64_t serial);
     ControllerError leave(const PlayerHandle&,uint64_t serial);
     size_t occupied() const;
+    ControllerError expire(const PlayerHandle&);
 private:
     struct Slot { PlayerHandle handle;uint64_t lease=0;std::unique_ptr<ControllerState> state; };
     GameSession& session_;

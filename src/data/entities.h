@@ -44,6 +44,9 @@ struct Entity
     // TEAM_PLAYER identifies allegiance, not which handheld controls this
     // entity. Multiplayer gameplay uses this compact owner independently.
     PlayerID ownerPlayerID = INVALID_PLAYER_ID;
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    uint8_t nativeControllerID = INVALID_PLAYER_ID;
+#endif
 
     uint8_t x;
     uint8_t y;

@@ -130,7 +130,7 @@ def main():
             try:
                 assert fifth.call('authenticate',secret=secret)['ok']
                 before=clients[0].call('players')['data']['players']
-                assert fifth.call('join',name='Fifth')['error']['code']=='Full'
+                assert fifth.call('join',name='Fifth')['ok'];assert fifth.call('play')['ok'];assert fifth.call('party_status')['error']['code']=='NotInParty';assert fifth.call('leave')['ok']
                 assert clients[0].call('players')['data']['players']==before
                 assert fifth.call('screen',since='0',offset=0)['error']['code']=='NotBound'
             finally:fifth.close()

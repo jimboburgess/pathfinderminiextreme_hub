@@ -291,9 +291,13 @@ bool tryMovePlayerAuthoritative(
     {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
         if(pfme::runtime::nativeRoomsActive() && combat.active &&
-           (!getCurrentCombatant() || getCurrentCombatant()->ownerPlayerID!=ownerPlayerID || getCurrentCombatant()->type!=ENTITY_PLAYER))return false;
+           (!getCurrentCombatant() || getCurrentCombatant()->nativeControllerID!=ownerPlayerID || getCurrentCombatant()->type!=ENTITY_PLAYER))return false;
 #endif
-        Entity* forestPlayer = getPlayerEntityByOwner(
+        Entity* forestPlayer =
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+            pfme::runtime::nativeRoomsActive()?getPlayerEntityByController(forestEntities,forestEntityCount,ownerPlayerID):
+#endif
+            getPlayerEntityByOwner(
             forestEntities, forestEntityCount, ownerPlayerID);
         if (forestPlayer == nullptr && ownerPlayerID == SINGLE_PLAYER_ID)
             forestPlayer = getPlayerEntity(forestEntities, forestEntityCount);
@@ -304,7 +308,11 @@ bool tryMovePlayerAuthoritative(
     // Find the player.
     //--------------------------------------------------
 
-    Entity* player = getPlayerEntityByOwner(
+    Entity* player =
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+        pfme::runtime::nativeRoomsActive()?getPlayerEntityByController(dungeon.entities,dungeon.entityCount,ownerPlayerID):
+#endif
+        getPlayerEntityByOwner(
         dungeon.entities, dungeon.entityCount, ownerPlayerID);
     if (player == nullptr && ownerPlayerID == SINGLE_PLAYER_ID)
         player = getPlayerEntity(dungeon.entities, dungeon.entityCount);

@@ -1,6 +1,7 @@
 #pragma once
 #include "multiplayer/multiplayer_types.h"
 #include <array>
+#include "controller_capacity.h"
 #include <cstddef>
 #include <cstdint>
 namespace pfme { namespace runtime {

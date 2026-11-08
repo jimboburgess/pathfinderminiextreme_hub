@@ -45,7 +45,7 @@ Entity* getActiveMapPlayer()
 
     if (entities == nullptr) return nullptr;
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
-    if(pfme::runtime::nativeRoomsActive())return getPlayerEntityByOwner(entities,entityCount,pfme::runtime::selectedController());
+    if(pfme::runtime::nativeRoomsActive())return getPlayerEntityByController(entities,entityCount,pfme::runtime::selectedController());
 #endif
     if (multiplayerSession.isActive())
     {

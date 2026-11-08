@@ -24,15 +24,15 @@ void resetNativeRoomFields(){
  switchRoomFields(0);
 }
 void loadPresentation(unsigned index) {
-    if(index>=MAX_MULTIPLAYER_PLAYERS)throw std::out_of_range("Controller index");
+    if(index>=NATIVE_CONTROLLER_CAPACITY)throw std::out_of_range("Controller index");
     for(auto* field=fields();field;field=field->next)field->load(index);
 }
 void resetPresentation(unsigned index) {
-    if(index>=MAX_MULTIPLAYER_PLAYERS)throw std::out_of_range("Controller index");
+    if(index>=NATIVE_CONTROLLER_CAPACITY)throw std::out_of_range("Controller index");
     for(auto* field=fields();field;field=field->next)field->reset(index);
 }
 void switchPresentation(unsigned previous,unsigned next) {
-    if(previous>=MAX_MULTIPLAYER_PLAYERS || next>=MAX_MULTIPLAYER_PLAYERS)
+    if(previous>=NATIVE_CONTROLLER_CAPACITY || next>=NATIVE_CONTROLLER_CAPACITY)
         throw std::out_of_range("Controller index");
     if(previous==next)return;
     for(auto* field=fields();field;field=field->next)field->save(previous);

@@ -151,3 +151,20 @@ if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
         "${PROJECT_SOURCE_DIR}/tests/server/browser_client_tests.cjs"
         "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --text)
 endif()
+
+if(BUILD_TESTING)
+ add_executable(pfme_lifecycle_tests ../../tests/server/lifecycle_tests.cpp)
+ target_link_libraries(pfme_lifecycle_tests PRIVATE pfme_server_support)
+ add_test(NAME pfme_connection_lifecycle COMMAND pfme_lifecycle_tests)
+endif()
+
+if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
+ add_test(NAME pfme_browser_auto_reconnect COMMAND "${PFME_CLIENT_NODE}"
+  "${PROJECT_SOURCE_DIR}/tests/server/browser_client_tests.cjs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --serve --retry)
+endif()
+
+if(BUILD_TESTING)
+ add_test(NAME pfme_websocket_idle COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/server/run_idle.py" "$<TARGET_FILE:pfme_server>")
+ set_tests_properties(pfme_websocket_idle PROPERTIES TIMEOUT 75 RUN_SERIAL TRUE)
+endif()

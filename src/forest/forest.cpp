@@ -213,6 +213,12 @@ static void initForest()
 
     if (playerEntity)
     {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+        // Bind the authored initial actor before owner-filtered lookup. Otherwise
+        // a second actor would be spawned and initiative could target an orphan.
+        playerEntity->nativeControllerID=pfme::runtime::selectedController();
+        playerEntity->ownerPlayerID=pfme::runtime::nativePartyPlayerID(playerEntity->nativeControllerID);
+#endif
         playerEntity->character = player;
 
         playerEntity->sprite =
@@ -267,14 +273,14 @@ namespace pfme { namespace runtime {
 void resetNativeForest(){for(unsigned i=0;i<MAX_ENTITIES;++i)forestEntities[i]=Entity{};forestEntityCount=0;counts[nativeWorldIndex()]=0;}
 void selectNativeForestWorld(unsigned previous,unsigned next){counts[previous]=forestEntityCount;forestEntities=forestResidents[next];forestEntityCount=counts[next];}
 bool enterNativeForestController(bool fresh){
- const auto id=selectedController();if(!isValidPlayerID(id))return false;
+ const auto id=selectedController();if(!isValidController(id))return false;
  switchRoomFields(MAX_ROOMS);
- if(fresh){abortCombat();gameState=GAME_FOREST;initForest();auto* first=getPlayerEntity(forestEntities,forestEntityCount);if(first)first->ownerPlayerID=id;}
- auto* actor=getPlayerEntityByOwner(forestEntities,forestEntityCount,id);
+ if(fresh){abortCombat();gameState=GAME_FOREST;initForest();auto* first=getPlayerEntity(forestEntities,forestEntityCount);if(first){first->nativeControllerID=id;first->ownerPlayerID=nativePartyPlayerID(id);}}
+ auto* actor=getPlayerEntityByController(forestEntities,forestEntityCount,id);
  if(!actor){
   for(int y=FOREST_HEIGHT-2;y>0 && !actor;--y)for(int x=FOREST_WIDTH/2;x<FOREST_WIDTH && !actor;++x)
    if(getForestTile(x,y)==TILE_GRASS && !getEntityAt(forestEntities,forestEntityCount,x,y))actor=spawnEntity(forestEntities,forestEntityCount,ENTITY_PLAYER,x,y);
-  if(!actor)return false;actor->ownerPlayerID=id;actor->character=player;actor->sprite=getPlayerSprite(player.characterClass);
+  if(!actor)return false;actor->nativeControllerID=id;actor->ownerPlayerID=nativePartyPlayerID(id);actor->character=player;actor->sprite=getPlayerSprite(player.characterClass);
  }
  adoptNativeForestActor(id,actor);gameState=GAME_FOREST;closeMenu();
  previousPlayerPosition={actor->x,actor->y};previousMoveDirection=moveDirection;

@@ -70,6 +70,10 @@ const Entity* getPlayerEntityByOwner(
 bool isPlayerEntity(const Entity& entity);
 bool isLocalPlayerEntity(const Entity& entity, PlayerID localPlayerID);
 PlayerID getOwningPlayerID(const Entity& entity);
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+Entity* getPlayerEntityByController(Entity[],uint8_t,uint8_t);
+const Entity* getPlayerEntityByController(const Entity[],uint8_t,uint8_t);
+#endif
 
 const char* getEntityName(const Entity* entity);
 

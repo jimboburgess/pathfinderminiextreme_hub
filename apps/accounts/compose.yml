@@ -14,6 +14,15 @@ x-bounds: &bounds
 services:
   game:
     <<: *bounds
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/pfme_server", "--healthcheck", "/back/backend.sock.health"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    ulimits:
+      nofile: {soft: 256, hard: 256}
     image: ${PFME_GAME_IMAGE:?Pin the verified game image}
     user: "999:980"
     network_mode: none

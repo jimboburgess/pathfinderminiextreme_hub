@@ -50,4 +50,9 @@ ControllerError ControllerSlots::leave(const PlayerHandle& handle,uint64_t seria
     slots_[player.id]=Slot{};return ControllerError::Ok;
 }
 size_t ControllerSlots::occupied() const {size_t count=0;for(const auto& slot:slots_)if(slot.state)++count;return count;}
+ControllerError ControllerSlots::expire(const PlayerHandle& handle){
+ Slot* slot=nullptr;SessionPlayer player;auto error=resolve(handle,slot,player);if(error!=ControllerError::Ok)return error;
+ if(slot->lease)return ControllerError::AlreadyConnected;
+ if(session_.leave(handle)!=SessionError::Ok)return ControllerError::InvalidHandle;slots_[player.id]=Slot{};return ControllerError::Ok;
+}
 }}

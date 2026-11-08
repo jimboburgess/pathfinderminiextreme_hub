@@ -244,7 +244,7 @@ Entity* getPlayerEntity(
         if (entities[i].type == ENTITY_PLAYER) {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
             if (pfme::runtime::nativeRoomsActive() &&
-                entities[i].ownerPlayerID != pfme::runtime::selectedController()) continue;
+                entities[i].nativeControllerID != pfme::runtime::selectedController()) continue;
 #endif
             return &entities[i];
         }
@@ -265,7 +265,7 @@ const Entity* getPlayerEntity(
         if (entities[i].type == ENTITY_PLAYER) {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
             if (pfme::runtime::nativeRoomsActive() &&
-                entities[i].ownerPlayerID != pfme::runtime::selectedController()) continue;
+                entities[i].nativeControllerID != pfme::runtime::selectedController()) continue;
 #endif
             return &entities[i];
         }
@@ -361,3 +361,12 @@ const char* getEntityName(const Entity* entity)
             return "Unknown";
     }
 }
+
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+Entity* getPlayerEntityByController(Entity entities[],uint8_t count,uint8_t controller){
+ for(unsigned i=0;i<count;++i)if(entities[i].active&&isPlayerEntity(entities[i])&&entities[i].nativeControllerID==controller)return &entities[i];return nullptr;
+}
+const Entity* getPlayerEntityByController(const Entity entities[],uint8_t count,uint8_t controller){
+ for(unsigned i=0;i<count;++i)if(entities[i].active&&isPlayerEntity(entities[i])&&entities[i].nativeControllerID==controller)return &entities[i];return nullptr;
+}
+#endif
