@@ -63,21 +63,22 @@ Do not terminate an unrelated process to free a port.
 
 | Browser input | Original handheld input |
 | --- | --- |
-| Down / S | Encoder clockwise |
-| Up / W | Encoder counterclockwise |
-| Enter | Encoder press |
-| Space | Button A |
-| Escape | Button B |
-| Hold Enter | Original encoder long press (750 ms) |
+| E / Right arrow | Encoder clockwise |
+| Q / Left arrow | Encoder counterclockwise |
+| W / Space | Encoder press |
+| A / Enter | Button A |
+| D / Escape | Button B |
+| Hold W or Space | Original encoder long press (750 ms) |
 
 Onscreen controls emulate the same inputs; they do not select game menu rows
 directly. Rotation changes class, weapon style, menu selection or facing according
-to the original state. In a dungeon, rotate to face a tile and press Enter to step.
-Menu selection usually uses Space or Enter; attack targeting confirms with Space.
+to the original state. In a dungeon, rotate to face a tile and press W or Space to step.
+Menu selection follows the handheld prompt: A/Enter for Button A, W/Space for
+encoder press. Attack targeting confirms with A/Enter.
 Original screen prompts and input guards remain authoritative.
 
 OS key-repeat events are ignored. Held rotary keys repeat deliberately after
-450 ms, then at 220 ms intervals when the input queue is available. Holding Enter
+450 ms, then at 220 ms intervals when the input queue is available. Holding W or Space
 does not generate repeated movement presses; the server runs the original
 long-press handler. Input is ignored while typing in form fields or using controls.
 Blur/hidden events release all held inputs. The server also releases held pins
@@ -96,28 +97,29 @@ defeat remains a genuine possible outcome. No stats or monster outcomes are fixe
 by the browser.
 
 1. Confirm the original title, sprites and A: New Game / B: Load Game prompts.
-2. Press Space for New Game. Use Up/Down to inspect the existing classes, then
-   choose Fighter with Enter. Choose Blades with Enter.
-3. Inspect the rolled character sheet; rotate to scroll it. Press Space to open
-   the original acceptance menu and Space again to accept. Pause briefly between
-   selections to respect the handheld’s transition guard.
-4. In town, hold Enter for about a second to open the character sheet. Release
-   Enter; Escape closes the sheet. Confirm blur or focus loss does not leave a
+2. Press A or Enter for New Game. Use Q/E or Left/Right to inspect the existing classes, then
+   choose Fighter with W/Space. Choose Blades with W/Space.
+3. Inspect the rolled character sheet; rotate to scroll it. Press A/Enter to open
+   the original acceptance menu and A/Enter again to accept. Pause briefly between
+   selections to respect the handheld’s transition guard. At the name step,
+   type letters/numbers and press Space to confirm before continuing.
+4. In town, hold W or Space for about a second to open the character sheet. Release
+   the key; D/Escape closes the sheet. Confirm blur or focus loss does not leave a
    button held.
-5. Select Explore Dungeon in the original town list: from Stay Home, Down twice
-   selects it. Press Space. Confirm the actual room tiles, Fighter sprite, facing
+5. Select Explore Dungeon in the original town list: from Stay Home, E/Right twice
+   selects it. Press A/Enter. Confirm the actual room tiles, Fighter sprite, facing
    cursor, door, object graphics and bottom message bar.
-6. Press Enter once to move east one tile. Rotate to a wall and try stepping into
-   it; confirm movement is blocked. Space opens the original map menu. Down/Up
+6. Press W/Space once to move east one tile. Rotate to a wall and try stepping into
+   it; confirm movement is blocked. A/Enter opens the original map menu. E/Q or Right/Left
    navigates it and Escape cancels. Restore east facing before continuing.
 7. In the entrance room, walk east to and through its door. The native route takes
    12 eastward steps from the original (2,6) spawn. Confirm a real room transition,
    different geometry and generated creatures. Do not use coordinates as wire
    commands: only the virtual handheld inputs exist.
 8. Let creatures notice/approach you, or explore toward them. Observe Roll for
-   Initiative and turn messages. On your turn, Space opens Menu; select Attack.
+   Initiative and turn messages. On your turn, A/Enter opens Menu; select Attack.
    Use Ranged Attack when separated, Melee Attack when adjacent. Rotate to select
-   a creature/direction and Space to confirm. Escape cancels targeting. Outside
+   a creature/direction and A/Enter to confirm. Escape cancels targeting. Outside
    menus, Escape ends your combat turn where the original game permits it.
 9. Observe attack rolls, HP changes, messages and enemy turns. Reopen the sheet to
    inspect current character state. Continue with supported attacks/actions until
@@ -139,7 +141,10 @@ Preferences adapter. Saves persist across process restarts in the per-user data
 directory documented in `NATIVE_BUILD.md`; authenticated multiplayer ownership
 and reconnect credentials remain process-local and are not save credentials.
 Browser character creation reports text-input mode with each frame so ordinary
-keyboard characters, Backspace, and Enter drive the same bounded creation model.
+letters/numbers type the name, Escape/Backspace deletes or cancels, and Space
+clicks the encoder to finish. The Q/W/E/A/D letter bindings yield to name typing
+only during that name step. Uppercase gameplay aliases work too. Holding multiple
+keys for one input keeps it held until the final key is released.
 
 During dungeon or forest exploration, the original Cast Spell menu now exposes
 supported spells. Non-hostile healing and buffs resolve without starting combat.

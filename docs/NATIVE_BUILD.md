@@ -384,8 +384,9 @@ execute them on hardware.
 
 Character creation now ends with a bounded name step. Names contain at most 15
 visible letters, numbers, or spaces plus a null terminator; an empty name becomes
-`Adventurer`. Native/browser play accepts ordinary keyboard characters,
-Backspace, and Enter. The handheld uses an encoder character wheel, A to append,
+`Adventurer`. Browser play accepts letters/numbers for the name,
+Escape/Backspace to delete or cancel, and Space to finish (encoder click).
+The handheld uses an encoder character wheel, A to append,
 B to backspace, and encoder press to finish.
 
 Save format version 10 adds that character name and provides exactly three

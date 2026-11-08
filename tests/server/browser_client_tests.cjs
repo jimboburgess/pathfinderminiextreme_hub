@@ -52,30 +52,53 @@ async function main(){
   if(textTest){
     const begin=sent.length;
     key('keydown',' ');await advance(120);key('keyup',' ');await advance(250);
-    assert(sent.slice(begin).some(r=>r.action==='a'&&r.down),'Space is Button A even if text_input is true');
+    assert(sent.slice(begin).some(r=>r.action==='encoder'&&r.down),'Space clicks the encoder even if text_input is true');
     assert(!sent.slice(begin).some(r=>r.action==='key: '),'never emit a whitespace-containing action');
     for(const char of ['!','\u00e9']){key('keydown',char);key('keyup',char);}await advance(250);
     assert(!sent.slice(begin).some(r=>r.action==='key:!'||r.action==='key:\u00e9'),'unsupported text ignored locally');
     key('keydown','q');await advance(150);assert(sent.some(r=>r.action==='key:q'),'letters still type into character name');
     assert.equal(socket.readyState,Socket.OPEN,'text controls preserve connection');
   }
+  // Contract for the requested browser defaults, including case and aliases.
+  const bindings=textTest?[['ArrowLeft','ccw'],[' ','encoder'],['ArrowRight','cw'],['Enter','a'],['Escape','b']]:
+    [['q','ccw'],['Q','ccw'],['ArrowLeft','ccw'],['w','encoder'],['W','encoder'],[' ','encoder'],['e','cw'],['E','cw'],['ArrowRight','cw'],['a','a'],['A','a'],['Enter','a'],['d','b'],['D','b'],['Escape','b']];
+  for(const [binding,action] of bindings){
+    const start=sent.length;assert(key('keydown',binding));await advance(160);key('keyup',binding.toLowerCase());await advance(180);
+    assert(sent.slice(start).some(r=>r.action===action&&r.down),binding+' sends '+action);
+    if(action!=='cw'&&action!=='ccw')assert(sent.slice(start).some(r=>r.action===action&&!r.down),binding+' releases '+action);
+  }
+  for(const target of ['INPUT','SELECT','TEXTAREA','BUTTON']){
+    const start=sent.length;for(const [binding] of bindings){assert(!key('keydown',binding,target));key('keyup',binding,target);}await advance(180);
+    assert(!sent.slice(start).some(r=>r.action),'form controls retain normal keyboard input');
+  }
+  if(!textTest){
+    for(const old of ['ArrowUp','ArrowDown','s','S'])assert(!key('keydown',old),'old binding removed: '+old);
+    const start=sent.length;
+    key('keydown','w');await advance(160);key('keydown',' ');await advance(800);key('keyup','w');await advance(160);
+    assert.equal(sent.slice(start).filter(r=>r.action==='encoder'&&r.down).length,1,'two encoder aliases generate one held press');
+    assert(!sent.slice(start).some(r=>r.action==='encoder'&&!r.down),'releasing one alias keeps the other held');
+    key('keyup',' ');await advance(180);assert(sent.slice(start).some(r=>r.action==='encoder'&&!r.down),'last alias releases encoder');
+  }else{
+    for(const letter of ['w','e','a','d']){const start=sent.length;key('keydown',letter);await advance(160);key('keyup',letter);assert(sent.slice(start).some(r=>r.action==='key:'+letter),'name-entry letters override gameplay aliases');}
+  }
   const initial=lastPixels;
   for(const scale of ['1','2','3','4','5','fit']){element('scale').value=scale;element('scale').onchange();assert.equal(canvas.width,240);assert.equal(canvas.height,240);const expected=scale==='fit'?3:Number(scale);assert.equal(canvas.style.width,`${expected*240}px`);assert.equal(lastPixels,initial);}
   assert.equal(key('keydown',' ','INPUT'),false);
-  assert.equal(key('keydown','Enter'),true);await advance(100);
-  assert.equal(sent.filter(r=>r.type==='input'&&r.action==='encoder'&&r.down).length,1);
-  key('keydown','Enter','CANVAS',true);await advance(800);
-  assert.equal(sent.filter(r=>r.type==='input'&&r.action==='encoder'&&r.down).length,1,'holding/repeat does not send movement presses');
-  key('keyup','Enter');await advance(100);assert(sent.some(r=>r.type==='input'&&r.action==='encoder'&&!r.down));
-  key('keydown','ArrowDown');await advance(1000);assert(sent.filter(r=>r.type==='input'&&r.action==='cw').length>1);
+  const encoderBefore=sent.filter(r=>r.action==='encoder'&&r.down).length;
+  assert.equal(key('keydown',' '),true);await advance(100);
+  assert.equal(sent.filter(r=>r.type==='input'&&r.action==='encoder'&&r.down).length,encoderBefore+1);
+  key('keydown',' ','CANVAS',true);await advance(800);
+  assert.equal(sent.filter(r=>r.type==='input'&&r.action==='encoder'&&r.down).length,encoderBefore+1,'holding/repeat does not send movement presses');
+  key('keyup',' ');await advance(100);assert(sent.some(r=>r.type==='input'&&r.action==='encoder'&&!r.down));
+  key('keydown','ArrowRight');await advance(1000);assert(sent.filter(r=>r.type==='input'&&r.action==='cw').length>1);
   events['window:blur']();await advance(200);const rotary=sent.filter(r=>r.type==='input'&&r.action==='cw').length;
   await advance(1000);assert.equal(sent.filter(r=>r.type==='input'&&r.action==='cw').length,rotary,'blur stops repeat');
   assert(sent.some(r=>r.type==='input'&&r.action==='release'));
   // A stalled response plus rapid inputs must collapse to release, never leave
   // a rotary interval running after its held-key state has been discarded.
-  socket.stall=true;await advance(100);key('keydown','ArrowDown');
+  socket.stall=true;await advance(100);key('keydown','ArrowRight');
   for(let i=0;i<10;i++){key('keydown',' ');key('keyup',' ');}
-  key('keyup','ArrowDown');socket.stall=false;socket.respond(socket.blocked);await flush();
+  key('keyup','ArrowRight');socket.stall=false;socket.respond(socket.blocked);await flush();
   const sentBefore=sent.length;await advance(1800);
   assert.equal(sent.slice(sentBefore).filter(r=>r.type==='input'&&r.action==='cw').length,0,'overflow cancels held repeat');
   documentMock.hidden=true;events['document:visibilitychange']();await advance(100);
@@ -91,6 +114,6 @@ async function main(){
     assert(sent.some(r=>r.type==='leave'));assert.equal(element('leave').disabled,true);assert.equal(element('connect').querySelector().disabled,false);
     console.log('Private client: WSS, no shared secret or bearer reconnect proof, identity recovery, verified-identity reconnect UI, and confirmed Leave passed.');
   }
-  console.log('Playable client: exact RLE color decode, integer zoom, default mappings, form exclusion, held Enter, focus release, bounded overflow/repeat and reconnect affordance passed.');
+  console.log('Playable client: exact RLE color decode, integer zoom, default mappings, form exclusion, held encoder click, focus release, bounded overflow/repeat and reconnect affordance passed.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
