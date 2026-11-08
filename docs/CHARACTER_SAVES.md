@@ -29,8 +29,14 @@ active world actor, shared combat, rest or a pending trade. Finish those actions
 and return to Town first. The production Return to Town action moves only that
 character. Loading does **not** abort combat, generate/reset a dungeon, advance
 world time, change room contents, move another actor or change party membership.
-The account retains its authenticated controller/ownership capability. Join and
-resume the current adventure using the existing party/travel rules.
+The account retains its authenticated controller/ownership capability. An
+existing party member can use Resume Dungeon (or Enter Forest for an active
+forest) to return with the loaded character at the safe entry area, while peers
+remain where they are. This resumes only that member, never regenerates the
+world, and is rejected during shared combat, a pending trade, defeat or a
+completed/unavailable run. Initial party launches still require the leader and
+all members ready in Town. New party membership still follows the existing
+join-code/Town admission policy; this does not bypass locked-party admission.
 
 Saves are character records, not adventure/world snapshots. A new server process
 still starts a new in-memory world; loading restores a character in Town, not an

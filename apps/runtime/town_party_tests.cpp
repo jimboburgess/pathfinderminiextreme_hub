@@ -286,6 +286,14 @@ int main(int argc,char** argv){try{
    tap(id,"a");
    check(selectAction(id,MENU_GAME)&&selectAction(id,MENU_RETURN_TO_TOWN),"original return-to-Town menu");
    check(gameState==GAME_TOWN && !nativeActor(id),"own character returned to Town");
+   if(id==0&&count>1&&!combatTest&&!forestCombat){
+    Entity* others[4]{};int xs[4]{},ys[4]{};
+    for(unsigned peer=1;peer<count;++peer){others[peer]=nativeActor(peer);check(others[peer],"remaining explorer");xs[peer]=others[peer]->x;ys[peer]=others[peer]->y;}
+    townSelection=forest?TOWN_FOREST:TOWN_DUNGEON;tap(id,"a");if(!forest)choose(id,"Resume Dungeon");
+    check(gameState==(forest?GAME_FOREST:GAME_DUNGEON)&&nativeActor(id),"returning member independently resumes current adventure");
+    for(unsigned peer=1;peer<count;++peer)check(nativeActor(peer)==others[peer]&&others[peer]->x==xs[peer]&&others[peer]->y==ys[peer],"resume does not teleport exploring peers");
+    tap(id,"a");check(selectAction(id,MENU_GAME)&&selectAction(id,MENU_RETURN_TO_TOWN),"resumed character returns independently");
+   }
   }
   PartySnapshot returned;check(nativePartySnapshot(0,returned)&&returned.activity==pfme::PartyActivity::Town&&!returned.locked,"party returned, unlocked after every member");
   if(!forest && count==2){

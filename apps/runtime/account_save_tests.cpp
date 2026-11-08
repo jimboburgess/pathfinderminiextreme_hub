@@ -104,7 +104,21 @@ int main(int argc,char** argv){fs::path root;try{
  check(worldTime()==clock&&dungeon.runActive==beforeDungeon.runActive&&dungeon.completed==beforeDungeon.completed,"load preserves shared world and clock");
  check(!std::memcmp(dungeon.rooms,beforeDungeon.rooms,sizeof(dungeon.rooms)),"load preserves every dungeon room");
  check(nativeActor(peerId)==retained&&retained->x==retainedActor.x&&retained->y==retainedActor.y&&retained->character.inventory.gold==retainedActor.character.inventory.gold,"other actor and position unchanged");
- player.inventory.gold=47;runtime.detach(owner,1);check(runtime.start(owner,3,"acct-stable-owner"),"verified reconnect");
+ player.inventory.gold=47;
+ // Entry is fail-closed for combat, the wrong activity and completed runs.
+ combat.active=true;startNativePartyAdventure(false);
+ check(gameState==GAME_TOWN&&!nativeActor(id),"cannot enter shared initiative mid-encounter");combat.active=false;
+ startNativePartyAdventure(true);check(gameState==GAME_TOWN&&!nativeActor(id),"cannot replace an active dungeon with forest travel");
+ dungeon.completed=true;startNativePartyAdventure(false);
+ check(gameState==GAME_TOWN&&!nativeActor(id)&&dungeon.completed,"cannot reset a completed run on individual resume");dungeon.completed=false;
+ // The nonleader returns through the actual Resume menu with the new character.
+ wait(runtime,350);townSelection=TOWN_DUNGEON;tap(runtime,owner,1,"a");choose(runtime,owner,1,"Resume Dungeon");
+ check(gameState==GAME_DUNGEON&&nativeActor(id)&&std::string(nativeActor(id)->character.name)=="Wizard","loaded nonleader joins current authoritative dungeon");
+ check(nativeActor(peerId)==retained&&retained->x==retainedActor.x&&retained->y==retainedActor.y&&retained->character.inventory.gold==retainedActor.character.inventory.gold,"resume never moves or replaces another player");
+ check(dungeon.runActive&&!dungeon.completed&&!std::memcmp(dungeon.rooms,beforeDungeon.rooms,sizeof(dungeon.rooms)),"resume preserves existing dungeon progress");
+ tap(runtime,owner,1,"a");choose(runtime,owner,1,"Game");choose(runtime,owner,1,"Return to Town");
+ check(gameState==GAME_TOWN&&!nativeActor(id),"loaded character independently returns home");
+ runtime.detach(owner,1);check(runtime.start(owner,3,"acct-stable-owner"),"verified reconnect");
  check(std::string(player.name)=="Wizard"&&player.inventory.gold==47,"reconnect retains correct character");check(runtime.pixels(owner,1)==nullptr,"stale serial denied");
  check(loadGameFromSlot(loaded,1)&&loaded.inventory.gold==47,"disconnect flushes current character");
  player.inventory.gold=48;runtime.tick(30000);selectController(id);check(loadGameFromSlot(loaded,1)&&loaded.inventory.gold==48,"bounded periodic autosave");

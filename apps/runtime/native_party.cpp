@@ -385,6 +385,26 @@ bool startNativePartyAdventure(bool forest){
  if(!social[owner].member && !create(owner))return true;
  auto& s=social[owner];PartySnapshot party;
  if(!nativePartySnapshot(owner,party))return true;
+ // An existing authenticated member may return with a loaded character while
+ // peers keep exploring. This is not new party admission and never starts or
+ // resets an activity. The initial party launch retains its original rules.
+ if(party.activity!=PartyActivity::Town){
+  const auto expected=forest?PartyActivity::Forest:PartyActivity::Dungeon;
+  const auto local=s.membership.player;
+  if(party.activity!=expected){setGameMessage("Resume the party's current adventure.");return true;}
+  if(!isValidPlayerID(local)||!party.members[local].occupied||!party.members[local].connected||
+     nativeActor(owner)||combat.active||pendingNativeTrade(owner)||player.health.currentHP<=0){
+   setGameMessage("Wait for combat/trade. Rest in Town.");return true;
+  }
+  if((!forest&&(!dungeon.runActive||dungeon.completed))||(forest&&forestEntityCount==0)){
+   setGameMessage("Current adventure is unavailable.");return true;
+  }
+  struct TravelScope {bool& flag;explicit TravelScope(bool& value):flag(value){flag=true;}~TravelScope(){flag=false;}} scope(travelling);
+  closeMenu();closeTownHome();closeCharacterSheet();
+  if(forest){if(!enterNativeForestController(false)){setGameMessage("No safe entry space.");return true;}}
+  else enterDungeon(); // travelling bypasses only this social dispatch hook.
+  refreshNativePartyMenu();return true;
+ }
  if(s.membership.player!=HOST_PLAYER_ID){setGameMessage("Only the party leader starts travel.");return true;}
  bool members[MAX_MULTIPLAYER_PLAYERS]{};
  for(PlayerID id=0;id<MAX_MULTIPLAYER_PLAYERS;++id)if(sameParty(owner,id)){
