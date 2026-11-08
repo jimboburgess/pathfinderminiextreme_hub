@@ -5,6 +5,7 @@ sys.dont_write_bytecode=True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from run_party import View,tap,form_town_party
 parser=argparse.ArgumentParser();parser.add_argument('--image',required=True);parser.add_argument('--game-image',required=True);parser.add_argument('--game-duration-ms',type=int,default=300000)
+parser.add_argument('--character-saves',action='store_true')
 options=parser.parse_args();assert sys.platform=='linux';assert 0<=options.game_duration_ms<=86400000
 IMAGE=options.image;GAME=options.game_image
 nonce=uuid.uuid4().hex[:10];prefix='pfme-accounts-test-'+nonce;containers=[];volumes={};bridge=None;game=None
@@ -30,14 +31,18 @@ class Client:
     def call(self,kind,**fields):
         r=b(op='rpc',slot=self.slot,type=kind,fields=fields)
         assert 'result' in r,(kind,r)
-        return r['result']
+        reply=r['result']
+        if kind=='screen' and reply.get('ok'):self.text_input=reply['data']['text_input']
+        return reply
 def status(cid):
     return json.loads(run(['docker','exec',cid,'python','-c',"from pathlib import Path;print(Path('/status/current.json').read_text())"]))
 report={}
 try:
-    for n in ('state','policy','front','back','status','gate','status_secret'):
+    for n in ('state','policy','front','back','status','gate','status_secret')+(('characters',) if options.character_saves else ()):
         v=prefix+'-'+n;run(['docker','volume','create','--label','pfme.accounts.test='+nonce,v]);volumes[n]=v
     oneshot(['-m','pfme_accounts.init'],user='0:0',names=tuple(volumes),caps=('CHOWN','FOWNER','DAC_OVERRIDE'))
+    if options.character_saves:
+        oneshot(['-c',"import os;os.chown('/characters',999,980);os.chmod('/characters',0o700)"],user='0:0',names=('characters',),caps=('CHOWN','FOWNER'))
     oneshot(['manage.py','migrate','--noinput'])
     fixture=[{'username':'friend'+str(i),'password':secrets.token_urlsafe(24)} for i in range(10)]
     code="""import os,json,sys;os.environ['DJANGO_SETTINGS_MODULE']='pfme_accounts.settings'
@@ -50,7 +55,7 @@ print(json.dumps(result))
 """
     invitation_tokens=json.loads(oneshot(['-c',code],input=json.dumps(fixture)))
     oneshot(['manage.py','sync_admission'],user='0:980')
-    game=start(GAME,['--runtime','party','--seed','2','--cloudflare-socket','/back/backend.sock','--cloudflare-origin','https://game.noburdenmusics.com','--cloudflare-policy','/policy/admission.json','--cloudflare-peer-uid','995','--cloudflare-peer-gid','980','--run-for-ms',str(options.game_duration_ms)],'999:980',[('back',False),('policy',True)])
+    game=start(GAME,['--runtime','party','--seed','2','--cloudflare-socket','/back/backend.sock','--cloudflare-origin','https://game.noburdenmusics.com','--cloudflare-policy','/policy/admission.json','--cloudflare-peer-uid','995','--cloudflare-peer-gid','980','--run-for-ms',str(options.game_duration_ms)],'999:980',[('back',False),('policy',True)]+([('characters',False)] if options.character_saves else []),['--env=PFME_SAVE_DIR=/characters','--env=PFME_REQUIRE_ACCOUNT_SAVES=1'] if options.character_saves else [])
     app=start(IMAGE,['-m','pfme_accounts.server'],'995:980',[('state',False),('policy',True),('front',False),('back',True),('status',False)],['--group-add=979'])
     time.sleep(3)
     bridge=subprocess.Popen(['docker','run','--rm','-i',*limits,'--user=994:979',*mount('front',True),'--mount','type=bind,src='+str(Path(__file__).with_name('accounts_client.py'))+',dst=/test_client.py,readonly',IMAGE,'/test_client.py'],text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -83,8 +88,20 @@ print(json.dumps(result))
         assert c.call('authenticate')['ok'];joined=c.call('join',name='Friend'+str(i));assert joined['ok'],joined;ids.append(joined['data']['player']['player_id'])
         assert c.call('play')['data']['audio'];players.append(c);views.append(View(c));assert any(views[-1].frame())
         for _ in range(5):tap(c,'a')
+        views[-1].frame();assert c.text_input, 'Original character name entry required'
+        for letter in 'Hero'+str(i):assert c.call('input',action='key:'+letter,down=True)['ok']
+        tap(c,'encoder')
+        views[-1].frame();assert not c.text_input, 'Finish actual character creation before Town/save checks'
+        if options.character_saves:
+            # Production Home -> Save Game -> Slot 1, with independent account
+            # namespaces established only by the real account gateway.
+            tap(c,'a');tap(c,'cw');tap(c,'a');tap(c,'a');tap(c,'b')
         assert status(app)['active_players']==i+1
     assert len(set(ids))==4
+    if options.character_saves:
+        code="from pathlib import Path;p=Path('/characters');a=list(p.iterdir());assert len(a)==4;assert all(x.name.startswith('account-') and sorted(y.name for y in x.iterdir())==['save_slot_1.dat'] for x in a);print('Four separately owned account saves verified')"
+        oneshot(['-c',code],user='0:0',names=('characters',),caps=('DAC_OVERRIDE',))
+        report['four_authenticated_accounts_separate_durable_character_files']=True
     for i in range(4,10):
         login=b(op='login',**fixture[i])['result'];assert login['status']==302
         cookies[i]='; '.join(k+'='+v for k,v in login['cookies'].items())

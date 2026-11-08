@@ -17,7 +17,8 @@ services:
     image: ${PFME_GAME_IMAGE:?Pin the verified game image}
     user: "999:980"
     network_mode: none
-    volumes: [back:/back, "policy:/policy:ro"]
+    environment: {PFME_SAVE_DIR: "/saves", PFME_REQUIRE_ACCOUNT_SAVES: "1"}
+    volumes: [back:/back, "policy:/policy:ro", characters:/saves]
     command: ["--runtime", "party", "--cloudflare-socket", "/back/backend.sock", "--cloudflare-origin", "https://game.noburdenmusics.com", "--cloudflare-policy", "/policy/admission.json", "--cloudflare-peer-uid", "995", "--cloudflare-peer-gid", "980", "--run-for-ms", "0"]
   accounts:
     <<: *bounds
@@ -109,6 +110,9 @@ networks:
   egress: {}
   monitor: {}
 volumes:
+  characters:
+    external: true
+    name: pfme-friends_characters
   state: {}
   policy: {}
   front: {}

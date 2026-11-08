@@ -232,7 +232,8 @@ int main(int argc,char** argv){try{
  selectController(0);check(townSelection==TOWN_STAY_HOME,"home selection");tap(0,"a");
  check(isTownHomeOpen(),"Stay Home opens original menu");tap(0,"a");wait(6500);check(!isTownRestActive(),"original rest completes");
  tap(0,"cw");tap(0,"a");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Save Game","save opens three-slot selector");tap(0,"b");
- tap(0,"cw");tap(0,"a");check(isCharacterSheetVisible(),"home character sheet");tap(0,"b");
+ tap(0,"cw");tap(0,"a");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Load Character","Home Load opens character selector");tap(0,"b");
+   tap(0,"cw");tap(0,"a");check(isCharacterSheetVisible(),"home character sheet");tap(0,"b");
  tap(0,"b");check(!isTownHomeOpen(),"home cancel");
  for(unsigned n=0;townSelection!=TOWN_SHOP&&n<5;++n)tap(0,"cw");tap(0,"a");choose(0,"Buy");
  const auto goldBefore=player.inventory.gold;tap(0,"a");check(player.inventory.gold<goldBefore,"production shop purchase");tap(0,"b");

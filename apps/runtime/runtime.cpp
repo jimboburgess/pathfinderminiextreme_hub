@@ -1,4 +1,5 @@
 #include "native_audio.h"
+#include "character_saves.h"
 #include "native_party.h"
 #include "controller_slots.h"
 #include "context_fields.h"
@@ -142,7 +143,7 @@ uint32_t worldTime() {return nowMs;}
 void switchNativeWorldRandom(unsigned previous,unsigned next){worldRng[previous]=rng;rng=worldRng[next];}
 uint32_t audioTime() {return multiController?audioMs:nowMs;}
 void initializeControllers(uint32_t seed,bool socialParties) {
-    initialize(seed);multiController=true;
+    initialize(seed);multiController=true;resetAccountCharacters();
     if(socialParties){for(unsigned i=0;i<NATIVE_WORLD_CAPACITY;++i)worldRng[i].seed(seed^(0x9e3779b9u*i));initializeNativeParties(seed);}
 }
 bool selectController(uint8_t id) {
@@ -184,7 +185,7 @@ void setControllerConnected(uint8_t id,bool connected) {
     storeController();
 }
 bool unbindController(uint8_t id) {
-    if(!selectController(id) || combat.active)return false;
+    if(!selectController(id) || combat.active || !flushAccountCharacter(id))return false;
     if(!retireNativePartyMember(id))return false;
     if(nativeActor(id) && !leaveNativeRoom(dungeon))return false;
     storeController();tft.exchangeSurface(bound[id].state->surface);

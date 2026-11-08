@@ -151,6 +151,9 @@ enum MenuAction
     MENU_RESIST_ELECTRICITY,
     MENU_RESIST_ACID,
     MENU_RESIST_CANCEL
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    , MENU_NEW_SAVED_CHARACTER
+#endif
 };
 
 enum MenuClassMask : uint16_t

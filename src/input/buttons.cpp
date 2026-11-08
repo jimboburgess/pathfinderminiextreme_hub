@@ -347,6 +347,11 @@ void handleTownButtons() {
                     openSaveGameMenu();
                     break;
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                case TOWN_HOME_LOAD_GAME:
+                    openLoadGameMenu();
+                    break;
+#endif
                 case TOWN_HOME_CHARACTER_SHEET:
                     openCharacterSheet();
                     break;

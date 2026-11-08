@@ -1,7 +1,7 @@
 # Compile production gameplay and presentation directly; only ESP-NOW hardware is replaced.
 file(GLOB_RECURSE handheld_sources CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp")
 list(FILTER handheld_sources EXCLUDE REGEX "/(espnow_transport|game_session|party_registry|combat_rules|dungeontopology|puzzleinstructions|riddles|multiplayer_snapshot|network_protocol)\\.cpp$")
-add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp controller_slots.cpp context_fields.cpp party_runtime.cpp native_worlds.cpp native_party.cpp audio_stream.cpp
+add_library(pfme_handheld_runtime STATIC ${handheld_sources} runtime.cpp no_radio.cpp controller_slots.cpp context_fields.cpp party_runtime.cpp character_saves.cpp native_worlds.cpp native_party.cpp audio_stream.cpp
     ../browser/third_party/adafruit_gfx/Adafruit_GFX.cpp)
 target_include_directories(pfme_handheld_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
     PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx "${PROJECT_SOURCE_DIR}/src")
@@ -168,4 +168,13 @@ if(BUILD_TESTING)
     target_link_libraries(pfme_text_input_tests PRIVATE pfme_handheld_runtime)
     target_compile_definitions(pfme_text_input_tests PRIVATE ARDUINO=100)
     add_test(NAME pfme_text_input_isolation COMMAND pfme_text_input_tests)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(pfme_account_save_tests account_save_tests.cpp)
+    target_include_directories(pfme_account_save_tests PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_account_save_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_account_save_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_account_characters COMMAND pfme_account_save_tests)
+    set_tests_properties(pfme_account_characters PROPERTIES TIMEOUT 90)
 endif()

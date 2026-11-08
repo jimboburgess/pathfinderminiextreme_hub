@@ -334,6 +334,16 @@ void drawTownScreen()
         tft.setCursor(72, 20);
         tft.print("Home");
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+        tft.setTextSize(1);
+        tft.setCursor(12, 52);
+        tft.print("Current: ");tft.print(player.name);tft.print(" Lv ");tft.print(player.level);
+        const char* labels[]={"Rest","Save Game","Load Game","Character Sheet","Back"};
+        tft.setTextSize(2);
+        for(unsigned i=0;i<TOWN_HOME_OPTION_COUNT;++i){
+            tft.setCursor(12,72+24*i);tft.print(getTownHomeSelection()==i?"> ":"  ");tft.print(labels[i]);
+        }
+#else
         tft.setTextSize(2);
         tft.setCursor(20, 65);
         tft.print(getTownHomeSelection() == TOWN_HOME_REST ? "> " : "  ");
@@ -351,6 +361,8 @@ void drawTownScreen()
         tft.setCursor(20, 155);
         tft.print(getTownHomeSelection() == TOWN_HOME_BACK ? "> " : "  ");
         tft.print("Back");
+
+#endif
 
         tft.setTextSize(1);
         tft.setCursor(12, 205);

@@ -21,12 +21,15 @@
 #undef ERROR
 #endif
 
+#include "CharacterFiles.h"
+
 namespace pfme { namespace runtime { uint8_t selectedController(); } }
 
 class Preferences
 {
     std::string space_;
     unsigned owner_ = 255;
+    std::string account_;
     bool readOnly_ = true;
 
     static std::map<std::string, std::vector<uint8_t>>& storage()
@@ -107,7 +110,9 @@ public:
     bool begin(const char* name, bool readOnly = false)
     {
         owner_ = pfme::runtime::selectedController();
+        account_ = CharacterFiles::owner(owner_);
         space_ = name != nullptr ? name : "";
+        if(space_=="pathfinder" && CharacterFiles::required() && account_.empty())return false;
         readOnly_ = readOnly;
         return !space_.empty();
     }
@@ -119,6 +124,7 @@ public:
 
     size_t getBytesLength(const char* name)
     {
+        if(isSaveKey(name)&&!account_.empty())return CharacterFiles::length(account_,name);
         if (isSaveKey(name))
         {
             std::error_code error;
@@ -135,6 +141,7 @@ public:
         if (out == nullptr)
             return 0;
 
+        if(isSaveKey(name)&&!account_.empty())return CharacterFiles::read(account_,name,out,size);
         if (isSaveKey(name))
         {
             const size_t storedSize = getBytesLength(name);
@@ -159,6 +166,7 @@ public:
         if (readOnly_ || space_.empty() || data == nullptr || size > 65536)
             return 0;
 
+        if(isSaveKey(name)&&!account_.empty())return CharacterFiles::write(account_,name,data,size);
         if (isSaveKey(name))
         {
             const std::filesystem::path destination = savePath(name);
@@ -197,6 +205,7 @@ public:
     {
         if (readOnly_ || space_.empty())
             return false;
+        if(isSaveKey(name)&&!account_.empty())return CharacterFiles::remove(account_,name);
         if (isSaveKey(name))
         {
             std::error_code error;
@@ -207,6 +216,7 @@ public:
 
     static void retireOwner(unsigned owner)
     {
+        CharacterFiles::retire(owner);
         auto& values = storage();
         const auto prefix = std::to_string(owner) + ":";
         for (auto entry = values.begin(); entry != values.end();)

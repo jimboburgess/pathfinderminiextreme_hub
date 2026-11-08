@@ -5,6 +5,9 @@
 #include <cstring>
 
 #include "progression.h"
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "character_saves.h"
+#endif
 
 namespace
 {
@@ -39,6 +42,15 @@ struct SavedCharacter
     uint32_t trainedWeaponGroup;
 };
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+// Native account saves retain conditions and spent class resources. ESP32's
+// version-10 layout and migration remain byte-for-byte unchanged.
+struct NativeSavedCharacter {
+    SavedCharacter base;
+    ConditionData conditions;
+    ClassAbilityData classAbilities;
+};
+#endif
 // Version 9 had the current item/property layout but no character name.
 struct UnnamedSavedCharacter
 {
@@ -606,6 +618,14 @@ bool saveGameWithKey(const Character& character, const char* key)
     if (!preferences.begin("pathfinder", false))
         return false;
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::accountCharactersEnabled()){
+        NativeSavedCharacter native{};native.base=saved;native.base.version=11;
+        native.conditions=character.conditions;native.classAbilities=character.classAbilities;
+        const auto bytes=preferences.putBytes(key,&native,sizeof(native));preferences.end();
+        return bytes==sizeof(native);
+    }
+#endif
     size_t bytesWritten = preferences.putBytes(
         key, &saved, sizeof(saved));
     preferences.end();
@@ -622,6 +642,25 @@ bool loadGameWithKey(Character& character, const char* key)
 
     size_t savedSize = preferences.getBytesLength(key);
 
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(savedSize==sizeof(NativeSavedCharacter)){
+        NativeSavedCharacter native{};const auto bytes=preferences.getBytes(key,&native,sizeof(native));preferences.end();
+        const auto& s=native.base;const auto& c=native.conditions;
+        if(bytes!=sizeof(native)||s.magic!=SAVE_MAGIC||s.version!=11||s.characterName[CHARACTER_NAME_SIZE-1]!='\0'||
+           !isValidSavedWeaponGroup(s.characterClass,s.trainedWeaponGroup)||
+           c.count>MAX_CONDITIONS_PER_CHARACTER||c.timedDamageCount>MAX_TIMED_DAMAGE_EFFECTS||
+           c.energyResistanceCount>MAX_ENERGY_RESISTANCES||c.energyProtectionCount>MAX_ENERGY_PROTECTIONS||
+           c.poison.type>POISON_SLOWING_VENOM)return false;
+        for(unsigned i=0;i<c.count;++i)if(!isValidConditionType(c.conditions[i].type))return false;
+        Character loaded{};
+        if(!restoreCharacter(loaded,s.characterClass,s.level,s.xp,s.abilities,s.health,s.equipment,s.inventory,true,
+            s.currentMP,s.knownAbilities,s.knownAbilityCount,&s.learning,true,static_cast<WeaponGroup>(s.trainedWeaponGroup),s.characterName))return false;
+        loaded.conditions=c;
+        loaded.classAbilities.channelEnergyCurrent=native.classAbilities.channelEnergyCurrent>loaded.classAbilities.channelEnergyMax?
+            loaded.classAbilities.channelEnergyMax:native.classAbilities.channelEnergyCurrent;
+        character=loaded;return true;
+    }
+#endif
     if (savedSize == sizeof(SavedCharacter))
     {
         SavedCharacter saved = {};

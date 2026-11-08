@@ -2387,4 +2387,5 @@ bool isMenuItemEnabled(MenuAction action)
 // MenuState is owned directly by ControllerState and borrowed by the adapter.
 PFME_CONTEXT_FIELD(spellMenuItems);
 PFME_CONTEXT_FIELD(spellMenu);
+PFME_CONTEXT_FIELD(menuBodyScratch);
 #endif
