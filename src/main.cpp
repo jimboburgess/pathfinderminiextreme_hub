@@ -8,6 +8,7 @@
 #include "characters/characters.h"
 #include "dungeon/combat.h"
 #include "dungeon/dungeon.h"
+#include "dungeon/bellpuzzle.h"
 #include "map/awareness.h"
 #include "map/monsteridle.h"
 #include "graphics/elementalvisual.h"
@@ -117,6 +118,7 @@ void loop()
     if (!isMultiplayerActivityLoading())
         updateMonsterVisibility();
 
+    updateCurrentBellVisuals();
     updateGameMessage();
     updateTownRest();
 

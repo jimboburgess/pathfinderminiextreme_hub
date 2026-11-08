@@ -87,8 +87,9 @@ struct DungeonRoom {
     RoomShape shape;
 
 
-    bool discovered;
-    bool completed;
+    bool discovered : 1;
+    bool completed : 1;
+    bool puzzleBypassed : 1; // Explicit passage bypass; physical puzzle remains unchanged.
 
     uint8_t north = NO_ROOM;
     uint8_t south = NO_ROOM;
@@ -130,6 +131,8 @@ struct CompactDungeonRoomEntityStorage
     // by the room's full Entity array. Stage 3 can replace this with one shared
     // scratch buffer when the legacy compatibility member is removed.
     PersistentEntity transactionScratch[MAX_ENTITIES];
+    // Use the existing legacy-union slack, never add another ESP32 allocation.
+    BellVisualRuntime bellVisual;
 };
 
 union DungeonRoomEntityStorage

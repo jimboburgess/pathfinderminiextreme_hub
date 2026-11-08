@@ -196,8 +196,9 @@ bool configureRiddlemanPuzzleRoom(DungeonRoom& room, Direction lockedDirection,
             {
                 if (abs(x - preferredX) + abs(y - preferredY) != distance ||
                     room.map.tiles[y][x] != TILE_FLOOR) continue;
-    DungeonRoom candidate = room;
-    candidate.puzzleType = PUZZLE_RIDDLEMAN;
+                DungeonRoom candidate = room;
+                candidate.puzzleBypassed = false;
+                candidate.puzzleType = PUZZLE_RIDDLEMAN;
                 if (!placeDungeonNPC(candidate, NPC_BERTRAM_RIDDLEMAN, x, y)) continue;
                 if (!findKeyTileNear(candidate, x, y,
                                      candidate.npcSpawn.keyX,
@@ -219,7 +220,7 @@ bool configureRiddlemanPuzzleRoom(DungeonRoom& room, Direction lockedDirection,
 
 bool isRiddlemanExitLocked(const DungeonRoom& room, Direction direction)
 {
-    return isRiddlemanPuzzleRoom(room) &&
+    return !room.puzzleBypassed && isRiddlemanPuzzleRoom(room) &&
         room.npcSpawn.lockedExitDirection == direction &&
         room.npcSpawn.puzzleState != RIDDLE_ROOM_COMPLETE;
 }

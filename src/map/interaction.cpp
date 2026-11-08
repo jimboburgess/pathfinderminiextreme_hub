@@ -16,6 +16,7 @@
 #include "dungeon/loot.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/fountain.h"
+#include "dungeon/roomgen.h"
 #include "dungeon/npcs.h"
 #include "dungeon/riddlepuzzle.h"
 #include "dungeon/bellpuzzle.h"
@@ -59,8 +60,8 @@ const Menu lockedChestMenu =
 const MenuItem riddleDoorMenuItems[] =
 {
     { "Pick Lock", "Attempt a difficult Disable Device check.",
-      MENU_RIDDLE_DOOR_PICK_LOCK, nullptr, MENU_CLASS_ALL },
-    { "Back", "Leave Bertram's puzzle door locked.",
+      MENU_RIDDLE_DOOR_PICK_LOCK, nullptr, MENU_CLASS_ROGUE },
+    { "Back", "Leave the puzzle exit locked.",
       MENU_RIDDLE_DOOR_BACK, nullptr, MENU_CLASS_ALL }
 };
 
@@ -218,12 +219,51 @@ void forceOpenLockedChest()
     }
 }
 
+namespace {
+bool puzzleExit(const DungeonRoom& room,Direction& direction) {
+    if(room.type!=ROOM_PUZZLE||room.puzzleBypassed)return false;
+    switch(room.puzzleType){
+    case PUZZLE_BELLS:if(room.bellPuzzle.progress==BELL_PUZZLE_NONE||room.bellPuzzle.progress==BELL_PUZZLE_COMPLETE)return false;direction=static_cast<Direction>(room.bellPuzzle.lockedExitDirection);break;
+    case PUZZLE_NUMBER_TILES:if(room.numberPuzzle.progress!=NUMBER_PUZZLE_UNSOLVED)return false;direction=static_cast<Direction>(room.numberPuzzle.lockedExitDirection);break;
+    case PUZZLE_BRAZIERS:if(room.brazierPuzzle.progress!=BRAZIER_PUZZLE_UNSOLVED)return false;direction=static_cast<Direction>(room.brazierPuzzle.lockedExitDirection);break;
+    case PUZZLE_RIDDLEMAN:if(room.npcSpawn.puzzleState==RIDDLE_ROOM_NONE||room.npcSpawn.puzzleState==RIDDLE_ROOM_COMPLETE)return false;direction=static_cast<Direction>(room.npcSpawn.lockedExitDirection);break;
+    default:return false;
+    }
+    return getRoomConnection(room,direction)!=nullptr;
+}
+}
+bool getCurrentPuzzleExitDirectionAt(int x,int y,Direction& direction) {
+    if(gameState!=GAME_DUNGEON||dungeon.currentRoom>=dungeon.roomCount)return false;
+    const auto& room=dungeon.rooms[dungeon.currentRoom];if(!puzzleExit(room,direction))return false;
+    const auto* exit=getRoomConnection(room,direction);return exit->x==x&&exit->y==y;
+}
+bool canAttemptCurrentPuzzleBypass(const Entity& actor,Direction direction) {
+    if(gameState!=GAME_DUNGEON||combat.active||dungeon.currentRoom>=dungeon.roomCount||
+       !actor.active||actor.type!=ENTITY_PLAYER||actor.character.state!=STATE_ALIVE||
+       actor.character.health.currentHP<=0||actor.character.characterClass!=CLASS_ROGUE||
+       getActiveMapPlayer()!=&actor)return false;
+    Direction expected=DIR_NORTH;const auto& room=dungeon.rooms[dungeon.currentRoom];
+    if(!puzzleExit(room,expected)||expected!=direction)return false;
+    const auto* exit=getRoomConnection(room,direction);
+    return exit&&actor.x+directionOffsets[moveDirection].dx==exit->x&&
+        actor.y+directionOffsets[moveDirection].dy==exit->y;
+}
+bool attemptCurrentPuzzleBypass(Entity& actor,Direction direction,int total) {
+    if(!canAttemptCurrentPuzzleBypass(actor,direction))return false;
+    if(total<getRiddlemanLockDisableDC(actor.character.level))return false;
+    auto& room=dungeon.rooms[dungeon.currentRoom];
+    if(room.puzzleType==PUZZLE_RIDDLEMAN&&
+       attemptCurrentRiddlemanDoorBypass(direction,total)!=RIDDLEMAN_BYPASS_SUCCEEDED)return false;
+    room.puzzleBypassed=true;room.completed=true;
+    const auto* exit=getRoomConnection(room,direction);markTileDirty(exit->x,exit->y);
+    return true;
+}
+
 void pickRiddlemanDoorLock()
 {
     Entity* playerEntity = getActiveMapPlayer();
-    if (playerEntity == nullptr || dungeon.currentRoom >= dungeon.roomCount ||
-        !isRiddlemanExitLocked(
-            dungeon.rooms[dungeon.currentRoom], selectedRiddleDoorDirection))
+    if (playerEntity == nullptr ||
+        !canAttemptCurrentPuzzleBypass(*playerEntity,selectedRiddleDoorDirection))
     {
         closeMenu();
         return;
@@ -244,8 +284,8 @@ void pickRiddlemanDoorLock()
         const int total = naturalRoll +
             getSkillBonus(playerEntity->character, SKILL_DISABLE_DEVICE) +
             getLockDisableDeviceModifier(playerEntity->character);
-        result = attemptCurrentRiddlemanDoorBypass(
-            selectedRiddleDoorDirection, total);
+        result = attemptCurrentPuzzleBypass(*playerEntity,selectedRiddleDoorDirection,total)
+            ? RIDDLEMAN_BYPASS_SUCCEEDED : RIDDLEMAN_BYPASS_FAILED;
     }
 
     closeMenu();
@@ -269,6 +309,12 @@ bool tryInteractWithFacingEntity()
 
     if (playerEntity == nullptr || !playerEntity->active)
         return false;
+
+    // A player standing on the physical replay button can press A again;
+    // stepping off/re-entering the room is never required.
+    if(!combat.active&&gameState==GAME_DUNGEON&&
+       isCurrentBellListeningRuneAt(playerEntity->x,playerEntity->y))
+        return handleCurrentBellListeningRuneEntry(*playerEntity,playerEntity->x,playerEntity->y);
 
     int targetX = playerEntity->x + directionOffsets[moveDirection].dx;
     int targetY = playerEntity->y + directionOffsets[moveDirection].dy;
@@ -303,11 +349,13 @@ bool tryInteractWithFacingEntity()
         if (interactWithCurrentNumberPuzzleClue(targetX, targetY))
             return true;
 
+        if (isCurrentBellListeningRuneAt(targetX,targetY))
+            return handleCurrentBellListeningRuneEntry(*playerEntity,targetX,targetY);
+
         Direction riddleExitDirection = DIR_NORTH;
-        if (getCurrentRiddlemanExitDirectionAt(
+        if (getCurrentPuzzleExitDirectionAt(
                 targetX, targetY, riddleExitDirection) &&
-            isRiddlemanExitLocked(
-                dungeon.rooms[dungeon.currentRoom], riddleExitDirection))
+            canAttemptCurrentPuzzleBypass(*playerEntity,riddleExitDirection))
         {
             selectedRiddleDoorDirection = riddleExitDirection;
             openMenu(&riddleDoorMenu);

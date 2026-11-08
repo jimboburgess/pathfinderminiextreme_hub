@@ -6,6 +6,7 @@
 #include "audio/audio.h"
 
 Dungeon dungeon{};
+GameState gameState=GAME_DUNGEON;
 namespace
 {
 const char* messageText = "";

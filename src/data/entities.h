@@ -46,6 +46,11 @@ struct Entity
     PlayerID ownerPlayerID = INVALID_PLAYER_ID;
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     uint8_t nativeControllerID = INVALID_PLAYER_ID;
+    // Crossing progress belongs to this actor; the room's digits/completion are shared.
+    bool nativeNumberCrossingActive = false;
+    uint8_t nativeNumberCurrentStep = 0;
+    uint8_t nativeNumberPreviousDigit = 0;
+    uint8_t nativeNumberCurrentDigit = 0;
 #endif
 
     uint8_t x;

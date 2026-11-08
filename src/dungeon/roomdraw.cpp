@@ -12,6 +12,8 @@
 #include "fountain.h"
 #include "numbertilepuzzle.h"
 #include "brazierpuzzle.h"
+#include "bellpuzzle.h"
+#include "data/entityspawn.h"
 
 extern Adafruit_ST7789 tft;
 
@@ -25,10 +27,8 @@ void drawNumberTile(const DungeonRoom& room, int tileX, int tileY)
 {
   const int x = tileX * TILE_SIZE;
   const int y = tileY * TILE_SIZE;
-  const Entity* player = nullptr;
-  for (uint8_t i = 0; dungeon.entities != nullptr && i < dungeon.entityCount; ++i)
-    if (dungeon.entities[i].active && dungeon.entities[i].type == ENTITY_PLAYER)
-    { player = &dungeon.entities[i]; break; }
+  const Entity* player = dungeon.entities
+      ? getPlayerEntity(dungeon.entities,dungeon.entityCount) : nullptr;
   const NumberTileVisualState state =
       getNumberTileVisualState(room, tileX, tileY, player);
   const uint16_t background = state == NUMBER_TILE_FAILED ? 0x7800
@@ -366,6 +366,7 @@ void drawTile(int tileX, int tileY, TileType tile) {
                         TILE_SIZE, TILE_SIZE);
       drawSpriteTransparent(
           tileX * TILE_SIZE, tileY * TILE_SIZE, bellListenRune16x16);
+        tft.drawRoundRect(tileX*TILE_SIZE+1,tileY*TILE_SIZE+1,14,14,2,ST77XX_WHITE);
       return;
 
     case TILE_DOOR:
@@ -423,6 +424,14 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
   }
   else
     drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);
+  if (dungeon.currentRoom<dungeon.roomCount && &room==&dungeon.rooms[dungeon.currentRoom] &&
+      isCurrentBellVisuallyRingingAt(tileX,tileY,millis())) {
+    const int x=tileX*TILE_SIZE,y=tileY*TILE_SIZE;
+    tft.drawLine(x,y+4,x+1,y+6,ST77XX_WHITE);
+    tft.drawLine(x,y+9,x+1,y+11,ST77XX_WHITE);
+    tft.drawLine(x+15,y+4,x+14,y+6,ST77XX_WHITE);
+    tft.drawLine(x+15,y+9,x+14,y+11,ST77XX_WHITE);
+  }
   drawSuspicionClue(tileX, tileY, getSuspicionAt(room, tileX, tileY));
 
   const TrapInstance* trap = getTrapAt(room, tileX, tileY);

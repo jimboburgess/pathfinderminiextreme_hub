@@ -1,4 +1,5 @@
 #include "native_audio.h"
+#include "dungeon/bellpuzzle.h"
 #include "character_saves.h"
 #include "native_party.h"
 #include "controller_slots.h"
@@ -101,6 +102,7 @@ void synchronizeCombatViews() {
     }
 }
 void renderController() {
+    updateCurrentBellVisuals();
     // Other actors dirty the shared world, not this observer's private tile
     // cache. Refresh each live map at 20 Hz; input/UI redraws remain immediate.
     if(multiController && isValidController(selected) && (gameState==GAME_DUNGEON || gameState==GAME_FOREST) &&

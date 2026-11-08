@@ -326,7 +326,7 @@ bool testEncoderBounceAndInvalidTransitionsDoNotCreateSteps()
 bool testPuzzleEntryInstructionsAreCentralizedAndBounded()
 {
     CHECK(std::strcmp(getPuzzleEntryInstruction(PUZZLE_BELLS),
-        "Match the tones. Ring the bells in the same order.") == 0);
+        "Match the tones. Use the replay button, then ring the same order.") == 0);
     CHECK(std::strcmp(getPuzzleEntryInstruction(PUZZLE_NUMBER_TILES),
         "Follow the rule. Cross using only the correct numbers.") == 0);
     CHECK(std::strcmp(getPuzzleEntryInstruction(PUZZLE_BRAZIERS),

@@ -4,6 +4,10 @@
 #include <stdio.h>
 
 #include "data/entities.h"
+#include "data/entityspawn.h"
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+#include "native_rooms.h"
+#endif
 #include "dungeon/dungeon.h"
 #include "dungeon/roomgen.h"
 #include "graphics/display.h"
@@ -160,7 +164,21 @@ bool buildStatefulSequence(NumberTilePuzzleState& state, uint8_t length)
     return !allSame && !periodTwo;
 }
 
-void resetStatefulTraversal(DungeonRoomRuntime& runtime,
+struct Traversal {
+    bool& numberCrossingActive;
+    uint8_t& numberCurrentStep;
+    uint8_t& numberPreviousDigit;
+    uint8_t& numberCurrentDigit;
+};
+Traversal traversalFor(Entity& actor) {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+    if(pfme::runtime::nativeRoomsActive())return {actor.nativeNumberCrossingActive,
+        actor.nativeNumberCurrentStep,actor.nativeNumberPreviousDigit,actor.nativeNumberCurrentDigit};
+#endif
+    auto& r=dungeon.roomRuntime[dungeon.currentRoom];
+    return {r.numberCrossingActive,r.numberCurrentStep,r.numberPreviousDigit,r.numberCurrentDigit};
+}
+void resetStatefulTraversal(Traversal runtime,
                             const NumberTilePuzzleState& state)
 {
     runtime.numberCrossingActive = false;
@@ -183,6 +201,26 @@ void movePlayerToStartLanding(Entity& player, const NumberTilePuzzleState& state
     { player.x = state.fieldX + state.fieldWidth / 2; player.y = state.fieldY - 1; }
     else
     { player.x = state.fieldX + state.fieldWidth / 2; player.y = state.fieldY + state.fieldHeight; }
+    const int preferredX=player.x,preferredY=player.y;
+    player.x=oldX;player.y=oldY;
+    auto* occupant=getEntityAt(dungeon.entities,dungeon.entityCount,preferredX,preferredY);
+    if(!occupant||occupant==&player){player.x=preferredX;player.y=preferredY;}
+    else {
+        player.x=oldX;player.y=oldY;bool found=false;
+        for(int distance=0;distance<ROOM_WIDTH+ROOM_HEIGHT&&!found;++distance)
+            for(int y=1;y<ROOM_HEIGHT-1&&!found;++y)for(int x=1;x<ROOM_WIDTH-1;++x) {
+                if(abs(x-preferredX)+abs(y-preferredY)!=distance)continue;
+                const bool near=(state.lockedExitDirection==DIR_EAST&&x<state.fieldX)||
+                    (state.lockedExitDirection==DIR_WEST&&x>=state.fieldX+state.fieldWidth)||
+                    (state.lockedExitDirection==DIR_SOUTH&&y<state.fieldY)||
+                    (state.lockedExitDirection==DIR_NORTH&&y>=state.fieldY+state.fieldHeight);
+                const auto tile=dungeon.rooms[dungeon.currentRoom].map.tiles[y][x];
+                auto* other=getEntityAt(dungeon.entities,dungeon.entityCount,x,y);
+                if(near&&(tile==TILE_FLOOR||tile==TILE_RUBBLE||tile==TILE_NUMBER_CLUE_PLAQUE)&&(!other||other==&player)) {
+                    player.x=x;player.y=y;found=true;break;
+                }
+            }
+    }
     markTileDirty(oldX, oldY);
     markTileDirty(player.x, player.y);
 }
@@ -422,6 +460,7 @@ bool configureNumberTilePuzzleRoom(DungeonRoom& room, Direction exitDirection,
     if (room.type != ROOM_PUZZLE || rolls == nullptr || rollCount == 0 ||
         !hasOppositePair(room, exitDirection)) return false;
     DungeonRoom candidate = room;
+    candidate.puzzleBypassed = false;
     candidate.puzzleType = PUZZLE_NUMBER_TILES;
     candidate.npcSpawn = DungeonNPCSpawn{};
     candidate.bellPuzzle = BellPuzzleState{};
@@ -490,6 +529,7 @@ bool configureNumberTilePuzzleRoom(DungeonRoom& room, Direction exitDirection,
     }
     for (uint8_t step = 0; step < depth; ++step)
     {
+        const int previousLateral=lateral;
         if (step > 0 && !stateful)
         {
             const int shift = static_cast<int>(rolls[rollIndex++ % rollCount] % 3) - 1;
@@ -498,6 +538,18 @@ bool configureNumberTilePuzzleRoom(DungeonRoom& room, Direction exitDirection,
             lateral += shift;
             if (lateral < 0) lateral = 0;
             if (lateral >= limit) lateral = limit - 1;
+        }
+        // A lateral shift previously made only a diagonal contact, while both
+        // the solvability checker and normal crossing use cardinal steps.
+        // Add the connecting safe tile, without another world RNG draw.
+        if(step>0&&!stateful&&lateral!=previousLateral) {
+            int bx=isHorizontalCrossing(exitDirection)?step:previousLateral;
+            int by=isHorizontalCrossing(exitDirection)?previousLateral:step;
+            if(exitDirection==DIR_WEST)bx=state.fieldWidth-1-bx;
+            if(exitDirection==DIR_NORTH)by=state.fieldHeight-1-by;
+            path[by][bx]=true;
+            state.digits[by*NUMBER_FIELD_STORAGE_WIDTH+bx]=chooseDigit(state.rule,true,
+                state.minimumDigit,state.maximumDigit,rolls[(rollIndex+step)%rollCount]);
         }
         int localX = isHorizontalCrossing(exitDirection) ? step : lateral;
         int localY = isHorizontalCrossing(exitDirection) ? lateral : step;
@@ -541,6 +593,16 @@ bool configureNumberTilePuzzleRoom(DungeonRoom& room, Direction exitDirection,
         }
     candidate.map.tiles[state.clueY][state.clueX] = TILE_NUMBER_CLUE_PLAQUE;
     makeCrossingBarriers(candidate, state);
+    // A narrow perimeter approach reaches the physical locked exit. It never
+    // crosses the numbered field, so it cannot solve the puzzle. This makes
+    // the Rogue's exit-lock bypass usable without first solving the crossing.
+    if(isHorizontalCrossing(exitDirection)) {
+        const int a=state.fieldX-1,b=state.fieldX+state.fieldWidth;
+        candidate.map.tiles[state.fieldY-1][a]=TILE_FLOOR;candidate.map.tiles[state.fieldY-1][b]=TILE_FLOOR;
+    } else {
+        const int a=state.fieldY-1,b=state.fieldY+state.fieldHeight;
+        candidate.map.tiles[a][state.fieldX-1]=TILE_FLOOR;candidate.map.tiles[b][state.fieldX-1]=TILE_FLOOR;
+    }
     if (!placedSafeDistractor || !placedUnsafeDistractor ||
         !validateNumberPuzzleSafePath(candidate) ||
         !validateRoomConnectivity(candidate)) return false;
@@ -584,9 +646,10 @@ bool tryEnterCurrentNumberPuzzleTile(Entity& player, int x, int y)
     DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
     if (!isNumberTilePuzzleRoom(room) || !isInField(room.numberPuzzle, x, y))
         return true;
+    if(room.puzzleBypassed)return true;
     NumberTilePuzzleState& state = room.numberPuzzle;
     const uint8_t digit = getNumberPuzzleDigitAt(room, x, y);
-    DungeonRoomRuntime& runtime = dungeon.roomRuntime[dungeon.currentRoom];
+    auto runtime = traversalFor(player);
     const bool stateful = isStateful(state.rule);
     if (!runtime.numberCrossingActive && !isStartEdge(state, x, y))
     {
@@ -629,8 +692,8 @@ void handleCurrentNumberPuzzleMovement(Entity& player, int previousX, int previo
     if (dungeon.currentRoom >= dungeon.roomCount || player.type != ENTITY_PLAYER)
         return;
     DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
-    if (!isNumberTilePuzzleRoom(room)) return;
-    DungeonRoomRuntime& runtime = dungeon.roomRuntime[dungeon.currentRoom];
+    if (!isNumberTilePuzzleRoom(room) || room.puzzleBypassed) return;
+    auto runtime = traversalFor(player);
     bool& crossing = runtime.numberCrossingActive;
     if (!crossing || isInField(room.numberPuzzle, player.x, player.y)) return;
     if (isInField(room.numberPuzzle, previousX, previousY) &&
@@ -665,6 +728,7 @@ bool tryUnlockCurrentNumberPuzzleExit(Direction direction)
 {
     if (dungeon.currentRoom >= dungeon.roomCount) return false;
     const DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    if (room.puzzleBypassed) return true;
     if (!isNumberTilePuzzleRoom(room) ||
         room.numberPuzzle.lockedExitDirection != direction) return true;
     if (room.numberPuzzle.progress == NUMBER_PUZZLE_COMPLETE) return true;

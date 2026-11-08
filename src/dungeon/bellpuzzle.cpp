@@ -221,6 +221,7 @@ bool configureBellPuzzleRoom(DungeonRoom& room, Direction lockedDirection,
     if (room.type != ROOM_PUZZLE ||
         getRoomConnection(room, lockedDirection) == nullptr) return false;
     DungeonRoom candidate = room;
+    candidate.puzzleBypassed = false;
     candidate.puzzleType = PUZZLE_BELLS;
     candidate.npcSpawn = DungeonNPCSpawn{};
     candidate.bellPuzzle = BellPuzzleState{};
@@ -269,11 +270,19 @@ bool playBellPuzzleSequence(const BellPuzzleState& state)
             return false;
     }
 
-    return playToneSequence(
+    if (dungeon.currentRoom < dungeon.roomCount &&
+        &state == &dungeon.rooms[dungeon.currentRoom].bellPuzzle) {
+        auto& runtime=dungeon.roomRuntime[dungeon.currentRoom].entityStorage.compact.bellVisual;
+        runtime.startedAt=millis();runtime.sequence=true;
+        runtime.active=true;updateCurrentBellVisuals();
+    }
+    // Mute must not suppress the visual puzzle information.
+    playToneSequence(
         frequencies,
         state.sequenceLength,
         BELL_TONE_DURATION_MS,
         BELL_PAUSE_DURATION_MS);
+    return true;
 }
 
 bool strikeCurrentBellAt(int x, int y)
@@ -285,6 +294,10 @@ bool strikeCurrentBellAt(int x, int y)
     if (furniture == nullptr) return false;
     const BellToneID tone = furnitureTone(furniture->type);
     if (tone >= BELL_TONE_COUNT) return false;
+    auto& visual=dungeon.roomRuntime[dungeon.currentRoom].entityStorage.compact.bellVisual;
+    visual.startedAt=millis();visual.tone=tone;
+    visual.sequence=false;visual.active=true;
+    updateCurrentBellVisuals();
     const uint16_t frequency = getBellToneFrequency(tone);
     playToneSequence(&frequency, 1, BELL_TONE_DURATION_MS, 0);
     uint8_t& entered = dungeon.roomRuntime[dungeon.currentRoom].bellEnteredCount;
@@ -353,6 +366,7 @@ bool tryUnlockCurrentBellExit(Direction direction)
 {
     if (dungeon.currentRoom >= dungeon.roomCount) return false;
     DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    if (room.puzzleBypassed) return true;
     if (!isBellPuzzleRoom(room) ||
         room.bellPuzzle.lockedExitDirection != direction ||
         room.bellPuzzle.progress == BELL_PUZZLE_COMPLETE) return true;
@@ -365,4 +379,40 @@ bool tryUnlockCurrentBellExit(Direction direction)
     room.completed = true;
     setGameMessage("The key unlocks the door.");
     return true;
+}
+
+BellToneID getCurrentBellVisualTone(uint32_t now)
+{
+    if(gameState!=GAME_DUNGEON || dungeon.currentRoom>=dungeon.roomCount)return BELL_TONE_COUNT;
+    const auto& room=dungeon.rooms[dungeon.currentRoom];const auto& runtime=dungeon.roomRuntime[dungeon.currentRoom].entityStorage.compact.bellVisual;
+    if(!isBellPuzzleRoom(room)||!runtime.active)return BELL_TONE_COUNT;
+    const uint32_t elapsed=now-runtime.startedAt;
+    if(!runtime.sequence)return elapsed<BELL_TONE_DURATION_MS?runtime.tone:BELL_TONE_COUNT;
+    const uint32_t period=BELL_TONE_DURATION_MS+BELL_PAUSE_DURATION_MS;
+    const auto index=elapsed/period;
+    return index<room.bellPuzzle.sequenceLength && elapsed%period<BELL_TONE_DURATION_MS
+        ?room.bellPuzzle.sequence[index]:BELL_TONE_COUNT;
+}
+bool isCurrentBellVisuallyRingingAt(int x,int y,uint32_t now)
+{
+    if(dungeon.currentRoom>=dungeon.roomCount)return false;
+    const auto* bell=getDungeonFurnitureAt(dungeon.rooms[dungeon.currentRoom],x,y);
+    const auto tone=getCurrentBellVisualTone(now);
+    return bell&&tone<BELL_TONE_COUNT&&furnitureTone(bell->type)==tone;
+}
+void updateCurrentBellVisuals()
+{
+    if(gameState!=GAME_DUNGEON||dungeon.currentRoom>=dungeon.roomCount)return;
+    auto& room=dungeon.rooms[dungeon.currentRoom];auto& runtime=dungeon.roomRuntime[dungeon.currentRoom].entityStorage.compact.bellVisual;
+    const uint32_t now=millis();const auto tone=getCurrentBellVisualTone(now);
+    if(tone!=runtime.lastTone){
+        for(const auto& bell:room.furniture){const auto id=furnitureTone(bell.type);
+            if(id<BELL_TONE_COUNT&&(id==tone||id==runtime.lastTone))
+                markTileDirty(bell.x,bell.y); // The four short marks fit inside this 16x16 footprint.
+        }
+        runtime.lastTone=tone;
+    }
+    const uint32_t length=runtime.sequence?
+        room.bellPuzzle.sequenceLength*(BELL_TONE_DURATION_MS+BELL_PAUSE_DURATION_MS):BELL_TONE_DURATION_MS;
+    if(runtime.active&&uint32_t(now-runtime.startedAt)>=length)runtime.active=false;
 }

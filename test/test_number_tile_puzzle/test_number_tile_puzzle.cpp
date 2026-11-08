@@ -14,6 +14,11 @@ const RoomConnection* getRoomConnection(const DungeonRoom& room, Direction direc
     return nullptr;
 }
 bool validateRoomConnectivity(const DungeonRoom&) { return true; }
+Entity* getEntityAt(Entity entities[],uint8_t count,uint8_t x,uint8_t y) {
+    for(unsigned i=0;entities&&i<count;++i)
+        if(entities[i].active&&entities[i].x==x&&entities[i].y==y)return &entities[i];
+    return nullptr;
+}
 void markTileDirty(int, int) {}
 void setGameMessage(const char* message) { messageText = message; }
 

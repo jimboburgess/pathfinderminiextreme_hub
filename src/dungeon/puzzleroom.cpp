@@ -64,6 +64,7 @@ bool isRotatingDungeonPuzzleType(DungeonPuzzleType puzzleType)
 void resetDungeonPuzzleBlueprints(DungeonRoom& room)
 {
     room.puzzleType = PUZZLE_NONE;
+    room.puzzleBypassed = false;
     room.completed = false;
     room.npcSpawn = DungeonNPCSpawn{};
     room.bellPuzzle = BellPuzzleState{};
@@ -132,6 +133,7 @@ bool configureRotatingPuzzleRoom(
 bool isDungeonPuzzleComplete(const DungeonRoom& room)
 {
     if (room.type != ROOM_PUZZLE) return false;
+    if (room.puzzleBypassed) return true;
     switch (room.puzzleType)
     {
         case PUZZLE_RIDDLEMAN:

@@ -41,6 +41,13 @@ constexpr uint16_t BELL_HIGH_FREQUENCY = 784;
 constexpr uint16_t BELL_TONE_DURATION_MS = 300;
 constexpr uint16_t BELL_PAUSE_DURATION_MS = 160;
 
+struct BellVisualRuntime {
+    uint32_t startedAt=0;
+    BellToneID tone=BELL_TONE_COUNT,lastTone=BELL_TONE_COUNT;
+    bool sequence=false,active=false;
+};
+static_assert(sizeof(BellVisualRuntime)<=8,"Bell visual timing stays compact");
+
 struct BellPuzzleState
 {
     BellToneID sequence[MAX_BELL_SEQUENCE] = {};
@@ -76,6 +83,10 @@ bool configureBellPuzzleRoom(
 bool isBellPuzzleRoom(const DungeonRoom& room);
 bool playBellPuzzleSequence(const BellPuzzleState& state);
 bool strikeCurrentBellAt(int x, int y);
+// Shared room clock, independent of the audio mute/output state.
+BellToneID getCurrentBellVisualTone(uint32_t now);
+bool isCurrentBellVisuallyRingingAt(int x, int y, uint32_t now);
+void updateCurrentBellVisuals();
 bool isCurrentBellListeningRuneAt(int x, int y);
 bool handleCurrentBellListeningRuneEntry(Entity& mover, int x, int y);
 bool handleCurrentBellListeningRuneMovement(

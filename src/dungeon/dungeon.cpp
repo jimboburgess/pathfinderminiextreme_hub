@@ -1007,6 +1007,7 @@ void resetDungeonRun(Dungeon& dungeon)
         runtime.initialized = false;
         runtime.persistenceReady = false;
         runtime.bellEnteredCount = 0;
+        runtime.entityStorage.compact.bellVisual=BellVisualRuntime{};
         runtime.numberCrossingActive = false;
         runtime.numberCurrentStep = 0;
         runtime.numberPreviousDigit = 0;
@@ -1027,6 +1028,7 @@ void resetDungeonRun(Dungeon& dungeon)
         dungeon.rooms[roomIndex].npcSpawn = DungeonNPCSpawn{};
         dungeon.rooms[roomIndex].puzzleType = PUZZLE_NONE;
         dungeon.rooms[roomIndex].encounterTheme = ENCOUNTER_NONE;
+        dungeon.rooms[roomIndex].puzzleBypassed = false;
         dungeon.rooms[roomIndex].bellPuzzle = BellPuzzleState{};
         dungeon.rooms[roomIndex].numberPuzzle = NumberTilePuzzleState{};
         dungeon.rooms[roomIndex].brazierPuzzle = BrazierPuzzleState{};

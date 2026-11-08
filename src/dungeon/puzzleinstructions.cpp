@@ -5,7 +5,7 @@ const char* getPuzzleEntryInstruction(DungeonPuzzleType puzzleType)
     switch (puzzleType)
     {
         case PUZZLE_BELLS:
-            return "Match the tones. Ring the bells in the same order.";
+            return "Match the tones. Use the replay button, then ring the same order.";
         case PUZZLE_NUMBER_TILES:
             return "Follow the rule. Cross using only the correct numbers.";
         case PUZZLE_BRAZIERS:

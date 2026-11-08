@@ -6,6 +6,7 @@
 #define PATHFINDERMINIEXTREME_025_INTERACTION_H
 
 #include <stdint.h>
+#include "data/game.h"
 
 struct Entity;
 
@@ -20,7 +21,10 @@ bool tryInteractWithFacingEntity();
 // open. They only affect the chest selected by the preceding interaction.
 void pickLockedChest();
 void forceOpenLockedChest();
-void pickRiddlemanDoorLock();
+void pickRiddlemanDoorLock(); // Existing menu action now handles every puzzle exit.
+bool getCurrentPuzzleExitDirectionAt(int x, int y, Direction& direction);
+bool canAttemptCurrentPuzzleBypass(const Entity& actor, Direction direction);
+bool attemptCurrentPuzzleBypass(Entity& actor, Direction direction, int disableDeviceTotal);
 
 // Invalidates selections that point into the shared active dungeon entity
 // buffer before that buffer is reused for another room.

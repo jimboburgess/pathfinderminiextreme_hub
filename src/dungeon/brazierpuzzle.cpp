@@ -198,6 +198,7 @@ bool configureBrazierPuzzleRoom(DungeonRoom& room, Direction lockedDirection,
         return false;
 
     DungeonRoom candidate = room;
+    candidate.puzzleBypassed = false;
     candidate.puzzleType = PUZZLE_BRAZIERS;
     candidate.npcSpawn = DungeonNPCSpawn{};
     candidate.bellPuzzle = BellPuzzleState{};
@@ -331,6 +332,7 @@ bool tryUnlockCurrentBrazierPuzzleExit(Direction direction)
 {
     if (dungeon.currentRoom >= dungeon.roomCount) return false;
     const DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    if (room.puzzleBypassed) return true;
     if (!isBrazierPuzzleRoom(room) ||
         room.brazierPuzzle.lockedExitDirection != direction ||
         room.brazierPuzzle.progress == BRAZIER_PUZZLE_COMPLETE)
