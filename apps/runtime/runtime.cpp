@@ -344,8 +344,11 @@ void releaseInputs() { pins[ENCODER_SW]=pins[BUTTON_A]=pins[BUTTON_B]=HIGH; }
 bool input(const std::string& action,bool down) {
     if(!initialized) return false;
     if(action.size()==5 && action.compare(0,4,"key:")==0) {
-        if(!down || !isCharacterNameEntryActive())return down;
-        return appendCharacterNameCharacter(action[4]);
+        if(!isSupportedCharacterNameCharacter(action[4]))return false;
+        // A valid key can arrive after the name fills or its UI closes. Treat
+        // that as a harmless no-op, never a failed gameplay action/disconnect.
+        if(down && textInputActive())appendCharacterNameCharacter(action[4]);
+        return true;
     }
     if(action=="release") { releaseInputs(); inputStep(); return true; }
     if(action=="cw" || action=="ccw") {
@@ -360,7 +363,7 @@ bool input(const std::string& action,bool down) {
     if(pin<0) return false;
     pins[pin]=down?LOW:HIGH; inputStep(); return true;
 }
-bool textInputActive() { return isCharacterNameEntryActive(); }
+bool textInputActive() { return gameState==GAME_CHARACTER_CREATION && isCharacterNameEntryActive(); }
 const uint16_t* pixels() { return tft.getBuffer(); }
 std::string diagnostic() {
     std::ostringstream out;

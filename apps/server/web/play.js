@@ -90,7 +90,11 @@
   function release(action) {if(!held.delete(action))return;clearTimeout(repeat.get(action));clearInterval(repeat.get(action));repeat.delete(action);if(action!=="cw"&&action!=="ccw")enqueue(action,false);}
   function releaseAll(){for(const timer of repeat.values()){clearTimeout(timer);clearInterval(timer);}repeat.clear();held.clear();requests=[];if(playing)enqueue("release",false);}
   function actionFor(key){return {ArrowDown:"cw",s:"cw",S:"cw",ArrowUp:"ccw",w:"ccw",W:"ccw",Enter:"encoder"," ":"a",Escape:"b",Backspace:"b"}[key];}
-  document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;if(textInput&&playing&&event.key.length===1){event.preventDefault();enqueue(`key:${event.key}`,true);return;}const a=actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a);}});
+  document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;if(textInput&&playing&&event.key.length===1&&event.key!==" "){
+    // Space always represents handheld Button A, including name entry.
+    // Unsupported text and key-repeat must not emit invalid/flooding RPCs.
+    event.preventDefault();if(!event.repeat&&/^[A-Za-z0-9]$/.test(event.key))enqueue(`key:${event.key}`,true);return;
+  }const a=actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a);}});
   document.addEventListener("keyup",event=>{const a=actionFor(event.key);if(a){release(a);if(playing)event.preventDefault();}});
   window.addEventListener("blur",()=>{releaseAll();audio?.pause();});document.addEventListener("visibilitychange",()=>{if(document.hidden){releaseAll();audio?.pause();}});
   for(const button of $("controls").querySelectorAll("button")){

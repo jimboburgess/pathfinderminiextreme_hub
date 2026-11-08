@@ -1,8 +1,9 @@
 // Client logic only: fake DOM/timers/socket, no browser or networking.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const events={},elements={},sent=[],timers=new Map();
+const textTest=process.argv.includes('--text');
 const privateTest=process.argv.includes('--serve');
-const fixture=process.argv[3]&&!privateTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
+const fixture=process.argv[3]&&!privateTest&&!textTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
 const expectedPixels=process.argv[4]?fs.readFileSync(process.argv[4]):null;
 let now=0,nextTimer=1,lastPixels,socket,characterExists=false;
 function element(id){return elements[id]??={value:'',style:{},disabled:false,tagName:'DIV',clientWidth:1200,
@@ -28,6 +29,7 @@ class Socket {
     if(request.type==='join'){characterExists=true;data=privateTest?{}:{reconnect_token:'b'.repeat(64)};}
     if(request.type==='leave')characterExists=false;
     if(request.type==='screen')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):''};
+    if(textTest&&data.encoding)data.text_input=true;
     if(request.type==='screen'&&fixture&&request.since==='0')data=fixture.find(p=>p.offset===request.offset);
     queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:true,data})}));
   }
@@ -47,6 +49,16 @@ async function main(){
   assert.equal(lastPixels.length,230400);
   function verifyPixels(){for(let i=0;i<lastPixels.length;i+=4){let expected=[0,0,255,255];if(expectedPixels){const v=expectedPixels.readUInt16LE(i/2),r=v>>11,g=v>>5&63,b=v&31;expected=[r<<3|r>>2,g<<2|g>>4,b<<3|b>>2,255];}assert.deepEqual(Array.from(lastPixels.subarray(i,i+4)),expected,`pixel ${i/4}`);}}
   verifyPixels();
+  if(textTest){
+    const begin=sent.length;
+    key('keydown',' ');await advance(120);key('keyup',' ');await advance(250);
+    assert(sent.slice(begin).some(r=>r.action==='a'&&r.down),'Space is Button A even if text_input is true');
+    assert(!sent.slice(begin).some(r=>r.action==='key: '),'never emit a whitespace-containing action');
+    for(const char of ['!','\u00e9']){key('keydown',char);key('keyup',char);}await advance(250);
+    assert(!sent.slice(begin).some(r=>r.action==='key:!'||r.action==='key:\u00e9'),'unsupported text ignored locally');
+    key('keydown','q');await advance(150);assert(sent.some(r=>r.action==='key:q'),'letters still type into character name');
+    assert.equal(socket.readyState,Socket.OPEN,'text controls preserve connection');
+  }
   const initial=lastPixels;
   for(const scale of ['1','2','3','4','5','fit']){element('scale').value=scale;element('scale').onchange();assert.equal(canvas.width,240);assert.equal(canvas.height,240);const expected=scale==='fit'?3:Number(scale);assert.equal(canvas.style.width,`${expected*240}px`);assert.equal(lastPixels,initial);}
   assert.equal(key('keydown',' ','INPUT'),false);

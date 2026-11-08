@@ -27,7 +27,7 @@ bool PartyRuntime::input(const PlayerHandle& handle,uint64_t serial,const std::s
 }
 const uint16_t* PartyRuntime::pixels(const PlayerHandle& handle,uint64_t serial) {
     SessionPlayer player;ControllerState* state=nullptr;
-    if(!impl_->resolve(handle,serial,player,state))return nullptr;
+    if(!impl_->resolve(handle,serial,player,state) || !selectController(player.id))return nullptr;
     return controllerPixels(player.id);
 }
 

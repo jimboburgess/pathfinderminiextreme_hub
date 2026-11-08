@@ -145,3 +145,9 @@ if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
         "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/server/browser_client_tests.cjs"
         "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --serve)
 endif()
+
+if(BUILD_TESTING AND PFME_BUILD_PLAYABLE AND PFME_CLIENT_NODE)
+    add_test(NAME pfme_browser_text_space COMMAND "${PFME_CLIENT_NODE}"
+        "${PROJECT_SOURCE_DIR}/tests/server/browser_client_tests.cjs"
+        "${CMAKE_CURRENT_SOURCE_DIR}/web/play.js" --text)
+endif()
