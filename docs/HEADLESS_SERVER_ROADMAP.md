@@ -10,9 +10,8 @@ party composition, four-player start barrier or three-player optimization.
 The portable native layer now includes a fixed-capacity `PartyRegistry` for up
 to 16 simultaneous independent parties. Each party owns one authoritative
 `GameSession`, uses the existing four `PlayerID` slots, and exposes a compact
-roster snapshot. Five-character uppercase join codes use the unambiguous
-`23456789ABCDEFGHJKMNPQRSTUVWXYZ` alphabet; codes are invitation/discovery
-secrets, not authentication credentials. Internal 128-bit party IDs are kept
+roster snapshot. Four-digit numeric join codes use the
+`0123456789` alphabet; codes identify parties and are not authentication credentials. Internal 128-bit party IDs are kept
 separate from manually shared codes.
 
 Player 0 creates the party and is its social leader. That permits party lock,

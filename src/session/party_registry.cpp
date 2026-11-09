@@ -6,7 +6,7 @@ namespace pfme
 {
 namespace
 {
-const char JOIN_CODE_ALPHABET[] = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const char JOIN_CODE_ALPHABET[] = "0123456789";
 constexpr size_t JOIN_CODE_ALPHABET_LENGTH = sizeof(JOIN_CODE_ALPHABET) - 1;
 
 bool sameID(const PartyID& left, const PartyID& right)
@@ -140,8 +140,6 @@ bool PartyRegistry::normalizeJoinCode(const char* input,
     for (size_t index = 0; index < PARTY_JOIN_CODE_LENGTH; ++index)
     {
         char character = input[index];
-        if (character >= 'a' && character <= 'z')
-            character = static_cast<char>(character - 'a' + 'A');
         bool valid = false;
         for (size_t alphabet = 0; alphabet < JOIN_CODE_ALPHABET_LENGTH; ++alphabet)
             if (character == JOIN_CODE_ALPHABET[alphabet]) valid = true;

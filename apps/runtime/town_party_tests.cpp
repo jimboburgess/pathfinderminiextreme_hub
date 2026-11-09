@@ -40,7 +40,7 @@ void board(unsigned id){
  for(unsigned n=0;townSelection!=TOWN_BULLETIN_BOARD && n<5;++n)tap(id,"cw");
  tap(id,"a");
 }
-void join(unsigned id,const char* code){board(id);choose(id,"Join Party");for(unsigned i=0;i<5;++i){char letter[2]={code[i],0};choose(id,letter);}PartySnapshot s;check(nativePartySnapshot(id,s),"joined through code menu");tap(id,"b");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Bulletin Board","Back restores Bulletin Board");tap(id,"b");}
+void join(unsigned id,const char* code){board(id);choose(id,"Join Party");for(unsigned i=0;i<pfme::PARTY_JOIN_CODE_LENGTH;++i){char letter[2]={code[i],0};choose(id,letter);}PartySnapshot s;check(nativePartySnapshot(id,s),"joined through code menu");tap(id,"b");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Bulletin Board","Back restores Bulletin Board");tap(id,"b");}
 bool selectAction(unsigned id,MenuAction action) {
     selectController(id);
     if(!menuState.isOpen || !menuState.depth)return false;

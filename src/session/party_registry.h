@@ -10,7 +10,7 @@
 namespace pfme
 {
 constexpr size_t PARTY_REGISTRY_CAPACITY = 16;
-constexpr size_t PARTY_JOIN_CODE_LENGTH = 5;
+constexpr size_t PARTY_JOIN_CODE_LENGTH = 4;
 constexpr size_t PARTY_JOIN_CODE_SIZE = PARTY_JOIN_CODE_LENGTH + 1;
 constexpr size_t PARTY_EVENT_CAPACITY = 32;
 constexpr size_t PARTY_CODE_RETRY_LIMIT = 32;

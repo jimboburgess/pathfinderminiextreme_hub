@@ -44,7 +44,7 @@ Entropy entropy;
 std::unique_ptr<PartyRegistry> registry;
 
 bool travelling=false;
-constexpr const char* alphabet="23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+constexpr const char* alphabet="0123456789";
 struct Social {
  bool member=false;PartyHandle party{};PartyMembership membership{};unsigned world=0;
  char name[NETWORK_PLAYER_NAME_SIZE]{};
@@ -169,14 +169,14 @@ void build(PlayerID id,Social::Pane pane){
  if(pane==Social::Board){
   std::snprintf(s.title,sizeof(s.title),"Bulletin Board");
   item(s,0,"Create Party","Become leader; share the join code.");
-  item(s,1,"Join Party","Enter a five-character party code.");
+  item(s,1,"Join Party","Enter a four-digit party code.");
   item(s,2,"Party Status","Members, classes and connection status.");
   item(s,3,"Trade Items","Offer carried items to a party member.");
   item(s,4,"Leave Party","In Town: leader departure closes party.");
   s.menu={s.title,s.items,5,nullptr,nullptr,s.body,30};
  }else if(pane==Social::Code){
   std::snprintf(s.title,sizeof(s.title),"Join Code: %s",s.code);
-  for(unsigned i=0;alphabet[i];++i){s.letters[i][0]=alphabet[i];s.letters[i][1]=0;item(s,i,s.letters[i],"Choose each character; B cancels.");}
+  for(unsigned i=0;alphabet[i];++i){s.letters[i][0]=alphabet[i];s.letters[i][1]=0;item(s,i,s.letters[i],"Choose each digit; B cancels.");}
   s.menu={s.title,s.items,static_cast<uint8_t>(std::strlen(alphabet)),nullptr,nullptr,nullptr,0};
  }else{
   std::snprintf(s.title,sizeof(s.title),"Party Status");item(s,0,"Back","Return to the Bulletin Board.");

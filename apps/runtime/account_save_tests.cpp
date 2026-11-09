@@ -91,7 +91,7 @@ int main(int argc,char** argv){fs::path root;try{
  townSelection=TOWN_BULLETIN_BOARD;tap(runtime,peer,2,"a");choose(runtime,peer,2,"Create Party");
  PartySnapshot party;check(nativePartySnapshot(peerId,party),"real party");tap(runtime,peer,2,"b");tap(runtime,peer,2,"b");
  check(selectController(id),"owner select");closeMenu();closeTownHome();wait(runtime,350);townSelection=TOWN_BULLETIN_BOARD;tap(runtime,owner,1,"a");choose(runtime,owner,1,"Join Party");
- for(unsigned n=0;n<5;++n){char letter[2]={party.joinCode[n],0};choose(runtime,owner,1,letter);}tap(runtime,owner,1,"b");tap(runtime,owner,1,"b");
+ for(unsigned n=0;n<pfme::PARTY_JOIN_CODE_LENGTH;++n){char letter[2]={party.joinCode[n],0};choose(runtime,owner,1,letter);}tap(runtime,owner,1,"b");tap(runtime,owner,1,"b");
  selectController(peerId);townSelection=TOWN_DUNGEON;tap(runtime,peer,2,"a");check(nativeActor(peerId),"peer in production dungeon");
  selectController(id);check(nativeActor(id),"owner in same dungeon");check(loadAccountCharacter(1,loaded)!=nullptr,"cannot replace an exploring actor");
  // Production Return to Town action leaves the other player exploring.

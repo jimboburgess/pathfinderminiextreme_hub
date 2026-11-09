@@ -53,12 +53,10 @@ bool creationAndJoining()
     CHECK(snapshot.members[0].location == MultiplayerMemberLocation::TOWN);
     CHECK(std::strcmp(snapshot.members[0].profile.displayName, "Alice") == 0);
     CHECK(std::strlen(snapshot.joinCode) == PARTY_JOIN_CODE_LENGTH);
-    const std::string alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+    const std::string alphabet = "0123456789";
     for (size_t index = 0; index < PARTY_JOIN_CODE_LENGTH; ++index)
         CHECK(alphabet.find(snapshot.joinCode[index]) != std::string::npos);
-    CHECK(std::strchr(snapshot.joinCode, '0') == nullptr);
     CHECK(std::strchr(snapshot.joinCode, 'O') == nullptr);
-    CHECK(std::strchr(snapshot.joinCode, '1') == nullptr);
     CHECK(std::strchr(snapshot.joinCode, 'I') == nullptr);
     CHECK(std::strchr(snapshot.joinCode, 'L') == nullptr);
     const GameSession* game = registry.gameSession(party);
@@ -95,11 +93,14 @@ bool codeValidationAndCollision()
 {
     char code[PARTY_JOIN_CODE_SIZE] = {};
     PartyRegistry::joinCodeFromEntropy(0, code);
-    CHECK(std::strcmp(code, "22222") == 0);
+    CHECK(std::strcmp(code, "0000") == 0);
     char normalized[PARTY_JOIN_CODE_SIZE] = {};
-    CHECK(PartyRegistry::normalizeJoinCode("abcde", normalized));
-    CHECK(std::strcmp(normalized, "ABCDE") == 0);
-    CHECK(!PartyRegistry::normalizeJoinCode("ABCD", normalized));
+    CHECK(PartyRegistry::normalizeJoinCode("0123", normalized));
+    CHECK(std::strcmp(normalized, "0123") == 0);
+    CHECK(!PartyRegistry::normalizeJoinCode("123", normalized));
+    CHECK(!PartyRegistry::normalizeJoinCode("12345", normalized));
+    CHECK(!PartyRegistry::normalizeJoinCode("12A4", normalized));
+    CHECK(!PartyRegistry::normalizeJoinCode("12 4", normalized));
     CHECK(!PartyRegistry::normalizeJoinCode("ABCDEF", normalized));
     CHECK(!PartyRegistry::normalizeJoinCode("ABO23", normalized));
     CHECK(!PartyRegistry::normalizeJoinCode("AB123", normalized));
@@ -119,8 +120,8 @@ bool codeValidationAndCollision()
     PartySnapshot firstSnapshot, secondSnapshot;
     CHECK(rerollRegistry.snapshot(first, firstSnapshot) == PartyError::Ok);
     CHECK(rerollRegistry.snapshot(second, secondSnapshot) == PartyError::Ok);
-    CHECK(std::strcmp(firstSnapshot.joinCode, "22222") == 0);
-    CHECK(std::strcmp(secondSnapshot.joinCode, "32222") == 0);
+    CHECK(std::strcmp(firstSnapshot.joinCode, "0000") == 0);
+    CHECK(std::strcmp(secondSnapshot.joinCode, "1000") == 0);
 
     uint64_t collisionValues[6 + 2 + PARTY_CODE_RETRY_LIMIT] = {};
     collisionValues[0] = 1; collisionValues[1] = 2;
@@ -139,7 +140,7 @@ bool codeValidationAndCollision()
     PartyHandle found;
     CHECK(validationRegistry.findParty("bad", found) == PartyError::InvalidCode);
     CHECK(validationRegistry.findParty("OOOOO", found) == PartyError::InvalidCode);
-    CHECK(validationRegistry.findParty("ABCDE", found) == PartyError::PartyNotFound);
+    CHECK(validationRegistry.findParty("9999", found) == PartyError::PartyNotFound);
     PartyMembership ignored;
     CHECK(validationRegistry.joinParty("bad", profile("A"), ignored) == PartyError::InvalidCode);
     CHECK(validationRegistry.createParty(profile(""), found, ignored) == PartyError::InvalidProfile);

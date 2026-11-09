@@ -75,7 +75,7 @@ def form_town_party(clients):
     tap(clients[0],'a');tap(clients[0],'a')
     party=clients[0].call('party_status');assert party['ok'],party
     code=party['data']['code'];tap(clients[0],'b');tap(clients[0],'b')
-    alphabet='23456789ABCDEFGHJKMNPQRSTUVWXYZ'
+    alphabet='0123456789'
     for client in clients[1:]:
         for _ in range(4):tap(client,'cw')
         tap(client,'a');tap(client,'cw');tap(client,'a')

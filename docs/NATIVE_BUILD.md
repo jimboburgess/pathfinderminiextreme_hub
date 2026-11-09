@@ -203,8 +203,8 @@ server-side `GameSession` remains gameplay authority. A party can start Forest o
 Dungeon with any connected size from one through four; all connected members are
 selected automatically and disconnected reserved members do not block travel.
 
-Join codes are five normalized uppercase characters using
-`23456789ABCDEFGHJKMNPQRSTUVWXYZ`. Collision retries are bounded and tested.
+Join codes are four numeric digits (including leading zeroes) using
+`0123456789`. Collision retries are bounded and tested.
 Opaque 128-bit reconnect tokens preserve the same Player ID across disconnect,
 are invalidated by leave/party closure, and are distinct from in-process
 `PlayerHandle` capabilities. Production adapters must provide operating-system
