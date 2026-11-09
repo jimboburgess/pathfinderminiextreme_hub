@@ -2806,7 +2806,7 @@ void confirmPlayerAttack()
     char message[64];
 
     snprintf(message, sizeof(message), "Attack %+d: %s! (%d)",
-             iterativeBAB,
+             totalAttackBonus,
              criticalConfirmed ? "Critical" : (hit ? "Hit" : "Miss"),
              total);
 
@@ -4476,7 +4476,7 @@ void beginMonsterAttack(
     char message[64];
     snprintf(message, sizeof(message), "%s attack %+d with %s%s",
              getEntityName(monster),
-             iterativeBAB,
+             totalAttackBonus,
              getEquippedItemName(
                   monster->character,
                   weaponSlot),
