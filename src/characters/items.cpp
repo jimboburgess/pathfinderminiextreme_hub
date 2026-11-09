@@ -116,7 +116,7 @@ const Item itemDatabase[] =
 	// Potions
 	// ======================================================
 
-	{ "Potion of Cure Light Wounds",      ITEMTYPE_POTION, 0, 50,   1, ICON_POTION, true, true, RARITY_COMMON,   THEME_ANY,    "Restores a small amount of health." },
+	{ "Potion of Cure Light Wounds",      ITEMTYPE_POTION, 0, 50,   1, ICON_POTION, true, true, RARITY_COMMON,   THEME_ANY,    "Restores 1d8+1 HP." },
 	{ "Potion of Cure Moderate Wounds",   ITEMTYPE_POTION, 1, 300,  1, ICON_POTION, true, true, RARITY_UNCOMMON, THEME_ANY,    "Restores a moderate amount of health." },
 	{ "Potion of Cure Serious Wounds",    ITEMTYPE_POTION, 2, 750,  1, ICON_POTION, true, true, RARITY_RARE,      THEME_ANY,    "Restores a large amount of health." },
 	{ "Potion of Cure Critical Wounds",   ITEMTYPE_POTION, 3, 1400, 1, ICON_POTION, true, true, RARITY_EPIC,      THEME_ANY,    "Restores a massive amount of health." },
@@ -749,7 +749,7 @@ bool advanceSpellLearning(Character& character, bool& completed)
 
 int calculateCureLightWoundsPotionHealing(int naturalRoll)
 {
-    const int healing = naturalRoll - 1;
+    const int healing = naturalRoll + 1;
     return healing > 0 ? healing : 0;
 }
 

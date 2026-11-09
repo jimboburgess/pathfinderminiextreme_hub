@@ -164,10 +164,10 @@ int main()
 {
     try
     {
-        check(calculateCureLightWoundsPotionHealing(1) == 0,
-              "healing roll one is zero");
-        check(calculateCureLightWoundsPotionHealing(8) == 7,
-              "healing roll eight is seven");
+        check(calculateCureLightWoundsPotionHealing(1) == 2,
+              "healing roll one is two");
+        check(calculateCureLightWoundsPotionHealing(8) == 9,
+              "healing roll eight is nine");
         check(!squareTargetRangedAttackHits(1, 20),
               "natural one misses square");
         check(squareTargetRangedAttackHits(2, 3),
@@ -188,8 +188,8 @@ int main()
             *actor, ally->x, ally->y, 20, 8);
         check(success.result == WorldItemResult::SUCCESS && success.hit,
               "successful potion throw");
-        check(success.healing == 7 && ally->character.health.currentHP == 17,
-              "successful throw heals one d8 minus one");
+        check(success.healing == 9 && ally->character.health.currentHP == 19,
+              "successful throw heals one d8 plus one");
         check(getItemQuantity(actor->character, ITEM_POTION_CURE_LIGHT_WOUNDS) ==
                   beforeSuccess - 1,
               "successful throw consumes once");

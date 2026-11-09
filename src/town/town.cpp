@@ -1,6 +1,7 @@
 #include "town.h"
 
 #include "characters/items.h"
+#include "characters/conditions.h"
 
 #include "characters/characters.h"
 #include "data/game.h"
@@ -83,11 +84,20 @@ void updateTownRest()
         if (millis() - restStageTime < REST_SLEEP_TIME_MS)
             return;
 
-        int healing = player.level * getAbilityModifier(
-            player, ABILITY_CONSTITUTION);
-        healing = max(0, healing);
-
-        int regained = healCharacter(player, healing);
+        // Cure both generic poison and its timed venom affliction before
+        // calculating recovery, so poison penalties cannot reduce this rest.
+        removeCondition(player, CONDITION_POISONED);
+        removeCondition(player, CONDITION_SLOWING_VENOM);
+        player.conditions.poison = PoisonAffliction{};
+        const int healing = player.level <= 1 ? player.health.maxHP :
+            max(0, int(player.level) + getAbilityModifier(player, ABILITY_CONSTITUTION));
+        const int regained = healCharacter(player, healing);
+        int mana = player.level <= 1 ? player.magic.maxMP : 0;
+        if (player.level > 1 && player.characterClass == CLASS_CLERIC)
+            mana = max(0, int(player.level) + getAbilityModifier(player, ABILITY_CHARISMA));
+        else if (player.level > 1 && player.characterClass == CLASS_WIZARD)
+            mana = max(0, int(player.level) + getAbilityModifier(player, ABILITY_INTELLIGENCE));
+        const int regainedMP = restoreMana(player, mana);
         restoreClassAbilityUses(player);
 
         char message[48];
@@ -106,7 +116,7 @@ void updateTownRest()
                          static_cast<unsigned>(player.magic.learning.restsRemaining));
         }
         else
-            snprintf(message, sizeof(message), "Rest regained %d HP.", regained);
+            snprintf(message, sizeof(message), "Rest: +%d HP, +%d MP.", regained, regainedMP);
         setGameMessage(message);
 
         restResultShown = true;
