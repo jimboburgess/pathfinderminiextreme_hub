@@ -920,6 +920,20 @@ const Menu dungeonEntryMenu =
 const MenuItem combatMenuItems[] =
 {
     {
+        "Attack",
+        "Perform a melee or ranged attack.",
+        MENU_ATTACK,
+        &attackMenu,
+        MENU_CLASS_ALL
+    },
+    {
+        "Cast Spell",
+        "Cast one of your prepared spells.",
+        MENU_CAST_SPELL,
+        &spellMenu,
+        MENU_CLASS_WIZARD | MENU_CLASS_CLERIC
+    },
+    {
         "Use Skill",
         "Use an active character skill.",
         MENU_USE_SKILL,
@@ -940,20 +954,6 @@ const MenuItem combatMenuItems[] =
         nullptr,
         MENU_CLASS_ALL
     },
-    {
-        "Attack",
-        "Perform a melee or ranged attack.",
-        MENU_ATTACK,
-        &attackMenu,
-        MENU_CLASS_ALL
-    },
-{
-    "Cast Spell",
-    "Cast one of your prepared spells.",
-    MENU_CAST_SPELL,
-    &spellMenu,
-    MENU_CLASS_WIZARD | MENU_CLASS_CLERIC
-},
 {
     "Inspect",
     "Examine a creature's condition.",
