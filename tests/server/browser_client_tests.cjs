@@ -4,7 +4,8 @@ const events={},elements={},sent=[],timers=new Map();
 const interactTest=process.argv.includes('--interact');
 const textTest=process.argv.includes('--text');
 const privateTest=process.argv.includes('--serve');
-const fixture=process.argv[3]&&!privateTest&&!interactTest&&!textTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
+const buttonAConfirmTest=process.argv.includes('--confirm-a');
+const fixture=process.argv[3]&&!privateTest&&!interactTest&&!textTest&&!buttonAConfirmTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
 const expectedPixels=process.argv[4]&&!process.argv[4].startsWith('--')?fs.readFileSync(process.argv[4]):null;
 let now=0,nextTimer=1,lastPixels,socket,characterExists=false,socketCount=0,failOpens=0,browserStateRequests=0;
 const retryTest=process.argv.includes("--retry");
@@ -46,7 +47,7 @@ class Socket {
         messages:call===0?Array.from({length:110},(_,i)=>({sequence:String(i+1),text:'Game event '+(i+1)})):[{sequence:String(111+call),text:'New game event '+call}],
         message_cursor:String(call===0?110:110+call),message_gap:false};
     }
-    if(request.type==='screen'||request.type==='interact')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):''};
+    if(request.type==='screen'||request.type==='interact')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):'',mouse_confirm_action:buttonAConfirmTest?'a':'encoder'};
     if(textTest&&data.encoding)data.text_input=true;
     if(request.type==='screen'&&fixture&&request.since==='0')data=fixture.find(p=>p.offset===request.offset);
     queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:true,data})}));
@@ -122,7 +123,7 @@ async function main(){
   events['viewport:pointerdown']({target:canvas,button:0,preventDefault(){prevented=true;}});await advance(180);
   assert(sent.slice(beforeMouse).some(r=>r.action==='ccw'&&r.down),'wheel up rotates previous');
   assert(sent.slice(beforeMouse).some(r=>r.action==='cw'&&r.down),'wheel down rotates next');
-  assert(sent.slice(beforeMouse).some(r=>r.action==='a'&&r.down),'right click maps to Button A');
+  assert(sent.slice(beforeMouse).some(r=>r.action===(buttonAConfirmTest?'a':'encoder')&&r.down),buttonAConfirmTest?'right click follows the server-provided Button A action during character creation':'right click commits movement using the production encoder action');
   assert(sent.slice(beforeMouse).some(r=>r.action==='b'&&r.down),'left click maps to Button B');
   element('messages').scrollTop=0;events['messages:scroll']();await advance(1200);
   assert.equal(element('messages').scrollTop,0,'new messages do not steal an upward scroll position');

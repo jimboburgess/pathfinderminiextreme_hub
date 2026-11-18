@@ -38,6 +38,7 @@ class View:
             assert reply['ok'],reply
             check_audio(reply,True)
             frame=reply['data']
+            assert frame['mouse_confirm_action'] in ('a','encoder')
             assert frame['base']==self.since and frame['offset']==offset and frame['total']<=230400
             data+=base64.b64decode(frame['pixels'],validate=True);offset=len(data)
             if frame['more']:continue

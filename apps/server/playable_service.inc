@@ -78,6 +78,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
         perf::Scope measured(perf::metrics.encode[id]);
         if(!partyScreen(id).next(pixels,since,static_cast<size_t>(position),frame))return fail("InvalidCursor");
         frame["text_input"]=runtime::textInputActive();
+        frame["mouse_confirm_action"]=runtime::browserConfirmAction();
         if(perf::enabled()){++perf::metrics.chunks[id];const auto total=frame.at("total").as_uint64();if(!position){if(total)++perf::metrics.changed[id];else ++perf::metrics.unchanged[id];}perf::metrics.patchBytes[id]+=frame.at("pixels").as_string().size();}
         return ok(std::move(frame));
     }
