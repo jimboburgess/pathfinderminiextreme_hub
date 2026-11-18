@@ -10,6 +10,7 @@
 #include "data/entityspawn.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/combat.h"
+#include "map/activemap.h"
 #include "forest/forest.h"
 #include "input/buttons.h"
 #include <cstdio>
@@ -543,7 +544,12 @@ void drawCharacterSheet()
 
     drawLabelValue(LEFT_X, VALUE_X, y, "Melee Attack", getMeleeAttackBonus(*currentCharacter)); y += 10;
     drawLabelValue(LEFT_X, VALUE_X, y, "Ranged Attack", getRangedAttackBonus(*currentCharacter)); y += 10;
-    drawLabelValue(LEFT_X, VALUE_X, y, "Movement", getMovementSpeed(*currentCharacter));
+    Entity* movementActor = getActiveMapPlayer();
+    if (combat.active && movementActor != nullptr &&
+        &movementActor->character == currentCharacter)
+        drawLabelValue(LEFT_X, VALUE_X, y, "Move Left", movementActor->turn.movementRemaining);
+    else
+        drawLabelValue(LEFT_X, VALUE_X, y, "Movement", getMovementSpeed(*currentCharacter));
     y += 18;
 
     if (currentCharacter->characterClass == CLASS_FIGHTER)

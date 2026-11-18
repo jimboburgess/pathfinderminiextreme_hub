@@ -6,14 +6,21 @@ const textTest=process.argv.includes('--text');
 const privateTest=process.argv.includes('--serve');
 const fixture=process.argv[3]&&!privateTest&&!interactTest&&!textTest?JSON.parse(fs.readFileSync(process.argv[3],'utf8')):null;
 const expectedPixels=process.argv[4]&&!process.argv[4].startsWith('--')?fs.readFileSync(process.argv[4]):null;
-let now=0,nextTimer=1,lastPixels,socket,characterExists=false,socketCount=0,failOpens=0;
+let now=0,nextTimer=1,lastPixels,socket,characterExists=false,socketCount=0,failOpens=0,browserStateRequests=0;
 const retryTest=process.argv.includes("--retry");
 function element(id){return elements[id]??={value:'',style:{},disabled:false,tagName:'DIV',clientWidth:1200,
+  children:[],scrollTop:0,scrollHeight:0,clientHeight:120,innerHTML:'',
   addEventListener(type,fn){events[id+':'+type]=fn;},getBoundingClientRect(){return {top:200};},focus(){},
   closest(){return element(id+'Label');},querySelector(){return element(id+'Button');},querySelectorAll(){return [];}};}
 if(privateTest)element('connect').dataset={authMode:'serve'};
 element('secret').value='a'.repeat(64);element('name').value='Tester';
 const canvas=element('display');canvas.width=canvas.height=240;canvas.tagName='CANVAS';
+element('messages').children=[{className:'empty',textContent:'Game messages will appear here.'}];
+element('messages').querySelector=selector=>selector==='.empty'?element('messages').children.find(child=>child.className==='empty')||null:null;
+element('messages').replaceChildren=function(...children){this.children=children;this.scrollHeight=this.children.length*20;};
+element('messages').appendChild=function(child){this.children.push(child);this.scrollHeight=this.children.length*20;};
+element('messages').removeChild=function(child){const index=this.children.indexOf(child);if(index>=0)this.children.splice(index,1);this.scrollHeight=this.children.length*20;};
+Object.defineProperty(element('messages'),'firstChild',{get(){return this.children[0];}});
 const context={createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData:image=>{lastPixels=Uint8Array.from(image.data);}};
 canvas.getContext=()=>context;
 function timeout(fn,ms,interval=0){const id=nextTimer++;timers.set(id,{at:now+ms,fn,interval});return id;}
@@ -30,7 +37,15 @@ class Socket {
     if(privateTest&&request.type==='reconnect'&&!characterExists){queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({v:1,id:request.id,ok:false,error:{code:'NoCharacter'}})}));return;}
     if(request.type==='join'){characterExists=true;data=privateTest?{}:{reconnect_token:'b'.repeat(64)};}
     if(request.type==='leave')characterExists=false;
-    if(request.type==='play')data={interactive_frames:interactTest};
+    if(request.type==='play')data={interactive_frames:interactTest,browser_state:true};
+    if(request.type==='browser_state'){
+      const call=browserStateRequests++;
+      data={character:{name:'Aric',class:'Fighter',level:4,hp:31,max_hp:38,mp:0,max_mp:0,ac:16,speed:6,movement_remaining:call?3:4,in_combat:true,abilities:[16,14,13,10,12,8],conditions:'Blessed',room:'Dungeon room 1'},
+        party:[{name:'Aric',characterClass:'Fighter',level:4,hp:31,max_hp:38,mp:0,max_mp:0,conditions:'Blessed',connection:'Connected',room:'Dungeon room 1'},
+          {name:'Mira',characterClass:'Wizard',level:3,hp:12,max_hp:19,mp:6,max_mp:10,conditions:'',connection:'Reconnecting',room:'Dungeon room 2'}],
+        messages:call===0?Array.from({length:110},(_,i)=>({sequence:String(i+1),text:'Game event '+(i+1)})):[{sequence:String(111+call),text:'New game event '+call}],
+        message_cursor:String(call===0?110:110+call),message_gap:false};
+    }
     if(request.type==='screen'||request.type==='interact')data={encoding:'rgb565-patch-rle1',base:request.since,frame:'1',offset:0,total:request.since==='0'?12:0,more:false,pixels:request.since==='0'?patch.toString('base64'):''};
     if(textTest&&data.encoding)data.text_input=true;
     if(request.type==='screen'&&fixture&&request.since==='0')data=fixture.find(p=>p.offset===request.offset);
@@ -38,7 +53,7 @@ class Socket {
   }
   close(code=1000,reason=""){this.readyState=3;queueMicrotask(()=>this.onclose?.({code,reason}));}
 }
-const documentMock={hidden:false,getElementById:element,addEventListener(type,fn){events['document:'+type]=fn;}};
+const documentMock={hidden:false,getElementById:element,createElement(tag){return {tagName:tag.toUpperCase(),className:'',textContent:''};},addEventListener(type,fn){events['document:'+type]=fn;}};
 const sandbox={document:documentMock,window:{confirm:()=>true,addEventListener(type,fn){events['window:'+type]=fn;}},innerHeight:1100,location:privateTest?{protocol:'https:',host:'game.test.ts.net'}:{protocol:'http:',host:'127.0.0.1:18765'},
   Date:{now:()=>now},Math:Object.assign(Object.create(Math),{random:()=>.5}),WebSocket:Socket,Uint8Array,Uint8ClampedArray,atob:s=>Buffer.from(s,'base64').toString('binary'),
   setTimeout:(fn,ms)=>timeout(fn,ms),clearTimeout:id=>timers.delete(id),setInterval:(fn,ms)=>timeout(fn,ms,ms),clearInterval:id=>timers.delete(id)};
@@ -50,6 +65,9 @@ async function main(){
   assert.match(element('status').textContent,/Connected/);assert.equal(element('secret').value,'');
   assert.equal(element('scale').value,'3');assert.equal(context.imageSmoothingEnabled,false);
   assert.equal(lastPixels.length,230400);
+  assert.match(element('character-panel').innerHTML,/Aric/);assert.match(element('character-panel').innerHTML,/31\/38/);assert.match(element('character-panel').innerHTML,/Move remaining/);assert.match(element('character-panel').innerHTML,/>4</);
+  assert.match(element('party-panel').innerHTML,/Party \(2\/4\)/);assert.match(element('party-panel').innerHTML,/Reconnecting/);assert.match(element('party-panel').innerHTML,/Dungeon room 2/);
+  assert.equal(element('messages').children.length,100,'browser message history is bounded at 100');assert.equal(element('messages').children.at(-1).textContent,'Game event 110');
   function verifyPixels(){for(let i=0;i<lastPixels.length;i+=4){let expected=[0,0,255,255];if(expectedPixels){const v=expectedPixels.readUInt16LE(i/2),r=v>>11,g=v>>5&63,b=v&31;expected=[r<<3|r>>2,g<<2|g>>4,b<<3|b>>2,255];}assert.deepEqual(Array.from(lastPixels.subarray(i,i+4)),expected,`pixel ${i/4}`);}}
   verifyPixels();
   if(textTest){
@@ -97,6 +115,18 @@ async function main(){
   events['window:blur']();await advance(200);const rotary=sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length;
   await advance(1000);assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length,rotary,'blur stops repeat');
   assert(sent.some(r=>(r.type==='input'||r.type==='interact')&&r.action==='release'));
+  const beforeMouse=sent.length;let prevented=false;
+  events['viewport:wheel']({deltaY:-1,preventDefault(){prevented=true;}});assert(prevented);await advance(180);
+  events['viewport:wheel']({deltaY:1,preventDefault(){}});await advance(180);
+  events['viewport:pointerdown']({target:canvas,button:2,preventDefault(){prevented=true;}});await advance(180);
+  events['viewport:pointerdown']({target:canvas,button:0,preventDefault(){prevented=true;}});await advance(180);
+  assert(sent.slice(beforeMouse).some(r=>r.action==='ccw'&&r.down),'wheel up rotates previous');
+  assert(sent.slice(beforeMouse).some(r=>r.action==='cw'&&r.down),'wheel down rotates next');
+  assert(sent.slice(beforeMouse).some(r=>r.action==='a'&&r.down),'right click maps to Button A');
+  assert(sent.slice(beforeMouse).some(r=>r.action==='b'&&r.down),'left click maps to Button B');
+  element('messages').scrollTop=0;events['messages:scroll']();await advance(1200);
+  assert.equal(element('messages').scrollTop,0,'new messages do not steal an upward scroll position');
+  events['messages:scroll']();
   // A stalled response plus rapid inputs must collapse to release, never leave
   // a rotary interval running after its held-key state has been discarded.
   socket.stall=true;await advance(100);key('keydown','ArrowRight');

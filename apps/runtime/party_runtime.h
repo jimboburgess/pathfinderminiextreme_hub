@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 namespace pfme { namespace runtime {
+struct BrowserPresentation;
 // Authentication and capability validation stay in Service/GameSession. This
 // adapter leases production controllers to already verified capabilities.
 class SessionBank;
@@ -22,6 +23,7 @@ public:
     bool expire(const PlayerHandle&);
     void tick(uint32_t milliseconds);
     bool status(const PlayerHandle&,uint64_t serial,PartySnapshot&);
+    bool presentation(const PlayerHandle&,uint64_t serial,uint64_t messageCursor,BrowserPresentation&);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

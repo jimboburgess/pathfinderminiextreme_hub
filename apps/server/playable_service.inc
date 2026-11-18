@@ -1,5 +1,5 @@
 // Included inside Service::dispatch after authentication. No client state is authoritative.
-if(request.type=="play" || request.type=="input" || request.type=="screen" || request.type=="party_status" || request.type=="interact") {
+if(request.type=="play" || request.type=="input" || request.type=="screen" || request.type=="party_status" || request.type=="browser_state" || request.type=="interact") {
     if(!runtime::isValidController(connection.player)) return fail("NotBound");
     auto& participant=participants_[connection.player];
     if(!participant.occupied || participant.activeConnection!=connection.serial) return fail("OwnershipRequired");
@@ -15,12 +15,32 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
                 {"level",member.profile.level},{"leader",member.leader},{"connected",member.connected},{"location",partyLocationName(member.location)}});
             return ok({{"code",party.joinCode},{"activity",partyActivityName(party.activity)},{"locked",party.locked},{"members",std::move(members)}});
         }
+        if(request.type=="browser_state") {
+            uint64_t cursor=0;
+            if(!fieldsAre(request,{"since"})||!cursorField(request,cursor))return fail("InvalidRequest");
+            runtime::BrowserPresentation state;
+            if(!partyStarted_[id]||!party_->presentation(participant.handle,connection.serial,cursor,state))return fail("OwnershipRequired");
+            const auto& c=state.character;
+            json::array abilities{c.strength,c.dexterity,c.constitution,c.intelligence,c.wisdom,c.charisma};
+            json::array members;
+            for(const auto& m:state.party)members.push_back(json::object{{"name",m.name},{"class",m.characterClass},{"level",m.level},
+                {"hp",m.hp},{"max_hp",m.maxHp},{"mp",m.mp},{"max_mp",m.maxMp},{"conditions",m.conditions},
+                {"connection",m.connection},{"room",m.room}});
+            json::array messages;
+            for(const auto& m:state.messages)messages.push_back(json::object{{"sequence",std::to_string(m.sequence)},{"text",m.text}});
+            return ok({{"character",json::object{{"name",c.name},{"class",c.characterClass},{"level",c.level},
+                {"hp",c.hp},{"max_hp",c.maxHp},{"mp",c.mp},{"max_mp",c.maxMp},{"ac",c.armorClass},
+                {"speed",c.speed},{"movement_remaining",c.movementRemaining},{"in_combat",c.inCombat},
+                {"abilities",std::move(abilities)},{"conditions",c.conditions},{"room",c.room}}},
+                {"party",std::move(members)},{"messages",std::move(messages)},
+                {"message_cursor",std::to_string(state.messageCursor)},{"message_gap",state.messageGap}});
+        }
         if(request.type=="play") {
             if(!fieldsAre(request,{}))return fail("InvalidRequest");
             if(!party_->start(participant.handle,connection.serial,participant.ownerPrincipal))return fail("RuntimeUnavailable");
             partyStarted_[id]=true;partyScreen(id).reset();connection.audioReady=false;
             partyLastInput_[id]=std::chrono::steady_clock::now();
-            return ok({{"mode","original-handheld-party"},{"width",240},{"height",240},{"capacity",runtime::NATIVE_CONTROLLER_CAPACITY},{"party_capacity",MAX_MULTIPLAYER_PLAYERS},{"audio",true},{"persistence",runtime::accountCharactersEnabled()?"account-character-slots":"process-memory-only"},{"interactive_frames",true}});
+            return ok({{"mode","original-handheld-party"},{"width",240},{"height",240},{"capacity",runtime::NATIVE_CONTROLLER_CAPACITY},{"party_capacity",MAX_MULTIPLAYER_PLAYERS},{"audio",true},{"persistence",runtime::accountCharactersEnabled()?"account-character-slots":"process-memory-only"},{"interactive_frames",true},{"browser_state",true}});
         }
         const auto* pixels=party_->pixels(participant.handle,connection.serial);
         if(!partyStarted_[id] || !pixels)return fail("OwnershipRequired");
@@ -61,7 +81,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
         if(perf::enabled()){++perf::metrics.chunks[id];const auto total=frame.at("total").as_uint64();if(!position){if(total)++perf::metrics.changed[id];else ++perf::metrics.unchanged[id];}perf::metrics.patchBytes[id]+=frame.at("pixels").as_string().size();}
         return ok(std::move(frame));
     }
-    if(request.type=="party_status" || request.type=="interact")return fail("RuntimeMode");
+    if(request.type=="party_status" || request.type=="browser_state" || request.type=="interact")return fail("RuntimeMode");
     if(request.type=="play") {
         if(!fieldsAre(request,{})) return fail("InvalidRequest");
         if(playRetired_) return fail("RuntimeRetired");

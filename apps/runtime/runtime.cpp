@@ -17,6 +17,10 @@
 #include "audio/audio.h"
 #include "map/mapeffects.h"
 #include "characters/sheet.h"
+#include "characters/characters.h"
+#include "characters/conditions.h"
+#include "session/party_registry.h"
+#include "data/entities.h"
 #include <limits>
 #include "runtime.h"
 #include "Arduino.h"
@@ -30,6 +34,7 @@
 #include "graphics/charcreationscreen.h"
 #include "input/menu.h"
 #include <array>
+#include <algorithm>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -69,6 +74,38 @@ struct BoundController {
     BoundController() { pins.fill(HIGH); }
 };
 BoundController bound[NATIVE_CONTROLLER_CAPACITY];
+struct MessageHistory { uint64_t next=1; char text[100][128]{}; };
+MessageHistory messageHistory[NATIVE_CONTROLLER_CAPACITY];
+void rememberMessage(uint8_t id,const char* text) {
+    if(id>=NATIVE_CONTROLLER_CAPACITY || !bound[id].state)return;
+    auto& history=messageHistory[id];
+    std::snprintf(history.text[history.next%100],sizeof(history.text[0]),"%s",text?text:"");
+    ++history.next;
+}
+std::string conditionSummary(const Character& character) {
+    static const char* names[CONDITION_MAX]={"","Flat-footed","Poisoned","Slowing venom","Burning","Sleeping","Stunned","Paralyzed","Blinded","Confused","Frightened","Webbed","Blessed","Hasted","Blur","Mage armor","Barkskin","AC bonus","Attack bonus","Save bonus","Bull's Strength","Cat's Grace","Eagle's Splendor","Owl's Wisdom","Divine Favor","Shield of Faith","Heroism","Bane","Enfeebled","Slowed","Cursed","Diseased","Prone","Battle Cry","Grappled"};
+    std::string result;
+    for(unsigned i=0;i<character.conditions.count;++i){const auto type=character.conditions.conditions[i].type;
+        if(type<=CONDITION_NONE || type>=CONDITION_MAX)continue;
+        if(!result.empty())result+=", ";result+=names[type];}
+    return result;
+}
+std::string roomLabel(uint8_t id) {
+    if(gameState==GAME_TOWN)return "Town";
+    if(gameState==GAME_DUNGEON){const auto room=pfme::runtime::nativeActorRoom(id);return room==NO_ROOM?"Dungeon (not entered)":"Dungeon room "+std::to_string(unsigned(room)+1);}
+    if(gameState==GAME_FOREST)return "Forest";
+    return "";
+}
+pfme::runtime::BrowserCharacterView characterView(uint8_t id) {
+    pfme::runtime::BrowserCharacterView view;const Entity* actor=pfme::runtime::nativeActor(id);const Character& c=actor?actor->character:player;
+    view.name=c.name;view.characterClass=pfme::partyCharacterClassName(c.characterClass);view.level=c.level;
+    view.hp=c.health.currentHP;view.maxHp=c.health.maxHP;view.mp=c.magic.currentMP;view.maxMp=c.magic.maxMP;
+    view.armorClass=getArmorClass(c);view.speed=getEffectiveSpeed(c);view.inCombat=combat.active;
+    view.movementRemaining=actor?actor->turn.movementRemaining:0;
+    view.strength=c.abilities.strength;view.dexterity=c.abilities.dexterity;view.constitution=c.abilities.constitution;
+    view.intelligence=c.abilities.intelligence;view.wisdom=c.abilities.wisdom;view.charisma=c.abilities.charisma;
+    view.conditions=conditionSummary(c);view.room=roomLabel(id);return view;
+}
 void tickAudioClock(uint32_t elapsed) {
     for(uint32_t tick=0;tick<elapsed;++tick) {
         ++nowMs;++audioMs;
@@ -145,6 +182,35 @@ void storeController() {
 PlayerID selectedController() {return selected;}
 bool nativeRoomsActive() {return multiController;}
 uint32_t worldTime() {return nowMs;}
+void recordBrowserMessage(uint8_t id,const char* text){rememberMessage(id,text);}
+bool controllerBound(uint8_t id){return id<NATIVE_CONTROLLER_CAPACITY && bound[id].state;}
+bool controllerConnected(uint8_t id){return id<NATIVE_CONTROLLER_CAPACITY && bound[id].state && bound[id].connected;}
+bool browserPresentation(uint8_t id,uint64_t since,BrowserPresentation& out) {
+    if(!isValidController(id)||!bound[id].state||!selectController(id))return false;
+    out=BrowserPresentation{};out.character=characterView(id);
+    const auto& history=messageHistory[id];out.messageCursor=history.next-1;
+    const uint64_t oldest=history.next>100?history.next-100:1;
+    const uint64_t safeCursor=std::min(since,history.next-1);
+    out.messageGap=safeCursor+1<oldest;
+    const uint64_t first=std::max(safeCursor+1,oldest);
+    for(uint64_t sequence=first;sequence<history.next;++sequence)out.messages.push_back({sequence,history.text[sequence%100]});
+    PartySnapshot party;
+    if(nativePartySnapshot(id,party))for(const auto& member:party.members)if(member.occupied){
+        BrowserPartyMemberView item;item.name=member.profile.displayName;item.characterClass=partyCharacterClassName(member.profile.characterClass);item.level=member.profile.level;
+        item.connection=member.connected?"Connected":"Disconnected";item.room=partyLocationName(member.location);
+        for(uint8_t candidate=0;candidate<NATIVE_CONTROLLER_CAPACITY;++candidate){
+            if(nativePartyPlayerID(candidate)!=member.player)continue;
+            PartySnapshot other;if(!nativePartySnapshot(candidate,other)||other.id.high!=party.id.high||other.id.low!=party.id.low)continue;
+            if(!selectController(candidate))continue;
+            const auto view=characterView(candidate);item.name=view.name;item.characterClass=view.characterClass;item.level=view.level;
+            item.hp=view.hp;item.maxHp=view.maxHp;item.mp=view.mp;item.maxMp=view.maxMp;item.conditions=view.conditions;item.room=view.room;
+            if(!member.connected)item.connection=controllerBound(candidate)?"Reconnecting":"Disconnected";
+            break;
+        }
+        out.party.push_back(std::move(item));
+    }
+    selectController(id);return true;
+}
 void switchNativeWorldRandom(unsigned previous,unsigned next){worldRng[previous]=rng;rng=worldRng[next];}
 uint32_t audioTime() {return multiController?audioMs:nowMs;}
 void initializeControllers(uint32_t seed,bool socialParties) {
@@ -194,7 +260,7 @@ bool unbindController(uint8_t id) {
     if(!retireNativePartyMember(id))return false;
     if(nativeActor(id) && !leaveNativeRoom(dungeon))return false;
     storeController();tft.exchangeSurface(bound[id].state->surface);
-    resetNativePartyCharacter(id);Preferences::retireOwner(id);bound[id]=BoundController{};selected=INVALID_PLAYER_ID;
+    resetNativePartyCharacter(id);Preferences::retireOwner(id);bound[id]=BoundController{};messageHistory[id]=MessageHistory{};selected=INVALID_PLAYER_ID;
     resetPresentation(id);retireNativeObserver(id);resetControllerAudio(id);resetAudioStream(id);selectAudioController(INVALID_PLAYER_ID);return true;
 }
 bool controllerInput(uint8_t id,const std::string& action,bool down) {

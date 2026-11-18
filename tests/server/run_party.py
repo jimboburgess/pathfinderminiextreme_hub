@@ -111,8 +111,10 @@ def main():
             proofs.append(joined['data']['reconnect_token'])
             check_audio(client.call('ping'),False)
             played=client.call('play');assert played['data']['mode']=='original-handheld-party' and played['data']['audio']
+            assert played['data']['browser_state'] is True
             check_audio(played,True);assert played['audio']['reset']
             assert client.call('party_status',player_id=0)['error']['code']=='InvalidRequest'
+            assert client.call('browser_state',since='0',player_id=0)['error']['code']=='InvalidRequest'
             assert client.call('party_status')['error']['code']=='NotInParty'
             assert client.call('input',action='a',down=True,audio_listener=0)['error']['code']=='InvalidRequest'
             view=View(client);views.append(view);title=view.frame();assert any(title)
@@ -123,6 +125,15 @@ def main():
         # gameplay tests assert HP/inventory and exact tile coordinates.
         form_town_party(clients)
         tap(clients[0],'a') # Leader embarks every connected member once.
+        for index,client in enumerate(clients):
+            state=client.call('browser_state',since='0');assert state['ok'],state
+            payload=state['data'];character=payload['character']
+            assert character['name'] and character['class'] and character['level']>=1
+            assert character['hp']>0 and character['max_hp']>=character['hp'] and character['speed']>=1
+            assert len(character['abilities'])==6 and payload['party'] and len(payload['party'])==count
+            assert payload['party'][index]['connection']=='Connected'
+            assert len(payload['messages'])<=100 and payload['message_cursor'].isdigit()
+            assert client.call('browser_state',since='0',player_id=(index+1)%count)['error']['code']=='InvalidRequest'
         for client in clients:
             assert client.call('input',action='encoder',down=True,player_id=0)['error']['code']=='InvalidRequest'
         if count==4:

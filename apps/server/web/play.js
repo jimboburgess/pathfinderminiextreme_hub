@@ -9,11 +9,29 @@
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
-  let leaving=false, interactiveFrames=false, lastSent=0, textInput=false, pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
+  let leaving=false, interactiveFrames=false, browserStateAvailable=false, lastSent=0, textInput=false, pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
   const rpcTimes=[];
   let ws=null, secret="", proof="", id=0, pending=null, playing=false, since="0", offset=0, chunks=[], total=0;
   let requests=[], held=new Set(), heldSources=new Map(), repeat=new Map(), scheduled=null, connecting=false, disconnectReason="";
-  const status=text=>{$("status").textContent=text;};
+  let messageCursor="0",lastStatePoll=0,followMessages=true;
+  const messageList=$("messages");
+  const status=text=>{$("status").textContent=text;const connection=$("connection-state");
+    if(connection)connection.textContent=/reconnect/i.test(text)?"Reconnecting":/^(Connected|Reconnected)/i.test(text)?"Connected":/disconnect|expired|server is full|failed|unavailable|grace ended|replaced/i.test(text)?"Disconnected":playing?"Connected":"Disconnected";};
+  function esc(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+  function renderPresentation(state){
+    const c=state.character;if(c){const a=c.abilities||[];$("character-panel").innerHTML=`<h2>Character</h2><strong>${esc(c.name)}</strong> &mdash; ${esc(c.class)} Lv ${esc(c.level)}<dl class="stats"><div><dt>HP</dt><dd>${esc(c.hp)}/${esc(c.max_hp)}</dd></div><div><dt>MP</dt><dd>${esc(c.mp)}/${esc(c.max_mp)}</dd></div><div><dt>AC</dt><dd>${esc(c.ac)}</dd></div><div><dt>Speed</dt><dd>${esc(c.speed)}</dd></div>${c.in_combat?`<div><dt>Move remaining</dt><dd>${esc(c.movement_remaining)}</dd></div>`:""}</dl><p class="conditions">Conditions: ${esc(c.conditions||"None")}</p><p class="abilities">STR ${esc(a[0])} &middot; DEX ${esc(a[1])} &middot; CON ${esc(a[2])}<br>INT ${esc(a[3])} &middot; WIS ${esc(a[4])} &middot; CHA ${esc(a[5])}</p><p class="empty">${esc(c.room||"")}</p>`;}
+    const members=Array.isArray(state.party)?state.party:[];$("party-panel").innerHTML=`<h2>Party (${members.length}/4)</h2>`+(members.length?members.map(m=>`<article class="party-member"><header><strong>${esc(m.name)}</strong><small>${esc(m.connection)}</small></header><div>${esc(m.characterClass)} Lv ${esc(m.level)} &middot; HP ${esc(m.hp)}/${esc(m.max_hp)} &middot; MP ${esc(m.mp)}/${esc(m.max_mp)}</div><p class="conditions">${esc(m.conditions||"No conditions")}</p><small>${esc(m.room||"")}</small></article>`).join(""):'<p class="empty">No party members.</p>');
+    if(Array.isArray(state.messages)){
+      if(messageList.querySelector?.(".empty"))messageList.replaceChildren();
+      if(state.message_gap){const gap=document.createElement("p");gap.className="message-gap";gap.textContent="Some older messages are no longer available.";messageList.appendChild(gap);}
+      const stick=followMessages;
+      for(const item of state.messages){const line=document.createElement("p");line.textContent=item.text;messageList.appendChild(line);}
+      while(messageList.children.length>100)messageList.removeChild(messageList.firstChild);
+      if(stick)messageList.scrollTop=messageList.scrollHeight;
+      if(typeof state.message_cursor==="string")messageCursor=state.message_cursor;
+    }
+  }
+  messageList.addEventListener("scroll",()=>{followMessages=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<=12;});
   function fit() {return Math.max(1,Math.floor(Math.min($("viewport").clientWidth,innerHeight-$("viewport").getBoundingClientRect().top-20)/240));}
   function resize() {const s=$("scale").value==="fit"?fit():Number($("scale").value); canvas.style.width=`${240*s}px`; canvas.style.height=`${240*s}px`;}
   $("scale").value=String(Math.min(3,fit())); $("scale").onchange=resize; window.addEventListener("resize",resize); resize();
@@ -75,6 +93,7 @@
     if(wait){wake(wait);return;}
     const epoch=generation;pumping=true;
     try {
+      if(browserStateAvailable&&Date.now()-lastStatePoll>=1000){renderPresentation(await rpc("browser_state",{since:messageCursor}));lastStatePoll=Date.now();}
       if(interactiveFrames){const event=requests.shift();applyFrame(await rpc("interact",{since,offset,...(event||{})}));}
       else if(requests.length){const event=requests.shift();await rpc("input",event);}
       else applyFrame(await rpc("screen",{since,offset}));
@@ -120,6 +139,10 @@
     button.addEventListener("pointerdown",event=>{event.preventDefault();button.setPointerCapture(event.pointerId);press(button.dataset.action,"pointer:"+event.pointerId);});
     button.addEventListener("pointerup",event=>release(button.dataset.action,"pointer:"+event.pointerId));button.addEventListener("pointercancel",releaseAll);
   }
+  function mouseTap(action){press(action,"mouse:"+action);setTimeout(()=>release(action,"mouse:"+action),45);}
+  $("viewport").addEventListener("wheel",event=>{if(!playing)return;event.preventDefault();if(event.deltaY)mouseTap(event.deltaY<0?"ccw":"cw");},{passive:false});
+  $("viewport").addEventListener("contextmenu",event=>event.preventDefault());
+  $("viewport").addEventListener("pointerdown",event=>{if(event.target!==canvas)return;if(event.button===2){event.preventDefault();mouseTap("a");}else if(event.button===0){event.preventDefault();mouseTap("b");}});
   const finalErrors=new Set(["NoCharacter","OwnershipRequired","AuthenticationFailed","IdentityRequired","ReplayRejected","ServerFull"]);
   function retry(){
     if(!wanted||connecting||playing||retryTimer)return;
@@ -164,11 +187,11 @@
         try{await rpc("reconnect");}catch(error){if(error.code!=="NoCharacter"||resume)throw error;await rpc("join",{name});}
         proof="verified-identity";
       }else if(resume)await rpc("reconnect",{token:proof});else{const joined=await rpc("join",{name});proof=joined.reconnect_token;}
-      const runtime=await rpc("play");interactiveFrames=runtime.interactive_frames===true;audio?.enable(runtime.audio===true);
+      const runtime=await rpc("play");interactiveFrames=runtime.interactive_frames===true;browserStateAvailable=runtime.browser_state===true;audio?.enable(runtime.audio===true);
       $("runtime-note").textContent=(runtime.persistence==="account-character-slots"?"Three account-owned character saves are stored on the server. ":"This adventure lives in server memory. ")+"Temporary disconnects reserve your character for 120 seconds. Original audio starts with a game control.";
       // Fresh authoritative full frame/audio state; no client snapshot or held
       // controls are replayed. Keep the previous image visible until connected.
-      clearFrame();requests=[];playing=true;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
+      clearFrame();requests=[];playing=true;lastStatePoll=Date.now()-1000;$("disconnect").disabled=false;$("connect").querySelector("button").disabled=true;
       if($("leave"))$("leave").disabled=false;
       retryAttempt=0;lostAt=0;status(automatic?"Reconnected.":"Connected. A / Enter: Button A; W / Space: encoder click; Q/E or Left/Right: rotate.");canvas.focus();pump();
     }catch(error){

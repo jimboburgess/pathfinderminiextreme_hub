@@ -3,10 +3,19 @@
 <main><header><h1>Pathfinder Mini EXTREME</h1><p>Private handheld session &middot; original 240&times;240 display</p></header>
 <form id="connect" data-auth-mode="development"><label>Development secret <input id="secret" type="password" autocomplete="off" maxlength="64" required></label>
 <label>Player name <input id="name" value="Adventurer" maxlength="15" required></label><button>Connect</button></form>
-<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1&times;</option><option value="2">2&times;</option><option value="3">3&times;</option><option value="4">4&times;</option><option value="5">5&times;</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button><button id="leave" disabled>Leave character</button></div>
-<div id="viewport"><canvas id="display" width="240" height="240" tabindex="0" aria-label="Pathfinder handheld game display"></canvas></div>
-<div id="controls"><button data-action="ccw">Rotate left (Q / &larr;)</button><button data-action="encoder">Encoder click (W / Space)</button><button data-action="cw">Rotate right (E / &rarr;)</button><button data-action="a">Button A (A / Enter)</button><button data-action="b">Button B (D / Esc)</button></div>
-<p>Q / Left: rotate left &middot; W / Space: encoder click &middot; E / Right: rotate right &middot; A / Enter: Button A &middot; D / Esc: Button B. Hold W or Space for the original encoder long press. Rotate to choose a direction, then click the encoder to step. While entering a character name, letters type the name; Space confirms it and Escape / Backspace deletes or cancels.</p>
+<div class="toolbar"><label>Zoom <select id="scale"><option value="1">1&times;</option><option value="2">2&times;</option><option value="3">3&times;</option><option value="4">4&times;</option><option value="5">5&times;</option><option value="fit">Fit to Window</option></select></label><button id="disconnect" disabled>Disconnect safely</button><button id="resume" disabled>Reconnect</button><button id="leave" disabled>Leave character</button><span>Connection: <strong id="connection-state">Disconnected</strong></span></div>
+<section id="game-layout" aria-label="Game and player information">
+  <section id="game-panel" aria-label="Dungeon view">
+    <h2>Dungeon</h2><div id="viewport" aria-label="Game control surface"><canvas id="display" width="240" height="240" tabindex="0" aria-label="Pathfinder handheld game display"></canvas></div>
+    <div id="controls"><button data-action="ccw">Rotate left (Q / &larr;)</button><button data-action="encoder">Encoder click (W / Space)</button><button data-action="cw">Rotate right (E / &rarr;)</button><button data-action="a">Button A (A / Enter)</button><button data-action="b">Button B (D / Esc)</button></div>
+    <p class="help">Wheel: rotate &middot; right-click: Button A &middot; left-click: Button B. Q / Left: rotate left &middot; W / Space: encoder click &middot; E / Right: rotate right &middot; A / Enter: Button A &middot; D / Esc: Button B. Hold W or Space for encoder long press. Letters type a character name; Space confirms it.</p>
+  </section>
+  <div id="side-panels">
+    <section id="character-panel" class="panel"><h2>Character</h2><p class="empty">Connect to load character state.</p></section>
+    <section id="party-panel" class="panel"><h2>Party</h2><p class="empty">No party state yet.</p></section>
+  </div>
+  <section id="messages-panel" class="panel"><h2>Messages</h2><div id="messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"><p class="empty">Game messages will appear here.</p></div></section>
+</section>
 <p id="status" role="status">Connect using the private access path supplied by your host.</p>
-<p id="runtime-note">Original music and sound effects play locally after using a game control. Saves survive only in this server process. Disconnect releases held inputs; other connected party members can continue. Keep this tab open to retain its reconnect credential; credentials are never saved to browser storage.</p>
+<p id="runtime-note">Original music and sound effects play locally after using a game control. Disconnect releases held inputs; other connected party members can continue. Keep this tab open to retain its reconnect credential; credentials are never saved to browser storage.</p>
 </main><script src="/audio.js"></script><script src="/play.js"></script></html>

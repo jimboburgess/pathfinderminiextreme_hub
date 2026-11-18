@@ -91,7 +91,15 @@ int main(int argc,char** argv){try{
  }
  for(unsigned start=0;start<count;start+=4){selectController(start);townSelection=forest?TOWN_FOREST:TOWN_DUNGEON;tap(runtime,handles[start],serials[start],"a");}
  std::vector<Entity*> actors(count);std::vector<unsigned> worlds(count);std::vector<Character> characters(count);
- for(unsigned id=0;id<count;++id){selectController(id);actors[id]=nativeActor(id);worlds[id]=nativeWorldIndex();check(actors[id]&&gameState==(forest?GAME_FOREST:GAME_DUNGEON),"all accounts play production dungeon");check(actors[id]->nativeControllerID==id,"global owner is unique");check(actors[id]->ownerPlayerID==id%4,"party PlayerID remains 0..3");characters[id]=actors[id]->character;PartySnapshot p;check(nativePartySnapshot(id,p),"membership");check(p.memberCount==std::min(4u,count-id/4*4),"party size stays four");for(unsigned peer=0;peer<count;++peer)if(peer/4!=id/4)check(nativeActor(peer)==nullptr,"foreign-party actor never exposed");check(runtime.pixels(handles[id],serials[id]),"authorized original framebuffer");}
+ for(unsigned id=0;id<count;++id){selectController(id);actors[id]=nativeActor(id);worlds[id]=nativeWorldIndex();check(actors[id]&&gameState==(forest?GAME_FOREST:GAME_DUNGEON),"all accounts play production dungeon");check(actors[id]->nativeControllerID==id,"global owner is unique");check(actors[id]->ownerPlayerID==id%4,"party PlayerID remains 0..3");characters[id]=actors[id]->character;PartySnapshot p;check(nativePartySnapshot(id,p),"membership");check(p.memberCount==std::min(4u,count-id/4*4),"party size stays four");for(unsigned peer=0;peer<count;++peer)if(peer/4!=id/4)check(nativeActor(peer)==nullptr,"foreign-party actor never exposed");check(runtime.pixels(handles[id],serials[id]),"authorized original framebuffer");
+  BrowserPresentation ui;check(runtime.presentation(handles[id],serials[id],0,ui),"authenticated browser presentation snapshot");
+  check(ui.character.name==actors[id]->character.name&&ui.character.hp==actors[id]->character.health.currentHP&&ui.character.speed==getEffectiveSpeed(actors[id]->character),"browser character panel uses production character state");
+  check(ui.party.size()==p.memberCount&&ui.party.size()<=4,"browser party panel is scoped to the authorized party");
+  check(ui.party[id%4].connection=="Connected"&&ui.party[id%4].hp==actors[id]->character.health.currentHP,"party connection and HP are authoritative");}
+ selectController(0);for(unsigned i=0;i<105;++i){const auto text="ui-history-"+std::to_string(i);setGameMessage(text.c_str());}
+ BrowserPresentation history;check(runtime.presentation(handles[0],serials[0],0,history),"history snapshot authorized");
+ check(history.messageGap&&history.messages.size()==100&&history.messages.front().text=="ui-history-5"&&history.messages.back().text=="ui-history-104","native game messages are bounded and retain newest entries");
+ BrowserPresentation delta;check(runtime.presentation(handles[0],serials[0],history.messageCursor,delta)&&delta.messages.empty(),"message cursor avoids retransmitting history");
  for(unsigned id=0;id<count;++id)for(unsigned peer=0;peer<count;++peer)check((worlds[id]==worlds[peer])==(id/4==peer/4),"one authoritative world per party");
  // Exercise original movement/door rules at high controller IDs, not only allocation.
  if(!forest)for(unsigned start=0;start<count;start+=4){
@@ -112,6 +120,7 @@ int main(int argc,char** argv){try{
  std::mt19937 seeded(7319);
  for(unsigned pass=0;pass<12;++pass){unsigned id=seeded()%count;selectController(id);const auto local=actors[id]->ownerPlayerID;const auto x=actors[id]->x,y=actors[id]->y;
   runtime.detach(handles[id],serials[id]);check(bank.disconnect(handles[id])==SessionError::Ok,"temporary disconnect");PartySnapshot p;check(nativePartySnapshot(id,p)&&p.memberCount==std::min(4u,count-id/4*4),"leader disconnect never closes party");
+  if(count>1){const auto observer=id%4?id-1:id+1;BrowserPresentation presence;check(runtime.presentation(handles[observer],serials[observer],history.messageCursor,presence),"connected peer can observe party reconnect state");check(presence.party[id%4].connection=="Reconnecting","reserved disconnected character is shown as reconnecting");}
   if(count>1){auto other=(id+1)%count;check(runtime.input(handles[other],serials[other],"cw",true),"others remain responsive");}
   check(bank.reconnect(handles[id])==SessionError::Ok,"reserved session reconnect");const auto old=serials[id];serials[id]+=100;
   check(runtime.start(handles[id],serials[id],"acct-load-"+std::to_string(id)),"stable account reconnect");check(!runtime.input(handles[id],old,"a",true),"old lease cannot control reconnect");check(nativeActor(id)==actors[id]&&actors[id]->x==x&&actors[id]->y==y&&actors[id]->ownerPlayerID==local&&std::strcmp(actors[id]->character.name,characters[id].name)==0,"same actor/party/id/character restored");

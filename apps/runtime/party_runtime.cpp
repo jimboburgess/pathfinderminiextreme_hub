@@ -66,6 +66,10 @@ bool PartyRuntime::status(const PlayerHandle& handle,uint64_t serial,PartySnapsh
  if(!impl_->resolve(handle,serial,player,state)||!selectController(player.id))return false;
  refreshNativePartyMenu();return nativePartySnapshot(player.id,snapshot);
 }
+bool PartyRuntime::presentation(const PlayerHandle& handle,uint64_t serial,uint64_t cursor,BrowserPresentation& out){
+ SessionPlayer player;ControllerState* state=nullptr;
+ return impl_->resolve(handle,serial,player,state) && browserPresentation(player.id,cursor,out);
+}
 void PartyRuntime::tick(uint32_t milliseconds) {if(impl_->initialized){advance(milliseconds);autosaveAccountCharacters(milliseconds);}}
 bool PartyRuntime::expire(const PlayerHandle& handle){
  SessionPlayer player;const int bank=impl_->locate(handle,player);

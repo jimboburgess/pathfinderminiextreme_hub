@@ -1,5 +1,6 @@
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
 #include "native_rooms.h"
+#include "runtime.h"
 #endif
 //
 // Created by james on 7/25/2026.
@@ -87,6 +88,8 @@ void setGameMessage(const char* message)
 {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if(pfme::runtime::nativeRoomsActive() && pfme::runtime::broadcastNativeMessage(message))return;
+    if(pfme::runtime::nativeRoomsActive())pfme::runtime::recordBrowserMessage(
+        pfme::runtime::selectedController(),message);
 #endif
     strncpy(pendingMessage, message, sizeof(pendingMessage) - 1);
     pendingMessage[sizeof(pendingMessage) - 1] = '\0';
