@@ -11,6 +11,8 @@
 #include "data/entityspawn.h"
 #include "town/town.h"
 #include "forest/forest.h"
+#include "data/progression.h"
+#include "input/inventorymenu.h"
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -63,7 +65,16 @@ bool selectAction(unsigned id,MenuAction action) {
     check(menuState.cursorIndex==target,"menu cursor");tap(id,"a");return true;
 }
 
-void face(unsigned id,Direction direction){selectController(id);for(unsigned n=0;moveDirection!=direction&&n<8;++n)tap(id,"cw");check(moveDirection==direction,"face");}
+bool face(unsigned id,Direction direction){
+ selectController(id);
+ if(combat.active && (getCurrentCombatant()!=nativeActor(id)||!combat.waitingForPlayer))return false;
+ if(menuState.isOpen||isInventoryMenuOpen())tap(id,"b");
+ for(unsigned n=0;moveDirection!=direction&&n<8;++n){
+  if(combat.active && (getCurrentCombatant()!=nativeActor(id)||!combat.waitingForPlayer))return false;
+  tap(id,"cw");
+ }
+ return moveDirection==direction;
+}
 bool takePathStep(unsigned id,bool travelToEncounter) {
     selectController(id);auto* actor=nativeActor(id);if(!actor)return false;
     uint8_t entityCount=0;auto* entities=getActiveMapEntities(entityCount);
@@ -96,7 +107,7 @@ bool takePathStep(unsigned id,bool travelToEncounter) {
     if(found<0)return false;
     while(parent[found]!=start)found=parent[found];
     const auto room=nativeActorRoom(id);const int x=actor->x,y=actor->y;
-    face(id,static_cast<Direction>(direction[found]));tap(id,"encoder");
+    if(!face(id,static_cast<Direction>(direction[found])))return false;tap(id,"encoder");
     return nativeActorRoom(id)!=room || nativeActor(id)->x!=x || nativeActor(id)->y!=y;
 }
 
@@ -110,6 +121,18 @@ bool attack(unsigned id) {
         tap(id,"b");if(menuState.isOpen)tap(id,"b");return false;
     }
     tap(id,"a");return true;
+}
+bool returnHome(unsigned id){
+ // The existing defeat screen has a direct recovery action, not a Game submenu.
+ for(unsigned facing=0;facing<8;++facing){
+  if(selectAction(id,MENU_RETURN_TO_TOWN) ||
+     (selectAction(id,MENU_GAME)&&selectAction(id,MENU_RETURN_TO_TOWN)))return true;
+  // A facing corpse correctly opens loot instead of the general menu.
+  // Close it, look away and use the original A-button menu again.
+  if(menuState.isOpen||isInventoryMenuOpen())tap(id,"b");
+  tap(id,"cw");tap(id,"a");
+ }
+ return false;
 }
 void battle(unsigned count) {
     const bool inForest=gameState==GAME_FOREST;
@@ -180,12 +203,13 @@ void battle(unsigned count) {
         std::cout<<"combat_player="<<id<<" room="<<int(nativeActorRoom(id))<<" hp="<<actor->character.health.currentHP<<" xp="<<actor->character.xp<<" attacked="<<attacked[id]<<" entered="<<entered[id]<<'\n';
     }
     if(inForest)check(activeAttacks>0,"original Forest attacks resolved");
-    else check(surviving>0 && totalXP>0 && activeAttacks>0,"production damage, rewards and surviving party");
+    else if(surviving)check(totalXP>0 && activeAttacks>0,"production damage and victory rewards");
+    else {for(unsigned id=0;id<count;++id){const auto* a=nativeActor(id);check(a->character.health.currentHP<=0&&a->character.state==STATE_UNCONSCIOUS,"defeat has an explicit KO terminal state");}std::cout<<"OUTCOME party defeated; checking normal recovery instead of assuming every encounter is won\n";}
     check(graceChecked,"disconnect turn policy exercised");
     if(count==1) {
         selectController(0);const auto xp=nativeActor(0)->character.xp;
         if(menuState.isOpen)tap(0,"b");tap(0,"a");
-        check(selectAction(0,MENU_GAME) && selectAction(0,MENU_RETURN_TO_TOWN),"original return-to-town menus");
+        check(returnHome(0),"original return-to-town menus");
         check(gameState==GAME_TOWN && player.xp==xp && !nativeActor(0),"solo adventure loop retains earned character in town");
     }
     std::cout<<"PASS shared combat party="<<count<<" initial_monster_hp="<<initialHP<<" surviving="<<surviving<<" total_xp="<<totalXP<<" world_ms="<<worldTime()<<'\n';
@@ -222,11 +246,14 @@ int main(int argc,char** argv){try{
  const bool forestCombat=argc>2 && std::string(argv[2])=="forest-initiative";
  const bool combatTest=argc>2 && (std::string(argv[2])=="combat" || std::string(argv[2])=="forest-combat");
  const bool separate=argc>2 && std::string(argv[2])=="separate";
- check(count>=1 && count<=4,"party count");initializeControllers(2,true);
+ const unsigned seed=argc>3?std::stoul(argv[3]):2;
+ const unsigned level=argc>4?std::stoul(argv[4]):1;check(level>=1&&level<=3,"playtest level");
+ const bool mixed=argc>5&&std::string(argv[5])=="mixed";
+ check(count>=1 && count<=4,"party count");initializeControllers(seed,true);
  ControllerState states[4];Character original[4];
  for(unsigned id=0;id<count;++id){check(bindController(id,states[id]),"bind");nativePartyCharacterName(id,("Tester"+std::to_string(id)).c_str());
-  tap(id,"a");for(unsigned n=0;n<(combatTest?0:id%4);++n)tap(id,"cw");tap(id,"a");if(getCharacterCreationState()==CCS_WEAPON_STYLE_SELECT)tap(id,"a");tap(id,"a");tap(id,"a");tap(id,"encoder");
-  check(gameState==GAME_TOWN,"original character creation");original[id]=player;
+  tap(id,"a");for(unsigned n=0;n<(combatTest&&!mixed?0:id%4);++n)tap(id,"cw");tap(id,"a");if(getCharacterCreationState()==CCS_WEAPON_STYLE_SELECT)tap(id,"a");tap(id,"a");tap(id,"a");tap(id,"encoder");
+  check(gameState==GAME_TOWN,"original character creation");if(level>1)awardExperience(player,getExperienceForLevel(level));original[id]=player;
  }
  if(!combatTest){
  selectController(0);check(townSelection==TOWN_STAY_HOME,"home selection");tap(0,"a");
@@ -284,7 +311,7 @@ int main(int argc,char** argv){try{
    for(unsigned direction=0;direction<8;++direction){const auto d=static_cast<Direction>(direction);
     if(!getEntityAt(entitiesHere,countHere,actor->x+directionOffsets[d].dx,actor->y+directionOffsets[d].dy)){face(id,d);break;}}
    tap(id,"a");
-   check(selectAction(id,MENU_GAME)&&selectAction(id,MENU_RETURN_TO_TOWN),"original return-to-Town menu");
+   check(returnHome(id),"original return-to-Town menu");
    check(gameState==GAME_TOWN && !nativeActor(id),"own character returned to Town");
    if(id==0&&count>1&&!combatTest&&!forestCombat){
     Entity* others[4]{};int xs[4]{},ys[4]{};
@@ -292,7 +319,7 @@ int main(int argc,char** argv){try{
     townSelection=forest?TOWN_FOREST:TOWN_DUNGEON;tap(id,"a");if(!forest)choose(id,"Resume Dungeon");
     check(gameState==(forest?GAME_FOREST:GAME_DUNGEON)&&nativeActor(id),"returning member independently resumes current adventure");
     for(unsigned peer=1;peer<count;++peer)check(nativeActor(peer)==others[peer]&&others[peer]->x==xs[peer]&&others[peer]->y==ys[peer],"resume does not teleport exploring peers");
-    tap(id,"a");check(selectAction(id,MENU_GAME)&&selectAction(id,MENU_RETURN_TO_TOWN),"resumed character returns independently");
+    tap(id,"a");check(returnHome(id),"resumed character returns independently");
    }
   }
   PartySnapshot returned;check(nativePartySnapshot(0,returned)&&returned.activity==pfme::PartyActivity::Town&&!returned.locked,"party returned, unlocked after every member");
@@ -302,7 +329,7 @@ int main(int argc,char** argv){try{
    selectController(0);dungeon.completed=true;
    for(unsigned n=0;townSelection!=TOWN_DUNGEON&&n<5;++n)tap(0,"cw");tap(0,"a");
    check(!dungeon.completed && !dungeon.rooms[1].discovered,"completed run starts a fresh authoritative dungeon");
-   for(unsigned id=0;id<count;++id){selectController(id);check(gameState==GAME_DUNGEON && nativeActor(id),"fresh shared entrance after completed run");tap(id,"a");check(selectAction(id,MENU_GAME)&&selectAction(id,MENU_RETURN_TO_TOWN),"return from fresh adventure");}
+   for(unsigned id=0;id<count;++id){selectController(id);check(gameState==GAME_DUNGEON && nativeActor(id),"fresh shared entrance after completed run");tap(id,"a");check(returnHome(id),"return from fresh adventure");}
   }
   if(count>1){board(count-1);choose(count-1,"Leave Party");check(!nativePartySnapshot(count-1,returned),"explicit leave releases membership");check(nativeControllerWorld(count-1)==count-1,"departed member has a private Town world");check(!dungeon.runActive,"no closed-party Resume option remains");tap(count-1,"b");check(nativePartySnapshot(0,returned)&&returned.memberCount==count-1,"remaining membership intact");}
   board(0);choose(0,"Leave Party");check(!nativePartySnapshot(0,returned),"leader closes party");

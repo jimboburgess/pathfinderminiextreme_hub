@@ -157,13 +157,19 @@ void battle(unsigned count) {
         surviving+=actor->character.state==STATE_ALIVE;activeAttacks+=attacked[id];totalXP+=actor->character.xp;
         std::cout<<"combat_player="<<id<<" room="<<int(nativeActorRoom(id))<<" hp="<<actor->character.health.currentHP<<" xp="<<actor->character.xp<<" attacked="<<attacked[id]<<" entered="<<entered[id]<<'\n';
     }
-    check(surviving>0 && totalXP>0 && activeAttacks>0,"production damage, rewards and surviving party");
+    check(activeAttacks>0,"actual production attacks resolved");
+    if(surviving)check(totalXP>0,"victory rewards");
+    else for(unsigned id=0;id<count;++id) {
+        const auto* a=nativeActor(id);
+        check(a->character.health.currentHP<=0 && a->character.state==STATE_UNCONSCIOUS,
+              "defeat reaches explicit KO terminal state");
+    }
     check(graceChecked,"disconnect turn policy exercised");
     if(count==1) {
         selectController(0);const auto xp=nativeActor(0)->character.xp;
         if(menuState.isOpen)tap(0,"b");tap(0,"a");
-        check(selectAction(0,MENU_GAME) && selectAction(0,MENU_RETURN_TO_TOWN),"original return-to-town menus");
-        check(gameState==GAME_TOWN && player.xp==xp && !nativeActor(0),"solo adventure loop retains earned character in town");
+        check(selectAction(0,MENU_RETURN_TO_TOWN) || (selectAction(0,MENU_GAME) && selectAction(0,MENU_RETURN_TO_TOWN)),"original victory/defeat return-to-town menus");
+        check(gameState==GAME_TOWN && player.xp==xp && player.health.currentHP>0 && !nativeActor(0),"solo adventure loop retains earned character in town");
     }
     std::cout<<"PASS shared combat party="<<count<<" initial_monster_hp="<<initialHP<<" surviving="<<surviving<<" total_xp="<<totalXP<<" world_ms="<<worldTime()<<'\n';
 }

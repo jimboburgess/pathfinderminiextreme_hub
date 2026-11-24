@@ -25,6 +25,8 @@
 #include "forest/forest.h"
 #include "map/movement.h"
 #include "map/worlditems.h"
+#include "map/activemap.h"
+#include "map/mapeffects.h"
 #include "dungeon/turns.h"
 #include "data/dice.h"
 #include "data/entityspawn.h"
@@ -113,6 +115,69 @@ uint8_t resolvePlayerMovementAttemptCost(
 
     return getMovementCostWithTerrainCheck(
         player, targetX, targetY, TILE_RUBBLE, succeeded);
+}
+
+// Direct controls cannot pause inside another character. Plan the entire
+// straight run first, then let the normal landing/interaction code commit it.
+// No actor is ever assigned an allied coordinate, even between frames.
+bool resolveFriendlyPassThrough(Entity& mover, Direction direction,
+                                int& targetX, int& targetY, unsigned& extraCost)
+{
+    extraCost = 0;
+    uint8_t count = 0;
+    Entity* entities = getActiveMapEntities(count);
+    auto friendly = [&](int x, int y) {
+        const Entity* e = getEntityAt(entities, count, x, y);
+        return e && e != &mover && e->type == ENTITY_PLAYER &&
+            e->character.team == mover.character.team;
+    };
+    if (!friendly(targetX, targetY)) return true;
+    auto blocked = []() {
+        setGameMessage("No clear square beyond your ally.");
+        playSound(SoundEffect::BUMP);
+        return false;
+    };
+    const int dx = directionOffsets[direction].dx;
+    const int dy = directionOffsets[direction].dy;
+    int x = targetX, y = targetY;
+    while (isInsideActiveMap(x, y) && friendly(x, y))
+    {
+        const TileType tile = getActiveMapTile(x, y);
+        if (gameState == GAME_DUNGEON && tile != TILE_FLOOR && tile != TILE_RUBBLE)
+            return blocked();
+        if (tile == TILE_TREE || getMovementCost(mover, x, y) == 0)
+            return blocked();
+        // A hazard which can stop/defeat the mover cannot be crossed safely
+        // while another actor owns its square. It must be cleared first.
+        for (const auto& effect : activeMapEffects)
+            if (effect.active && mapEffectAffectsEntityAt(effect, mover, x, y) &&
+                (effect.conditionType != CONDITION_NONE || effect.damageDiceCount || effect.flatDamage))
+                return blocked();
+        if (gameState == GAME_DUNGEON)
+        {
+            const TrapInstance* trap = getTrapAt(dungeon.rooms[dungeon.currentRoom], x, y);
+            if (trap != nullptr && isTrapActive(*trap)) return blocked();
+        }
+        x += dx; y += dy;
+    }
+    if (!isInsideActiveMap(x, y)) return blocked();
+    const Entity* landingEntity = getEntityAt(entities, count, x, y);
+    if (landingEntity && !(gameState == GAME_DUNGEON &&
+        ((landingEntity->type == ENTITY_MONSTER && landingEntity->character.state != STATE_ALIVE) ||
+         landingEntity->type == ENTITY_PUZZLE_KEY))) return blocked();
+    const TileType landing = getActiveMapTile(x, y);
+    if (gameState == GAME_DUNGEON && landing != TILE_FLOOR && landing != TILE_RUBBLE &&
+        landing != TILE_DOOR && landing != TILE_BELL_LISTEN_RUNE &&
+        landing != TILE_NUMBER_PUZZLE && landing != TILE_NUMBER_CLUE_PLAQUE)
+        return blocked();
+    if (landing == TILE_TREE) return blocked();
+    for (int sx = targetX, sy = targetY; sx != x || sy != y; sx += dx, sy += dy)
+        extraCost += gameState == GAME_DUNGEON
+            ? resolvePlayerMovementAttemptCost(mover, sx, sy, getActiveMapTile(sx, sy))
+            : getMovementCost(mover, sx, sy);
+    if (combat.active && extraCost >= mover.turn.movementRemaining) return blocked();
+    targetX = x; targetY = y;
+    return true;
 }
 
 bool resolveBrazierMovementAttempt(Entity& player, int targetX, int targetY)
@@ -289,6 +354,7 @@ bool tryMovePlayerAuthoritative(
     bool& roomChanged)
 {
     roomChanged = false;
+    if (static_cast<unsigned>(direction) >= 8) return false;
     if (gameState == GAME_FOREST)
     {
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
@@ -360,6 +426,9 @@ bool tryMovePlayerAuthoritative(
 
     if (standHandled)
         return true;
+
+    unsigned friendlyCost = 0;
+    if (!resolveFriendlyPassThrough(*player, direction, targetX, targetY, friendlyCost)) return false;
 
     DungeonRoom& room =
         dungeon.rooms[dungeon.currentRoom];
@@ -504,6 +573,16 @@ bool tryMovePlayerAuthoritative(
         case TILE_BARREL:
         case TILE_CRATE:
         {
+            // Validate payment before an interaction changes puzzle/furniture
+            // state. Rubble still resolves its normal Acrobatics check below.
+            if (combat.active && tile != TILE_RUBBLE &&
+                !canAffordMovementCost(*player, static_cast<uint8_t>(
+                    friendlyCost + getMovementCost(*player, targetX, targetY))))
+            {
+                playSound(SoundEffect::BUMP);
+                setGameMessage("Not enough movement.");
+                return false;
+            }
             if (tile == TILE_NUMBER_PUZZLE &&
                 !tryEnterCurrentNumberPuzzleTile(*player, targetX, targetY))
             {
@@ -547,7 +626,7 @@ bool tryMovePlayerAuthoritative(
             }
 
             const uint8_t resolvedMovementCost =
-                resolvePlayerMovementAttemptCost(
+                friendlyCost + resolvePlayerMovementAttemptCost(
                     *player, targetX, targetY, tile);
 
             //--------------------------------------------------
@@ -636,6 +715,8 @@ bool tryMovePlayerAuthoritative(
 
         case TILE_DOOR:
         {
+            if (combat.active && friendlyCost + 1 > player->turn.movementRemaining)
+                return false;
             if (!allowRoomTransition)
             {
                 playSound(SoundEffect::BUMP);
@@ -732,6 +813,11 @@ bool tryMovePlayerAuthoritative(
                     return false;
                 }
 
+                if (combat.active && friendlyCost)
+                {
+                    Entity* arrived = getActiveMapPlayer();
+                    if (arrived) spendMovementCost(*arrived, static_cast<uint8_t>(friendlyCost));
+                }
                 // Repaint the destination map, otherwise the old player's
                 // transparent sprite can remain visible beneath the room.
                 backgroundNeedsRedraw = true;
@@ -815,6 +901,9 @@ static bool tryMoveForestPlayer(Entity* player, Direction direction)
         return false;
     }
 
+    unsigned friendlyCost = 0;
+    if (!resolveFriendlyPassThrough(*player, direction, targetX, targetY, friendlyCost)) return false;
+
     //--------------------------------------------------
     // Collision check.
     //--------------------------------------------------
@@ -842,7 +931,7 @@ static bool tryMoveForestPlayer(Entity* player, Direction direction)
     }
 
     const uint8_t resolvedMovementCost =
-        getMovementCost(*player, targetX, targetY);
+        friendlyCost + getMovementCost(*player, targetX, targetY);
 
     if (combat.active &&
         !canAffordMovementCost(*player, resolvedMovementCost))

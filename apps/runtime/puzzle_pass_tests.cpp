@@ -110,10 +110,30 @@ void bypass(){
  }
  std::cout<<"PASS Rogue-only Bell/Number/Brazier/Bertram physical exit bypass, DC20..29, failure/retry, no remote/foreign/combat action, optional rewards preserved\n";
 }
+// Structural reachability treats solved mechanisms/movable furniture as
+// traversable. Actual puzzle legality is tested separately below.
+void roomStructure(const Dungeon& world,unsigned roomIndex){
+ const auto& room=world.rooms[roomIndex];
+ bool reached[ROOM_HEIGHT][ROOM_WIDTH]{};std::queue<std::pair<int,int>> q;
+ check(room.connectionCount>0,"generated room has a connection");
+ auto first=room.connections[0];check(first.x<ROOM_WIDTH&&first.y<ROOM_HEIGHT,"first connection in bounds");q.push({first.x,first.y});reached[first.y][first.x]=true;
+ auto passable=[](TileType t){return t!=TILE_WALL&&t!=TILE_PILLAR&&t!=TILE_STATUE&&t!=TILE_BELL_LOW&&t!=TILE_BELL_MID&&t!=TILE_BELL_HIGH;};
+ while(!q.empty()){auto cell=q.front();q.pop();for(unsigned d=0;d<8;d+=2){int x=cell.first+directionOffsets[d].dx,y=cell.second+directionOffsets[d].dy;
+  if(x<0||y<0||x>=ROOM_WIDTH||y>=ROOM_HEIGHT||reached[y][x]||!passable(room.map.tiles[y][x]))continue;
+  reached[y][x]=true;q.push({x,y});}}
+ for(unsigned i=0;i<room.connectionCount;++i){const auto c=room.connections[i];
+  check(c.x<ROOM_WIDTH&&c.y<ROOM_HEIGHT,"connection inside generated map");
+  check(room.map.tiles[c.y][c.x]==TILE_DOOR,"connection has physical door");
+  check(reached[c.y][c.x],"mandatory generated doors physically connected after solving mechanisms");
+  const auto other=c.direction==DIR_NORTH?room.north:c.direction==DIR_SOUTH?room.south:c.direction==DIR_EAST?room.east:room.west;
+  if(other==NO_ROOM)continue;check(other<world.roomCount,"door neighbor exists");const auto& peer=world.rooms[other];
+  check((c.direction==DIR_NORTH?peer.south:c.direction==DIR_SOUTH?peer.north:c.direction==DIR_EAST?peer.west:peer.east)==roomIndex,"reciprocal door graph");
+ }
+}
 void generation(){
  initialize(5);unsigned counts[5]{};uint32_t rules=0;unsigned stateful=0;
  for(unsigned level: {1u,4u,5u,9u,10u,12u,16u,20u})for(unsigned seed=1;seed<=80;++seed){
-  player.level=level;randomSeed(seed*101+level);gameState=GAME_TOWN;generateDungeon(dungeon);check(dungeon.runActive,"production generated dungeon");
+  player.level=level;randomSeed(seed*101+level);gameState=GAME_TOWN;generateDungeon(dungeon);check(dungeon.runActive,"production generated dungeon");for(unsigned room=0;room<dungeon.roomCount;++room)roomStructure(dungeon,room);
   for(unsigned i=1;i<dungeon.roomCount;++i){const auto& room=dungeon.rooms[i];if(room.type!=ROOM_PUZZLE)continue;check(room.puzzleType!=PUZZLE_NONE,"no empty puzzle enum in production");++counts[room.puzzleType];
    if(room.puzzleType!=PUZZLE_NUMBER_TILES)continue;const auto& n=room.numberPuzzle;check(validateNumberPuzzleSafePath(room),"production numbered room has legal solution");check(getNumberTileClue(n)[0],"production clue readable");rules|=1u<<n.rule;stateful+=getNumberTileRuleDefinition(n.rule)->evaluationMode==NUMBER_RULE_STATEFUL;
    for(unsigned y=0;y<n.fieldHeight;++y)for(unsigned x=0;x<n.fieldWidth;++x){auto d=getNumberPuzzleDigitAt(room,n.fieldX+x,n.fieldY+y);check(d>=n.minimumDigit&&d<=n.maximumDigit,"digits match level/rule range");}
