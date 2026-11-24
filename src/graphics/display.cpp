@@ -1015,7 +1015,7 @@ uint16_t getPoisonTintColor(uint16_t color)
 
 static void drawConditionSpriteTransparent(
     int x, int y, const uint16_t* sprite, uint8_t width, uint8_t height,
-    bool grayscale, bool poisoned, const ActionSprite* actionSprite = nullptr)
+    bool grayscale, bool poisoned, const ActionSprite* visualSprite = nullptr)
 {
     if (sprite == nullptr)
         return;
@@ -1032,16 +1032,60 @@ static void drawConditionSpriteTransparent(
                 color = grayscaleColor(color);
             if (poisoned)
                 color = getPoisonTintColor(color);
-            int poseOffset = 0;
-            if (actionSprite != nullptr && row < height * 3 / 4 &&
-                actionSprite->style != ACTION_SPRITE_CAST)
-                poseOffset = 1;
-            if (col + poseOffset < width)
-                tft.writePixel(x + col + poseOffset, y + row, color);
+            int drawX = x + col;
+            int drawY = y + row;
+            if (visualSprite != nullptr)
+            {
+                switch (visualSprite->style)
+                {
+                    case ACTION_SPRITE_WEAPON:
+                    case ACTION_SPRITE_RANGED:
+                    case ACTION_SPRITE_NATURAL:
+                        if (row < height * 3 / 4) drawX++;
+                        break;
+                    case WALK_SPRITE_HUMANOID:
+                        if (row < height / 2) drawX++;
+                        else if (row >= height * 3 / 4 && (col & 1) == 0)
+                            drawX--;
+                        break;
+                    case WALK_SPRITE_LIGHT:
+                        if (row < height * 2 / 3) drawX++;
+                        else if ((col & 1) != 0) drawY--;
+                        break;
+                    case WALK_SPRITE_ROBE:
+                        if (row < height / 2) drawX++;
+                        else if (row >= height * 3 / 4) drawX--;
+                        break;
+                    case WALK_SPRITE_SPIDER:
+                        drawX += row < height / 2 ? 1 : -1;
+                        break;
+                    case WALK_SPRITE_OOZE:
+                        drawX += (row & 1) == 0 ? 1 : -1;
+                        break;
+                    case WALK_SPRITE_FLOAT:
+                        if (row + 1 < height) drawY++;
+                        break;
+                    case HIT_SPRITE_RECOIL:
+                        if (row < height * 3 / 4) drawX--;
+                        else drawX++;
+                        break;
+                    case HIT_SPRITE_CROUCH:
+                        drawY = y + height / 5 + row * 4 / 5;
+                        break;
+                    case HIT_SPRITE_COMPRESS:
+                        drawY = y + height / 4 + row * 3 / 4;
+                        break;
+                    case ACTION_SPRITE_CAST:
+                        break;
+                }
+            }
+            if (drawX >= x && drawX < x + width &&
+                drawY >= y && drawY < y + height)
+                tft.writePixel(drawX, drawY, color);
         }
     }
 
-    if (actionSprite != nullptr)
+    if (visualSprite != nullptr)
     {
         auto actionColor = [&](uint16_t color)
         {
@@ -1049,11 +1093,11 @@ static void drawConditionSpriteTransparent(
             if (poisoned) color = getPoisonTintColor(color);
             return color;
         };
-        const uint16_t primary = actionColor(actionSprite->primaryColor);
-        const uint16_t accent = actionColor(actionSprite->accentColor);
+        const uint16_t primary = actionColor(visualSprite->primaryColor);
+        const uint16_t accent = actionColor(visualSprite->accentColor);
         const int right = x + width - 2;
         const int middle = y + height / 2;
-        switch (actionSprite->style)
+        switch (visualSprite->style)
         {
             case ACTION_SPRITE_WEAPON:
                 tft.writeLine(right - 5, middle + 3, right, middle - 2, primary);
@@ -1073,6 +1117,8 @@ static void drawConditionSpriteTransparent(
             case ACTION_SPRITE_NATURAL:
                 tft.writeLine(x + 1, middle - 3, x + 5, middle + 1, primary);
                 tft.writeLine(right - 4, middle + 1, right, middle - 3, accent);
+                break;
+            default:
                 break;
         }
     }
@@ -1127,8 +1173,7 @@ void drawEntity(const Entity& entity)
                 entity.spriteHeight,
                 true,
                 hasCondition(entity.character, CONDITION_POISONED),
-                isEntityActionPoseActive(entity)
-                    ? getEntityActionSprite(entity) : nullptr);
+                getEntityVisualSprite(entity));
             drawActiveTurnOutline(entity);
             return;
         }
@@ -1145,8 +1190,7 @@ void drawEntity(const Entity& entity)
         entity.spriteHeight,
         false,
         hasCondition(entity.character, CONDITION_POISONED),
-        isEntityActionPoseActive(entity)
-            ? getEntityActionSprite(entity) : nullptr);
+        getEntityVisualSprite(entity));
     drawActiveTurnOutline(entity);
 
     if (entity.character.state == STATE_DEAD ||

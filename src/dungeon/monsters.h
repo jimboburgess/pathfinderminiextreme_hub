@@ -223,9 +223,11 @@ struct Monster
     // target-centered cast, and higher values allow broader repeat coverage.
     uint8_t webCastPriority;
 
-    // Flash-resident presentation metadata for the creature's single ACTION
-    // frame. Passive effects never activate it.
+    // Flash-resident presentation metadata. A null alternate frame safely
+    // falls back to the normal sprite.
+    const ActionSprite* walkSprite;
     const ActionSprite* actionSprite;
+    const ActionSprite* hitSprite;
 };
 
 const Monster* getMonster(MonsterID id);

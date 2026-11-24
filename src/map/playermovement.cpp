@@ -29,6 +29,7 @@
 #include "data/dice.h"
 #include "data/entityspawn.h"
 #include "graphics/display.h"
+#include "graphics/actionpose.h"
 #include "graphics/messagelog.h"
 #include "multiplayer/multiplayer_activity.h"
 
@@ -228,6 +229,7 @@ bool tryPlayerAcrobaticsTraversal(
     // project has no AoO system yet, so no combat reaction is triggered here.
     player.x = beyondX;
     player.y = beyondY;
+    triggerEntityWalkPose(player);
     player.turn.movementRemaining -= 4;
     player.turn.moveActionUsed = true;
     bool trapTriggered = false;
@@ -577,6 +579,7 @@ bool tryMovePlayerAuthoritative(
 
             player->x = targetX;
             player->y = targetY;
+            triggerEntityWalkPose(*player);
             handleCurrentBellListeningRuneMovement(
                 *player, oldX, oldY, targetX, targetY);
             handleCurrentNumberPuzzleMovement(*player, oldX, oldY);
@@ -854,6 +857,7 @@ static bool tryMoveForestPlayer(Entity* player, Direction direction)
 
     player->x = targetX;
     player->y = targetY;
+    triggerEntityWalkPose(*player);
 
     //--------------------------------------------------
     // Consume one square of movement.

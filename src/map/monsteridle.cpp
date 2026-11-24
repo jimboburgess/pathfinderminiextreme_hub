@@ -12,6 +12,7 @@
 #include "dungeon/combat.h"
 #include "dungeon/monsterscripts.h"
 #include "graphics/display.h"
+#include "graphics/actionpose.h"
 #include "input/inventorymenu.h"
 #include "input/menu.h"
 #include "map/activemap.h"
@@ -165,6 +166,7 @@ bool attemptIdleStep(
     markEntityFootprintDirtyAt(monster, oldX, oldY);
     monster.x = static_cast<uint8_t>(targetX);
     monster.y = static_cast<uint8_t>(targetY);
+    triggerEntityWalkPose(monster, MONSTER_WALK_POSE_DURATION_MS);
     markEntityFootprintDirty(monster);
     return true;
 }

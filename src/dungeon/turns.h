@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-enum MonsterTurnState
+enum MonsterTurnState : uint8_t
 {
     MONSTER_START,
     MONSTER_MOVE,
@@ -32,6 +32,9 @@ struct TurnState
     // Transient encounter state; reset when a new combat roster is built.
     bool oncePerCombatAbilityUsed = false;
     uint8_t monsterRuntimeFlags = 0;
+    // Presentation-only ACTION plus prioritized WALK/HIT deadlines. The
+    // byte-sized enum above uses prior padding, keeping TurnState at 16 bytes.
+    uint32_t visualStateTiming = 0;
 
 };
 

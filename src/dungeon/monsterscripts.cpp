@@ -20,6 +20,7 @@
 #include "data/dice.h"
 #include "data/game.h"
 #include "graphics/display.h"
+#include "graphics/actionpose.h"
 #include "audio/audio.h"
 
 namespace
@@ -501,6 +502,7 @@ static bool moveMonsterTo(Entity* monster, int newX, int newY)
 
     monster->x = newX;
     monster->y = newY;
+    triggerEntityWalkPose(*monster, MONSTER_WALK_POSE_DURATION_MS);
 
     spendMovementCost(*monster, newX, newY);
     bool trapTriggered = false;
@@ -575,6 +577,7 @@ static bool tryBattleCry(Entity* chieftain)
     chieftain->turn.standardActionUsed = true;
     setGameMessage("Goblin Chieftain lets out a battle cry!");
     playSound(SoundEffect::GOBLIN_ALERT);
+    triggerEntityActionPose(*chieftain);
     markEntityFootprintDirty(*chieftain);
     return true;
 }

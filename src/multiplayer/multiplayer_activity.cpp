@@ -2382,9 +2382,11 @@ void applyPositionUpdate(const PlayerPositionPayload& position)
     Entity* entity = entities != nullptr
         ? getPlayerEntityByOwner(entities, count, position.playerID) : nullptr;
     if (entity == nullptr) return;
+    const bool moved = entity->x != position.x || entity->y != position.y;
     markEntityFootprintDirty(*entity);
     entity->x = position.x;
     entity->y = position.y;
+    if (moved) triggerEntityWalkPose(*entity);
     markEntityFootprintDirty(*entity);
     if (position.playerID == multiplayerSession.getLocalPlayerID())
         moveDirection = static_cast<Direction>(position.facing);
@@ -3319,11 +3321,20 @@ void applyCombatantEventState(
     }
     Entity* entity = resolveVisibleCombatant(reference);
     if (entity == nullptr) return;
+    const bool moved = entity->x != x || entity->y != y;
+    const bool damaged = hp < entity->character.health.currentHP;
     markEntityFootprintDirty(*entity);
     entity->x = x;
     entity->y = y;
     entity->character.health.currentHP = hp;
     entity->character.state = static_cast<CharacterState>(state);
+    if (moved)
+        triggerEntityWalkPose(*entity,
+            entity->type == ENTITY_MONSTER
+                ? MONSTER_WALK_POSE_DURATION_MS
+                : PLAYER_WALK_POSE_DURATION_MS);
+    if (damaged && entity->character.state == STATE_ALIVE)
+        triggerEntityHitPose(*entity);
     markEntityFootprintDirty(*entity);
     needsRedraw = true;
 }
@@ -4033,6 +4044,7 @@ bool resolveMultiplayerAttack(
         if (critical) damage *= weapon->criticalMultiplier;
         damage += rollWeaponEnergyDamage(item, target->character);
         damageCharacter(target->character, damage);
+        triggerEntityHitPose(*target);
         if (target->character.health.currentHP <= 0)
         {
             target->character.health.currentHP = 0;
@@ -5686,6 +5698,7 @@ void updateMultiplayerCombat(uint32_t now)
             markEntityFootprintDirty(*monster);
             monster->x = static_cast<uint8_t>(nextX);
             monster->y = static_cast<uint8_t>(nextY);
+            triggerEntityWalkPose(*monster, MONSTER_WALK_POSE_DURATION_MS);
             markEntityFootprintDirty(*monster);
         }
         if (abs(static_cast<int>(target->x) - monster->x) <= 1 &&

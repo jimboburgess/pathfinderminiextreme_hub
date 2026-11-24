@@ -636,6 +636,7 @@ void applyEnvironmentalDamage(Entity& target, int damage)
         return;
 
     damageCharacter(target.character, damage);
+    triggerEntityHitPose(target);
     if (target.character.health.currentHP <= 0)
         finalizeDefeat(target);
     markEntityFootprintDirty(target);
@@ -668,6 +669,7 @@ CombatDamageResult applyCombatDamage(Entity& target, int damage,
     }
 
     damageCharacter(target.character, damage);
+    triggerEntityHitPose(target);
     result.applied = true;
 
     if (target.character.health.currentHP <= 0)
@@ -1205,6 +1207,8 @@ static void updateMonsterAttack()
             {
                 damageCharacter(
                     target->character, combat.monsterPendingDamage);
+                if (combat.monsterPendingDamage > 0)
+                    triggerEntityHitPose(*target);
 
                 char message[64];
 
@@ -1792,6 +1796,8 @@ void resetActions(Entity* entity)
 
     ConditionTurnResult result =
         processConditionsAtTurnStart(entity->character);
+    if (result.poisonDamage > 0)
+        triggerEntityHitPose(*entity);
     if (entity->character.state == STATE_ALIVE)
     {
         const MapEffectTriggerResult hazardResult =
@@ -2205,6 +2211,8 @@ void updateCombat()
                    {
                         damageCharacter(
                             target->character, combat.pendingDamage);
+                        if (combat.pendingDamage > 0)
+                            triggerEntityHitPose(*target);
 
                        char message[128];
 
