@@ -13,6 +13,16 @@ bool textField(const Request& request, const char* key, std::size_t maximum, std
     for (unsigned char c : text) if (c < 33 || c > 126) return false;
     return true;
 }
+bool inputActionField(const Request& request, const char* key, std::size_t maximum, std::string& text)
+{
+    const auto* value = request.fields.if_contains(key);
+    if (!value || !value->is_string() || value->as_string().empty() ||
+        value->as_string().size() > maximum) return false;
+    text.assign(value->as_string().data(), value->as_string().size());
+    if (text == "key: ") return true;
+    for (unsigned char c : text) if (c < 33 || c > 126) return false;
+    return true;
+}
 bool parseRequest(std::string_view text, Request& result, std::string& error)
 {
     result = Request{};

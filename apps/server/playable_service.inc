@@ -52,7 +52,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
         if(request.type=="input" || (interact && hasAction)) {
             const auto* down=request.fields.if_contains("down");
             if(!(interact?fieldsAre(request,{"since","offset","action","down"}):fieldsAre(request,{"action","down"})) ||
-               !textField(request,"action",8,action) || !down || !down->is_bool())return fail("InvalidRequest");
+               !inputActionField(request,"action",8,action) || !down || !down->is_bool())return fail("InvalidRequest");
             const bool textKey=action.size()==5 && action.compare(0,4,"key:")==0;
             if(action!="cw" && action!="ccw" && action!="encoder" && action!="a" && action!="b" && action!="release" && !textKey)return fail("InvalidAction");
             pressed=down->as_bool();
@@ -97,7 +97,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
     if(request.type=="input") {
         std::string action;
         const auto* down=request.fields.if_contains("down");
-        if(!fieldsAre(request,{"action","down"}) || !textField(request,"action",8,action) || !down || !down->is_bool()) return fail("InvalidRequest");
+        if(!fieldsAre(request,{"action","down"}) || !inputActionField(request,"action",8,action) || !down || !down->is_bool()) return fail("InvalidRequest");
         const bool textKey=action.size()==5 && action.compare(0,4,"key:")==0;
         if(action!="cw" && action!="ccw" && action!="encoder" && action!="a" && action!="b" && action!="release" && !textKey) return fail("InvalidAction");
         if(!runtime::input(action,down->as_bool())) return fail("InvalidAction");

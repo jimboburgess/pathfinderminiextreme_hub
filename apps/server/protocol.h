@@ -11,6 +11,7 @@ struct Request { std::string id, type; json::object fields; };
 bool parseRequest(std::string_view text, Request& result, std::string& error);
 bool fieldsAre(const Request& request, std::initializer_list<std::string_view> extra);
 bool textField(const Request& request, const char* key, std::size_t maximum, std::string& text);
+bool inputActionField(const Request& request, const char* key, std::size_t maximum, std::string& text);
 bool cursorField(const Request& request, uint64_t& sequence);
 json::object response(const std::string& id, const std::string& type, json::object data = {});
 json::object failure(const std::string& id, const std::string& code);

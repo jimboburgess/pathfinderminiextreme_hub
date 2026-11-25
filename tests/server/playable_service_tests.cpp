@@ -80,6 +80,8 @@ int main() {
         check(error(call(service,owner,"input",{{"action","a"},{"down",true},{"items","full_plate"}}),"InvalidRequest"),"client equipment rejected");
         check(error(call(service,owner,"input",{{"action","teleport"},{"down",true}}),"InvalidAction"),"only hardware intents accepted");
         check(error(call(service,owner,"input",{{"action","a"},{"down",1}}),"InvalidRequest"),"strict input type");
+        check(good(call(service,owner,"input",{{"action","key: "},{"down",true}})),"character-name space accepted");
+        check(error(call(service,owner,"input",{{"action","key:\n"},{"down",true}}),"InvalidRequest"),"other action whitespace rejected");
         check(error(call(service,owner,"move",{{"direction","east"}}),"RuntimeMode"),"no competing topology movement");
         const std::vector<uint16_t> title(pfme::runtime::pixels(),pfme::runtime::pixels()+57600);
         uint64_t revision=0;auto presented=frame(service,owner,revision,std::vector<uint16_t>(57600),true);
