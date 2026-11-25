@@ -76,6 +76,8 @@ int main() {
         check(error(call(service,other,"screen",{{"since","0"},{"offset",0}}),"OwnershipRequired"),"no cross-player screen leak");
         check(error(call(service,other,"input",{{"action","a"},{"down",true}}),"OwnershipRequired"),"no cross-player control");
         check(error(call(service,owner,"input",{{"action","a"},{"down",true},{"hp",999}}),"InvalidRequest"),"client HP rejected");
+        check(error(call(service,owner,"input",{{"action","a"},{"down",true},{"level",20},{"xp",3600000}}),"InvalidRequest"),"client level and XP rejected");
+        check(error(call(service,owner,"input",{{"action","a"},{"down",true},{"items","full_plate"}}),"InvalidRequest"),"client equipment rejected");
         check(error(call(service,owner,"input",{{"action","teleport"},{"down",true}}),"InvalidAction"),"only hardware intents accepted");
         check(error(call(service,owner,"input",{{"action","a"},{"down",1}}),"InvalidRequest"),"strict input type");
         check(error(call(service,owner,"move",{{"direction","east"}}),"RuntimeMode"),"no competing topology movement");

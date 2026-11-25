@@ -74,15 +74,15 @@ async function main(){
   if(textTest){
     const begin=sent.length;
     key('keydown',' ');await advance(120);key('keyup',' ');await advance(250);
-    assert(sent.slice(begin).some(r=>r.action==='encoder'&&r.down),'Space clicks the encoder even if text_input is true');
-    assert(!sent.slice(begin).some(r=>r.action==='key: '),'never emit a whitespace-containing action');
+    assert(sent.slice(begin).some(r=>r.action==='key: '&&r.down),'Space types a literal character while text_input is true');
+    assert(!sent.slice(begin).some(r=>r.action==='encoder'),'Space does not prematurely accept a character name');
     for(const char of ['!','\u00e9']){key('keydown',char);key('keyup',char);}await advance(250);
     assert(!sent.slice(begin).some(r=>r.action==='key:!'||r.action==='key:\u00e9'),'unsupported text ignored locally');
     key('keydown','q');await advance(150);assert(sent.some(r=>r.action==='key:q'),'letters still type into character name');
     assert.equal(socket.readyState,Socket.OPEN,'text controls preserve connection');
   }
   // Contract for the requested browser defaults, including case and aliases.
-  const bindings=textTest?[['ArrowLeft','ccw'],[' ','encoder'],['ArrowRight','cw'],['Enter','a'],['Escape','b']]:
+  const bindings=textTest?[['ArrowLeft','ccw'],['ArrowRight','cw'],['Enter','encoder'],['Escape','b']]:
     [['q','ccw'],['Q','ccw'],['ArrowLeft','ccw'],['w','encoder'],['W','encoder'],[' ','encoder'],['e','cw'],['E','cw'],['ArrowRight','cw'],['a','a'],['A','a'],['Enter','a'],['d','b'],['D','b'],['Escape','b']];
   for(const [binding,action] of bindings){
     const start=sent.length;assert(key('keydown',binding));await advance(160);key('keyup',binding.toLowerCase());await advance(180);
@@ -106,12 +106,20 @@ async function main(){
   const initial=lastPixels;
   for(const scale of ['1','2','3','4','5','fit']){element('scale').value=scale;element('scale').onchange();assert.equal(canvas.width,240);assert.equal(canvas.height,240);const expected=scale==='fit'?3:Number(scale);assert.equal(canvas.style.width,`${expected*240}px`);assert.equal(lastPixels,initial);}
   assert.equal(key('keydown',' ','INPUT'),false);
-  const encoderBefore=sent.filter(r=>r.action==='encoder'&&r.down).length;
-  assert.equal(key('keydown',' '),true);await advance(100);
-  assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&r.down).length,encoderBefore+1);
-  key('keydown',' ','CANVAS',true);await advance(800);
-  assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&r.down).length,encoderBefore+1,'holding/repeat does not send movement presses');
-  key('keyup',' ');await advance(100);assert(sent.some(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&!r.down));
+  if(textTest){
+    const spacesBefore=sent.filter(r=>r.action==='key: ').length;
+    assert.equal(key('keydown',' '),true);await advance(100);
+    key('keydown',' ','CANVAS',true);await advance(800);
+    assert.equal(sent.filter(r=>r.action==='key: ').length,spacesBefore+1,'holding/repeat types one space');
+    key('keyup',' ');await advance(100);
+  }else{
+    const encoderBefore=sent.filter(r=>r.action==='encoder'&&r.down).length;
+    assert.equal(key('keydown',' '),true);await advance(100);
+    assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&r.down).length,encoderBefore+1);
+    key('keydown',' ','CANVAS',true);await advance(800);
+    assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&r.down).length,encoderBefore+1,'holding/repeat does not send movement presses');
+    key('keyup',' ');await advance(100);assert(sent.some(r=>(r.type==='input'||r.type==='interact')&&r.action==='encoder'&&!r.down));
+  }
   key('keydown','ArrowRight');await advance(1000);assert(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length>1);
   events['window:blur']();await advance(200);const rotary=sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length;
   await advance(1000);assert.equal(sent.filter(r=>(r.type==='input'||r.type==='interact')&&r.action==='cw').length,rotary,'blur stops repeat');

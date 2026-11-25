@@ -85,10 +85,14 @@ struct CharacterCreationModel
         if(length==1)clearCharacterName(preview);else setCharacterName(preview,updated);return true;
     }
     void cancelNameEntry() {if(creationState==CCS_NAME_ENTRY){creationState=CCS_MENU;selectedMenu=MENU_ACCEPT;}}
-    bool accept(Character& destination) {
+    bool accept(Character& destination, bool enableTestCharacters = false,
+                uint8_t* appliedStartingLevel = nullptr) {
         if(!showingPreview)return false;
         destination=preview;setCharacterName(destination,
             hasCharacterName(preview)?getCharacterName(preview):nullptr);
+        const uint8_t startingLevel=applyTestCharacterTitle(
+            destination,enableTestCharacters);
+        if(appliedStartingLevel!=nullptr)*appliedStartingLevel=startingLevel;
         showingPreview=false;return true;
     }
 };

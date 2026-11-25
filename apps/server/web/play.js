@@ -129,11 +129,11 @@
   function releaseAll(){for(const timer of repeat.values()){clearTimeout(timer);clearInterval(timer);}repeat.clear();heldSources.clear();held.clear();requests=[];if(playing)enqueue("release",false);}
   function actionFor(key){return {q:"ccw",Q:"ccw",ArrowLeft:"ccw",w:"encoder",W:"encoder"," ":"encoder",e:"cw",E:"cw",ArrowRight:"cw",a:"a",A:"a",Enter:"a",d:"b",D:"b",Escape:"b",Backspace:"b"}[key];}
   function keySource(event){return "key:"+(event.code||event.key.toLowerCase());}
-  document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;if(textInput&&playing&&event.key.length===1&&event.key!==" "){
-    // Space always clicks the encoder, including character-name entry.
-    // Unsupported text and key-repeat must not emit invalid/flooding RPCs.
-    event.preventDefault();if(!event.repeat&&/^[A-Za-z0-9]$/.test(event.key))enqueue(`key:${event.key}`,true);return;
-  }const a=actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a,keySource(event));}});
+  document.addEventListener("keydown",event=>{if(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(event.target.tagName)||event.ctrlKey||event.metaKey||event.altKey)return;if(textInput&&playing&&event.key.length===1){
+    // Character names support one literal space; Enter remains the explicit
+    // encoder-confirm action while text entry is active.
+    event.preventDefault();if(!event.repeat&&/^[A-Za-z0-9 ]$/.test(event.key))enqueue(`key:${event.key}`,true);return;
+  }const a=textInput&&event.key==="Enter"?"encoder":actionFor(event.key);if(a&&playing){event.preventDefault();if(!event.repeat)press(a,keySource(event));}});
   document.addEventListener("keyup",event=>{const source=keySource(event),a=heldSources.get(source);if(a){release(a,source);if(playing)event.preventDefault();}});
   window.addEventListener("blur",()=>{releaseAll();audio?.pause();});document.addEventListener("visibilitychange",()=>{if(document.hidden){releaseAll();audio?.pause();}});
   for(const button of $("controls").querySelectorAll("button")){

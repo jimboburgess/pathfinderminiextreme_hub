@@ -15,6 +15,9 @@
 #include "config.h"
 #include "data/game.h"
 #include "input/buttons.h"
+#include "graphics/messagelog.h"
+
+#include <cstdio>
 
 static const char *classNames[] =
 {
@@ -243,9 +246,16 @@ void rerollCharacter() { if(!creation.showingPreview)return; creation.reroll(); 
 //======================================================
 
 void acceptCharacter() {
-    if(!creation.accept(player))return;
+    uint8_t startingLevel=1;
+    if(!creation.accept(player,testCharactersEnabled(),&startingLevel))return;
     resetButtonStates();
     gameState=GAME_TOWN;
+    if(startingLevel>1) {
+        char message[48];
+        std::snprintf(message,sizeof(message),"%s begins at Level %u!",
+            getCharacterName(player),static_cast<unsigned>(startingLevel));
+        setGameMessage(message);
+    }
     needsRedraw=true;
 }
 
