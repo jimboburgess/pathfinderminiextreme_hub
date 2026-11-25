@@ -31,6 +31,7 @@ if(request.type=="play" || request.type=="input" || request.type=="screen" || re
             return ok({{"character",json::object{{"name",c.name},{"class",c.characterClass},{"level",c.level},
                 {"hp",c.hp},{"max_hp",c.maxHp},{"mp",c.mp},{"max_mp",c.maxMp},{"ac",c.armorClass},
                 {"speed",c.speed},{"movement_remaining",c.movementRemaining},{"in_combat",c.inCombat},
+                {"equipment",json::object{{"melee",c.meleeWeapon},{"ranged",c.rangedWeapon},{"armor",c.armor},{"shield",c.shield}}},
                 {"abilities",std::move(abilities)},{"conditions",c.conditions},{"room",c.room}}},
                 {"party",std::move(members)},{"messages",std::move(messages)},
                 {"message_cursor",std::to_string(state.messageCursor)},{"message_gap",state.messageGap}});

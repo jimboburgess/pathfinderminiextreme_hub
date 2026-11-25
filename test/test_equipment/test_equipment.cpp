@@ -89,6 +89,18 @@ void test_exact_instance_swap_preserves_every_field()
         character.equipment.equipped[SLOT_MELEE_WEAPON].itemID);
 }
 
+void test_item_id_equip_copies_inventory_instance_before_removal()
+{
+    Character character = makeTestCharacter();
+    ItemInstance incoming = enhanced(
+        ITEM_CHAINMAIL, 2, WEAPON_PROPERTY_NONE);
+    TEST_ASSERT_TRUE(addItem(character, incoming));
+
+    TEST_ASSERT_TRUE(equipItem(character, ITEM_CHAINMAIL));
+    TEST_ASSERT_TRUE(character.equipment.equipped[SLOT_ARMOR] == incoming);
+    TEST_ASSERT_FALSE(hasItem(character, incoming));
+}
+
 void test_full_inventory_allows_one_for_one_swap()
 {
     Character character = makeTestCharacter();
@@ -697,6 +709,7 @@ void setup()
     delay(2000);
     UNITY_BEGIN();
     RUN_TEST(test_exact_instance_swap_preserves_every_field);
+    RUN_TEST(test_item_id_equip_copies_inventory_instance_before_removal);
     RUN_TEST(test_full_inventory_allows_one_for_one_swap);
     RUN_TEST(test_two_handed_and_shield_conflicts_are_atomic);
     RUN_TEST(test_unequip_fails_safely_when_inventory_is_full);

@@ -343,29 +343,17 @@ void drawTownScreen()
         tft.setTextSize(1);
         tft.setCursor(12, 52);
         tft.print("Current: ");tft.print(player.name);tft.print(" Lv ");tft.print(player.level);
-        const char* labels[]={"Rest","Save Game","Load Game","Character Sheet","Back"};
+        const char* labels[]={"Rest","Save Game","Load Game","Character Sheet","Equipment","Back"};
         tft.setTextSize(2);
         for(unsigned i=0;i<TOWN_HOME_OPTION_COUNT;++i){
-            tft.setCursor(12,72+24*i);tft.print(getTownHomeSelection()==i?"> ":"  ");tft.print(labels[i]);
+            tft.setCursor(12,66+22*i);tft.print(getTownHomeSelection()==i?"> ":"  ");tft.print(labels[i]);
         }
 #else
+        const char* labels[]={"Rest","Save Game","Character Sheet","Equipment","Back"};
         tft.setTextSize(2);
-        tft.setCursor(20, 65);
-        tft.print(getTownHomeSelection() == TOWN_HOME_REST ? "> " : "  ");
-        tft.print("Rest");
-
-        tft.setCursor(20, 95);
-        tft.print(getTownHomeSelection() == TOWN_HOME_SAVE_GAME ? "> " : "  ");
-        tft.print("Save Game");
-
-        tft.setCursor(20, 125);
-        tft.print(getTownHomeSelection() == TOWN_HOME_CHARACTER_SHEET
-            ? "> " : "  ");
-        tft.print("Character Sheet");
-
-        tft.setCursor(20, 155);
-        tft.print(getTownHomeSelection() == TOWN_HOME_BACK ? "> " : "  ");
-        tft.print("Back");
+        for(unsigned i=0;i<TOWN_HOME_OPTION_COUNT;++i){
+            tft.setCursor(20,55+28*i);tft.print(getTownHomeSelection()==i?"> ":"  ");tft.print(labels[i]);
+        }
 
 #endif
 

@@ -8,6 +8,7 @@ struct ControllerState;
 struct BrowserMessage { uint64_t sequence=0; std::string text; };
 struct BrowserCharacterView {
     std::string name, characterClass, conditions, room;
+    std::string meleeWeapon, rangedWeapon, armor, shield;
     int level=0, hp=0, maxHp=0, mp=0, maxMp=0, armorClass=0, speed=0, movementRemaining=0;
     int strength=0, dexterity=0, constitution=0, intelligence=0, wisdom=0, charisma=0;
     bool inCombat=false;

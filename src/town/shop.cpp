@@ -6,6 +6,7 @@
 #include "characters/characters.h"
 #include "data/game.h"
 #include "graphics/display.h"
+#include "input/buttons.h"
 #include "input/menu.h"
 #include "map/skillactions.h"
 
@@ -35,6 +36,8 @@ constexpr uint8_t SHOP_STATUS_LENGTH = 64;
 
 char shopGoldText[24] = "";
 char shopStatus[SHOP_STATUS_LENGTH] = "";
+ItemInstance pendingShopPurchase =
+    { ITEM_NONE, 0, WEAPON_PROPERTY_NONE };
 
 char buyLabels[MAX_SHOP_ITEMS][SHOP_LABEL_LENGTH];
 MenuItem buyMenuItems[MAX_SHOP_ITEMS];
@@ -69,6 +72,24 @@ const MenuItem shopMenuItems[] =
     }
 };
 
+const MenuItem equipNowMenuItems[] =
+{
+    {
+        "Yes",
+        "Equip the item you just bought.",
+        MENU_SHOP_EQUIP_YES,
+        nullptr,
+        MENU_CLASS_ALL
+    },
+    {
+        "No",
+        "Keep the item in inventory.",
+        MENU_SHOP_EQUIP_NO,
+        nullptr,
+        MENU_CLASS_ALL
+    }
+};
+
 Menu shopMenu =
 {
     "Shop",
@@ -96,6 +117,15 @@ Menu sellMenu =
     shopStatus
 };
 
+const Menu equipNowMenu =
+{
+    "Equip Now?",
+    equipNowMenuItems,
+    sizeof(equipNowMenuItems) / sizeof(equipNowMenuItems[0]),
+    shopGoldText,
+    shopStatus
+};
+
 void setShopStatus(const char* message)
 {
     snprintf(shopStatus, sizeof(shopStatus), "%s",
@@ -112,6 +142,16 @@ bool isSellable(const Item* item)
 {
     return item != nullptr && item->value > 0 && item->value / 2 > 0 &&
            item->type != ITEMTYPE_NONE && item->type != ITEMTYPE_QUEST;
+}
+
+bool isShopItemEquippable(const ItemInstance& instance)
+{
+    return isSupportedEquipmentSlot(getEquipmentSlot(instance.itemID));
+}
+
+void clearPendingShopPurchase()
+{
+    pendingShopPurchase = makeItemInstance(ITEM_NONE);
 }
 
 void buildBuyMenu()
@@ -227,10 +267,58 @@ void clampSellMenuSelection()
             menuState.cursorIndex - MENU_VISIBLE_ITEMS + 1;
     }
 }
+
+void returnToShopRoot()
+{
+    menuState.menuStack[0] = &shopMenu;
+    menuState.depth = 1;
+    menuState.cursorIndex = 0;
+    menuState.previousCursorIndex = 0;
+    menuState.firstVisibleIndex = 0;
+    menuState.isOpen = true;
+    suppressMenuInputUntilRelease();
+    requestShopRedraw();
+}
+
+const char* getEquipFailureMessage(EquipResult result)
+{
+    switch (result)
+    {
+        case EQUIP_TWO_HANDED_CONFLICT:
+            return "Remove the conflicting shield or weapon first.";
+        case EQUIP_NOT_OWNED:
+            return "Purchased item is no longer carried.";
+        case EQUIP_INVENTORY_ERROR:
+            return "Inventory full; item was not equipped.";
+        case EQUIP_INVALID_ITEM:
+            return "That item cannot be equipped.";
+        case EQUIP_SUCCESS:
+        default:
+            return "Unable to equip that item.";
+    }
+}
+}
+
+ShopPurchaseResult purchaseShopItem(Character& character,
+                                    const ItemInstance& instance,
+                                    uint16_t price)
+{
+    if (getItem(instance.itemID) == nullptr || price == 0)
+        return SHOP_PURCHASE_INVALID_ITEM;
+
+    if (character.inventory.gold < price)
+        return SHOP_PURCHASE_NOT_ENOUGH_GOLD;
+
+    if (!addItem(character, instance))
+        return SHOP_PURCHASE_INVENTORY_FULL;
+
+    character.inventory.gold -= price;
+    return SHOP_PURCHASE_SUCCESS;
 }
 
 void openTownShop()
 {
+    clearPendingShopPurchase();
     updateShopGoldText();
     buildBuyMenu();
     buildSellMenu();
@@ -277,28 +365,93 @@ void buyShopItem(uint8_t menuIndex)
         return;
     }
 
-    if (player.inventory.gold < item->value)
+    ShopPurchaseResult result =
+        purchaseShopItem(player, instance, item->value);
+
+    if (result != SHOP_PURCHASE_SUCCESS)
     {
-        setShopStatus("Not enough gold.");
+        if (result == SHOP_PURCHASE_NOT_ENOUGH_GOLD)
+            setShopStatus("Not enough gold.");
+        else if (result == SHOP_PURCHASE_INVENTORY_FULL)
+            setShopStatus("Inventory full.");
+        else
+            setShopStatus("That item is not for sale.");
         playSound(SoundEffect::ERROR);
         requestShopRedraw();
         return;
     }
 
-    if (!addItem(player, instance))
-    {
-        setShopStatus("Inventory full.");
-        playSound(SoundEffect::ERROR);
-        requestShopRedraw();
-        return;
-    }
-
-    player.inventory.gold -= item->value;
     updateShopGoldText();
     buildSellMenu();
     snprintf(shopStatus, sizeof(shopStatus), "Bought %s.", item->name);
     playSound(SoundEffect::ITEM_PICKUP);
-    requestShopRedraw();
+
+    if (isShopItemEquippable(instance))
+    {
+        pendingShopPurchase = instance;
+        snprintf(shopStatus, sizeof(shopStatus),
+                 "Bought %.35s. Equip now?", item->name);
+        pushMenu(&equipNowMenu);
+    }
+    else
+    {
+        requestShopRedraw();
+    }
+}
+
+void completeShopEquipPrompt(bool equipNow)
+{
+    if (pendingShopPurchase.itemID == ITEM_NONE)
+    {
+        setShopStatus("No purchased item is pending.");
+        returnToShopRoot();
+        return;
+    }
+
+    const ItemInstance purchasedItem = pendingShopPurchase;
+    clearPendingShopPurchase();
+
+    if (!equipNow)
+    {
+        setShopStatus("Item kept in inventory.");
+        returnToShopRoot();
+        return;
+    }
+
+    const EquipResult result =
+        equipItemWithResult(player, purchasedItem);
+
+    if (result == EQUIP_SUCCESS)
+    {
+        char itemName[40];
+        formatItemInstanceName(
+            purchasedItem, itemName, sizeof(itemName), true);
+        snprintf(shopStatus, sizeof(shopStatus),
+                 "Equipped %s.", itemName);
+        buildSellMenu();
+        playSound(SoundEffect::ITEM_PICKUP);
+    }
+    else
+    {
+        setShopStatus(getEquipFailureMessage(result));
+        playSound(SoundEffect::ERROR);
+    }
+
+    returnToShopRoot();
+}
+
+bool cancelShopEquipPrompt(const Menu* menu)
+{
+    if (menu != &equipNowMenu)
+        return false;
+
+    completeShopEquipPrompt(false);
+    return true;
+}
+
+const char* getShopStatusMessage()
+{
+    return shopStatus;
 }
 
 void sellShopItem(uint8_t menuIndex)
@@ -350,6 +503,7 @@ void sellShopItem(uint8_t menuIndex)
 #include "context_fields.h"
 PFME_CONTEXT_FIELD(shopGoldText);
 PFME_CONTEXT_FIELD(shopStatus);
+PFME_CONTEXT_FIELD(pendingShopPurchase);
 PFME_CONTEXT_FIELD(buyLabels);
 PFME_CONTEXT_FIELD(buyMenuItems);
 PFME_CONTEXT_FIELD(buyStockIndices);

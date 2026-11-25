@@ -356,6 +356,10 @@ void handleTownButtons() {
                     openCharacterSheet();
                     break;
 
+                case TOWN_HOME_EQUIPMENT:
+                    openCharacterView(CHARACTER_VIEW_EQUIPMENT);
+                    break;
+
                 case TOWN_HOME_BACK:
                     closeTownHome();
                     break;

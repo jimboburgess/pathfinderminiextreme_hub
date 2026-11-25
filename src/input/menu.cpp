@@ -1649,6 +1649,14 @@ void menuActivate()
             sellShopItem(menuState.cursorIndex);
             break;
 
+        case MENU_SHOP_EQUIP_YES:
+            completeShopEquipPrompt(true);
+            break;
+
+        case MENU_SHOP_EQUIP_NO:
+            completeShopEquipPrompt(false);
+            break;
+
         case MENU_END_TURN:
 
             closeMenu();
@@ -1666,6 +1674,9 @@ void menuCancel()
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if(pfme::runtime::cancelNativePartyMenu())return;
 #endif
+    if (cancelShopEquipPrompt(getCurrentMenu()))
+        return;
+
     if (getCurrentMenu() == &resistEnergyMenu)
     {
         cancelPlayerAbility();

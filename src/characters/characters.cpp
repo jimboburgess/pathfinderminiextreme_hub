@@ -934,7 +934,10 @@ bool equipItem(Character& character, ItemID item)
         const ItemInstance& instance = character.inventory.slots[i].item;
 
         if (instance.itemID == item)
-            return equipItem(character, instance);
+        {
+            const ItemInstance selected = instance;
+            return equipItem(character, selected);
+        }
     }
 
     return false;

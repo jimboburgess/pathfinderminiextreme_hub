@@ -104,6 +104,8 @@ pfme::runtime::BrowserCharacterView characterView(uint8_t id) {
     view.movementRemaining=actor?actor->turn.movementRemaining:0;
     view.strength=c.abilities.strength;view.dexterity=c.abilities.dexterity;view.constitution=c.abilities.constitution;
     view.intelligence=c.abilities.intelligence;view.wisdom=c.abilities.wisdom;view.charisma=c.abilities.charisma;
+    view.meleeWeapon=getEquippedItemName(c,SLOT_MELEE_WEAPON);view.rangedWeapon=getEquippedItemName(c,SLOT_RANGED_WEAPON);
+    view.armor=getEquippedItemName(c,SLOT_ARMOR);view.shield=getEquippedItemName(c,SLOT_SHIELD);
     view.conditions=conditionSummary(c);view.room=roomLabel(id);return view;
 }
 void tickAudioClock(uint32_t elapsed) {

@@ -41,7 +41,7 @@ class Socket {
     if(request.type==='play')data={interactive_frames:interactTest,browser_state:true};
     if(request.type==='browser_state'){
       const call=browserStateRequests++;
-      data={character:{name:'Aric',class:'Fighter',level:4,hp:31,max_hp:38,mp:0,max_mp:0,ac:16,speed:6,movement_remaining:call?3:4,in_combat:true,abilities:[16,14,13,10,12,8],conditions:'Blessed',room:'Dungeon room 1'},
+      data={character:{name:'Aric',class:'Fighter',level:4,hp:31,max_hp:38,mp:0,max_mp:0,ac:16,speed:6,movement_remaining:call?3:4,in_combat:true,abilities:[16,14,13,10,12,8],conditions:'Blessed',room:'Dungeon room 1',equipment:{melee:'+1 Longsword',ranged:'Shortbow',armor:'Chainmail',shield:'Heavy Wooden Shield'}},
         party:[{name:'Aric',characterClass:'Fighter',level:4,hp:31,max_hp:38,mp:0,max_mp:0,conditions:'Blessed',connection:'Connected',room:'Dungeon room 1'},
           {name:'Mira',characterClass:'Wizard',level:3,hp:12,max_hp:19,mp:6,max_mp:10,conditions:'',connection:'Reconnecting',room:'Dungeon room 2'}],
         messages:call===0?Array.from({length:110},(_,i)=>({sequence:String(i+1),text:'Game event '+(i+1)})):[{sequence:String(111+call),text:'New game event '+call}],
@@ -67,6 +67,7 @@ async function main(){
   assert.equal(element('scale').value,'3');assert.equal(context.imageSmoothingEnabled,false);
   assert.equal(lastPixels.length,230400);
   assert.match(element('character-panel').innerHTML,/Aric/);assert.match(element('character-panel').innerHTML,/31\/38/);assert.match(element('character-panel').innerHTML,/Move remaining/);assert.match(element('character-panel').innerHTML,/>4</);
+  assert.match(element('character-panel').innerHTML,/\+1 Longsword/);assert.match(element('character-panel').innerHTML,/Chainmail/);
   assert.match(element('party-panel').innerHTML,/Party \(2\/4\)/);assert.match(element('party-panel').innerHTML,/Reconnecting/);assert.match(element('party-panel').innerHTML,/Dungeon room 2/);
   assert.equal(element('messages').children.length,100,'browser message history is bounded at 100');assert.equal(element('messages').children.at(-1).textContent,'Game event 110');
   function verifyPixels(){for(let i=0;i<lastPixels.length;i+=4){let expected=[0,0,255,255];if(expectedPixels){const v=expectedPixels.readUInt16LE(i/2),r=v>>11,g=v>>5&63,b=v&31;expected=[r<<3|r>>2,g<<2|g>>4,b<<3|b>>2,255];}assert.deepEqual(Array.from(lastPixels.subarray(i,i+4)),expected,`pixel ${i/4}`);}}
