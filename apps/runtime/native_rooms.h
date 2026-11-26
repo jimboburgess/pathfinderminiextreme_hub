@@ -4,7 +4,9 @@ namespace pfme { namespace runtime {
 // Selected only by the serialized native runtime, never by a client field.
 PlayerID selectedController();
 bool nativeRoomsActive();
+bool allowNativeRoomTransition(Dungeon&,uint8_t);
 bool travelNativeRoom(Dungeon&,RoomEntry);
+bool consumeNativeCohesionRejection();
 void bindNativeRoom(Dungeon&,PlayerID);
 bool bindNativeWorldRoom(Dungeon&,uint8_t);
 Entity* nativeActor(PlayerID);

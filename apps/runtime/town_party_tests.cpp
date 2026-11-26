@@ -4,6 +4,8 @@
 #include "native_rooms.h"
 #include "data/game.h"
 #include "dungeon/combat.h"
+#include "dungeon/dungeongraph.h"
+#include "dungeon/partycohesion.h"
 #include "graphics/charcreationscreen.h"
 #include "characters/sheet.h"
 #include "graphics/messagelog.h"
@@ -246,6 +248,7 @@ int main(int argc,char** argv){try{
  const bool forestCombat=argc>2 && std::string(argv[2])=="forest-initiative";
  const bool combatTest=argc>2 && (std::string(argv[2])=="combat" || std::string(argv[2])=="forest-combat");
  const bool separate=argc>2 && std::string(argv[2])=="separate";
+ const bool cohesion=argc>2 && std::string(argv[2])=="cohesion";
  const unsigned seed=argc>3?std::stoul(argv[3]):2;
  const unsigned level=argc>4?std::stoul(argv[4]):1;check(level>=1&&level<=3,"playtest level");
  const bool mixed=argc>5&&std::string(argv[5])=="mixed";
@@ -279,6 +282,45 @@ int main(int argc,char** argv){try{
   auto* actor=nativeActor(id);check(actor && actor->ownerPlayerID==id,"independent production actor");
   check(actor->character.characterClass==original[id].characterClass && actor->character.health.maxHP==original[id].health.maxHP && actor->character.inventory.gold==original[id].inventory.gold && actor->character.magic.maxMP==original[id].magic.maxMP,"full character retained");
   check(nativeActorRoom(id)==(forest?NATIVE_FOREST_ROOM:0),"entrance");capture(id,"town-party-"+std::to_string(id)+".rgb565");
+ }
+ if(cohesion){
+  check(count==4 && !forest,"cohesion fixture requires four dungeon players");
+  uint8_t first=NO_ROOM,second=NO_ROOM;
+  for(Direction direction:{DIR_NORTH,DIR_EAST,DIR_SOUTH,DIR_WEST}){
+   const uint8_t candidate=getRoomNeighbor(dungeon.rooms[0],direction);
+   if(candidate<dungeon.roomCount){first=candidate;break;}
+  }
+  check(first<dungeon.roomCount,"entrance graph neighbor");
+  for(Direction direction:{DIR_NORTH,DIR_EAST,DIR_SOUTH,DIR_WEST}){
+   const uint8_t candidate=getRoomNeighbor(dungeon.rooms[first],direction);
+   if(candidate<dungeon.roomCount && candidate!=0){second=candidate;break;}
+  }
+  check(second<dungeon.roomCount,"two-door graph path");
+  selectController(3);dungeon.currentRoom=first;
+  check(loadRoom(dungeon,ENTRY_START),"scout enters connected room");
+  check(nativeActorRoom(3)==first,"scout room committed");
+  for(unsigned id=0;id<3;++id)check(nativeActorRoom(id)==0,"other players remain at anchor");
+  const TurnState turn=nativeActor(3)->turn;dungeon.currentRoom=second;
+  check(!loadRoom(dungeon,ENTRY_START),"two-door scout transition rejected");
+  check(nativeActorRoom(3)==first && dungeon.currentRoom==first,"rejection preserves scout room");
+  check(nativeActor(3)->turn.movementRemaining==turn.movementRemaining &&
+        nativeActor(3)->turn.moveActionUsed==turn.moveActionUsed &&
+        nativeActor(3)->turn.standardActionUsed==turn.standardActionUsed,
+        "rejection consumes no movement or action");
+  check(std::string(getGameMessage())=="You cannot stray that far from your",
+        "cohesion rejection first line");
+  wait(1500);
+  check(std::string(getGameMessage())=="party.",
+        "cohesion rejection final line");
+  for(unsigned id=0;id<3;++id)setControllerConnected(id,false);
+  selectController(3);dungeon.currentRoom=second;
+  check(loadRoom(dungeon,ENTRY_START),"solo connected scout remains unrestricted");
+  for(unsigned id=0;id<3;++id)setControllerConnected(id,true);
+  selectController(3);dungeon.currentRoom=first;
+  check(loadRoom(dungeon,ENTRY_START),"reconnected scout can regroup");
+  check(nativeActorRoom(3)==first,"regrouping transition committed");
+  for(unsigned id=0;id<3;++id)check(nativeActorRoom(id)==0,"regroup never teleports peers");
+  std::cout<<"PASS production party cohesion message="<<getGameMessage()<<'\n';return 0;
  }
  if(separate){selectController(1);for(unsigned n=0;townSelection!=TOWN_DUNGEON&&n<5;++n)tap(1,"cw");tap(1,"a");check(nativeActor(1)&&!nativeActor(0),"other world has no first-party actors");auto* second=nativeActor(1);selectController(0);check(nativeActor(0)&&!nativeActor(1),"first world contains no second-party actor");check(nativeActor(0)!=second,"resident ownership isolated");
  for(unsigned n=0;nativeActorRoom(0)==0 && n<60;++n)check(takePathStep(0,true),"independent party corridor step");

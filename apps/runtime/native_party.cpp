@@ -368,6 +368,9 @@ void nativePartyConnection(PlayerID id,bool connected){
  if(connected){PartyMembership resumed;const auto error=registry->reconnect(s.party,s.membership.player,s.membership.reconnectToken,resumed);if(error==PartyError::Ok)s.membership=resumed;}
  else{tradeOffers.cancelForPlayer(id);registry->disconnect(s.membership.handle);}
 }
+bool nativePartyMemberConnected(PlayerID id){
+ return isValidController(id) && (!social[id].member || connectedPartyMember(id));
+}
 bool retireNativePartyMember(PlayerID id){
  if(!registry||!social[id].member)return true;
  const auto owner=selectedController();

@@ -762,6 +762,15 @@ bool tryMovePlayerAuthoritative(
 
             if (nextRoom != 255)
             {
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                if (pfme::runtime::nativeRoomsActive() &&
+                    !pfme::runtime::allowNativeRoomTransition(
+                        dungeon, nextRoom))
+                {
+                    playSound(SoundEffect::BUMP);
+                    return false;
+                }
+#endif
                 if (!tryUnlockCurrentRiddleExit(doorDirection))
                 {
                     playSound(SoundEffect::BUMP);
@@ -808,7 +817,10 @@ bool tryMovePlayerAuthoritative(
 
                 if (!roomLoaded)
                 {
-                    setGameMessage("Could not leave room.");
+#ifdef PFME_NATIVE_CONTROLLER_CONTEXT
+                    if (!pfme::runtime::consumeNativeCohesionRejection())
+#endif
+                        setGameMessage("Could not leave room.");
                     playSound(SoundEffect::BUMP);
                     return false;
                 }

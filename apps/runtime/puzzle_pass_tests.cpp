@@ -241,7 +241,8 @@ void multiplayer(){
   if(getNumberTileRuleDefinition(room.numberPuzzle.rule)->evaluationMode!=NUMBER_RULE_STATEFUL)continue;
   unsigned starts=0;for(int y=room.numberPuzzle.fieldY;y<room.numberPuzzle.fieldY+room.numberPuzzle.fieldHeight;++y)starts+=getNumberPuzzleDigitAt(room,room.numberPuzzle.fieldX,y)==room.numberPuzzle.requiredSequence[0];found=starts>=2;
  }
- check(found,"generated stateful Number room with independent entry choices");const auto blueprint=room.numberPuzzle;
+ check(found,"generated stateful Number room with independent entry choices");
+ dungeon.rooms[0].east=1;room.west=0;const auto blueprint=room.numberPuzzle;
  dungeon.currentRoom=1;check(loadRoom(dungeon,ENTRY_WEST),"first player enters Number room");check(nativeActorRoom(0)==1&&nativeActorRoom(1)==0,"room transition never teleports peer");
  nativeActor(0)->character.characterClass=CLASS_ROGUE;
  selectController(1);check(!canAttemptCurrentPuzzleBypass(*nativeActor(1),DIR_EAST),"player elsewhere cannot use Rogue in another room");dungeon.currentRoom=1;check(loadRoom(dungeon,ENTRY_WEST),"second player enters same authoritative room");auto* a=nativeActor(0);auto* b=nativeActor(1);
@@ -265,7 +266,7 @@ void multiplayer(){
  const auto bx=b->x,by=b->y;selectController(0);for(unsigned i=1;i<route.size();++i)moveOne(route[i]);moveOne({a->x+1,a->y});check(room.numberPuzzle.progress==NUMBER_PUZZLE_COMPLETE&&b->x==bx&&b->y==by,"one completion unlocks shared room without moving peer");
  selectController(1);check(tryUnlockCurrentNumberPuzzleExit(DIR_EAST),"peer sees authoritative unlocked route");check(controllerPixels(0)&&controllerPixels(1)&&controllerPixels(0)!=controllerPixels(1),"independent original framebuffer surfaces");
  // The same room-owned visual clock is visible from either authorized observer.
- configure(room,PUZZLE_BELLS);const DungeonFurnitureInstance* bell=nullptr;for(const auto& f:room.furniture)if(f.type==FURNITURE_BELL_MID)bell=&f;check(bell,"shared bell fixture");
+ configure(room,PUZZLE_BELLS);dungeon.rooms[0].east=1;room.west=0;const DungeonFurnitureInstance* bell=nullptr;for(const auto& f:room.furniture)if(f.type==FURNITURE_BELL_MID)bell=&f;check(bell,"shared bell fixture");
  selectController(0);setAudioMuted(true);check(strikeCurrentBellAt(bell->x,bell->y),"first rings shared bell");const auto began=millis();selectController(1);check(getCurrentBellVisualTone(began)==BELL_MID,"second sees same shared bell, even muted");wait(300);check(getCurrentBellVisualTone(millis())==BELL_TONE_COUNT,"both observers see expiry");
  // Only the Rogue physically at this room's exit can perform the bypass.
  selectController(1);dungeon.currentRoom=0;check(loadRoom(dungeon,ENTRY_START),"Fighter returns to other room");

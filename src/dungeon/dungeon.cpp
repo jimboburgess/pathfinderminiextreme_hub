@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include "roomgen.h"
 #include "dungeongraph.h"
+#include "partycohesion.h"
 #include "riddlepuzzle.h"
 #include "puzzleroom.h"
 #include "data/entityspawn.h"
@@ -1092,6 +1093,8 @@ PlayerID loadedObserver=INVALID_PLAYER_ID;
 uint8_t observedRoom=NO_ROOM;
 Entity* actors[NATIVE_CONTROLLER_CAPACITY]{};
 uint8_t actorRooms[NATIVE_CONTROLLER_CAPACITY]{};
+uint8_t partyAnchorRooms[NATIVE_WORLD_CAPACITY]{};
+bool cohesionRejected[NATIVE_WORLD_CAPACITY]{};
 void bindRoom(Dungeon& world,uint8_t index) {
     switchRoomFields(index);
     auto& room=residentRooms[index];
@@ -1108,6 +1111,8 @@ void bindRoom(Dungeon& world,uint8_t index) {
 }
 void resetNativeResidentRooms(){
     for(auto& room:residentRooms)room=ResidentRoom{};
+    partyAnchorRooms[nativeWorldIndex()]=NO_ROOM;
+    cohesionRejected[nativeWorldIndex()]=false;
     for(PlayerID id=0;id<NATIVE_CONTROLLER_CAPACITY;++id)if(nativeControllerWorld(id)==nativeWorldIndex())retireNativeObserver(id);
     invalidateNativeRoomView();
 }
@@ -1141,6 +1146,43 @@ void retireNativeObserver(PlayerID id) {
     for(auto& room:views[id])for(auto& view:room)view=ObserverEntity{};
 }
 uint8_t nativeActorRoom(PlayerID id) {return nativeActor(id)?actorRooms[id]:NO_ROOM;}
+PartyCohesionDecision nativeCohesionDecision(
+    const Dungeon& world,PlayerID id,uint8_t destination){
+    uint8_t partyRooms[PARTY_COHESION_MEMBER_CAPACITY];
+    for(auto& room:partyRooms)room=NO_ROOM;
+    uint8_t activeMask=0;
+    for(PlayerID candidate=0;candidate<NATIVE_CONTROLLER_CAPACITY;++candidate){
+        auto* actor=nativeActor(candidate);
+        if(!actor || !actor->active || !nativePartyMemberConnected(candidate))continue;
+        const PlayerID member=nativePartyPlayerID(candidate);
+        if(!isValidPlayerID(member))continue;
+        partyRooms[member]=actorRooms[candidate];
+        activeMask|=static_cast<uint8_t>(1u<<member);
+    }
+    if(actors[id] && actorRooms[id]<world.roomCount)
+        return evaluatePartyRoomTransition(
+            world,partyRooms,activeMask,nativePartyPlayerID(id),destination,
+            partyAnchorRooms[nativeWorldIndex()]);
+    PartyCohesionDecision result{};result.allowed=true;
+    result.currentAnchor=partyAnchorRooms[nativeWorldIndex()];
+    result.nextAnchor=result.currentAnchor<world.roomCount
+        ?result.currentAnchor:destination;
+    return result;
+}
+bool allowNativeRoomTransition(Dungeon& world,uint8_t destination){
+    const PlayerID id=selectedController();
+    if(!isValidController(id)||destination>=world.roomCount)return false;
+    const PartyCohesionDecision cohesion=nativeCohesionDecision(
+        world,id,destination);
+    partyAnchorRooms[nativeWorldIndex()]=cohesion.currentAnchor;
+    if(cohesion.allowed)return true;
+    setGameMessage(PARTY_COHESION_REJECTION_MESSAGE);return false;
+}
+bool consumeNativeCohesionRejection(){
+    const bool rejected=cohesionRejected[nativeWorldIndex()];
+    cohesionRejected[nativeWorldIndex()]=false;
+    return rejected;
+}
 void adoptNativeForestActor(PlayerID id,Entity* entity){actors[id]=entity;actorRooms[id]=NATIVE_FOREST_ROOM;}
 bool leaveNativeRoom(Dungeon& world) {
     auto id=selectedController();if(!isValidController(id)||!actors[id]||combat.active)return false;
@@ -1165,6 +1207,16 @@ void bindNativeRoom(Dungeon& world,PlayerID id) {
 bool travelNativeRoom(Dungeon& world,RoomEntry entry) {
     const auto id=selectedController();const auto destination=world.currentRoom;
     if (!isValidController(id) || destination>=world.roomCount)return false;
+    cohesionRejected[nativeWorldIndex()]=false;
+    const PartyCohesionDecision cohesion=nativeCohesionDecision(
+        world,id,destination);
+    partyAnchorRooms[nativeWorldIndex()]=cohesion.currentAnchor;
+    if(!cohesion.allowed){
+        world.currentRoom=actorRooms[id];
+        cohesionRejected[nativeWorldIndex()]=true;
+        setGameMessage(PARTY_COHESION_REJECTION_MESSAGE);
+        return false;
+    }
     if(combat.active && (!combat.waitingForPlayer || getCurrentCombatant()!=actors[id] ||
                         actors[id]->turn.movementRemaining==0))return false;
     saveNativeRoomView(world);
@@ -1205,6 +1257,7 @@ bool travelNativeRoom(Dungeon& world,RoomEntry entry) {
     // Commit the move only after destination/capacity checks have succeeded.
     if(previous)previous->active=false;
     *targetActor=value;actors[id]=targetActor;actorRooms[id]=destination;
+    partyAnchorRooms[nativeWorldIndex()]=cohesion.nextAnchor;
     if(combat.active && previous) {
         // Actual travel is a bounded transaction. Resident monster addresses
         // never change; retarget every combat pointer to this moved actor.

@@ -27,6 +27,7 @@ void nativePartyReturnedToTown();
 bool canResetNativePartyAdventure();
 bool resetNativePartyAdventure();
 void nativePartyConnection(PlayerID,bool);
+bool nativePartyMemberConnected(PlayerID);
 bool retireNativePartyMember(PlayerID);
 void resetNativePartyCharacter(PlayerID);
 void nativePartyCharacterName(PlayerID,const char*);

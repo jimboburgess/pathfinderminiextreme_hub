@@ -16,6 +16,7 @@
 #include "dungeon/furniture.h"
 #include "dungeon/monsterscripts.h"
 #include "dungeon/numbertilepuzzle.h"
+#include "dungeon/partycohesion.h"
 #include "dungeon/puzzleroom.h"
 #include "dungeon/riddlepuzzle.h"
 #include "dungeon/traps.h"
@@ -127,6 +128,7 @@ struct ActivityRuntime
     uint8_t visiblePlayerMask = 0;
     PlayerID localPlayerID = INVALID_PLAYER_ID;
     uint8_t currentRoom = NETWORK_NO_ROOM;
+    uint8_t partyAnchorRoom = NETWORK_NO_ROOM;
     uint8_t transitionEntry = 0;
     uint16_t localMovementSequence = 0;
     uint16_t nextSharedMessageSequence = 1;
@@ -834,6 +836,11 @@ bool restoreHostDungeonRoom()
     return activateAuthoritativeDungeonRoom(hostRoom, ENTRY_START);
 }
 
+void rejectPartyRoomTransition(PlayerID movingPlayer);
+PartyCohesionDecision evaluateMultiplayerRoomTransition(
+    PlayerID movingPlayer,
+    uint8_t destinationRoom);
+
 bool resolvePlayerDoorTransition(
     PlayerID playerID,
     Direction direction,
@@ -879,8 +886,16 @@ bool resolvePlayerDoorTransition(
         doorDirection = DIR_EAST;
         entry = ENTRY_WEST;
     }
-    if (destinationRoom >= dungeon.roomCount ||
-        !tryUnlockCurrentRiddleExit(doorDirection) ||
+    if (destinationRoom >= dungeon.roomCount) return false;
+    const PartyCohesionDecision cohesion =
+        evaluateMultiplayerRoomTransition(playerID, destinationRoom);
+    runtime.partyAnchorRoom = cohesion.currentAnchor;
+    if (!cohesion.allowed)
+    {
+        rejectPartyRoomTransition(playerID);
+        return false;
+    }
+    if (!tryUnlockCurrentRiddleExit(doorDirection) ||
         !tryUnlockCurrentBellExit(doorDirection) ||
         !tryUnlockCurrentNumberPuzzleExit(doorDirection) ||
         !tryUnlockCurrentBrazierPuzzleExit(doorDirection)) return false;
@@ -2211,6 +2226,51 @@ void announcePlayerRoomChange(PlayerID movingPlayer)
             sendPlayerRoomChangeTo(playerID, movingPlayer);
 }
 
+void rejectPartyRoomTransition(PlayerID movingPlayer)
+{
+    if (movingPlayer == runtime.localPlayerID)
+        setGameMessage(PARTY_COHESION_REJECTION_MESSAGE);
+    if (movingPlayer == HOST_PLAYER_ID) return;
+
+    SharedGameplayMessagePayload message{};
+    message.activityID = runtime.activityID;
+    message.messageSequence = runtime.nextSharedMessageSequence++;
+    if (runtime.nextSharedMessageSequence == 0)
+        runtime.nextSharedMessageSequence = 1;
+    message.category = SharedMessageCategory::ROOM;
+    const size_t length = strnlen(
+        PARTY_COHESION_REJECTION_MESSAGE, SHARED_MESSAGE_TEXT_SIZE - 1);
+    memcpy(message.text, PARTY_COHESION_REJECTION_MESSAGE, length);
+    message.text[length] = '\0';
+    message.textLength = static_cast<uint8_t>(length);
+    uint8_t bytes[NETWORK_MAX_PAYLOAD_SIZE] = {};
+    size_t size = 0;
+    if (encodeSharedGameplayMessage(message, bytes, sizeof(bytes), size))
+        sendToPlayer(movingPlayer, NetworkPacketType::SHARED_GAMEPLAY_MESSAGE,
+                     bytes, size);
+}
+
+PartyCohesionDecision evaluateMultiplayerRoomTransition(
+    PlayerID movingPlayer,
+    uint8_t destinationRoom)
+{
+    uint8_t partyRooms[PARTY_COHESION_MEMBER_CAPACITY];
+    for (uint8_t member = 0; member < PARTY_COHESION_MEMBER_CAPACITY;
+         ++member)
+        partyRooms[member] = NETWORK_NO_ROOM;
+    uint8_t activeMask = 0;
+    for (PlayerID playerID = 0; playerID < MAX_MULTIPLAYER_PLAYERS;
+         ++playerID)
+    {
+        if (!isParticipant(playerID)) continue;
+        partyRooms[playerID] = runtime.participants[playerID].spawn.roomID;
+        activeMask |= playerBit(playerID);
+    }
+    return evaluatePartyRoomTransition(
+        dungeon, partyRooms, activeMask, movingPlayer, destinationRoom,
+        runtime.partyAnchorRoom);
+}
+
 bool beginIndependentRoomTransition(
     PlayerID movingPlayer,
     uint8_t destinationRoom,
@@ -2222,12 +2282,22 @@ bool beginIndependentRoomTransition(
         destinationRoom >= dungeon.roomCount) return false;
     Participant& participant = runtime.participants[movingPlayer];
     const uint8_t sourceRoom = participant.spawn.roomID;
+    const PartyCohesionDecision cohesion =
+        evaluateMultiplayerRoomTransition(movingPlayer, destinationRoom);
+    runtime.partyAnchorRoom = cohesion.currentAnchor;
+    if (!cohesion.allowed)
+    {
+        participant.transitionPending = false;
+        rejectPartyRoomTransition(movingPlayer);
+        return false;
+    }
     if (!activateAuthoritativeDungeonRoom(
             destinationRoom, entry, movingPlayer))
     {
         restoreHostDungeonRoom();
         return false;
     }
+    runtime.partyAnchorRoom = cohesion.nextAnchor;
     participant.lastTransitionSequence = transitionSequence;
     participant.transitionPending = false;
     participant.transitionEntry = static_cast<uint8_t>(entry);
@@ -2367,6 +2437,10 @@ void applyPositionUpdate(const PlayerPositionPayload& position)
         position.y >= (runtime.type == MultiplayerActivityType::FOREST
             ? FOREST_HEIGHT : ROOM_HEIGHT)) return;
     Participant& participant = runtime.participants[position.playerID];
+    if (position.playerID == runtime.localPlayerID &&
+        participant.transitionPending &&
+        position.roomID == participant.pendingTransitionSourceRoom)
+        participant.transitionPending = false;
     if (participant.hasMoveSequence &&
         !isNewerMovementSequence(position.movementSequence,
                                  participant.lastMoveSequence)) return;
