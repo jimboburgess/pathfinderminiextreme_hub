@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "controller_slots.h"
+#include "characters/abilities.h"
 #include "characters/conditions.h"
 #include "characters/sheet.h"
 #include "data/game.h"
@@ -513,6 +514,72 @@ int main()
         check(!hasOutline(*actor, ST77XX_CYAN) &&
               !hasOutline(*nextActor, ST77XX_CYAN),
               "turn outlines disappear when combat ends");
+
+        // A ground-targeted spell that defeats the final enemies must
+        // resolve the encounter after its normal message presentation.
+        for (int y = 0; y < ROOM_HEIGHT; ++y)
+            for (int x = 0; x < ROOM_WIDTH; ++x)
+                dungeon.rooms[dungeon.currentRoom].map.tiles[y][x] = TILE_FLOOR;
+        for (uint8_t i = 0; i < dungeon.entityCount; ++i)
+            if (dungeon.entities[i].type == ENTITY_MONSTER)
+                dungeon.entities[i].active = false;
+        actor->x = 4;
+        actor->y = 6;
+        actor->active = true;
+        actor->character.characterClass = CLASS_WIZARD;
+        actor->character.level = 10;
+        actor->character.abilities.intelligence = 20;
+        initializeCharacterMagic(actor->character);
+        check(learnAbility(actor->character, ABILITY_FIREBALL),
+              "level-ten Wizard knows Fireball");
+
+        Entity* undeadA = spawnMonster(
+            dungeon.entities, dungeon.entityCount, MONSTER_SKELETON, 0, 0);
+        Entity* undeadB = spawnMonster(
+            dungeon.entities, dungeon.entityCount, MONSTER_ZOMBIE, 0, 0);
+        check(undeadA != nullptr && undeadB != nullptr,
+              "two undead spell targets spawn");
+        undeadA->x = 7;
+        undeadA->y = 6;
+        undeadB->x = 8;
+        undeadB->y = 6;
+        for (Entity* undead : {undeadA, undeadB})
+        {
+            undead->active = true;
+            undead->character.state = STATE_ALIVE;
+            undead->character.health.currentHP = 1;
+            undead->character.health.maxHP = 1;
+        }
+
+        combat = Combat{};
+        combat.active = true;
+        combat.phase = COMBAT_TURN;
+        combat.waitingForPlayer = true;
+        combat.combatantCount = 3;
+        combat.initiativeOrder[0] = actor;
+        combat.initiativeOrder[1] = undeadA;
+        combat.initiativeOrder[2] = undeadB;
+        combat.currentTurnIndex = 0;
+        actor->turn = TurnState{};
+        actor->turn.turnActive = true;
+        actor->turn.movementRemaining = getEffectiveSpeed(actor->character);
+        moveDirection = DIR_EAST;
+        beginPlayerAbility(ABILITY_FIREBALL);
+        check(isPlayerTargetingGroundAbility(), "Fireball targeting begins");
+        int fireballX = -1;
+        int fireballY = -1;
+        check(getSelectedAbilityGroundTarget(fireballX, fireballY) &&
+              fireballX == 7 && fireballY == 6,
+              "Fireball starts centered on both undead");
+        confirmPlayerAbility();
+        check(undeadA->character.state != STATE_ALIVE &&
+              undeadB->character.state != STATE_ALIVE,
+              "Fireball defeats both undead");
+        check(combat.abilityResolutionPending && combat.abilityEndedCombat,
+              "area spell marks final-enemy defeat for combat cleanup");
+        wait(COMBAT_MESSAGE_PAUSE_MS + 300);
+        check(!combat.active,
+              "combat ends after Fireball defeats the last enemies");
 
         std::cout << "Production Batch 2A combat tests passed\n";
         return 0;

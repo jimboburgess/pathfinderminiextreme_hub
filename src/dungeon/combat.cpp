@@ -877,7 +877,7 @@ void presentGroundAbilityResolution(
 
     combat.abilityResolutionPending = true;
     combat.abilityCaster = &caster;
-    combat.abilityEndedCombat = false;
+    combat.abilityEndedCombat = areAllCombatMonstersDefeated();
     combat.abilityResultTime = millis();
 
     if (caster.type == ENTITY_PLAYER)
@@ -2156,7 +2156,12 @@ void updateCombat()
                    isGameMessageComplete())
                {
                    Entity* caster = combat.abilityCaster;
-                   bool endedCombat = combat.abilityEndedCombat;
+                   // Area and directional abilities may defeat several
+                   // combatants at once. Recheck authoritative combat state
+                   // when their result pause completes so any spell path
+                   // that omitted the presentation hint still ends combat.
+                   bool endedCombat = combat.abilityEndedCombat ||
+                                      areAllCombatMonstersDefeated();
                    const bool wasOpeningAbility =
                        combat.openingAbilityInProgress;
 
@@ -3188,7 +3193,7 @@ void presentDirectionalAbilityResolution(
 
     combat.abilityResolutionPending = true;
     combat.abilityCaster = &caster;
-    combat.abilityEndedCombat = false;
+    combat.abilityEndedCombat = areAllCombatMonstersDefeated();
     combat.abilityResultTime = millis();
 
     if (caster.type == ENTITY_PLAYER)
