@@ -169,6 +169,7 @@ struct MultiplayerCombatSlot
     bool moveActionUsed = false;
     bool standardActionUsed = false;
     bool fullDefense = false;
+    bool initialUnawareTurn = false;
 };
 
 struct ExplorationAbilityNetworkState
@@ -3452,13 +3453,15 @@ void processCombatBegin(
     }
     for (uint8_t index = 0; index < begin.combatantCount; ++index)
     {
-        multiplayerCombat->slots[index].initiative = begin.combatants[index];
+        MultiplayerCombatSlot& slot = multiplayerCombat->slots[index];
+        slot.initiative = begin.combatants[index];
         Entity* entity = resolveVisibleCombatant(
             begin.combatants[index].combatant);
         if (entity != nullptr && entity->type == ENTITY_MONSTER)
         {
-            entity->awareOfPlayer = true;
-            entity->revealedToPlayer = true;
+            slot.initialUnawareTurn = !entity->awareOfPlayer;
+            if (slot.initialUnawareTurn)
+                addCondition(entity->character, CONDITION_FLAT_FOOTED, 0, 0);
             markEntityFootprintDirty(*entity);
         }
     }
@@ -3778,6 +3781,12 @@ void resetMultiplayerTurnState(MultiplayerCombatSlot& slot)
         slot.standardActionUsed = true;
         multiplayerCombat->openingAbilityPlayerID = INVALID_PLAYER_ID;
     }
+    if (reference.kind == MultiplayerCombatantKind::MONSTER &&
+        slot.initialUnawareTurn)
+    {
+        slot.standardActionUsed = true;
+        slot.initialUnawareTurn = false;
+    }
     slot.movementRemaining = reference.kind == MultiplayerCombatantKind::PLAYER &&
         isValidPlayerID(reference.playerID)
         ? participantCharacter(reference.playerID).speed
@@ -3789,6 +3798,9 @@ void resetMultiplayerTurnState(MultiplayerCombatSlot& slot)
         entity->turn.turnActive = true;
         entity->turn.movementRemaining = slot.movementRemaining;
         entity->turn.fullDefense = slot.fullDefense;
+        entity->turn.standardActionUsed = slot.standardActionUsed;
+        if (reference.kind == MultiplayerCombatantKind::MONSTER)
+            removeCondition(entity->character, CONDITION_FLAT_FOOTED);
     }
 }
 
@@ -4389,9 +4401,10 @@ void resolveAuthoritativeExplorationAbility(
         return;
     }
 
-    const bool hostile = target != nullptr
-        ? isAbilityEffectHostileToTarget(*ability, target->character)
-        : isAbilityHostile(*ability);
+    const bool startsCombat = prepareExplorationAbilityCombat(
+        *actor, target, abilityID,
+        command.targetX, command.targetY,
+        static_cast<Direction>(command.direction));
     MultiplayerCombatActionRequestPayload request{};
     request.activityID = runtime.activityID;
     request.action = MultiplayerCombatActionType::CAST_ABILITY;
@@ -4403,7 +4416,7 @@ void resolveAuthoritativeExplorationAbility(
     request.direction = command.direction;
     request.damageType = command.damageType;
 
-    if (hostile)
+    if (startsCombat)
     {
         if (!startMultiplayerCombatFromCurrentRoom())
         {
@@ -4413,6 +4426,10 @@ void resolveAuthoritativeExplorationAbility(
                 ABILITY_RESULT_INVALID_TARGET);
             return;
         }
+        prepareExplorationAbilityCombat(
+            *actor, target, abilityID,
+            command.targetX, command.targetY,
+            static_cast<Direction>(command.direction));
         multiplayerCombat->openingAbilityPending = true;
         multiplayerCombat->openingAbilitySender = sender;
         multiplayerCombat->openingAbilitySequence = command.actionSequence;
@@ -5314,18 +5331,20 @@ bool startMultiplayerCombatFromCurrentRoom()
         {
             Entity& entity = entities[index];
             if (!entity.active || entity.type != ENTITY_MONSTER ||
-                entity.character.state != STATE_ALIVE) continue;
+                entity.character.state != STATE_ALIVE ||
+                entity.character.health.currentHP <= 0) continue;
             MultiplayerCombatantRef reference{};
             reference.kind = MultiplayerCombatantKind::MONSTER;
             reference.playerID = INVALID_PLAYER_ID;
             reference.roomID = roomID;
             reference.entityID = index + 1;
             if (findCombatSlot(reference) >= 0) continue;
-            entity.awareOfPlayer = true;
-            entity.revealedToPlayer = true;
             MultiplayerCombatSlot& slot = multiplayerCombat->slots[
                 multiplayerCombat->combatantCount++];
             slot.initiative.combatant = reference;
+            slot.initialUnawareTurn = !entity.awareOfPlayer;
+            if (slot.initialUnawareTurn)
+                addCondition(entity.character, CONDITION_FLAT_FOOTED, 0, 0);
             slot.initiative.initiative = static_cast<int8_t>(
                 rollDie(20) +
                 getAbilityModifier(entity.character.abilities.dexterity));
@@ -5404,14 +5423,15 @@ bool startMultiplayerCombatFromCurrentRoom()
         if (!entity.active || entity.type != ENTITY_MONSTER ||
             entity.character.state != STATE_ALIVE ||
             entity.character.health.currentHP <= 0) continue;
-        entity.awareOfPlayer = true;
-        entity.revealedToPlayer = true;
         MultiplayerCombatSlot& slot = multiplayerCombat->slots[
             multiplayerCombat->combatantCount++];
         slot.initiative.combatant.kind = MultiplayerCombatantKind::MONSTER;
         slot.initiative.combatant.playerID = INVALID_PLAYER_ID;
         slot.initiative.combatant.roomID = triggerRoom;
         slot.initiative.combatant.entityID = index + 1;
+        slot.initialUnawareTurn = !entity.awareOfPlayer;
+        if (slot.initialUnawareTurn)
+            addCondition(entity.character, CONDITION_FLAT_FOOTED, 0, 0);
         const int initiative = rollDie(20) +
             getAbilityModifier(entity.character.abilities.dexterity);
         slot.initiative.initiative = static_cast<int8_t>(initiative);
@@ -5758,6 +5778,9 @@ void updateMultiplayerCombat(uint32_t now)
     }
     if (current == nullptr || current->kind != MultiplayerCombatantKind::MONSTER)
         return;
+    MultiplayerCombatSlot& currentSlot = multiplayerCombat->slots[
+        multiplayerCombat->currentTurnIndex];
+    const bool moveOnlyTurn = currentSlot.standardActionUsed;
     if (!prepareCombatantRoom(*current)) return;
     Entity* monster = resolveVisibleCombatant(*current);
     Entity* target = nullptr;
@@ -5789,6 +5812,12 @@ void updateMultiplayerCombat(uint32_t now)
     request.target = targetRef;
     request.direction = 0;
     bool resolved = false;
+    if (target != nullptr && monster != nullptr &&
+        !monster->awareOfPlayer &&
+        !tryMonsterDetectPlayer(*monster, *target))
+    {
+        target = nullptr;
+    }
     if (target != nullptr && monster != nullptr)
     {
         uint8_t steps = static_cast<uint8_t>(
@@ -5815,13 +5844,19 @@ void updateMultiplayerCombat(uint32_t now)
             triggerEntityWalkPose(*monster, MONSTER_WALK_POSE_DURATION_MS);
             markEntityFootprintDirty(*monster);
         }
-        if (abs(static_cast<int>(target->x) - monster->x) <= 1 &&
+        if (!moveOnlyTurn &&
+            abs(static_cast<int>(target->x) - monster->x) <= 1 &&
             abs(static_cast<int>(target->y) - monster->y) <= 1)
             resolved = resolveMultiplayerAttack(request, false);
     }
     if (!resolved)
     {
         const MultiplayerCombatantRef actor = *current;
+        if (moveOnlyTurn)
+        {
+            currentSlot.moveActionUsed = true;
+            currentSlot.movementRemaining = 0;
+        }
         saveCombatRoomAndRestoreHost(actor.roomID);
         advanceMultiplayerTurn();
         emitCombatEvent(NetworkPacketType::COMBAT_TURN,

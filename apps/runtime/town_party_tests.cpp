@@ -41,7 +41,7 @@ void choose(unsigned id,const char* title){
 void board(unsigned id){
  selectController(id);check(gameState==GAME_TOWN,"board only in Town");
  if(menuState.isOpen)tap(id,"b");
- for(unsigned n=0;townSelection!=TOWN_BULLETIN_BOARD && n<5;++n)tap(id,"cw");
+ for(unsigned n=0;townSelection!=TOWN_BULLETIN_BOARD && n<TOWN_OPTION_COUNT;++n)tap(id,"cw");
  tap(id,"a");
 }
 void join(unsigned id,const char* code){board(id);choose(id,"Join Party");for(unsigned i=0;i<pfme::PARTY_JOIN_CODE_LENGTH;++i){char letter[2]={code[i],0};choose(id,letter);}PartySnapshot s;check(nativePartySnapshot(id,s),"joined through code menu");tap(id,"b");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Bulletin Board","Back restores Bulletin Board");tap(id,"b");}
@@ -265,7 +265,7 @@ int main(int argc,char** argv){try{
  tap(0,"cw");tap(0,"a");check(menuState.isOpen && std::string(menuState.menuStack[0]->title)=="Load Character","Home Load opens character selector");tap(0,"b");
    tap(0,"cw");tap(0,"a");check(isCharacterSheetVisible(),"home character sheet");tap(0,"b");
  tap(0,"b");check(!isTownHomeOpen(),"home cancel");
- for(unsigned n=0;townSelection!=TOWN_SHOP&&n<5;++n)tap(0,"cw");tap(0,"a");choose(0,"Buy");
+ for(unsigned n=0;townSelection!=TOWN_SHOP&&n<TOWN_OPTION_COUNT;++n)tap(0,"cw");tap(0,"a");choose(0,"Buy");
  const auto goldBefore=player.inventory.gold;tap(0,"a");check(player.inventory.gold<goldBefore,"production shop purchase");tap(0,"b");
  choose(0,"Sell");const auto goldBought=player.inventory.gold;tap(0,"a");check(player.inventory.gold>goldBought,"production shop sale");tap(0,"b");choose(0,"Leave");
  original[0]=player;
@@ -275,7 +275,7 @@ int main(int argc,char** argv){try{
  if(!separate){check(nativePartySnapshot(0,owner)&&owner.memberCount==count,"all members");
   if(count>1){setControllerConnected(1,false);check(nativePartySnapshot(0,owner)&&!owner.members[1].connected,"disconnect retained member");setControllerConnected(1,true);check(nativePartySnapshot(0,owner)&&owner.members[1].connected,"secure adapter reconnect");}
  }
- selectController(0);for(unsigned n=0;townSelection!=(forest?TOWN_FOREST:TOWN_DUNGEON)&&n<5;++n)tap(0,"cw");tap(0,"a");
+ selectController(0);for(unsigned n=0;townSelection!=(forest?TOWN_FOREST:TOWN_DUNGEON)&&n<TOWN_OPTION_COUNT;++n)tap(0,"cw");tap(0,"a");
  for(unsigned id=0;id<count;++id){selectController(id);
   if(separate && id){check(gameState==GAME_TOWN && !nativeActor(id),"other party stays in Town");continue;}
   check(gameState==(forest?GAME_FOREST:GAME_DUNGEON),"leader shared adventure transition");
@@ -322,7 +322,7 @@ int main(int argc,char** argv){try{
   for(unsigned id=0;id<3;++id)check(nativeActorRoom(id)==0,"regroup never teleports peers");
   std::cout<<"PASS production party cohesion message="<<getGameMessage()<<'\n';return 0;
  }
- if(separate){selectController(1);for(unsigned n=0;townSelection!=TOWN_DUNGEON&&n<5;++n)tap(1,"cw");tap(1,"a");check(nativeActor(1)&&!nativeActor(0),"other world has no first-party actors");auto* second=nativeActor(1);selectController(0);check(nativeActor(0)&&!nativeActor(1),"first world contains no second-party actor");check(nativeActor(0)!=second,"resident ownership isolated");
+ if(separate){selectController(1);for(unsigned n=0;townSelection!=TOWN_DUNGEON&&n<TOWN_OPTION_COUNT;++n)tap(1,"cw");tap(1,"a");check(nativeActor(1)&&!nativeActor(0),"other world has no first-party actors");auto* second=nativeActor(1);selectController(0);check(nativeActor(0)&&!nativeActor(1),"first world contains no second-party actor");check(nativeActor(0)!=second,"resident ownership isolated");
  for(unsigned n=0;nativeActorRoom(0)==0 && n<60;++n)check(takePathStep(0,true),"independent party corridor step");
  check(dungeon.rooms[1].discovered,"first party actually discovers next room");
  selectController(1);check(!dungeon.rooms[1].discovered && nativeActorRoom(1)==0 && nativeActor(1)==second && !combat.active,"other party world and initiative unchanged");
@@ -369,7 +369,7 @@ int main(int argc,char** argv){try{
    // Entry policy for a retained completed run (the same flag written by the
    // original final-encounter/Town-return rules), without replaying a whole campaign.
    selectController(0);dungeon.completed=true;
-   for(unsigned n=0;townSelection!=TOWN_DUNGEON&&n<5;++n)tap(0,"cw");tap(0,"a");
+   for(unsigned n=0;townSelection!=TOWN_DUNGEON&&n<TOWN_OPTION_COUNT;++n)tap(0,"cw");tap(0,"a");
    check(!dungeon.completed && !dungeon.rooms[1].discovered,"completed run starts a fresh authoritative dungeon");
    for(unsigned id=0;id<count;++id){selectController(id);check(gameState==GAME_DUNGEON && nativeActor(id),"fresh shared entrance after completed run");tap(id,"a");check(returnHome(id),"return from fresh adventure");}
   }

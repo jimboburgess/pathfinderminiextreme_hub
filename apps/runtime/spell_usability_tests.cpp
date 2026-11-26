@@ -12,6 +12,8 @@
 #include "map/activemap.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 
@@ -118,6 +120,50 @@ int main()
         enterTestDungeon();
         Entity* actor = prepareOpenRoom();
 
+        const Ability* magicMissile = getAbility(ABILITY_MAGIC_MISSILE);
+        const Ability* fireball = getAbility(ABILITY_FIREBALL);
+        check(magicMissile != nullptr && fireball != nullptr,
+              "spell cost fixtures exist");
+        check(magicMissile->mpCost != fireball->mpCost,
+              "spell cost fixtures use different costs");
+        char costText[64] = {};
+        char expectedCostText[64] = {};
+        check(formatSpellMenuCostText(
+                  actor->character, ABILITY_MAGIC_MISSILE,
+                  costText, sizeof(costText)),
+              "Magic Missile cost formats");
+        snprintf(expectedCostText, sizeof(expectedCostText),
+                 "MP Cost: %u  Current MP: %d/%d",
+                 static_cast<unsigned>(magicMissile->mpCost),
+                 actor->character.magic.currentMP,
+                 actor->character.magic.maxMP);
+        check(std::strcmp(costText, expectedCostText) == 0,
+              "Magic Missile shows canonical MP cost and current MP");
+        check(formatSpellMenuCostText(
+                  actor->character, ABILITY_FIREBALL,
+                  costText, sizeof(costText)),
+              "Fireball cost formats");
+        snprintf(expectedCostText, sizeof(expectedCostText),
+                 "MP Cost: %u  Current MP: %d/%d",
+                 static_cast<unsigned>(fireball->mpCost),
+                 actor->character.magic.currentMP,
+                 actor->character.magic.maxMP);
+        check(std::strcmp(costText, expectedCostText) == 0,
+              "Fireball shows its different canonical MP cost");
+        actor->character.magic.currentMP = magicMissile->mpCost - 1;
+        check(formatSpellMenuCostText(
+                  actor->character, ABILITY_MAGIC_MISSILE,
+                  costText, sizeof(costText)),
+              "insufficient spell cost formats");
+        snprintf(expectedCostText, sizeof(expectedCostText),
+                 "MP Cost: %u (Not enough MP)\nCurrent MP: %d/%d",
+                 static_cast<unsigned>(magicMissile->mpCost),
+                 actor->character.magic.currentMP,
+                 actor->character.magic.maxMP);
+        check(std::strcmp(costText, expectedCostText) == 0,
+              "insufficient MP is explicit");
+        actor->character.magic.currentMP = actor->character.magic.maxMP;
+
         check(feetToTiles(30) == 6, "thirty feet is six tiles");
         check(isAbilityTargetTileInRange(*actor, ABILITY_FIREBALL, 13, 6),
               "target range includes six-tile boundary");
@@ -218,7 +264,58 @@ int main()
         check(hasCondition(actor->character, CONDITION_BUFF_AC),
               "exploration buff applies shared condition");
 
+        Entity remoteEnemy{};
+        remoteEnemy.active = true;
+        remoteEnemy.type = ENTITY_MONSTER;
+        remoteEnemy.character.team = TEAM_MONSTER;
+        remoteEnemy.character.state = STATE_ALIVE;
+        remoteEnemy.character.health.currentHP = 10;
+        remoteEnemy.awareOfPlayer = true;
+        check(!prepareExplorationAbilityCombat(
+                  *actor, &remoteEnemy, ABILITY_MAGIC_MISSILE,
+                  -1, -1, moveDirection),
+              "aware enemy outside the active room does not start combat");
+
+        learnAbility(actor->character, ABILITY_FIREBALL);
+        const int emptyAreaMP = actor->character.magic.currentMP;
+        beginPlayerAbility(ABILITY_FIREBALL);
+        check(isPlayerTargetingGroundAbility(),
+              "empty-room area spell can select a legal tile");
+        confirmPlayerAbility();
+        check(!combat.active,
+              "empty-room area spell remains in exploration");
+        check(actor->character.magic.currentMP ==
+                  emptyAreaMP - getAbility(ABILITY_FIREBALL)->mpCost,
+              "empty-room area spell spends its normal MP");
+
         Entity* target = spawnTarget(10, 6);
+        removeCondition(actor->character, CONDITION_BUFF_AC);
+        const int unawareBuffMP = actor->character.magic.currentMP;
+        beginPlayerAbility(ABILITY_SHIELD);
+        check(!combat.active,
+              "buff near an unaware enemy remains in exploration");
+        check(!target->awareOfPlayer,
+              "non-hostile spell does not reveal or alert an enemy");
+        check(actor->character.magic.currentMP == unawareBuffMP - 2,
+              "unaware-room buff spends normal MP");
+
+        removeCondition(actor->character, CONDITION_BUFF_AC);
+        target->awareOfPlayer = true;
+        actor->character.magic.currentMP = 40;
+        actor->turn = TurnState{};
+        beginPlayerAbility(ABILITY_SHIELD);
+        check(combat.active,
+              "spellcasting near an aware enemy starts combat");
+        check(combat.openingAbilityInProgress &&
+              combat.abilityResolutionPending,
+              "aware-enemy spell is committed as the opening action");
+        check(actor->turn.standardActionUsed,
+              "aware-enemy opening buff spends the standard action");
+        resetExploration(*actor);
+        target->awareOfPlayer = false;
+        target->revealedToPlayer = true;
+        actor->character.magic.currentMP = 40;
+
         learnAbility(actor->character, ABILITY_MAGIC_MISSILE);
         const int cancelMP = actor->character.magic.currentMP;
         beginPlayerAbility(ABILITY_MAGIC_MISSILE);
@@ -229,7 +326,6 @@ int main()
         check(actor->character.magic.currentMP == cancelMP,
               "cancel spends no MP");
 
-        learnAbility(actor->character, ABILITY_FIREBALL);
         closeMenu();
         beginPlayerAbility(ABILITY_FIREBALL);
         check(isPlayerTargetingGroundAbility(), "ground spell targeting");
@@ -248,6 +344,12 @@ int main()
         resetExploration(*actor);
         actor->character.magic.currentMP = 40;
         actor->turn.standardActionUsed = false;
+        Entity* unawareBystander = spawnTarget(12, 6);
+        Entity* awareEnemy = spawnTarget(13, 6);
+        awareEnemy->awareOfPlayer = true;
+        target->character.initiative = -100;
+        unawareBystander->character.initiative = -100;
+        awareEnemy->character.initiative = -100;
         const int targetHP = target->character.health.currentHP;
         beginPlayerAbility(ABILITY_MAGIC_MISSILE);
         check(getSelectedAbilityTarget() == target,
@@ -260,6 +362,27 @@ int main()
               "opening result uses normal ability presentation");
         check(target->character.health.currentHP < targetHP,
               "opening spell resolves once");
+        check(target->awareOfPlayer,
+              "hostile spell alerts only its initially unaware target");
+        check(!unawareBystander->awareOfPlayer,
+              "targeted spell does not alert an unrelated enemy");
+        check(isCombatParticipant(*target) &&
+              isCombatParticipant(*unawareBystander) &&
+              isCombatParticipant(*awareEnemy),
+              "all living room enemies join initiative");
+        check(target->character.initiative != -100 &&
+              unawareBystander->character.initiative != -100 &&
+              awareEnemy->character.initiative != -100,
+              "aware and unaware room enemies both roll initiative");
+        check(!hasInitialUnawareTurn(awareEnemy->turn),
+              "aware enemy has no first-turn action restriction");
+        check(hasInitialUnawareTurn(target->turn),
+              "hostile spell preserves its target's initial unaware status");
+        check(hasInitialUnawareTurn(unawareBystander->turn),
+              "unaware enemy records its initial awareness separately");
+        check(hasCondition(unawareBystander->character,
+                           CONDITION_FLAT_FOOTED),
+              "unaware enemy begins flat-footed");
         const int resolvedHP = target->character.health.currentHP;
         check(actor->turn.standardActionUsed,
               "opening spell commits the standard action");
@@ -290,6 +413,28 @@ int main()
               "opening spell gives no free second standard action");
         check(!openingCasterTurn->turn.moveActionUsed,
               "opening caster retains the first move action");
+
+        unawareBystander->awareOfPlayer = true;
+        resetActions(unawareBystander);
+        check(!hasCondition(unawareBystander->character,
+                            CONDITION_FLAT_FOOTED),
+              "unaware enemy stops being flat-footed on its first turn");
+        check(unawareBystander->turn.standardActionUsed &&
+              !unawareBystander->turn.moveActionUsed,
+              "initially unaware enemy receives only a Move Action");
+        check(unawareBystander->turn.movementRemaining ==
+                  getEffectiveSpeed(unawareBystander->character),
+              "initially unaware enemy retains normal first-turn movement");
+        check(!hasInitialUnawareTurn(unawareBystander->turn),
+              "first-turn restriction is consumed exactly once");
+        resetActions(unawareBystander);
+        check(!unawareBystander->turn.standardActionUsed &&
+              !unawareBystander->turn.moveActionUsed,
+              "initially unaware enemy acts normally on its second turn");
+        resetActions(awareEnemy);
+        check(!awareEnemy->turn.standardActionUsed &&
+              !awareEnemy->turn.moveActionUsed,
+              "aware enemy acts normally on its first turn");
 
         resetExploration(*actor);
         actor->character.characterClass = CLASS_CLERIC;

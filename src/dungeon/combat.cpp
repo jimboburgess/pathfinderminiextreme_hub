@@ -474,6 +474,16 @@ static void applyFlatFootedToCombatants()
     }
 }
 
+static void captureInitialUnawareEnemies()
+{
+    for (uint8_t i = 0; i < combat.combatantCount; ++i)
+    {
+        Entity* entity = combat.initiativeOrder[i];
+        if (entity != nullptr && entity->type == ENTITY_MONSTER)
+            setInitialUnawareTurn(entity->turn, !entity->awareOfPlayer);
+    }
+}
+
 static void removeFlatFooted(Entity* entity)
 {
     if (entity != nullptr &&
@@ -508,6 +518,27 @@ static bool areAllCombatMonstersDefeated()
     }
 
     return hasMonster;
+}
+
+static bool hasLivingAwareCombatMonster()
+{
+    for (uint8_t i = 0; i < combat.combatantCount; ++i)
+    {
+        Entity* entity = combat.initiativeOrder[i];
+        if (entity != nullptr && isLivingHostileForCombat(*entity) &&
+            entity->awareOfPlayer)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool isCombatThreatResolved()
+{
+    return areAllCombatMonstersDefeated() ||
+           !hasLivingAwareCombatMonster();
 }
 
 static uint8_t getParticipatingPlayerCount()
@@ -807,7 +838,7 @@ void presentAbilityResolution(
     combat.abilityResolutionPending = true;
     combat.abilityCaster = &caster;
     combat.abilityEndedCombat = resolution.targetDefeated &&
-        (target.type == ENTITY_PLAYER || areAllCombatMonstersDefeated());
+        (target.type == ENTITY_PLAYER || isCombatThreatResolved());
 #ifdef PFME_NATIVE_CONTROLLER_CONTEXT
     if(pfme::runtime::nativeRoomsActive() && target.type==ENTITY_PLAYER)
         combat.abilityEndedCombat=!pfme::runtime::hasLivingNativePlayers();
@@ -877,7 +908,7 @@ void presentGroundAbilityResolution(
 
     combat.abilityResolutionPending = true;
     combat.abilityCaster = &caster;
-    combat.abilityEndedCombat = areAllCombatMonstersDefeated();
+    combat.abilityEndedCombat = isCombatThreatResolved();
     combat.abilityResultTime = millis();
 
     if (caster.type == ENTITY_PLAYER)
@@ -972,8 +1003,8 @@ static bool anotherMonsterDetectsAfterOpeningAttack(
 static void beginInitiativeAfterOpeningAttack()
 {
     // The provisional roster existed only so the established attack resolver
-    // could run. Rebuild now so a dead opener is removed and a forest monster
-    // that detected the player after the strike is included.
+    // could run. Rebuild now so a dead opener is removed while every living
+    // room combatant remains represented.
     clearCombatFlatFootedConditions();
     findCombatants();
     rollInitiative();
@@ -1070,7 +1101,7 @@ static void finishPlayerAttack()
         return;
     }
 
-    if (areAllCombatMonstersDefeated())
+    if (isCombatThreatResolved())
     {
         combat.waitingForPlayer = false;
         combat.phase = COMBAT_END;
@@ -1530,6 +1561,7 @@ void startCombat()
     findCombatants();
     resetCombatAbilityUsage(
         combat.initiativeOrder, combat.combatantCount);
+    captureInitialUnawareEnemies();
     playSound(combatRosterHasBoss(
                   combat.initiativeOrder, combat.combatantCount)
               ? SoundEffect::BOSS_THEME
@@ -1605,7 +1637,7 @@ static void finishTurnStart(Entity* entity)
             combat.monsterDefeatedPlayer = true;
             combat.phase = COMBAT_END;
         }
-        else if (areAllCombatMonstersDefeated())
+        else if (isCombatThreatResolved())
         {
             combat.phase = COMBAT_END;
         }
@@ -1618,6 +1650,13 @@ static void finishTurnStart(Entity* entity)
     }
 
     announceTurn(entity);
+
+    if (entity->type == ENTITY_MONSTER &&
+        hasInitialUnawareTurn(entity->turn))
+    {
+        entity->turn.standardActionUsed = true;
+        setInitialUnawareTurn(entity->turn, false);
+    }
 
     if (entity->type == ENTITY_PLAYER &&
         entity->ownerPlayerID == combat.openingAbilityPlayerID)
@@ -1937,7 +1976,15 @@ void runMonsterTurn(Entity* monster)
             if (monster->turn.movementRemaining == 0 ||
                 isMonsterReadyForAction(monster))
             {
-                monster->turn.monsterState = MONSTER_ACTION;
+                if (monster->turn.standardActionUsed)
+                {
+                    monster->turn.movementRemaining = 0;
+                    monster->turn.monsterState = MONSTER_END;
+                }
+                else
+                {
+                    monster->turn.monsterState = MONSTER_ACTION;
+                }
             }
 
             break;
@@ -2161,7 +2208,7 @@ void updateCombat()
                    // when their result pause completes so any spell path
                    // that omitted the presentation hint still ends combat.
                    bool endedCombat = combat.abilityEndedCombat ||
-                                      areAllCombatMonstersDefeated();
+                                      isCombatThreatResolved();
                    const bool wasOpeningAbility =
                        combat.openingAbilityInProgress;
 
@@ -2687,6 +2734,8 @@ void confirmPlayerAttack()
         target->awareOfPlayer = true;
         target->revealedToPlayer = true;
         startCombat();
+        if (!targetWasAware)
+            setInitialUnawareTurn(target->turn, true);
         combat.openingAttackInProgress = true;
         combat.openingAttackWasAmbush = !targetWasAware;
         for (uint8_t i = 0; i < combat.combatantCount; i++)
@@ -2994,6 +3043,9 @@ static void markAbilityCursorDirty()
 
 static bool consumeSelectedAbilityScroll(Entity& player);
 static void clearSelectedAbilityScroll();
+static bool beginOpeningExplorationAbilityCombat(
+    Entity& player,
+    Entity* target);
 
 static void executePlayerAbility(
     Entity& player,
@@ -3156,7 +3208,7 @@ static void executeTurnUndead(Entity& cleric)
     playSound(SoundEffect::SPELL_CAST);
     combat.abilityResolutionPending = true;
     combat.abilityCaster = &cleric;
-    combat.abilityEndedCombat = areAllCombatMonstersDefeated();
+    combat.abilityEndedCombat = isCombatThreatResolved();
     combat.abilityResultTime = millis();
     combat.waitingForPlayer = false;
     requestCombatTileRedraw();
@@ -3193,7 +3245,7 @@ void presentDirectionalAbilityResolution(
 
     combat.abilityResolutionPending = true;
     combat.abilityCaster = &caster;
-    combat.abilityEndedCombat = areAllCombatMonstersDefeated();
+    combat.abilityEndedCombat = isCombatThreatResolved();
     combat.abilityResultTime = millis();
 
     if (caster.type == ENTITY_PLAYER)
@@ -3260,7 +3312,12 @@ void beginPlayerAbility(AbilityID abilityID)
             clearSelectedAbilityScroll();
             return;
         }
-        executePlayerAbility(*player, player, abilityID);
+        combat.selectedAbility = abilityID;
+        const bool canCast = beginOpeningExplorationAbilityCombat(
+            *player, player);
+        combat.selectedAbility = ABILITY_NONE;
+        if (canCast)
+            executePlayerAbility(*player, player, abilityID);
         return;
     }
 
@@ -3607,7 +3664,51 @@ static AbilityResult validateSelectedAbilityCommit(
         combat.selectedAbilityDamageType);
 }
 
-static bool beginOpeningHostileAbility(
+bool prepareExplorationAbilityCombat(
+    Entity& caster,
+    Entity* selectedTarget,
+    AbilityID abilityID,
+    int targetX,
+    int targetY,
+    Direction direction)
+{
+    const Ability* ability = getAbility(abilityID);
+    uint8_t entityCount = 0;
+    Entity* entities = getActiveMapEntities(entityCount);
+    if (ability == nullptr || entities == nullptr)
+        return false;
+
+    bool combatRequired = false;
+    for (uint8_t i = 0; i < entityCount; ++i)
+    {
+        Entity& enemy = entities[i];
+        if (!isLivingHostileForCombat(enemy) || !areHostile(caster, enemy))
+            continue;
+
+        if (enemy.awareOfPlayer)
+            combatRequired = true;
+
+        const bool selected = selectedTarget == &enemy;
+        const bool inArea = selectedTarget == nullptr &&
+            isEntityInSpatialAbilityArea(
+                caster, enemy, abilityID, targetX, targetY, direction);
+        const bool hostileEffect =
+            isAbilityHostile(*ability) ||
+            isAbilityEffectHostileToTarget(*ability, enemy.character);
+        if ((selected || inArea) && hostileEffect)
+        {
+            if (combat.active)
+            {
+                enemy.awareOfPlayer = true;
+                enemy.revealedToPlayer = true;
+            }
+            combatRequired = true;
+        }
+    }
+    return combatRequired;
+}
+
+static bool beginOpeningExplorationAbilityCombat(
     Entity& player,
     Entity* target)
 {
@@ -3615,12 +3716,7 @@ static bool beginOpeningHostileAbility(
         return true;
 
     const Ability* ability = getAbility(combat.selectedAbility);
-    const bool hostile = ability != nullptr &&
-        (target != nullptr
-            ? isAbilityEffectHostileToTarget(
-                *ability, target->character)
-            : isAbilityHostile(*ability));
-    if (ability == nullptr || !hostile)
+    if (ability == nullptr)
         return true;
 
     const AbilityResult validation = validateSelectedAbilityCommit(
@@ -3642,21 +3738,16 @@ static bool beginOpeningHostileAbility(
     const bool fromScroll = combat.selectedAbilityFromScroll;
     const ItemInstance scroll = combat.selectedAbilityScroll;
 
-    uint8_t entityCount = 0;
-    Entity* entities = getActiveMapEntities(entityCount);
-    for (uint8_t i = 0; entities != nullptr && i < entityCount; i++)
-    {
-        if (entities[i].active && entities[i].character.state == STATE_ALIVE &&
-            areHostile(player, entities[i]))
-        {
-            entities[i].awareOfPlayer = true;
-            entities[i].revealedToPlayer = true;
-        }
-    }
+    if (!prepareExplorationAbilityCombat(
+            player, target, abilityID, targetX, targetY, direction))
+        return true;
 
     startCombat();
     if (!combat.active)
         return false;
+
+    prepareExplorationAbilityCombat(
+        player, target, abilityID, targetX, targetY, direction);
 
     for (uint8_t i = 0; i < combat.combatantCount; i++)
     {
@@ -3814,7 +3905,7 @@ void confirmPlayerAbility()
 
     Entity* selectedTarget = getSelectedAbilityTarget();
     if (player != nullptr &&
-        !beginOpeningHostileAbility(*player, selectedTarget))
+        !beginOpeningExplorationAbilityCombat(*player, selectedTarget))
     {
         return;
     }

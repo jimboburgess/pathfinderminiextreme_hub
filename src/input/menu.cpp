@@ -7,6 +7,7 @@
 //
 
 #include "menu.h"
+#include <cstdio>
 #include <cstring>
 #include "data/game.h"
 #include "data/settings.h"
@@ -69,6 +70,37 @@ static Character* getMenuCharacter()
     }
 
     return &player;
+}
+
+bool formatSpellMenuCostText(
+    const Character& character,
+    AbilityID abilityID,
+    char* output,
+    size_t outputSize)
+{
+    if (output == nullptr || outputSize == 0)
+        return false;
+
+    output[0] = '\0';
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr)
+        return false;
+
+    char currentMP[24] = {};
+    formatCharacterMP(character, currentMP, sizeof(currentMP));
+    if (character.magic.currentMP < ability->mpCost)
+    {
+        snprintf(output, outputSize,
+                 "MP Cost: %u (Not enough MP)\nCurrent MP: %s",
+                 static_cast<unsigned>(ability->mpCost), currentMP);
+    }
+    else
+    {
+        snprintf(output, outputSize,
+                 "MP Cost: %u  Current MP: %s",
+                 static_cast<unsigned>(ability->mpCost), currentMP);
+    }
+    return true;
 }
 
 static bool isPlayerCombatTurn()
@@ -2032,12 +2064,37 @@ static void drawDescription(const MenuItem* item)
         description = menu->statusText;
     }
 
+    const int descriptionBottom =
+        descriptionY + MENU_DESCRIPTION_HEIGHT - 2;
+    char costText[64] = {};
+    Character* character = getMenuCharacter();
+    if (item->action == MENU_CAST_ABILITY && character != nullptr &&
+        formatSpellMenuCostText(
+            *character, item->abilityID, costText, sizeof(costText)))
+    {
+        const int costHeight = std::strchr(costText, '\n') == nullptr ? 8 : 16;
+        const int costTop = descriptionBottom - costHeight;
+        drawWrappedMenuText(
+            description,
+            MENU_X + MENU_PADDING,
+            descriptionY + 6,
+            MENU_X + MENU_WIDTH - MENU_PADDING,
+            costTop);
+        drawWrappedMenuText(
+            costText,
+            MENU_X + MENU_PADDING,
+            costTop,
+            MENU_X + MENU_WIDTH - MENU_PADDING,
+            descriptionBottom);
+        return;
+    }
+
     drawWrappedMenuText(
         description,
         MENU_X + MENU_PADDING,
         descriptionY + 6,
         MENU_X + MENU_WIDTH - MENU_PADDING,
-        descriptionY + MENU_DESCRIPTION_HEIGHT - 2);
+        descriptionBottom);
 }
 
 static void drawMenuSelection()

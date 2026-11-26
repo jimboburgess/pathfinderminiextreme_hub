@@ -5,6 +5,7 @@
 #ifndef PATHFINDERMINIEXTREME_025_GAME_H
 #define PATHFINDERMINIEXTREME_025_GAME_H
 
+#include <stdint.h>
 #include <Adafruit_ST7789.h>
 
 #include "characters/characters.h"
@@ -14,7 +15,7 @@
 // Game State
 //======================================================
 
-enum GameState
+enum GameState : uint8_t
 {
     GAME_START,
     GAME_CHARACTER_CREATION,
@@ -23,13 +24,16 @@ enum GameState
     GAME_DUNGEON
 };
 
-enum TownOption
+enum TownOption : uint8_t
 {
     TOWN_FOREST,
     TOWN_DUNGEON,
     TOWN_SHOP,
     TOWN_BULLETIN_BOARD,
     TOWN_STAY_HOME,
+    TOWN_BARN,
+    TOWN_CASTLE,
+    TOWN_MYSTERIOUS_ALLEY,
     TOWN_OPTION_COUNT
 };
 
@@ -62,7 +66,7 @@ extern Adafruit_ST7789 tft;
 extern GameState gameState;
 extern TownOption townSelection;
 
-enum RedrawType
+enum RedrawType : uint8_t
 {
     REDRAW_NONE,
     REDRAW_FULL,

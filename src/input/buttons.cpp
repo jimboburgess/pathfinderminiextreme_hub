@@ -24,6 +24,7 @@
 #include "dungeon/turns.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
+#include "graphics/townscene.h"
 #include "town/town.h"
 #include "multiplayer/multiplayer_activity.h"
 #include "town/shop.h"
@@ -377,16 +378,16 @@ void handleTownButtons() {
 
     if (direction == ENCODER_CLOCKWISE)
     {
-        townSelection =
-            (TownOption)((townSelection + 1) % TOWN_OPTION_COUNT);
+        clearTownSceneSelectionHighlight(townSelection);
+        townSelection = rotateTownLocation(townSelection, true);
 
         playSound(SoundEffect::MENU_MOVE);
         needsRedraw = true;
     }
     else if (direction == ENCODER_COUNTERCLOCKWISE)
     {
-        townSelection =
-            (TownOption)((townSelection - 1 + TOWN_OPTION_COUNT) % TOWN_OPTION_COUNT);
+        clearTownSceneSelectionHighlight(townSelection);
+        townSelection = rotateTownLocation(townSelection, false);
 
         playSound(SoundEffect::MENU_MOVE);
         needsRedraw = true;
@@ -396,19 +397,20 @@ void handleTownButtons() {
     {
         playSound(SoundEffect::MENU_SELECT);
 
-        switch (townSelection)
+        const TownLocationDefinition& location = getTownLocation(townSelection);
+        switch (location.action)
         {
-            case TOWN_FOREST:
+            case TOWN_ACTION_FOREST:
                 if (!requestMultiplayerTravel(
                         MultiplayerActivityType::FOREST))
                     enterForest();
                 break;
 
-            case TOWN_STAY_HOME:
+            case TOWN_ACTION_STAY_HOME:
                 openTownHome();
                 break;
 
-            case TOWN_DUNGEON:
+            case TOWN_ACTION_DUNGEON:
                 if (hasResumableDungeon(dungeon))
                     openDungeonEntryMenu();
                 else if (!requestMultiplayerTravel(
@@ -416,12 +418,16 @@ void handleTownButtons() {
                     enterDungeon();
                 break;
 
-            case TOWN_SHOP:
+            case TOWN_ACTION_SHOP:
                 openTownShop();
                 break;
 
-            case TOWN_BULLETIN_BOARD:
+            case TOWN_ACTION_BULLETIN_BOARD:
                 openMultiplayerMenu();
+                break;
+
+            case TOWN_ACTION_UNAVAILABLE:
+                showTownLocationUnavailable(location);
                 break;
         }
     }

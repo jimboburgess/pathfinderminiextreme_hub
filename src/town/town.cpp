@@ -8,6 +8,8 @@
 #include "graphics/messagelog.h"
 #include "input/buttons.h"
 
+#include <stdio.h>
+
 constexpr unsigned long REST_SLEEP_TIME_MS = 2800;
 constexpr unsigned long REST_RESULT_TIME_MS = 1800;
 
@@ -16,6 +18,79 @@ static TownHomeOption townHomeSelection = TOWN_HOME_REST;
 static bool resting = false;
 static bool restResultShown = false;
 static unsigned long restStageTime = 0;
+
+namespace
+{
+const TownLocationDefinition townLocations[TOWN_OPTION_COUNT] =
+{
+    {TOWN_FOREST, "Enter the Forest",
+     "Venture into the surrounding wilderness.", true,
+     TOWN_SPRITE_FOREST, 1, 18, 43, 69, TOWN_ACTION_FOREST},
+    {TOWN_DUNGEON, "Explore Dungeon",
+     "Descend into the depths in search of adventure.", true,
+     TOWN_SPRITE_DUNGEON, 166, 145, 69, 50, TOWN_ACTION_DUNGEON},
+    {TOWN_SHOP, "Shop",
+     "Purchase equipment and supplies.", true,
+     TOWN_SPRITE_SHOP, 5, 91, 61, 49, TOWN_ACTION_SHOP},
+    {TOWN_BULLETIN_BOARD, "Bulletin Board",
+     "Find adventurers and form a party.", true,
+     TOWN_SPRITE_BULLETIN_BOARD, 70, 105, 27, 35,
+     TOWN_ACTION_BULLETIN_BOARD},
+    {TOWN_STAY_HOME, "Stay Home",
+     "It's dangerous out there.", true,
+     TOWN_SPRITE_HOME, 91, 37, 52, 49, TOWN_ACTION_STAY_HOME},
+    {TOWN_BARN, "Barn",
+     "The barn is currently closed.", false,
+     TOWN_SPRITE_BARN, 45, 39, 44, 44, TOWN_ACTION_UNAVAILABLE},
+    {TOWN_CASTLE, "Castle",
+     "The castle gates are closed.", false,
+     TOWN_SPRITE_CASTLE, 164, 10, 73, 76, TOWN_ACTION_UNAVAILABLE},
+    {TOWN_MYSTERIOUS_ALLEY, "Mysterious Alley",
+     "Something stirs in the shadows.", false,
+     TOWN_SPRITE_MYSTERIOUS_ALLEY, 101, 91, 33, 47,
+     TOWN_ACTION_UNAVAILABLE}
+};
+
+const TownOption townSelectionOrder[TOWN_OPTION_COUNT] =
+{
+    TOWN_STAY_HOME,
+    TOWN_FOREST,
+    TOWN_DUNGEON,
+    TOWN_SHOP,
+    TOWN_BULLETIN_BOARD,
+    TOWN_BARN,
+    TOWN_CASTLE,
+    TOWN_MYSTERIOUS_ALLEY
+};
+}
+
+const TownLocationDefinition& getTownLocation(TownOption option)
+{
+    const uint8_t index = static_cast<uint8_t>(option);
+    return townLocations[index < TOWN_OPTION_COUNT ? index : TOWN_STAY_HOME];
+}
+
+TownOption rotateTownLocation(TownOption option, bool forward)
+{
+    uint8_t current = 0;
+    for (; current < TOWN_OPTION_COUNT; ++current)
+        if (townSelectionOrder[current] == option) break;
+    if (current == TOWN_OPTION_COUNT) current = 0;
+    current = forward
+        ? static_cast<uint8_t>((current + 1) % TOWN_OPTION_COUNT)
+        : static_cast<uint8_t>(
+            (current + TOWN_OPTION_COUNT - 1) % TOWN_OPTION_COUNT);
+    return townSelectionOrder[current];
+}
+
+void showTownLocationUnavailable(const TownLocationDefinition& location)
+{
+    char message[48];
+    snprintf(message, sizeof(message),
+             "%s is currently unavailable.", location.displayName);
+    setGameMessage(message);
+    needsRedraw = true;
+}
 
 void openTownHome()
 {

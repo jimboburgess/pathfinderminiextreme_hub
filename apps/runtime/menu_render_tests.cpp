@@ -1,8 +1,10 @@
 #include "runtime.h"
 #include "controller_slots.h"
+#include "characters/abilities.h"
 #include "data/game.h"
 #include "dungeon/dungeon.h"
 #include "input/menu.h"
+#include "map/activemap.h"
 
 #include <algorithm>
 #include <fstream>
@@ -30,6 +32,14 @@ const MenuItem CHILD_ITEMS[] = {
 const Menu CHILD_MENU = {
     "Child", CHILD_ITEMS,
     static_cast<uint8_t>(sizeof(CHILD_ITEMS) / sizeof(CHILD_ITEMS[0]))
+};
+const MenuItem SPELL_ITEMS[] = {
+    {"Magic Missile", "Automatically deals force damage to one enemy.",
+     MENU_CAST_ABILITY, nullptr, MENU_CLASS_ALL, ABILITY_MAGIC_MISSILE}
+};
+const Menu SPELL_MENU = {
+    "Cast Spell", SPELL_ITEMS,
+    static_cast<uint8_t>(sizeof(SPELL_ITEMS) / sizeof(SPELL_ITEMS[0]))
 };
 
 void check(bool condition, const char* message)
@@ -179,6 +189,19 @@ int main()
         wait(20);
         check(menuState.cursorIndex == 0, "reopen resets selection");
         checkEveryRowVisible();
+
+        Entity* actor = getActiveMapPlayer();
+        check(actor != nullptr, "active player for spell menu");
+        actor->character.magic.currentMP = 12;
+        actor->character.magic.maxMP = 18;
+        openMenu(&SPELL_MENU);
+        wait(20);
+        const uint32_t enoughMPDescription = descriptionFingerprint();
+        actor->character.magic.currentMP = 1;
+        requestMenuRedraw();
+        wait(20);
+        check(descriptionFingerprint() != enoughMPDescription,
+              "spell description redraws current and insufficient MP");
 
         std::cout << "Native production menu framebuffer checks passed\n";
         return 0;

@@ -17,6 +17,8 @@ enum MonsterTurnState : uint8_t
     MONSTER_THINKING
 };
 
+constexpr uint8_t MONSTER_INITIAL_UNAWARE_TURN = 0x10;
+
 struct TurnState
 {
     MonsterTurnState monsterState = MONSTER_START;
@@ -40,6 +42,20 @@ struct TurnState
 
 static_assert(sizeof(TurnState) <= 16,
               "TurnState must remain compact for fixed Entity arrays");
+
+inline bool hasInitialUnawareTurn(const TurnState& turn)
+{
+    return (turn.monsterRuntimeFlags & MONSTER_INITIAL_UNAWARE_TURN) != 0;
+}
+
+inline void setInitialUnawareTurn(TurnState& turn, bool unaware)
+{
+    if (unaware)
+        turn.monsterRuntimeFlags |= MONSTER_INITIAL_UNAWARE_TURN;
+    else
+        turn.monsterRuntimeFlags &=
+            static_cast<uint8_t>(~MONSTER_INITIAL_UNAWARE_TURN);
+}
 
 
 

@@ -147,6 +147,13 @@ bool isTileInDirectionalAbilityArea(
     Direction direction,
     int tileX,
     int tileY);
+bool isEntityInSpatialAbilityArea(
+    const Entity& caster,
+    const Entity& target,
+    AbilityID abilityID,
+    int targetX,
+    int targetY,
+    Direction direction);
 
 // Shared player/monster saving-throw helpers. No natural-1/natural-20 rule is
 // added here because the existing game does not define one for saves.

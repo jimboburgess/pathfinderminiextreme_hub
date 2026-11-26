@@ -194,6 +194,13 @@ bool addCombatReinforcement(Entity& monster);
 //==================================================
 
 void startCombat();
+bool prepareExplorationAbilityCombat(
+    Entity& caster,
+    Entity* selectedTarget,
+    AbilityID abilityID,
+    int targetX,
+    int targetY,
+    Direction direction);
 
 void rollInitiative();
 
@@ -215,6 +222,7 @@ void formatConditionDamageMessage(const Entity& entity,
                                   char* buffer, size_t bufferSize);
 
 void announceTurn(Entity* entity);
+void resetActions(Entity* entity);
 
 void nextTurn();
 

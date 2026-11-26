@@ -15,6 +15,7 @@
 #include "monstersprites.h"
 #include "graphics/sprites.h"
 #include "graphics/itemdropvisual.h"
+#include "graphics/townscene.h"
 #include "characters/sheet.h"
 #include "data/entityspawn.h"
 #include "data/entitytraits.h"
@@ -312,6 +313,7 @@ void drawTownScreen()
 {
     if (isCharacterSheetVisible())
     {
+        invalidateTownScene();
         drawCharacterSheet();
         return;
     }
@@ -319,6 +321,7 @@ void drawTownScreen()
     if (multiplayerSession.isClient() && isMultiplayerActivityLoading() &&
         isLocalActivityParticipant())
     {
+        invalidateTownScene();
         tft.fillScreen(ST77XX_BLACK);
         tft.setTextColor(ST77XX_WHITE);
         tft.setTextSize(2);
@@ -333,6 +336,7 @@ void drawTownScreen()
 
     if (isTownHomeOpen())
     {
+        invalidateTownScene();
         tft.fillScreen(ST77XX_BLACK);
         tft.setTextColor(ST77XX_WHITE);
         tft.setTextSize(3);
@@ -362,43 +366,7 @@ void drawTownScreen()
         tft.print(getGameMessage());
         return;
     }
-
-    tft.fillScreen(ST77XX_BLACK);
-
-    tft.setTextColor(ST77XX_WHITE);
-
-    tft.setTextSize(3);
-    tft.setCursor(72, 20);
-    tft.print("Town");
-
-    tft.setTextSize(2);
-
-    tft.setCursor(20, 60);
-    tft.print(townSelection == TOWN_FOREST ? "> " : "  ");
-    tft.print("Enter the Forest");
-
-    tft.setCursor(20, 90);
-    tft.print(townSelection == TOWN_DUNGEON ? "> " : "  ");
-    tft.print("Explore Dungeon");
-
-    tft.setCursor(20, 120);
-    tft.print(townSelection == TOWN_SHOP ? "> " : "  ");
-    tft.print("Shop");
-
-    tft.setCursor(20, 150);
-    tft.print(townSelection == TOWN_BULLETIN_BOARD ? "> " : "  ");
-    tft.print("Bulletin Board");
-
-    tft.setCursor(20, 180);
-    tft.print(townSelection == TOWN_STAY_HOME ? "> " : "  ");
-    tft.print("Stay Home");
-
-    if (townSelection == TOWN_STAY_HOME)
-    {
-        tft.setTextSize(1);
-        tft.setCursor(18, 215);
-        tft.print("\"It's dangerous out there.\"");
-    }
+    drawTownScene();
 }
 
 void drawMapBackground()

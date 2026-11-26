@@ -29,6 +29,14 @@ if(BUILD_TESTING)
     add_test(NAME pfme_menu_rendering COMMAND pfme_menu_render_tests)
     set_tests_properties(pfme_menu_rendering PROPERTIES TIMEOUT 30)
 
+    add_executable(pfme_town_scene_tests town_scene_tests.cpp)
+    target_include_directories(pfme_town_scene_tests PRIVATE
+        host ../browser/host ../browser/third_party/adafruit_gfx)
+    target_link_libraries(pfme_town_scene_tests PRIVATE pfme_handheld_runtime)
+    target_compile_definitions(pfme_town_scene_tests PRIVATE ARDUINO=100)
+    add_test(NAME pfme_town_scene COMMAND pfme_town_scene_tests)
+    set_tests_properties(pfme_town_scene PROPERTIES TIMEOUT 30)
+
     add_executable(pfme_puzzle_entry_tests puzzle_entry_tests.cpp)
     target_include_directories(pfme_puzzle_entry_tests PRIVATE host ../browser/host ../browser/third_party/adafruit_gfx)
     target_link_libraries(pfme_puzzle_entry_tests PRIVATE pfme_handheld_runtime)

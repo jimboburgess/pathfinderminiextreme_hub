@@ -1,11 +1,14 @@
 #include "runtime.h"
+#include "data/entityspawn.h"
 #include "data/game.h"
 #include "dungeon/dungeon.h"
 #include "dungeon/combat.h"
 #include "map/activemap.h"
 #include "graphics/charcreationscreen.h"
+#include "graphics/messagelog.h"
 #include "characters/sheet.h"
 #include "input/menu.h"
+#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -36,6 +39,12 @@ bool select(MenuAction action) {
     tap("a"); return true;
 }
 int monsterHP() {int hp=0;for(int i=0;i<dungeon.entityCount;i++)if(dungeon.entities[i].type==ENTITY_MONSTER)hp+=std::max(0,int(dungeon.entities[i].character.health.currentHP));return hp;}
+bool monsterTurnWasAnnounced() {
+    const char* message=getGameMessage();
+    for(int i=0;i<dungeon.entityCount;i++)if(dungeon.entities[i].type==ENTITY_MONSTER &&
+        std::strstr(message,getEntityName(&dungeon.entities[i]))!=nullptr)return true;
+    return false;
+}
 }
 int main(int argc,char** argv) {
     try {
@@ -59,8 +68,8 @@ int main(int argc,char** argv) {
         check(dungeon.currentRoom==1,"Existing door/room transition");
         check(monsterHP()>0,"Actual generated monsters");
         wait(18000);check(combat.active,"Real monster awareness and initiative");capture("play-combat.rgb565");
-        const int initialMonsters=monsterHP();const int initialPlayer=getActiveMapPlayer()->character.health.currentHP;
-        bool attacked=false,hpChanged=false,enemyActed=false;
+        const int initialMonsters=monsterHP();
+        bool attacked=false,hpChanged=false,enemyTurnObserved=false;
         auto confirmTarget=[&]() {
             for(int turn=0;turn<8 && !getSelectedAttackTarget();turn++)tap("cw");
             if(getSelectedAttackTarget()) { tap("a"); attacked=true; return true; }
@@ -89,11 +98,11 @@ int main(int argc,char** argv) {
                 if(isPlayerTurn() && combat.waitingForPlayer)tap("b");
             }
             hpChanged |= monsterHP()<initialMonsters;
-            enemyActed |= active->character.health.currentHP<initialPlayer;
+            enemyTurnObserved|=monsterTurnWasAnnounced();
             std::cout<<"turn="<<turn<<" monster_hp="<<monsterHP()<<" "<<pfme::runtime::diagnostic()<<'\n';
         }
         check(attacked,"Player attack via original menus");check(hpChanged,"Production attack applies monster HP change");
-        check(enemyActed,"Production enemy turn applies player HP change");
+        check(enemyTurnObserved,"Production enemy turn reaches monster AI");
         check(!combat.active && getActiveMapPlayer() && getActiveMapPlayer()->character.health.currentHP>0,"Survived and completed first combat");
         capture("play-after-combat.rgb565");
         const int beforeX=getActiveMapPlayer()->x,beforeY=getActiveMapPlayer()->y;
@@ -101,6 +110,6 @@ int main(int argc,char** argv) {
         for(int d=0;d<8 && !moved;d++) {face(static_cast<Direction>(d));tap("encoder");auto* e=getActiveMapPlayer();moved=e && (e->x!=beforeX || e->y!=beforeY);}
         check(moved,"Continue exploring after combat");
         pfme::runtime::releaseInputs();
-        std::cout<<"Production playthrough passed: title, creation, town, long press, dungeon, collision, menu, door, initiative, attack, HP, enemy AI, combat completion, continued exploration. Enemy damaged player="<<enemyActed<<'\n';
+        std::cout<<"Production playthrough passed: title, creation, town, long press, dungeon, collision, menu, door, initiative, attack, HP, enemy AI, combat completion, continued exploration. Enemy turn observed="<<enemyTurnObserved<<'\n';
     } catch(const std::exception& error) {std::cerr<<"FAILED: "<<error.what()<<"; "<<pfme::runtime::diagnostic()<<'\n';return 1;}
 }

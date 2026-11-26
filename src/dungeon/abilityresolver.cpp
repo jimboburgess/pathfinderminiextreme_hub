@@ -894,6 +894,50 @@ bool isTileInDirectionalAbilityAreaFromSource(
         forward <= ability->rangeTiles;
 }
 
+bool isEntityInSpatialAbilityArea(
+    const Entity& caster,
+    const Entity& target,
+    AbilityID abilityID,
+    int targetX,
+    int targetY,
+    Direction direction)
+{
+    const Ability* ability = getAbility(abilityID);
+    if (ability == nullptr)
+        return false;
+
+    if (isDirectionalAbility(abilityID))
+        return entityIsInDirectionalArea(caster, target, *ability, direction);
+
+    if (isGroundTargetAbility(abilityID))
+        return entityIsInRadiusArea(
+            caster, target, *ability, targetX, targetY);
+
+    if (ability->target != TARGET_ALL_ENEMIES_AREA &&
+        ability->target != TARGET_ALL_ALLIES_AREA)
+    {
+        return false;
+    }
+
+    for (uint8_t offsetY = 0;
+         offsetY < getEntityTileHeight(target);
+         ++offsetY)
+    {
+        for (uint8_t offsetX = 0;
+             offsetX < getEntityTileWidth(target);
+             ++offsetX)
+        {
+            if (isTileInCenteredAbilityArea(
+                    caster, abilityID,
+                    target.x + offsetX, target.y + offsetY))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool canResolveEnvironmentally(AbilityID abilityID)
 {
     const Ability* ability = getAbility(abilityID);

@@ -58,7 +58,7 @@ inline bool isLivingHostileForCombat(const Entity& entity)
 
 inline bool shouldMonsterJoinCombatRoster(const Entity& entity)
 {
-    return isLivingHostileForCombat(entity) && entity.awareOfPlayer;
+    return isLivingHostileForCombat(entity);
 }
 
 inline bool reinforcementMayAct(
@@ -86,10 +86,25 @@ inline uint8_t buildCombatRoster(
 
     uint8_t rosterCount = 0;
 
-    if (player != nullptr && player->active &&
+    for (uint8_t i = 0; i < entityCount && rosterCount < rosterCapacity; ++i)
+    {
+        Entity& entity = entities[i];
+        if (entity.active && entity.type == ENTITY_PLAYER &&
+            entity.character.team == TEAM_PLAYER &&
+            entity.character.state == STATE_ALIVE)
+        {
+            roster[rosterCount++] = &entity;
+        }
+    }
+
+    bool playerIncluded = false;
+    for (uint8_t i = 0; i < rosterCount; ++i)
+        if (roster[i] == player) playerIncluded = true;
+    if (!playerIncluded && player != nullptr && player->active &&
         player->type == ENTITY_PLAYER &&
         player->character.team == TEAM_PLAYER &&
-        player->character.state == STATE_ALIVE)
+        player->character.state == STATE_ALIVE &&
+        rosterCount < rosterCapacity)
     {
         roster[rosterCount++] = player;
     }

@@ -6,6 +6,7 @@
 #define PATHFINDERMINIEXTREME_025_MENU_H
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include "dungeon/combat.h"
 
@@ -236,6 +237,11 @@ extern char menuBodyScratch[128];
 
 bool isMenuItemVisible(MenuAction action);
 bool isMenuItemEnabled(MenuAction action);
+bool formatSpellMenuCostText(
+    const Character& character,
+    AbilityID abilityID,
+    char* output,
+    size_t outputSize);
 
 //--------------------------------------------------
 // Menu Functions

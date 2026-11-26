@@ -157,6 +157,34 @@ int main()
 {
     try
     {
+        Entity roomEntities[4]{};
+        for (Entity& entity : roomEntities)
+        {
+            entity.active = true;
+            entity.character.state = STATE_ALIVE;
+            entity.character.health.currentHP = 10;
+            entity.character.health.maxHP = 10;
+        }
+        roomEntities[0].type = ENTITY_PLAYER;
+        roomEntities[0].character.team = TEAM_PLAYER;
+        roomEntities[1].type = ENTITY_PLAYER;
+        roomEntities[1].character.team = TEAM_PLAYER;
+        roomEntities[2].type = ENTITY_MONSTER;
+        roomEntities[2].character.team = TEAM_MONSTER;
+        roomEntities[2].awareOfPlayer = true;
+        roomEntities[3].type = ENTITY_MONSTER;
+        roomEntities[3].character.team = TEAM_MONSTER;
+        roomEntities[3].awareOfPlayer = false;
+        Entity* roomRoster[MAX_COMBATANTS]{};
+        const uint8_t roomRosterCount = buildCombatRoster(
+            roomEntities, 4, &roomEntities[0], roomRoster, MAX_COMBATANTS);
+        check(roomRosterCount == 4,
+              "room roster includes every living player and enemy");
+        for (uint8_t left = 0; left < roomRosterCount; ++left)
+            for (uint8_t right = left + 1; right < roomRosterCount; ++right)
+                check(roomRoster[left] != roomRoster[right],
+                      "room roster contains no duplicate entries");
+
         initializeControllers(2);
         ControllerState state;
         check(bindController(0, state), "bind controller");
