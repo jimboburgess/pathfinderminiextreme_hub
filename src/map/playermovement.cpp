@@ -447,6 +447,31 @@ bool tryMovePlayerAuthoritative(
     TileType tile =
         room.map.tiles[targetY][targetX];
 
+    const bool atPitBottom =
+        hasCondition(player->character, CONDITION_PIT_BOTTOM);
+    const bool flying = hasCondition(player->character, CONDITION_FLYING);
+    const TrapInstance* currentPit =
+        getTriggeredCollapsingPitAt(room, player->x, player->y);
+    const TrapInstance* targetPit =
+        getTriggeredCollapsingPitAt(room, targetX, targetY);
+    if (atPitBottom && !flying &&
+        (currentPit == nullptr || targetPit != currentPit ||
+         getCollapsingPitTile(*currentPit, targetX, targetY) !=
+             COLLAPSING_PIT_OPEN))
+    {
+        setGameMessage("The pit wall is too steep. Use Climb.");
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+    if (!atPitBottom && !flying && targetPit != nullptr &&
+        getCollapsingPitTile(*targetPit, targetX, targetY) ==
+            COLLAPSING_PIT_OPEN)
+    {
+        setGameMessage("The open pit blocks the way.");
+        playSound(SoundEffect::BUMP);
+        return false;
+    }
+
     // Forest movement blocks an occupied monster square before the player
     // moves. Do the same in rooms, including every square of a large
     // creature's footprint.
@@ -468,8 +493,10 @@ bool tryMovePlayerAuthoritative(
 
         const bool ordinaryTerrain = tile == TILE_FLOOR || tile == TILE_RUBBLE;
         const bool safeDoor = tile == TILE_DOOR && allowRoomTransition;
+        const TrapInstance* exactTrap = getTrapAt(room, targetX, targetY);
         if ((!ordinaryTerrain && !safeDoor) ||
-            (ordinaryTerrain && getTrapAt(room, targetX, targetY) != nullptr))
+            (ordinaryTerrain && exactTrap != nullptr &&
+             !(isCollapsingPit(*exactTrap) && exactTrap->triggered)))
         {
             setGameMessage("That interaction is unavailable in multiplayer.");
             playSound(SoundEffect::BUMP);

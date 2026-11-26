@@ -384,6 +384,34 @@ bool useSelectedManaPotion(
     return true;
 }
 
+bool useSelectedFlyPotion(Character& character)
+{
+    if (!canUseCombatItem(character))
+    {
+        setInventoryStatus("Cannot use an item now.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+    if (!useFlyPotion(character))
+    {
+        setInventoryStatus("Potion is no longer available.");
+        playSound(SoundEffect::ERROR);
+        return false;
+    }
+    if (combat.active)
+    {
+        Entity* combatant = getCurrentCombatant();
+        combatant->turn.standardActionUsed = true;
+        checkEndPlayerTurn();
+    }
+    Entity* player = getActiveMapPlayer();
+    if (player != nullptr)
+        markEntityFootprintDirty(*player);
+    playSound(SoundEffect::POTION);
+    setInventoryStatus("You rise into the air.");
+    return true;
+}
+
 bool useSelectedRation(Character& character)
 {
     if (combat.active)
@@ -533,6 +561,13 @@ void useSelectedPlayerItem()
             closeInventoryMenu();
         }
 
+        return;
+    }
+
+    if (slot->item.itemID == ITEM_POTION_FLY)
+    {
+        if (useSelectedFlyPotion(*inventoryMenu.character))
+            closeInventoryMenu();
         return;
     }
 

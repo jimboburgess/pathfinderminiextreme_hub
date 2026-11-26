@@ -7,6 +7,7 @@
 #include "data/entities.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
+#include "characters/conditions.h"
 #include "dungeon/abilityresolver.h"
 #include "dungeon/combat.h"
 #include "dungeon/dungeon.h"
@@ -16,6 +17,7 @@
 #include "graphics/elementalvisual.h"
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
+#include "multiplayer/multiplayer_activity.h"
 
 namespace
 {
@@ -74,6 +76,12 @@ constexpr SuspicionType COLOR_SPRAY_CLUES[] =
     SUSPICION_DISCOLORED_TILE,
     SUSPICION_SCORCH_MARK,
     SUSPICION_OZONE_MARK
+};
+constexpr SuspicionType PIT_CLUES[] =
+{
+    SUSPICION_CRACKED_FLOOR,
+    SUSPICION_DISTURBED_DUST,
+    SUSPICION_FLOOR_GROOVES
 };
 
 constexpr SuspicionType DRESSING_CLUES[] =
@@ -147,6 +155,12 @@ SuspicionType randomSpellClue(TrapID id)
         count = sizeof(COLOR_SPRAY_CLUES) / sizeof(COLOR_SPRAY_CLUES[0]);
     }
     return clues[static_cast<uint8_t>(random(count))];
+}
+
+SuspicionType randomPitClue()
+{
+    constexpr uint8_t count = sizeof(PIT_CLUES) / sizeof(PIT_CLUES[0]);
+    return PIT_CLUES[static_cast<uint8_t>(random(count))];
 }
 
 int coordinateDistance(int first, int second)
@@ -288,6 +302,73 @@ bool chooseFeatureCandidate(DungeonRoom& room, uint8_t& x, uint8_t& y)
     return true;
 }
 
+bool isPitFeatureCandidate(DungeonRoom& room, int centerX, int centerY)
+{
+    if (!isFeatureCandidate(room, centerX, centerY))
+        return false;
+
+    for (int offsetY = -1; offsetY <= 1; offsetY++)
+    {
+        for (int offsetX = -1; offsetX <= 1; offsetX++)
+        {
+            const int x = centerX + offsetX;
+            const int y = centerY + offsetY;
+            if (x <= 0 || y <= 0 || x >= ROOM_WIDTH - 1 ||
+                y >= ROOM_HEIGHT - 1 || room.map.tiles[y][x] != TILE_FLOOR ||
+                getTrapAt(room, x, y) != nullptr ||
+                getSuspicionAt(room, x, y) != SUSPICION_NONE ||
+                isNearRoomEntry(room, x, y) || isNearContent(room, x, y))
+            {
+                return false;
+            }
+        }
+    }
+
+    TileType original[3][3];
+    for (int offsetY = -1; offsetY <= 1; offsetY++)
+    {
+        for (int offsetX = -1; offsetX <= 1; offsetX++)
+        {
+            const int x = centerX + offsetX;
+            const int y = centerY + offsetY;
+            original[offsetY + 1][offsetX + 1] = room.map.tiles[y][x];
+            if (offsetX == 0 || offsetY == 0)
+                room.map.tiles[y][x] = TILE_WALL;
+        }
+    }
+
+    const bool connected = validateRoomConnectivity(room);
+    for (int offsetY = -1; offsetY <= 1; offsetY++)
+        for (int offsetX = -1; offsetX <= 1; offsetX++)
+            room.map.tiles[centerY + offsetY][centerX + offsetX] =
+                original[offsetY + 1][offsetX + 1];
+    return connected;
+}
+
+bool choosePitFeatureCandidate(DungeonRoom& room, uint8_t& x, uint8_t& y)
+{
+    FeatureCandidate candidates[ROOM_WIDTH * ROOM_HEIGHT];
+    uint16_t candidateCount = 0;
+    for (int candidateY = 2; candidateY < ROOM_HEIGHT - 2; candidateY++)
+    {
+        for (int candidateX = 2; candidateX < ROOM_WIDTH - 2; candidateX++)
+        {
+            if (!isPitFeatureCandidate(room, candidateX, candidateY))
+                continue;
+            candidates[candidateCount++] = {
+                static_cast<uint8_t>(candidateX),
+                static_cast<uint8_t>(candidateY)};
+        }
+    }
+    if (candidateCount == 0)
+        return false;
+    const FeatureCandidate& selected = candidates[
+        static_cast<uint16_t>(random(candidateCount))];
+    x = selected.x;
+    y = selected.y;
+    return true;
+}
+
 bool hasSpikeTrap(const DungeonRoom& room)
 {
     for (const TrapInstance& trap : room.traps)
@@ -371,6 +452,98 @@ Entity* traceProjectileTarget(const DungeonRoom& room, const TrapInstance& trap)
         y += offset.dy;
     }
     return nullptr;
+}
+
+void markCollapsingPitDirty(const TrapInstance& trap)
+{
+    for (int y = trap.y - 1; y <= trap.y + 1; y++)
+        for (int x = trap.x - 1; x <= trap.x + 1; x++)
+            markTileDirty(x, y);
+}
+
+CollapsingPitTile findEntityPitTile(
+    const TrapInstance& trap, const Entity& entity, int& tileX, int& tileY)
+{
+    CollapsingPitTile best = COLLAPSING_PIT_OUTSIDE;
+    for (uint8_t offsetY = 0; offsetY < getEntityTileHeight(entity); offsetY++)
+    {
+        for (uint8_t offsetX = 0; offsetX < getEntityTileWidth(entity); offsetX++)
+        {
+            const int x = entity.x + offsetX;
+            const int y = entity.y + offsetY;
+            const CollapsingPitTile tile = getCollapsingPitTile(trap, x, y);
+            if (tile == COLLAPSING_PIT_OPEN)
+            {
+                tileX = x;
+                tileY = y;
+                return tile;
+            }
+            if (tile == COLLAPSING_PIT_STABLE_CORNER)
+            {
+                best = tile;
+                tileX = x;
+                tileY = y;
+            }
+        }
+    }
+    return best;
+}
+
+bool triggerCollapsingPit(TrapInstance& trap)
+{
+    if (!isTrapActive(trap) || !isCollapsingPit(trap))
+        return false;
+
+    trap.triggered = true;
+    trap.discovered = true;
+    uint8_t fallenCount = 0;
+    for (uint8_t i = 0; i < dungeon.entityCount; i++)
+    {
+        Entity& target = dungeon.entities[i];
+        if (!target.active || isBertramRiddleman(target) ||
+            target.character.state != STATE_ALIVE)
+        {
+            continue;
+        }
+
+        int tileX = target.x;
+        int tileY = target.y;
+        const CollapsingPitTile tile =
+            findEntityPitTile(trap, target, tileX, tileY);
+        if (tile == COLLAPSING_PIT_OUTSIDE)
+            continue;
+
+        const bool flying = hasCondition(target.character, CONDITION_FLYING);
+        const int acrobaticsTotal = tile == COLLAPSING_PIT_STABLE_CORNER
+            ? rollDie(20) + getSkillBonus(target.character, SKILL_ACROBATICS)
+            : 0;
+        const int damage = rollDice(getCollapsingPitDamageDice(trap), 6);
+        const CollapsingPitFallResult fall = resolveCollapsingPitFall(
+            trap, tileX, tileY, flying, acrobaticsTotal, damage);
+        if (!fall.fell)
+            continue;
+
+        addCondition(
+            target.character,
+            CONDITION_PIT_BOTTOM,
+            getCollapsingPitDepthFeet(trap),
+            0);
+        markEntityFootprintDirty(target);
+        if (fall.damage > 0)
+            applyCombatDamage(target, fall.damage, DAMAGE_BLUDGEONING);
+        fallenCount++;
+    }
+
+    markCollapsingPitDirty(trap);
+    char message[96];
+    if (fallenCount == 0)
+        snprintf(message, sizeof(message), "The floor collapses into a pit!");
+    else
+        snprintf(message, sizeof(message), "The floor collapses! %u fall into the pit.",
+                 static_cast<unsigned>(fallenCount));
+    setSharedGameMessage(message);
+    synchronizeCurrentMultiplayerDungeonRoom();
+    return true;
 }
 
 void presentTrapTrigger(
@@ -481,26 +654,36 @@ void populateDungeonRoomFeatures(
     if (allowTrap && !authoredTrapAdded && !hasSpikeTrap(room) &&
         random(100) < RANDOM_TRAP_PERCENT)
     {
+        const TrapID trapID = selectGeneratedTrapID(
+            challengeLevel,
+            static_cast<uint8_t>(random(100)),
+            static_cast<uint8_t>(random(100)));
         uint8_t x = 0;
         uint8_t y = 0;
-        if (chooseFeatureCandidate(room, x, y))
+        const bool foundCandidate = trapID == TRAP_COLLAPSING_PIT
+            ? choosePitFeatureCandidate(room, x, y)
+            : chooseFeatureCandidate(room, x, y);
+        if (foundCandidate)
         {
-            const TrapID trapID = selectGeneratedTrapID(
-                challengeLevel,
-                static_cast<uint8_t>(random(100)),
-                static_cast<uint8_t>(random(100)));
+            SuspicionType clue = SUSPICION_NONE;
+            if (trapID == TRAP_COLLAPSING_PIT)
+                clue = randomPitClue();
+            else if (trapID == TRAP_SPIKE_PLATE)
+                clue = randomSpikeClue();
+            else if (trapID == TRAP_ARROW || trapID == TRAP_POISON_DART)
+                clue = randomProjectileClue(trapID);
+            else if (getTrapDefinition(trapID)->abilityId != ABILITY_NONE)
+                clue = randomSpellClue(trapID);
+            else
+                clue = randomElementalClue(trapID);
             if (!addTrap(
                 room,
                 trapID,
                 x,
                 y,
-                randomTrapLevel(challengeLevel),
-                trapID == TRAP_SPIKE_PLATE ? randomSpikeClue() :
-                    ((trapID == TRAP_ARROW || trapID == TRAP_POISON_DART)
-                        ? randomProjectileClue(trapID)
-                        : (getTrapDefinition(trapID)->abilityId != ABILITY_NONE
-                            ? randomSpellClue(trapID)
-                            : randomElementalClue(trapID)))))
+                trapID == TRAP_COLLAPSING_PIT
+                    ? challengeLevel : randomTrapLevel(challengeLevel),
+                clue))
             {
                 // Leave the room otherwise unchanged; harmless dressing may
                 // still be added below.
@@ -658,6 +841,9 @@ bool triggerTrapForEntityAt(
         const TrapDefinition* definition = getTrapDefinition(trap.id);
         if (definition == nullptr)
             return false;
+
+        if (isCollapsingPit(trap))
+            return triggerCollapsingPit(trap);
 
         if (isElementalTrap(trap))
         {

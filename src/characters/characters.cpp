@@ -577,6 +577,7 @@ SkillAptitude getSkillAptitude(CharacterClass characterClass,
         case CLASS_FIGHTER:
             switch (skill)
             {
+                case SKILL_CLIMB:
                 case SKILL_INTIMIDATE:
                     return SKILL_EXCELLENT;
 
@@ -594,6 +595,9 @@ SkillAptitude getSkillAptitude(CharacterClass characterClass,
                 case SKILL_ACROBATICS:
                 case SKILL_DISABLE_DEVICE:
                     return SKILL_EXCELLENT;
+
+                case SKILL_CLIMB:
+                    return SKILL_GOOD;
 
                 case SKILL_DIPLOMACY:
                 case SKILL_PERCEPTION:
@@ -619,6 +623,9 @@ SkillAptitude getSkillAptitude(CharacterClass characterClass,
                 case SKILL_DIPLOMACY:
                 case SKILL_PERCEPTION:
                     return SKILL_GOOD;
+
+                case SKILL_CLIMB:
+                    return SKILL_AVERAGE;
 
                 default:
                     return SKILL_AVERAGE;
@@ -666,6 +673,9 @@ static AbilityScore getSkillAbility(Skill skill)
 
         case SKILL_DISABLE_DEVICE:
             return ABILITY_INTELLIGENCE;
+
+        case SKILL_CLIMB:
+            return ABILITY_STRENGTH;
 
         case SKILL_PERCEPTION:
             return ABILITY_WISDOM;

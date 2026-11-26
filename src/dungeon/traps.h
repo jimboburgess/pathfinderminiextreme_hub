@@ -23,7 +23,8 @@ enum TrapID : uint8_t
     TRAP_GREASE,
     TRAP_WEB,
     TRAP_SLEEP,
-    TRAP_COLOR_SPRAY
+    TRAP_COLOR_SPRAY,
+    TRAP_COLLAPSING_PIT
 };
 
 enum SuspicionType : uint8_t
@@ -161,6 +162,25 @@ struct TrapDamageResult
     bool destroyed = false;
 };
 
+enum CollapsingPitTile : uint8_t
+{
+    COLLAPSING_PIT_OUTSIDE,
+    COLLAPSING_PIT_STABLE_CORNER,
+    COLLAPSING_PIT_OPEN
+};
+
+struct CollapsingPitFallResult
+{
+    bool affected = false;
+    bool acrobaticsAttempted = false;
+    bool acrobaticsSucceeded = false;
+    bool fell = false;
+    uint16_t damage = 0;
+};
+
+constexpr uint8_t COLLAPSING_PIT_ACROBATICS_DC = 15;
+constexpr uint8_t COLLAPSING_PIT_CLIMB_DC = 10;
+
 const TrapDefinition* getTrapDefinition(TrapID id);
 
 // Percentile is deterministic input in the inclusive conceptual range 0..99.
@@ -177,6 +197,28 @@ uint16_t getTrapMaxHP(const TrapInstance& trap);
 uint8_t getTrapSaveDC(const TrapInstance& trap);
 uint8_t getTrapDamageDice(const TrapInstance& trap);
 uint8_t getTrapDamageSides(const TrapInstance& trap);
+
+bool isCollapsingPit(const TrapInstance& trap);
+uint8_t getCollapsingPitDepthFeet(const TrapInstance& trap);
+uint8_t getCollapsingPitDamageDice(const TrapInstance& trap);
+CollapsingPitTile getCollapsingPitTile(
+    const TrapInstance& trap, int x, int y);
+CollapsingPitFallResult resolveCollapsingPitFall(
+    const TrapInstance& trap,
+    int x,
+    int y,
+    bool flying,
+    int acrobaticsTotal,
+    int rolledDamage);
+TrapInstance* getTriggeredCollapsingPitAt(DungeonRoom& room, int x, int y);
+const TrapInstance* getTriggeredCollapsingPitAt(
+    const DungeonRoom& room, int x, int y);
+bool isOpenCollapsingPitTile(const DungeonRoom& room, int x, int y);
+bool lowerRopeIntoCollapsingPit(
+    TrapInstance& trap, int anchorX, int anchorY);
+bool hasLoweredPitRope(const TrapInstance& trap);
+uint8_t getCollapsingPitClimbDC(
+    const DungeonRoom& room, const TrapInstance& trap);
 
 TrapInstance* getTrapAt(DungeonRoom& room, int x, int y);
 const TrapInstance* getTrapAt(const DungeonRoom& room, int x, int y);

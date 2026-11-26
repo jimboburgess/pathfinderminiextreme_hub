@@ -834,6 +834,8 @@ const MenuItem useSkillMenuItems[] =
       MENU_SKILL_PERCEPTION, nullptr, MENU_CLASS_ALL },
     { "Stealth", "Attempt to remain unnoticed.",
       MENU_SKILL_STEALTH, nullptr, MENU_CLASS_ALL },
+    { "Climb", "Climb out of a pit or use climbing gear.",
+      MENU_SKILL_CLIMB, nullptr, MENU_CLASS_ALL },
     { "Back", "Return to the previous menu.",
       MENU_SKILL_BACK, nullptr, MENU_CLASS_ALL }
 };
@@ -1372,6 +1374,7 @@ void menuActivate()
         case MENU_SKILL_INTIMIDATE:
         case MENU_SKILL_PERCEPTION:
         case MENU_SKILL_STEALTH:
+        case MENU_SKILL_CLIMB:
         {
             Skill skill = SKILL_ACROBATICS;
             if (item->action == MENU_SKILL_DISABLE_DEVICE)
@@ -1382,6 +1385,8 @@ void menuActivate()
                 skill = SKILL_PERCEPTION;
             else if (item->action == MENU_SKILL_STEALTH)
                 skill = SKILL_STEALTH;
+            else if (item->action == MENU_SKILL_CLIMB)
+                skill = SKILL_CLIMB;
 
             closeMenu();
             useSkill(skill);

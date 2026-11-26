@@ -20,6 +20,11 @@ const TrapInstance* getTrapAt(const DungeonRoom&, int, int)
     return nullptr;
 }
 
+bool isOpenCollapsingPitTile(const DungeonRoom&, int, int)
+{
+    return false;
+}
+
 bool isHealingFountainTile(const DungeonRoom&, int, int)
 {
     return false;

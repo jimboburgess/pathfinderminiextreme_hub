@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "characters.h"
+#include "conditions.h"
 #include "combat_rules.h"
 #include "data/dice.h"
 
@@ -664,6 +665,29 @@ bool useCureLightWoundsPotion(Character& character, int& amountRestored)
         return false;
     }
 
+    return true;
+}
+
+bool useFlyPotion(Character& character, int rounds)
+{
+    if (rounds <= 0 || !hasItem(character, ITEM_POTION_FLY))
+        return false;
+
+    const Condition* previous = getCondition(character, CONDITION_FLYING);
+    const int previousRounds = previous != nullptr
+        ? previous->roundsRemaining : -1;
+    if (!addCondition(character, CONDITION_FLYING, 0, rounds))
+        return false;
+    if (!removeItem(character, ITEM_POTION_FLY, 1))
+    {
+        if (previousRounds < 0)
+            removeCondition(character, CONDITION_FLYING);
+        else
+            addCondition(character, CONDITION_FLYING, 0, previousRounds);
+        return false;
+    }
+
+    removeCondition(character, CONDITION_PIT_BOTTOM);
     return true;
 }
 

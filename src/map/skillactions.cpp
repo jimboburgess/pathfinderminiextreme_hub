@@ -5,12 +5,14 @@
 
 #include "audio/audio.h"
 #include "characters/conditions.h"
+#include "characters/items.h"
 #include "data/dice.h"
 #include "data/entitytraits.h"
 #include "data/entityspawn.h"
 #include "data/game.h"
 #include "dungeon/combat.h"
 #include "dungeon/dungeon.h"
+#include "dungeon/traps.h"
 #include "graphics/display.h"
 #include "graphics/messagelog.h"
 #include "map/activemap.h"
@@ -312,6 +314,200 @@ bool useIntimidate(Entity& player)
     spendStandardSkillAction(player);
     return true;
 }
+
+TrapInstance* getReachableTriggeredPit(Entity& player)
+{
+    if (gameState != GAME_DUNGEON || dungeon.currentRoom >= MAX_ROOMS)
+        return nullptr;
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    TrapInstance* pit = getTriggeredCollapsingPitAt(room, player.x, player.y);
+    if (pit != nullptr)
+        return pit;
+    for (uint8_t direction = 0; direction < 8; direction++)
+    {
+        const int x = player.x + directionOffsets[direction].dx;
+        const int y = player.y + directionOffsets[direction].dy;
+        pit = getTriggeredCollapsingPitAt(room, x, y);
+        if (pit != nullptr)
+            return pit;
+    }
+    return nullptr;
+}
+
+bool findPitExit(
+    const DungeonRoom& room,
+    const TrapInstance& pit,
+    Entity& player,
+    int& exitX,
+    int& exitY)
+{
+    static constexpr int8_t offsets[][2] = {
+        {-1, -1}, {1, -1}, {-1, 1}, {1, 1},
+        {0, -2}, {2, 0}, {0, 2}, {-2, 0},
+        {-1, -2}, {1, -2}, {2, -1}, {2, 1},
+        {-1, 2}, {1, 2}, {-2, -1}, {-2, 1}};
+    for (const auto& offset : offsets)
+    {
+        const int x = pit.x + offset[0];
+        const int y = pit.y + offset[1];
+        if (x < 0 || y < 0 || x >= ROOM_WIDTH || y >= ROOM_HEIGHT ||
+            !isDungeonFloorTerrain(room.map.tiles[y][x]) ||
+            isOpenCollapsingPitTile(room, x, y))
+        {
+            continue;
+        }
+        Entity* occupant = getEntityAt(
+            dungeon.entities, dungeon.entityCount,
+            static_cast<uint8_t>(x), static_cast<uint8_t>(y));
+        if (occupant == nullptr || occupant == &player)
+        {
+            exitX = x;
+            exitY = y;
+            return true;
+        }
+    }
+    return false;
+}
+
+int getPitAssistBonus(const TrapInstance& pit, const Entity& climber)
+{
+    int bonus = 0;
+    for (uint8_t i = 0; i < dungeon.entityCount; i++)
+    {
+        const Entity& ally = dungeon.entities[i];
+        if (!ally.active || &ally == &climber || ally.type != ENTITY_PLAYER ||
+            ally.character.state != STATE_ALIVE ||
+            hasCondition(ally.character, CONDITION_PIT_BOTTOM))
+        {
+            continue;
+        }
+        if (getEntityGridDistanceToTile(ally, pit.x, pit.y) <= 2)
+        {
+            bonus = 2;
+            break;
+        }
+    }
+    return bonus;
+}
+
+bool useClimb(Entity& player)
+{
+    TrapInstance* pit = getReachableTriggeredPit(player);
+    if (pit == nullptr)
+    {
+        setGameMessage("No Climb action available.");
+        return false;
+    }
+    if (!canUseStandardSkillAction(player))
+        return false;
+
+    if (!hasCondition(player.character, CONDITION_PIT_BOTTOM))
+    {
+        if (!hasItem(player.character, ITEM_ROPE) &&
+            !hasItem(player.character, ITEM_GRAPPLING_HOOK))
+        {
+            setGameMessage("You need rope or a grappling hook.");
+            return false;
+        }
+        lowerRopeIntoCollapsingPit(*pit, player.x, player.y);
+        for (int y = pit->y - 1; y <= pit->y + 1; y++)
+            for (int x = pit->x - 1; x <= pit->x + 1; x++)
+                markTileDirty(x, y);
+        setSharedGameMessage("A rope is lowered into the pit.");
+        spendStandardSkillAction(player);
+        return true;
+    }
+
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    int dc = getCollapsingPitClimbDC(room, *pit);
+    if (hasItem(player.character, ITEM_ROPE) ||
+        hasItem(player.character, ITEM_GRAPPLING_HOOK))
+    {
+        dc -= 2;
+    }
+    dc -= getPitAssistBonus(*pit, player);
+    if (dc < 5)
+        dc = 5;
+    const int total = rollDie(20) +
+        getSkillBonus(player.character, SKILL_CLIMB);
+    if (total < dc)
+    {
+        setGameMessage("You fail to climb the pit wall.");
+        spendStandardSkillAction(player);
+        return true;
+    }
+
+    int exitX = player.x;
+    int exitY = player.y;
+    if (!findPitExit(room, *pit, player, exitX, exitY))
+    {
+        setGameMessage("There is no safe ledge to climb onto.");
+        return false;
+    }
+    markEntityFootprintDirty(player);
+    player.x = static_cast<uint8_t>(exitX);
+    player.y = static_cast<uint8_t>(exitY);
+    removeCondition(player.character, CONDITION_PIT_BOTTOM);
+    markEntityFootprintDirty(player);
+    setSharedGameMessage("A party member climbs out of the pit.");
+    spendStandardSkillAction(player);
+    return true;
+}
+
+bool usePitJump(Entity& player)
+{
+    if (gameState != GAME_DUNGEON || dungeon.currentRoom >= MAX_ROOMS)
+        return false;
+    DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+    const DirectionOffset offset = directionOffsets[moveDirection];
+    const int pitX = player.x + offset.dx;
+    const int pitY = player.y + offset.dy;
+    TrapInstance* pit = getTriggeredCollapsingPitAt(room, pitX, pitY);
+    if (pit == nullptr || getCollapsingPitTile(*pit, pitX, pitY) !=
+            COLLAPSING_PIT_OPEN)
+    {
+        return false;
+    }
+    const int landingX = player.x + offset.dx * 2;
+    const int landingY = player.y + offset.dy * 2;
+    if (landingX < 0 || landingY < 0 || landingX >= ROOM_WIDTH ||
+        landingY >= ROOM_HEIGHT ||
+        !isDungeonFloorTerrain(room.map.tiles[landingY][landingX]) ||
+        isOpenCollapsingPitTile(room, landingX, landingY) ||
+        getEntityAt(dungeon.entities, dungeon.entityCount,
+                    static_cast<uint8_t>(landingX),
+                    static_cast<uint8_t>(landingY)) != nullptr)
+    {
+        return false;
+    }
+    if (!canUseStandardSkillAction(player))
+        return false;
+
+    const int total = rollDie(20) +
+        getSkillBonus(player.character, SKILL_ACROBATICS);
+    markEntityFootprintDirty(player);
+    if (total >= COLLAPSING_PIT_ACROBATICS_DC)
+    {
+        player.x = static_cast<uint8_t>(landingX);
+        player.y = static_cast<uint8_t>(landingY);
+        setGameMessage("You leap across the pit.");
+    }
+    else
+    {
+        player.x = static_cast<uint8_t>(pitX);
+        player.y = static_cast<uint8_t>(pitY);
+        addCondition(player.character, CONDITION_PIT_BOTTOM,
+                     getCollapsingPitDepthFeet(*pit), 0);
+        applyCombatDamage(
+            player,
+            rollDice(getCollapsingPitDamageDice(*pit), 6),
+            DAMAGE_BLUDGEONING);
+        setGameMessage("You miss the ledge and fall!");
+    }
+    markEntityFootprintDirty(player);
+    spendStandardSkillAction(player);
+    return true;
+}
 }
 
 int getIntimidateDC(const Entity& target)
@@ -333,11 +529,14 @@ bool useSkill(Skill skill)
         case SKILL_DISABLE_DEVICE: return useDisableDevice(*player);
         case SKILL_STEALTH: return useStealth(*player);
         case SKILL_INTIMIDATE: return useIntimidate(*player);
+        case SKILL_CLIMB: return useClimb(*player);
         case SKILL_ACROBATICS:
         {
             const MapEffect* web = getWebEffectAffectingEntity(*player);
             if (!canAttemptEscapeWeb(*player) || web == nullptr)
             {
+                if (usePitJump(*player))
+                    return true;
                 setGameMessage("No Acrobatics action available.");
                 return false;
             }

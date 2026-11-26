@@ -60,6 +60,12 @@ enum ConditionType
     // CONDITION_WEBBED remains reserved for older persisted values.
     CONDITION_GRAPPLED,
 
+    // Appended traversal states keep every existing persisted value stable.
+    // A zero-duration pit-bottom condition remains until a successful climb
+    // or flight removes it.
+    CONDITION_FLYING,
+    CONDITION_PIT_BOTTOM,
+
     CONDITION_MAX
 };
 

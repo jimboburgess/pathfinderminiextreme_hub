@@ -406,7 +406,7 @@ static void drawSkillsView()
     static const char* names[SKILL_COUNT] =
     {
         "Acrobatics", "Diplomacy", "Disable Dev.",
-        "Intimidate", "Perception", "Stealth"
+        "Intimidate", "Perception", "Stealth", "Climb"
     };
 
     int y = 32;
@@ -637,7 +637,8 @@ void drawCharacterSheet()
     drawLabelValue(LEFT_X, VALUE_X, y, "Disable Dev.", getSkillBonus(*currentCharacter, SKILL_DISABLE_DEVICE)); y += 10;
     drawLabelValue(LEFT_X, VALUE_X, y, "Intimidate", getSkillBonus(*currentCharacter, SKILL_INTIMIDATE)); y += 10;
     drawLabelValue(LEFT_X, VALUE_X, y, "Perception", getSkillBonus(*currentCharacter, SKILL_PERCEPTION)); y += 10;
-    drawLabelValue(LEFT_X, VALUE_X, y, "Stealth", getSkillBonus(*currentCharacter, SKILL_STEALTH));
+    drawLabelValue(LEFT_X, VALUE_X, y, "Stealth", getSkillBonus(*currentCharacter, SKILL_STEALTH)); y += 10;
+    drawLabelValue(LEFT_X, VALUE_X, y, "Climb", getSkillBonus(*currentCharacter, SKILL_CLIMB));
     y += 18;
 
     //--------------------------------------------------

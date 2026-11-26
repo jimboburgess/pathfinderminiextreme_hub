@@ -74,6 +74,10 @@ constexpr uint16_t COLOR_TRAP_METAL_LIGHT = 0xD69A;
 constexpr uint16_t COLOR_TRAP_BRASS = 0xC5A0;
 constexpr uint16_t COLOR_TRAP_RUST = 0x7800;
 constexpr uint16_t COLOR_TRAP_DEBRIS = 0x5AEB;
+constexpr uint16_t COLOR_PIT_RIM = 0x6B4D;
+constexpr uint16_t COLOR_PIT_EDGE = 0x3186;
+constexpr uint16_t COLOR_PIT_DEPTH = 0x0841;
+constexpr uint16_t COLOR_PIT_BOTTOM = 0x18E3;
 constexpr uint16_t COLOR_FOUNTAIN_STONE_DARK = 0x4A49;
 constexpr uint16_t COLOR_FOUNTAIN_STONE = 0x8C71;
 constexpr uint16_t COLOR_FOUNTAIN_STONE_LIGHT = 0xC618;
@@ -231,6 +235,8 @@ void drawTrapStateArt(int tileX, int tileY, TrapID trapID, TrapVisualState state
       break;
 
     case TRAP_VISUAL_TRIGGERED:
+      if (trapID == TRAP_COLLAPSING_PIT)
+        break;
       if (trapID != TRAP_SPIKE_PLATE)
       {
         // A spent wall launcher is represented compactly at its linked plate.
@@ -284,6 +290,45 @@ void drawTrapStateArt(int tileX, int tileY, TrapID trapID, TrapVisualState state
     default:
       break;
   }
+}
+
+void drawCollapsingPitTile(
+    const DungeonRoom& room, int tileX, int tileY,
+    const TrapInstance& pit)
+{
+  const CollapsingPitTile tile = getCollapsingPitTile(pit, tileX, tileY);
+  if (!pit.triggered || tile == COLLAPSING_PIT_OUTSIDE)
+    return;
+
+  const int x = tileX * TILE_SIZE;
+  const int y = tileY * TILE_SIZE;
+  if (tile == COLLAPSING_PIT_STABLE_CORNER)
+  {
+    const bool left = tileX < pit.x;
+    const bool top = tileY < pit.y;
+    const int innerX = left ? x + 10 : x;
+    const int innerY = top ? y + 10 : y;
+    tft.fillRect(innerX, innerY, 6, 6, COLOR_PIT_EDGE);
+    tft.drawLine(left ? x + 8 : x + 7, innerY,
+                 left ? x + 15 : x, innerY, COLOR_PIT_RIM);
+    tft.drawLine(innerX, top ? y + 8 : y + 7,
+                 innerX, top ? y + 15 : y, COLOR_PIT_RIM);
+    return;
+  }
+
+  tft.fillRect(x, y, TILE_SIZE, TILE_SIZE, COLOR_PIT_DEPTH);
+  tft.fillRect(x + 3, y + 3, 10, 10, COLOR_PIT_BOTTOM);
+  if (tileX == pit.x - 1) tft.drawLine(x, y, x, y + 15, COLOR_PIT_RIM);
+  if (tileX == pit.x + 1) tft.drawLine(x + 15, y, x + 15, y + 15, COLOR_PIT_RIM);
+  if (tileY == pit.y - 1) tft.drawLine(x, y, x + 15, y, COLOR_PIT_RIM);
+  if (tileY == pit.y + 1) tft.drawLine(x, y + 15, x + 15, y + 15, COLOR_PIT_RIM);
+  if (hasLoweredPitRope(pit) && tileX == pit.x && tileY == pit.y)
+  {
+    tft.drawLine(x + 7, y, x + 7, y + 14, 0xC5A0);
+    tft.drawPixel(x + 8, y + 13, 0xC5A0);
+  }
+  if (room.map.tiles[tileY][tileX] == TILE_CRATE)
+    drawSpriteTransparent(x, y, dungeonCrate16x16);
 }
 }
 
@@ -424,6 +469,11 @@ void drawRoomTile(const DungeonRoom& room, int tileX, int tileY)
   }
   else
     drawTile(tileX, tileY, room.map.tiles[tileY][tileX]);
+
+  const TrapInstance* collapsedPit =
+      getTriggeredCollapsingPitAt(room, tileX, tileY);
+  if (collapsedPit != nullptr)
+    drawCollapsingPitTile(room, tileX, tileY, *collapsedPit);
   if (dungeon.currentRoom<dungeon.roomCount && &room==&dungeon.rooms[dungeon.currentRoom] &&
       isCurrentBellVisuallyRingingAt(tileX,tileY,millis())) {
     const int x=tileX*TILE_SIZE,y=tileY*TILE_SIZE;

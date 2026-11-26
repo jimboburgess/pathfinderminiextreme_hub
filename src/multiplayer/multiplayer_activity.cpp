@@ -1147,7 +1147,7 @@ bool applyRoomDetailSnapshot(const uint8_t* source, size_t size)
             !reader.u16(hp) || !reader.u8(flags) ||
             !reader.u8(trap.chargingCombatRound) ||
             !reader.u8(suspicion) || !reader.u8(trap.controlGroup) ||
-            id > TRAP_COLOR_SPRAY || direction >= 8 ||
+            id > TRAP_COLLAPSING_PIT || direction >= 8 ||
             suspicion > SUSPICION_DISTURBED_DUST) return false;
         trap.id = static_cast<TrapID>(id);
         trap.x = static_cast<int8_t>(x);
@@ -5200,9 +5200,32 @@ bool handleMultiplayerLocalMove(uint8_t direction, bool& moved)
     if (isInsideActiveMap(targetX, targetY))
     {
         const TileType tile = getActiveMapTile(targetX, targetY);
-        const bool simpleTile = runtime.type == MultiplayerActivityType::FOREST
+        bool simpleTile = runtime.type == MultiplayerActivityType::FOREST
             ? tile != TILE_TREE && tile != TILE_WATER && tile != TILE_VOID
             : (tile == TILE_FLOOR || tile == TILE_RUBBLE);
+        if (runtime.type == MultiplayerActivityType::DUNGEON &&
+            dungeon.currentRoom < dungeon.roomCount)
+        {
+            const DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+            const TrapInstance* pit =
+                getTriggeredCollapsingPitAt(room, targetX, targetY);
+            const TrapInstance* currentPit =
+                getTriggeredCollapsingPitAt(room, local->x, local->y);
+            const bool flying =
+                hasCondition(local->character, CONDITION_FLYING);
+            const bool atBottom =
+                hasCondition(local->character, CONDITION_PIT_BOTTOM);
+            if (!flying && ((atBottom &&
+                 (pit == nullptr || pit != currentPit ||
+                  getCollapsingPitTile(*pit, targetX, targetY) !=
+                      COLLAPSING_PIT_OPEN)) ||
+                (!atBottom && pit != nullptr &&
+                 getCollapsingPitTile(*pit, targetX, targetY) ==
+                     COLLAPSING_PIT_OPEN)))
+            {
+                simpleTile = false;
+            }
+        }
         Entity* occupant = getEntityAt(
             entities, count, static_cast<uint8_t>(targetX),
             static_cast<uint8_t>(targetY));
@@ -5596,6 +5619,23 @@ bool requestMultiplayerExplorationAbility(
         return false;
     }
     return true;
+}
+
+void synchronizeCurrentMultiplayerDungeonRoom()
+{
+    if (!multiplayerSession.isHost() ||
+        !isMultiplayerExplorationActive() ||
+        runtime.type != MultiplayerActivityType::DUNGEON)
+    {
+        return;
+    }
+    const uint8_t roomID = getCurrentRoomID();
+    if (roomID >= NETWORK_MAX_DUNGEON_ROOMS)
+        return;
+    if (++runtime.roomRevisions[roomID] == 0)
+        runtime.roomRevisions[roomID] = 1;
+    capturePlayersInLoadedDungeonRoom();
+    scheduleRoomRefreshForClients(roomID);
 }
 
 bool requestMultiplayerCombatEndTurn()

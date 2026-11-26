@@ -38,6 +38,9 @@ const TrapDefinition GREASE_DEFINITION = {TRAP_GREASE, "grease trap", 1, 13, 15,
 const TrapDefinition WEB_DEFINITION = {TRAP_WEB, "web trap", 3, 15, 17, 10, 2, DAMAGE_NONE, 0, 0, SAVE_REFLEX, ABILITY_WEB};
 const TrapDefinition SLEEP_DEFINITION = {TRAP_SLEEP, "sleep trap", 1, 14, 16, 8, 2, DAMAGE_NONE, 0, 0, SAVE_WILL, ABILITY_SLEEP};
 const TrapDefinition COLOR_SPRAY_DEFINITION = {TRAP_COLOR_SPRAY, "color spray trap", 2, 14, 16, 8, 2, DAMAGE_NONE, 0, 0, SAVE_WILL, ABILITY_COLOR_SPRAY};
+const TrapDefinition COLLAPSING_PIT_DEFINITION = {
+    TRAP_COLLAPSING_PIT, "collapsing pit", 1, 13, 15, 12, 3,
+    DAMAGE_BLUDGEONING, 1, 6, SAVE_REFLEX, ABILITY_NONE};
 
 uint8_t clampTrapLevel(int level)
 {
@@ -114,6 +117,7 @@ const TrapDefinition* getTrapDefinition(TrapID id)
         case TRAP_WEB: return &WEB_DEFINITION;
         case TRAP_SLEEP: return &SLEEP_DEFINITION;
         case TRAP_COLOR_SPRAY: return &COLOR_SPRAY_DEFINITION;
+        case TRAP_COLLAPSING_PIT: return &COLLAPSING_PIT_DEFINITION;
 
         case TRAP_NONE:
         default:
@@ -212,8 +216,10 @@ TrapID selectGeneratedTrapID(
 
     // Mechanical traps remain the largest category. Elemental and spell
     // traps occupy separate slices so neither family displaces the other.
-    if (roll < 25)
+    if (roll < 18)
         return TRAP_SPIKE_PLATE;
+    if (roll < 25)
+        return TRAP_COLLAPSING_PIT;
     if (roll < 42)
         return TRAP_ARROW;
     if (roll < 55)
@@ -286,9 +292,140 @@ uint8_t getTrapDamageDice(const TrapInstance& trap)
     if (definition == nullptr)
         return 0;
 
+    if (isCollapsingPit(trap))
+        return getCollapsingPitDamageDice(trap);
+
     return clampToByte(
         static_cast<unsigned>(definition->damageDice) +
         (effectiveTrapLevel(trap) - 1U) / 4U);
+}
+
+bool isCollapsingPit(const TrapInstance& trap)
+{
+    return trap.id == TRAP_COLLAPSING_PIT;
+}
+
+uint8_t getCollapsingPitDepthFeet(const TrapInstance& trap)
+{
+    return effectiveTrapLevel(trap) <= 4 ? 10 : 20;
+}
+
+uint8_t getCollapsingPitDamageDice(const TrapInstance& trap)
+{
+    return getCollapsingPitDepthFeet(trap) == 10 ? 1 : 2;
+}
+
+CollapsingPitTile getCollapsingPitTile(
+    const TrapInstance& trap, int x, int y)
+{
+    if (!isCollapsingPit(trap) || x < trap.x - 1 || x > trap.x + 1 ||
+        y < trap.y - 1 || y > trap.y + 1)
+    {
+        return COLLAPSING_PIT_OUTSIDE;
+    }
+
+    return x != trap.x && y != trap.y
+        ? COLLAPSING_PIT_STABLE_CORNER
+        : COLLAPSING_PIT_OPEN;
+}
+
+CollapsingPitFallResult resolveCollapsingPitFall(
+    const TrapInstance& trap,
+    int x,
+    int y,
+    bool flying,
+    int acrobaticsTotal,
+    int rolledDamage)
+{
+    CollapsingPitFallResult result;
+    const CollapsingPitTile tile = getCollapsingPitTile(trap, x, y);
+    result.affected = tile != COLLAPSING_PIT_OUTSIDE;
+    if (!result.affected || flying)
+        return result;
+
+    if (tile == COLLAPSING_PIT_STABLE_CORNER)
+    {
+        result.acrobaticsAttempted = true;
+        result.acrobaticsSucceeded =
+            acrobaticsTotal >= COLLAPSING_PIT_ACROBATICS_DC;
+        if (result.acrobaticsSucceeded)
+            return result;
+    }
+
+    result.fell = true;
+    result.damage = clampPositiveDamage(rolledDamage);
+    return result;
+}
+
+TrapInstance* getTriggeredCollapsingPitAt(DungeonRoom& room, int x, int y)
+{
+    for (TrapInstance& trap : room.traps)
+    {
+        if (trap.triggered && isCollapsingPit(trap) &&
+            getCollapsingPitTile(trap, x, y) != COLLAPSING_PIT_OUTSIDE)
+        {
+            return &trap;
+        }
+    }
+    return nullptr;
+}
+
+const TrapInstance* getTriggeredCollapsingPitAt(
+    const DungeonRoom& room, int x, int y)
+{
+    for (const TrapInstance& trap : room.traps)
+    {
+        if (trap.triggered && isCollapsingPit(trap) &&
+            getCollapsingPitTile(trap, x, y) != COLLAPSING_PIT_OUTSIDE)
+        {
+            return &trap;
+        }
+    }
+    return nullptr;
+}
+
+bool isOpenCollapsingPitTile(const DungeonRoom& room, int x, int y)
+{
+    const TrapInstance* pit = getTriggeredCollapsingPitAt(room, x, y);
+    return pit != nullptr &&
+        getCollapsingPitTile(*pit, x, y) == COLLAPSING_PIT_OPEN;
+}
+
+bool lowerRopeIntoCollapsingPit(TrapInstance& trap, int anchorX, int anchorY)
+{
+    if (!trap.triggered || !isCollapsingPit(trap) ||
+        !isInsideRoom(anchorX, anchorY))
+    {
+        return false;
+    }
+    trap.sourceX = static_cast<int8_t>(anchorX);
+    trap.sourceY = static_cast<int8_t>(anchorY);
+    return true;
+}
+
+bool hasLoweredPitRope(const TrapInstance& trap)
+{
+    return trap.triggered && isCollapsingPit(trap) &&
+        trap.sourceX >= 0 && trap.sourceY >= 0;
+}
+
+uint8_t getCollapsingPitClimbDC(
+    const DungeonRoom& room, const TrapInstance& trap)
+{
+    int dc = COLLAPSING_PIT_CLIMB_DC;
+    if (hasLoweredPitRope(trap))
+        dc -= 5;
+    for (int y = trap.y - 1; y <= trap.y + 1; y++)
+    {
+        for (int x = trap.x - 1; x <= trap.x + 1; x++)
+        {
+            if (isInsideRoom(x, y) && room.map.tiles[y][x] == TILE_CRATE)
+                dc -= 2;
+        }
+    }
+    if (dc < 5)
+        dc = 5;
+    return static_cast<uint8_t>(dc);
 }
 
 uint8_t getTrapDamageSides(const TrapInstance& trap)

@@ -16,6 +16,17 @@ TrapInstance makeSpikeTrap(uint8_t level = 1)
     trap.suspicion = SUSPICION_RAISED_TILE;
     return trap;
 }
+
+TrapInstance makePit(uint8_t level = 1)
+{
+    TrapInstance trap;
+    trap.id = TRAP_COLLAPSING_PIT;
+    trap.x = 5;
+    trap.y = 5;
+    trap.level = level;
+    trap.hp = static_cast<int16_t>(getTrapMaxHP(trap));
+    return trap;
+}
 }
 
 void setUp()
@@ -145,6 +156,7 @@ void test_spell_trap_context_uses_trap_level_dc_source_and_direction()
 void test_generated_trap_categories_retain_all_families_and_level_gates()
 {
     TEST_ASSERT_EQUAL(TRAP_SPIKE_PLATE, selectGeneratedTrapID(5, 0, 0));
+    TEST_ASSERT_EQUAL(TRAP_COLLAPSING_PIT, selectGeneratedTrapID(5, 20, 0));
     TEST_ASSERT_EQUAL(TRAP_ARROW, selectGeneratedTrapID(5, 30, 0));
     TEST_ASSERT_EQUAL(TRAP_POISON_DART, selectGeneratedTrapID(5, 50, 0));
     TEST_ASSERT_EQUAL(TRAP_FIRE, selectGeneratedTrapID(5, 60, 0));
@@ -159,6 +171,81 @@ void test_generated_trap_categories_retain_all_families_and_level_gates()
     TEST_ASSERT_EQUAL(TRAP_GREASE, selectGeneratedTrapID(1, 93, 0));
     TEST_ASSERT_EQUAL(TRAP_SLEEP, selectGeneratedTrapID(1, 98, 0));
     TEST_ASSERT_EQUAL(TRAP_SPIKE_PLATE, selectGeneratedTrapID(1, 60, 0));
+}
+
+void test_collapsing_pit_depth_damage_and_exact_footprint()
+{
+    TrapInstance shallow = makePit(4);
+    TrapInstance deep = makePit(5);
+    TEST_ASSERT_EQUAL_UINT8(10, getCollapsingPitDepthFeet(shallow));
+    TEST_ASSERT_EQUAL_UINT8(1, getCollapsingPitDamageDice(shallow));
+    TEST_ASSERT_EQUAL_UINT8(20, getCollapsingPitDepthFeet(deep));
+    TEST_ASSERT_EQUAL_UINT8(2, getCollapsingPitDamageDice(deep));
+
+    for (int y = 4; y <= 6; y++)
+        for (int x = 4; x <= 6; x++)
+            TEST_ASSERT_EQUAL(
+                x != 5 && y != 5
+                    ? COLLAPSING_PIT_STABLE_CORNER
+                    : COLLAPSING_PIT_OPEN,
+                getCollapsingPitTile(shallow, x, y));
+    TEST_ASSERT_EQUAL(
+        COLLAPSING_PIT_OUTSIDE, getCollapsingPitTile(shallow, 3, 5));
+}
+
+void test_collapsing_pit_cross_corners_flight_and_damage_are_deterministic()
+{
+    const TrapInstance pit = makePit(5);
+    static const int cross[][2] = {
+        {5, 5}, {5, 4}, {5, 6}, {4, 5}, {6, 5}};
+    for (const auto& point : cross)
+    {
+        const CollapsingPitFallResult result = resolveCollapsingPitFall(
+            pit, point[0], point[1], false, 99, 11);
+        TEST_ASSERT_TRUE(result.fell);
+        TEST_ASSERT_FALSE(result.acrobaticsAttempted);
+        TEST_ASSERT_EQUAL_UINT16(11, result.damage);
+    }
+
+    CollapsingPitFallResult result = resolveCollapsingPitFall(
+        pit, 4, 4, false, COLLAPSING_PIT_ACROBATICS_DC, 7);
+    TEST_ASSERT_TRUE(result.acrobaticsAttempted);
+    TEST_ASSERT_TRUE(result.acrobaticsSucceeded);
+    TEST_ASSERT_FALSE(result.fell);
+    result = resolveCollapsingPitFall(
+        pit, 6, 6, false, COLLAPSING_PIT_ACROBATICS_DC - 1, 7);
+    TEST_ASSERT_TRUE(result.acrobaticsAttempted);
+    TEST_ASSERT_FALSE(result.acrobaticsSucceeded);
+    TEST_ASSERT_TRUE(result.fell);
+    TEST_ASSERT_EQUAL_UINT16(7, result.damage);
+    result = resolveCollapsingPitFall(pit, 5, 5, true, 0, 12);
+    TEST_ASSERT_TRUE(result.affected);
+    TEST_ASSERT_FALSE(result.fell);
+    TEST_ASSERT_EQUAL_UINT16(0, result.damage);
+}
+
+void test_collapsing_pit_persistence_rope_and_crate_geometry()
+{
+    DungeonRoom room{};
+    for (int y = 0; y < ROOM_HEIGHT; y++)
+        for (int x = 0; x < ROOM_WIDTH; x++)
+            room.map.tiles[y][x] = TILE_FLOOR;
+    TEST_ASSERT_TRUE(addTrap(
+        room, TRAP_COLLAPSING_PIT, 5, 5, 3,
+        SUSPICION_CRACKED_FLOOR));
+    TrapInstance* pit = getTrapAt(room, 5, 5);
+    TEST_ASSERT_NOT_NULL(pit);
+    pit->triggered = true;
+    pit->discovered = true;
+    TEST_ASSERT_EQUAL_PTR(pit, getTriggeredCollapsingPitAt(room, 5, 4));
+    TEST_ASSERT_TRUE(isOpenCollapsingPitTile(room, 5, 4));
+    TEST_ASSERT_FALSE(isOpenCollapsingPitTile(room, 4, 4));
+    TEST_ASSERT_TRUE(lowerRopeIntoCollapsingPit(*pit, 3, 5));
+    TEST_ASSERT_TRUE(hasLoweredPitRope(*pit));
+    TEST_ASSERT_EQUAL_UINT8(5, getCollapsingPitClimbDC(room, *pit));
+    room.map.tiles[5][4] = TILE_CRATE;
+    TEST_ASSERT_TRUE(isOpenCollapsingPitTile(room, 4, 5));
+    TEST_ASSERT_FALSE(isOpenCollapsingPitTile(room, 4, 4));
 }
 
 void test_trap_level_selection_varies_and_stays_in_intended_ranges()
@@ -449,6 +536,9 @@ void setup()
     RUN_TEST(test_color_spray_trap_preserves_directional_source_geometry);
     RUN_TEST(test_spell_trap_context_uses_trap_level_dc_source_and_direction);
     RUN_TEST(test_generated_trap_categories_retain_all_families_and_level_gates);
+    RUN_TEST(test_collapsing_pit_depth_damage_and_exact_footprint);
+    RUN_TEST(test_collapsing_pit_cross_corners_flight_and_damage_are_deterministic);
+    RUN_TEST(test_collapsing_pit_persistence_rope_and_crate_geometry);
     RUN_TEST(test_trap_level_selection_varies_and_stays_in_intended_ranges);
     RUN_TEST(test_trap_scaling_is_linear_and_bounded);
     RUN_TEST(test_room_helpers_keep_clues_independent_from_traps);

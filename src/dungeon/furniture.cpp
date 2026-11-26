@@ -53,11 +53,16 @@ bool isPushDestinationValid(
     const Dungeon& dungeon,
     const DungeonRoom& room,
     const Entity& pusher,
+    DungeonFurnitureType furnitureType,
     int x,
     int y)
 {
-    if (!isInsideRoom(x, y) || room.map.tiles[y][x] != TILE_FLOOR ||
-        getTrapAt(room, x, y) != nullptr ||
+    const bool crateIntoPit = furnitureType == FURNITURE_CRATE &&
+        isOpenCollapsingPitTile(room, x, y) &&
+        room.map.tiles[y][x] == TILE_FLOOR;
+    if (!isInsideRoom(x, y) ||
+        (room.map.tiles[y][x] != TILE_FLOOR && !crateIntoPit) ||
+        (getTrapAt(room, x, y) != nullptr && !crateIntoPit) ||
         isHealingFountainTile(room, x, y))
     {
         return false;
@@ -243,7 +248,8 @@ FurniturePushResult tryPushDungeonFurniture(
     const int destinationX = x + directionX;
     const int destinationY = y + directionY;
     if (!isPushDestinationValid(
-            dungeon, room, pusher, destinationX, destinationY))
+            dungeon, room, pusher, furniture->type,
+            destinationX, destinationY))
     {
         return FURNITURE_PUSH_BLOCKED;
     }

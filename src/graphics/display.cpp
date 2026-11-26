@@ -1142,6 +1142,18 @@ void drawEntity(const Entity& entity)
         return;
     }
 
+    const int entityDrawY = entity.y * TILE_SIZE +
+        (hasCondition(entity.character, CONDITION_PIT_BOTTOM) ? 4 : 0);
+    if (hasCondition(entity.character, CONDITION_PIT_BOTTOM))
+    {
+        tft.fillRect(
+            entity.x * TILE_SIZE + 2,
+            entity.y * TILE_SIZE + 5,
+            entity.spriteWidth > 4 ? entity.spriteWidth - 4 : entity.spriteWidth,
+            entity.spriteHeight > 6 ? entity.spriteHeight - 6 : entity.spriteHeight,
+            0x0841);
+    }
+
     if (entity.type == ENTITY_MONSTER && entity.character.state == STATE_ALIVE)
     {
         if (entity.sprite == nullptr)
@@ -1155,7 +1167,7 @@ void drawEntity(const Entity& entity)
         {
             drawConditionSpriteTransparent(
                 entity.x * TILE_SIZE,
-                entity.y * TILE_SIZE,
+                entityDrawY,
                 entity.sprite,
                 entity.spriteWidth,
                 entity.spriteHeight,
@@ -1172,7 +1184,7 @@ void drawEntity(const Entity& entity)
 
     drawConditionSpriteTransparent(
         entity.x * TILE_SIZE,
-        entity.y * TILE_SIZE,
+        entityDrawY,
         entity.sprite,
         entity.spriteWidth,
         entity.spriteHeight,

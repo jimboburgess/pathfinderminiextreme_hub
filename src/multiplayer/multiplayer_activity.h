@@ -79,6 +79,10 @@ MultiplayerMemberLocation getMultiplayerMemberLocation(PlayerID playerID);
 const char* multiplayerMemberLocationName(MultiplayerMemberLocation location);
 
 bool handleMultiplayerLocalMove(uint8_t direction, bool& moved);
+
+// Reuses the existing reliable room snapshot when an authoritative persistent
+// room feature changes outside the combat event stream.
+void synchronizeCurrentMultiplayerDungeonRoom();
 bool publishSharedGameplayMessage(
     const char* message,
     SharedMessageCategory category = SharedMessageCategory::GAMEPLAY);

@@ -5,6 +5,7 @@
 #include "characters/conditions.h"
 #include "data/entities.h"
 #include "data/entityspawn.h"
+#include "dungeon/dungeon.h"
 #include "dungeon/traps.h"
 
 namespace
@@ -20,6 +21,31 @@ uint8_t calculateMovementCost(
     if (hasCondition(mover.character, CONDITION_GRAPPLED) ||
         hasCondition(mover.character, CONDITION_WEBBED))
         return 0;
+
+    if (gameState == GAME_DUNGEON && dungeon.currentRoom < MAX_ROOMS)
+    {
+        const DungeonRoom& room = dungeon.rooms[dungeon.currentRoom];
+        const TrapInstance* targetPit =
+            getTriggeredCollapsingPitAt(room, targetX, targetY);
+        const TrapInstance* currentPit =
+            getTriggeredCollapsingPitAt(room, mover.x, mover.y);
+        const bool atBottom =
+            hasCondition(mover.character, CONDITION_PIT_BOTTOM);
+        const bool flying = hasCondition(mover.character, CONDITION_FLYING);
+        if (atBottom && !flying &&
+            (targetPit == nullptr || targetPit != currentPit ||
+             getCollapsingPitTile(*targetPit, targetX, targetY) !=
+                 COLLAPSING_PIT_OPEN))
+        {
+            return 0;
+        }
+        if (!atBottom && !flying && targetPit != nullptr &&
+            getCollapsingPitTile(*targetPit, targetX, targetY) ==
+                COLLAPSING_PIT_OPEN)
+        {
+            return 0;
+        }
+    }
 
     uint8_t width = getEntityTileWidth(mover);
     uint8_t height = getEntityTileHeight(mover);

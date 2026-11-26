@@ -5,7 +5,9 @@
 #include "../../src/dungeon/abilityresolver.h"
 #include "../../src/dungeon/battlecry.h"
 #include "../../src/dungeon/combat.h"
+#include "../../src/dungeon/dungeon.h"
 #include "../../src/dungeon/monsterscripts.h"
+#include "../../src/dungeon/traps.h"
 #include "../../src/map/mapeffects.h"
 #include "../../src/map/movement.h"
 #include "../../src/data/game.h"
@@ -28,6 +30,19 @@ static Entity activeTestEntities[4];
 static uint8_t activeTestEntityCount = 0;
 
 Combat combat;
+GameState gameState = GAME_START;
+Dungeon dungeon{};
+
+const TrapInstance* getTriggeredCollapsingPitAt(
+    const DungeonRoom&, int, int)
+{
+    return nullptr;
+}
+
+CollapsingPitTile getCollapsingPitTile(const TrapInstance&, int, int)
+{
+    return COLLAPSING_PIT_OUTSIDE;
+}
 
 void triggerEntityActionPose(Entity&) {}
 

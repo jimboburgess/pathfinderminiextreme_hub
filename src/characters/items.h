@@ -697,6 +697,11 @@ bool completeSpellLearning(Character& character, AbilityID& completedAbility);
 // explicitly configured monster that carries the same normal item.
 bool useCureLightWoundsPotion(Character& character, int& amountRestored);
 
+// Applies the shared flying traversal condition and consumes one potion.
+// Reusing the condition lets spells and future items grant identical pit
+// protection without a separate movement path.
+bool useFlyPotion(Character& character, int rounds = 10);
+
 int calculateCureLightWoundsPotionHealing(int naturalRoll);
 
 // Restores MP and consumes exactly the selected potion as one transaction.

@@ -244,3 +244,13 @@ if(BUILD_TESTING)
  add_test(NAME pfme_town_equipment COMMAND pfme_town_equipment_tests)
  set_tests_properties(pfme_town_equipment PROPERTIES TIMEOUT 60)
 endif()
+
+if(BUILD_TESTING)
+ add_executable(pfme_pit_trap_tests pit_trap_tests.cpp)
+ target_include_directories(pfme_pit_trap_tests PRIVATE
+     host ../browser/host ../browser/third_party/adafruit_gfx)
+ target_link_libraries(pfme_pit_trap_tests PRIVATE pfme_handheld_runtime)
+ target_compile_definitions(pfme_pit_trap_tests PRIVATE ARDUINO=100)
+ add_test(NAME pfme_collapsing_pits COMMAND pfme_pit_trap_tests)
+ set_tests_properties(pfme_collapsing_pits PROPERTIES TIMEOUT 30)
+endif()
