@@ -187,12 +187,6 @@ uint32_t worldTime() {return nowMs;}
 void recordBrowserMessage(uint8_t id,const char* text){rememberMessage(id,text);}
 bool controllerBound(uint8_t id){return id<NATIVE_CONTROLLER_CAPACITY && bound[id].state;}
 bool controllerConnected(uint8_t id){return id<NATIVE_CONTROLLER_CAPACITY && bound[id].state && bound[id].connected;}
-const char* browserConfirmAction(){
-    // The production map commits a tile with the encoder; ordinary menus
-    // accept either input, while the character-creation menu intentionally
-    // requires Button A. Keep the pointer mapped to the original semantics.
-    return gameState==GAME_CHARACTER_CREATION && getCharacterCreationState()==CCS_MENU?"a":"encoder";
-}
 bool browserPresentation(uint8_t id,uint64_t since,BrowserPresentation& out) {
     if(!isValidController(id)||!bound[id].state||!selectController(id))return false;
     out=BrowserPresentation{};out.character=characterView(id);

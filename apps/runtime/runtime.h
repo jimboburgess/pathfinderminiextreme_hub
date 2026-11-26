@@ -39,7 +39,6 @@ bool controllerBound(uint8_t id);
 bool controllerConnected(uint8_t id);
 bool browserPresentation(uint8_t id,uint64_t since,BrowserPresentation& out);
 void recordBrowserMessage(uint8_t id,const char* text);
-const char* browserConfirmAction();
 
 // Original handheld globals permit one runtime per process, one owning session.
 void initialize(uint32_t seed);

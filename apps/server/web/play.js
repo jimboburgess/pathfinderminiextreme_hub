@@ -9,7 +9,7 @@
   ctx.imageSmoothingEnabled=false;
   const image=ctx.createImageData(240,240);
   for(let i=3;i<image.data.length;i+=4) image.data[i]=255;
-  let leaving=false, interactiveFrames=false, browserStateAvailable=false, lastSent=0, textInput=false, mouseConfirmAction="encoder", pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
+  let leaving=false, interactiveFrames=false, browserStateAvailable=false, lastSent=0, textInput=false, pumping=false, wanted=false, retryTimer=null, retryAttempt=0, lostAt=0, generation=0;
   const rpcTimes=[];
   let ws=null, secret="", proof="", id=0, pending=null, playing=false, since="0", offset=0, chunks=[], total=0;
   let requests=[], held=new Set(), heldSources=new Map(), repeat=new Map(), scheduled=null, connecting=false, disconnectReason="";
@@ -55,7 +55,6 @@
   }
   function applyFrame(frame) {
     textInput=frame.text_input===true;
-    if(frame.mouse_confirm_action==="a"||frame.mouse_confirm_action==="encoder")mouseConfirmAction=frame.mouse_confirm_action;
     if(frame.encoding!=="rgb565-patch-rle1" || frame.base!==since || frame.offset!==offset || !Number.isInteger(frame.total) || frame.total<0 || frame.total>230400 || typeof frame.more!=="boolean") throw new Error("Invalid frame sequence");
     const bytes=Uint8Array.from(atob(frame.pixels),c=>c.charCodeAt(0));
     if(bytes.length>9216 || (offset && frame.total!==total) || offset+bytes.length>frame.total) throw new Error("Invalid frame size");
@@ -143,7 +142,7 @@
   function mouseTap(action){press(action,"mouse:"+action);setTimeout(()=>release(action,"mouse:"+action),45);}
   $("viewport").addEventListener("wheel",event=>{if(!playing)return;event.preventDefault();if(event.deltaY)mouseTap(event.deltaY<0?"ccw":"cw");},{passive:false});
   $("viewport").addEventListener("contextmenu",event=>event.preventDefault());
-  $("viewport").addEventListener("pointerdown",event=>{if(event.target!==canvas)return;if(event.button===2){event.preventDefault();mouseTap(mouseConfirmAction);}else if(event.button===0){event.preventDefault();mouseTap("b");}});
+  $("viewport").addEventListener("pointerdown",event=>{if(event.target!==canvas)return;if(event.button===0){event.preventDefault();mouseTap("a");}else if(event.button===2){event.preventDefault();mouseTap("b");}});
   const finalErrors=new Set(["NoCharacter","OwnershipRequired","AuthenticationFailed","IdentityRequired","ReplayRejected","ServerFull"]);
   function retry(){
     if(!wanted||connecting||playing||retryTimer)return;
